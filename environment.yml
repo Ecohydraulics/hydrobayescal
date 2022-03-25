@@ -1,0 +1,16 @@
+name: tkeenv
+channels:
+  - conda-forge
+  - defaults
+  - blaze
+  - anaconda
+
+dependencies:
+  - python>=3.6
+  - pip
+  # scientific python
+  - numpy
+  - pandas
+  # plotting
+  - matplotlib
+  - plotly
