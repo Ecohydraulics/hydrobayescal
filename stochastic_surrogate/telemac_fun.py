@@ -1,27 +1,37 @@
-'''
-Auxiliary functions to couple the Surrogate-Assisted Bayesian inversion technique with Telemac. These functions are
-specific of the parameters that wanted to be changed at the time, but they can be used as a base on how to modify
-Telemac's input and output files
+"""
+Functional core for coupling the Surrogate-Assisted Bayesian inversion technique with Telemac.
+"""
 
-Contact: eduae94@gmail.com
-'''
-
-# Import libraries
-import sys, os
+import os
 import subprocess
 import shutil
 import numpy as np
-import math
 from datetime import datetime
-import init
-from ppmodules.selafin_io_pp import *
+from selafin_io_pp import ppSELAFIN
+from config import *
 
 
-def update_steering_file(prior_distribution, parameters_name, initial_diameters, auxiliary_names, gaia_name, telemac_name,
+
+def update_steering_file(prior_distribution, parameters_name, initial_diameters,
+                         auxiliary_names, gaia_name, telemac_name,
                          result_name_gaia, result_name_telemac, n_simulation):
+    """
+    Update the Telemac2d and Gaia steering files
+
+    :param list prior_distribution: dep. stress in N/m2, eros. stress in N/m2, denisty in kg/m3, settling velocity in m/s
+    :param list parameters_name: list of strings describing parameter names
+    :param list initial_diameters: floats of diamaters
+    :param list auxiliary_names: strings of auxiliary parameter names
+    :param str gaia_name:
+    :param str telemac_name:
+    :param str result_name_gaia:
+    :param str result_name_telemac:
+    :param int n_simulation:
+    :return:
+    """
 
     # Update deposition stress
-    updated_values = np.round(np.ones(4)*prior_distribution[0], decimals=3)
+    updated_values = np.round(np.ones(4) * prior_distribution[0], decimals=3)
     updated_string = create_string(parameters_name[0], updated_values)
     rewrite_parameter_file(parameters_name[0], updated_string, gaia_name)
 
@@ -39,45 +49,52 @@ def update_steering_file(prior_distribution, parameters_name, initial_diameters,
     rho_sed, rho_water, k_visc = 2650.0, 1000.0, 0.000001004
     new_diameters = initial_diameters * prior_distribution[3]
     settling_velocity = calculate_settling_velocity(new_diameters[1:], rho_sed, rho_water, k_visc)
-    updated_values = "; ".join(map('{:.3E}'.format, settling_velocity))
+    updated_values = "; ".join(map("{:.3E}".format, settling_velocity))
     updated_values = "-9; " + updated_values.replace("E-0", "E-")
     updated_string = parameters_name[3] + " = " + updated_values
     rewrite_parameter_file(parameters_name[3], updated_string, gaia_name)
 
     # Update other variables
     new_diameters[0] = initial_diameters[0]  # the first non-cohesive diameter stays the same
-    updated_values = "; ".join(map('{:.3E}'.format, new_diameters))
+    updated_values = "; ".join(map("{:.3E}".format, new_diameters))
     updated_values = updated_values.replace("E-0", "E-")
     updated_string = auxiliary_names[0] + " = " + updated_values
     rewrite_parameter_file(auxiliary_names[0], updated_string, gaia_name)
 
     # Update result file name gaia
-    updated_string = "RESULTS FILE"+"=" + result_name_gaia + str(n_simulation) + ".slf'"
+    updated_string = "RESULTS FILE" + "=" + result_name_gaia + str(n_simulation) + ".slf"
     rewrite_parameter_file("RESULTS FILE", updated_string, gaia_name)
     # Update result file name telemac
-    updated_string = "RESULTS FILE"+"="+ result_name_telemac + str(n_simulation) + ".slf'"
+    updated_string = "RESULTS FILE" + "=" + result_name_telemac + str(n_simulation) + ".slf"
     rewrite_parameter_file("RESULTS FILE", updated_string, telemac_name)
 
 
 def create_string(param_name, values):
-    updated_string = param_name + " = "
+    """
+    Create string names with new values to be used in Telemac2d / Gaia steering files
 
-    for i, value in enumerate(values):
-        if i == len(values)-1:
-            updated_string = updated_string + str(value)
-        else:
-            updated_string = updated_string + str(value) + "; "
-
-    return updated_string
+    :param str param_name: name of parameter to update
+    :param list values: new values for the parameter
+    :return str: update parameter line for a steering file
+    """
+    return param_name + " = " + "; ".join(map(str, values))
 
 
-def rewrite_parameter_file(param_name, updated_string, path):
+def rewrite_parameter_file(param_name, updated_string, directory):
+    """
+    Rewrite the steering file with new parameters
+
+    :param str param_name: name of parameter to rewrite
+    :param str updated_string: new values for parameter
+    :param str directory: directory where the steering file is tp be saved
+    :return None:
+    """
 
     # Save the variable of interest without unwanted spaces
     variable_interest = param_name.rstrip().lstrip()
 
     # Open the steering file with read permission and save a temporary copy
-    gaia_file = open(path, "r")
+    gaia_file = open(directory, "r")
     read_steering = gaia_file.readlines()
 
     # If the updated_string have more 72 characters, then it divides it in two
@@ -89,7 +106,7 @@ def rewrite_parameter_file(param_name, updated_string, path):
     # so this loop clean all the lines that start with a number
     temp = []
     for i, line in enumerate(read_steering):
-        if not isinteger(line[0]):
+        if not isinstance(line[0], int):
             temp.append(line)
         else:
             previous_line = read_steering[i-1].split("=")[0].rstrip().lstrip()
@@ -104,30 +121,44 @@ def rewrite_parameter_file(param_name, updated_string, path):
             temp[i] = updated_string + "\n"
 
     # Rewrite and close the steering file
-    gaia_file = open(path, "w")
+    gaia_file = open(directory, "w")
     gaia_file.writelines(temp)
     gaia_file.close()
 
 
-def calculate_settling_velocity(diameters, rho_sed, rho_water, k_visc):
+def calculate_settling_velocity(diameters, rho_sed, rho_water, k_visc=10**-6):
+    """
+    Calculate particle settling velocity as a function of diameter, densities of water and
+    sediment, and kinematic viscosity
+
+    :param np.array diameters: floats of sediment diameter in meters
+    :param float rho_sed: sediment density in kg/m3
+    :param float rho_water: water density in kg/m3
+    :param k_visc: kinematic viscosity in m2/s (default is 10**-6)
+    :return np.array settling_vevlocity: settling velocities in m/s for every diameter in the diameters list
+    """
     settling_velocity = np.zeros(diameters.shape[0])
-    s = rho_sed/rho_water
+    s = rho_sed / rho_water
     for i, d in enumerate(diameters):
-
         if d <= 0.0001:
-            settling_velocity[i] = (s - 1) * 9.81 * d**2 / (18 * k_visc)
+            settling_velocity[i] = (s - 1) * GRAVITY * d ** 2 / (18 * k_visc)
         elif 0.0001 < d < 0.001:
-            settling_velocity[i] = 10 * k_visc / d * (math.sqrt(1 + 0.01 * (s-1) * 9.81 * d**3 / k_visc**2) - 1)
+            settling_velocity[i] = 10 * k_visc / d * (np.sqrt(1 + 0.01 * (s-1) * 9.81 * d**3 / k_visc**2) - 1)
         else:
-            settling_velocity[i] = 1.1 * math.sqrt((s-1) * 9.81 * d)
-
+            settling_velocity[i] = 1.1 * np.sqrt((s - 1) * GRAVITY * d)
     return settling_velocity
 
 
-def run_telemac(telemac_file_name, number_processors):
+def run_telemac(telemac_file_name, number_processors=1):
+    """
+    Run a Telemac simulation
+
+    :param str telemac_file_name: name of the steering file for the simulation (must end on .cas)
+    :param int number_processors: number of processor to use for parallelization (default: 1
+    :return None:
+    """
     start_time = datetime.now()
-    # Run telemac
-    bash_cmd = "telemac2d.py " + telemac_file_name + " --ncsize="+number_processors
+    bash_cmd = "telemac2d.py " + telemac_file_name + " --ncsize="+ str(number_processors)
     process = subprocess.Popen(bash_cmd .split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
     print("Telemac simulation finished")
@@ -144,7 +175,7 @@ def run_gretel(telemac_file_name, number_processors, folder_rename):
     simulation_index = simulation_index[0]
     original_name = subfolders[simulation_index]
     os.rename(original_name, folder_rename)
-    simulation_path = './'+ folder_rename
+    simulation_path = "./"+ folder_rename
     os.chdir(simulation_path)
 
     # Run gretel code
@@ -159,14 +190,22 @@ def run_gretel(telemac_file_name, number_processors, folder_rename):
     print("Finish Gretel for Telemac")
 
     # Copy result files in original folder
-    shutil.copy('GAIRES', original_directory)
-    shutil.copy('T2DRES', original_directory)
+    shutil.copy("GAIRES", original_directory)
+    shutil.copy("T2DRES", original_directory)
     os.chdir(original_directory)
 
 
 def rename_selafin(original_name, new_name):
-    # When I join parallel computed meshes with my gretel subroutine, even though the files is a SELAFIN it lacks the
-    # extension. Here I change the name and create the proper extension
+    """
+    Merged parallel computation meshes (gretel subroutine) does not add correct file endings.
+    This funciton adds the correct file ending to the file name.
+
+    :param str original_name: original file name
+    :param str new_name: new file name
+    :return: None
+    :rtype: None
+    """
+
     if os.path.exists(original_name):
         os.rename(original_name, new_name)
     else:
@@ -174,6 +213,16 @@ def rename_selafin(original_name, new_name):
 
 
 def get_variable_value(file_name, calibration_variable, specific_nodes=None, save_name=""):
+    """
+    Retrieve values of parameters
+
+    :param str file_name:
+    :param calibration_variable:
+    :param specific_nodes:
+    :param str save_name:
+    :return:
+    """
+
     # Read the SELEFIN file
     slf = ppSELAFIN(file_name)
     slf.readHeader()
@@ -205,28 +254,26 @@ def get_variable_value(file_name, calibration_variable, specific_nodes=None, sav
         format_modelled_results = format_modelled_results[specific_nodes[:, 0].astype(int) - 1, :]
 
     if len(save_name) != 0:
-        np.savetxt(save_name, format_modelled_results, delimiter="	", fmt=['%1.0f', '%1.3f'])
+        np.savetxt(save_name, format_modelled_results, delimiter="	",
+                   fmt=["%1.0f", "%1.3f"])
 
     # Return the value of the variable of interest
     return format_modelled_results
 
 
-def isinteger(x):
-
-    try:
-        int(x)
-        return True
-
-    except ValueError:
-        return False
-
-
 def append_new_line(file_name, text_to_append):
-    # Open the file in append & read mode ('a+')
+    """
+    Add new line to steering file
+
+    :param str file_name: name of the file to which the line should be appended
+    :param str text_to_append: text of the line to append
+    :return None:
+    """
+    # Open the file in append & read mode ("a+")
     with open(file_name, "a+") as file_object:
         # Move read cursor to the start of file.
         file_object.seek(0)
-        # If file is not empty then append '\n'
+        # If file is not empty then append "\n"
         data = file_object.read(100)
         if len(data) > 0:
             file_object.write("\n")

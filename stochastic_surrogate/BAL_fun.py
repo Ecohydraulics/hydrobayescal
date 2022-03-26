@@ -1,12 +1,10 @@
-'''
-Auxiliary functions for the stochastic calibration of model using Surrogate-Assisted Bayesian inversion
+"""
+Auxiliary functions for the stochastic calibration of model using Surrogate-Assisted Bayesian
+inversion
+"""
 
-Contact: eduae94@gmail.com
-'''
-
-# Libraries
 import numpy as np
-import math
+
 
 def compute_fast_likelihood(prediction, observations, error_variance):
     """
@@ -40,7 +38,7 @@ def compute_fast_likelihood(prediction, observations, error_variance):
     # Calculate constants:
     #n_points = observations.shape[1]
     #det_R = np.linalg.det(cov_mat)
-    #const_mvn = pow(2 * math.pi, -n_points / 2) * (1 / math.sqrt(det_R))
+    #const_mvn = pow(2 * np.pi, -n_points / 2) * (1 / np.sqrt(det_R))
 
     # Vectorize means:
     means_vect = observations[:, np.newaxis]
@@ -109,7 +107,7 @@ def compute_bayesian_scores(prediction, observations, error_variance):
         exp_log_pred = np.sum(post_weigth * np.log(non_zero_likel))
 
         # Relative entropy calculation
-        RE = exp_log_pred - math.log(BME)
+        RE = exp_log_pred - np.log(BME)
 
     # For cases in which the BME is zero (point selected from the prior gives really bad results, or the surrogate still
     # is giving bad results)

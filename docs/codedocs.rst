@@ -8,33 +8,33 @@ The following sections provide details of functions, their arguments, and output
 config.py
 ---------
 
-.. automodule:: TKEanalyst.config
+.. automodule:: stochastic_surrogate.config
     :members:
 
 flowstat.py
 -----------
 
-.. automodule:: TKEanalyst.flowstat
+.. automodule:: stochastic_surrogate.flowstat
     :members:
 
 profile_analyst.py
 ------------------
 
-.. automodule:: TKEanalyst.profile_analyst
+.. automodule:: stochastic_surrogate.profile_analyst
     :members:
 
 
 profile_plotter.py
 ------------------
 
-.. automodule:: TKEanalyst.profile_plotter
+.. automodule:: stochastic_surrogate.profile_plotter
     :members:
 
 
 rmspike.py
 ----------
 
-.. automodule:: TKEanalyst.rmspike
+.. automodule:: stochastic_surrogate.rmspike
     :members:
 
 

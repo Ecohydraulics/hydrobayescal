@@ -1,29 +1,17 @@
-'''
-Stochastic calibration of a Telemac2d hydromorphodunamic model model using 
+"""
+Stochastic calibration of a Telemac2d hydro-morphodynamic model using
 Surrogate-Assisted Bayesian inversion. The surrogate model is created using
 Gaussian Process Regression
 
-Methodology from:
-Oladyshkin, S., Mohammadi, F., Kroeker, I., & Nowak, W. (2020). Bayesian3 Active Learning for the Gaussian Process
+Method adapt: Oladyshkin et al. (2020). Bayesian Active Learning for the Gaussian Process
 Emulator Using Information Theory. Entropy, 22(8), 890.
+"""
 
-Adaptation to python and coupling with Telemac by: Eduardo Acuna and Farid Mohammadi
-
-Contact: eduae94@gmail.com
-'''
-
-# Import libraries
-import sys, os
-import numpy as np
-import shutil
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
-import init
-from auxiliary_functions_BAL import *
-from auxiliary_functions_telemac import *
+from BAL_fun import *
+from telemac_fun import *
 
-# ---------------------------------------------------------------------------------------------------------------------
-# USER INPUT  ---------------------------------------------------------------------------------------------------------
 
 # Prior distribution of calibration parameters
 N = 4  # number of calibration parameters (uncertainty parameters)
@@ -57,8 +45,8 @@ al_strategy = "RE"
 # Telemac
 telemac_name = "run_liquid_tel.cas"
 gaia_name = "run_liquid_gaia.cas"
-result_name_gaia = "'res_gaia_PC"  # PC stands for parameter combination
-result_name_telemac = "'res_tel_PC"  # PC stands for parameter combination
+result_name_gaia = ""res_gaia_PC"  # PC stands for parameter combination
+result_name_telemac = ""res_tel_PC"  # PC stands for parameter combination
 n_processors = "12"
 
 # Calibration parameters
@@ -80,7 +68,7 @@ al_BME = np.zeros((d_size_AL, 1))
 al_RE = np.zeros((d_size_AL, 1))
 
 # Part 2. Read initial collocation points  ----------------------------------------------------------------------------
-temp = np.loadtxt(os.path.abspath(os.path.expanduser(path_results))+"/parameter_file.txt", dtype=np.str, delimiter=';')
+temp = np.loadtxt(os.path.abspath(os.path.expanduser(path_results))+"/parameter_file.txt", dtype=np.str, delimiter=";")
 simulation_names = temp[:, 0]
 collocation_points = temp[:, 1:].astype(np.float)
 n_simulation = collocation_points.shape[0]
@@ -152,7 +140,7 @@ for iter in range(0, iteration_limit):
     shutil.move(result_name_telemac[1:] + str(n_simulation+1+iter) + ".slf", path_simulations)
 
     # Append the parameter used to a file
-    new_line = "; ".join(map('{:.3f}'.format, collocation_points[-1, :]))
+    new_line = "; ".join(map("{:.3f}".format, collocation_points[-1, :]))
     new_line = "PC" + str(n_simulation+1+iter) + "; " + new_line
     append_new_line(path_results + "/parameter_file.txt", new_line)
 

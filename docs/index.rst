@@ -85,7 +85,7 @@ Still in Anaconda Prompt (or any other Python-pip-able Terminal), enter:
 
     pip install stochastic_surrogate
 
-The last item you need to run ``TKEanalyst`` is the workbook (``.xlsx``) template for defining input parameters (`download input.xlsx <https://github.com/sschwindt/TKEanalyst/raw/main/input.xlsx>`_).
+With the ``stochastic_surrogate`` installed you are now ready to use it for running a stochastic optimization of your TELEMAC model. The `usage section <usage>` provides detailed explanations for running the optimization.
 
 
 .. toctree::
