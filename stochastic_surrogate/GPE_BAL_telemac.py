@@ -45,8 +45,8 @@ al_strategy = "RE"
 # Telemac
 telemac_name = "run_liquid_tel.cas"
 gaia_name = "run_liquid_gaia.cas"
-result_name_gaia = ""res_gaia_PC"  # PC stands for parameter combination
-result_name_telemac = ""res_tel_PC"  # PC stands for parameter combination
+result_name_gaia = "'res_gaia_PC"  # PC stands for parameter combination
+result_name_telemac = "'res_tel_PC"  # PC stands for parameter combination
 n_processors = "12"
 
 # Calibration parameters

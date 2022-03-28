@@ -11,30 +11,23 @@ config.py
 .. automodule:: stochastic_surrogate.config
     :members:
 
-flowstat.py
+BAL_fun.py
 -----------
 
-.. automodule:: stochastic_surrogate.flowstat
+.. automodule:: stochastic_surrogate.BAL_fun
     :members:
 
-profile_analyst.py
+GPE_BAL_telemac.py
 ------------------
 
-.. automodule:: stochastic_surrogate.profile_analyst
+.. automodule:: stochastic_surrogate.GPE_BAL_telemac
     :members:
 
-
-profile_plotter.py
+telemac_fun.py
 ------------------
 
-.. automodule:: stochastic_surrogate.profile_plotter
+.. automodule:: stochastic_surrogate.telemac_fun
     :members:
 
-
-rmspike.py
-----------
-
-.. automodule:: stochastic_surrogate.rmspike
-    :members:
 
 

@@ -3,22 +3,26 @@ Auxiliary functions for the stochastic calibration of model using Surrogate-Assi
 inversion
 """
 
-import numpy as np
+import numpy as _np  # use underscore import to avoid double-numpy imports with wildcards (import *)
 
 
-def compute_fast_likelihood(prediction, observations, error_variance):
+def compute_likelihood(prediction, observations, error_variance, const_mvn_method="simple"):
     """
-    Calculates the multivariate Gaussian likelihood between model predictions and measured/observed data, taking
-    independent errors (diagonal covariance matrix)
+    Calculates the multivariate Gaussian likelihood between model predictions and
+    measured/observed data taking independent errors (diagonal covariance matrix)
 
     Input
     ----------
     prediction : array [MC, n_points]
-        predicted / modelled values
+        predicted / modeled values
     observations: array [1, n_points]
         observed / measured values
     error variance : array [n_points]]
         error of the observations
+    const_mvn_method : string
+        Default "simple" uses const_mvn=1.0 as constant outside the exponent of the
+        multivariate Gaussian likelihood. Any other string (e.g. const_mvn_method="calc"
+        makes the function calculating const_mvn (see p. XYZ in Acnuna thesis).
 
     Returns
     -------
@@ -27,46 +31,46 @@ def compute_fast_likelihood(prediction, observations, error_variance):
 
     Notes:
     * MC is the total number of model runs and n_points is the number of points considered for the comparison
-    * const_mvn is the constant outside the exponent of the multivariate Gaussian likelihood. In some cases this can be
-    ignored
-    * Method is faster than using stats module.
     """
 
-    cov_mat = np.diag(error_variance)
-    invR = np.linalg.inv(cov_mat)
+    cov_mat = _np.diag(error_variance)  # covariance matrix
+    inv_r = _np.linalg.inv(cov_mat)
 
-    # Calculate constants:
-    #n_points = observations.shape[1]
-    #det_R = np.linalg.det(cov_mat)
-    #const_mvn = pow(2 * np.pi, -n_points / 2) * (1 / np.sqrt(det_R))
+    # Calculate constants
+    if not ("simple" in const_mvn_method):
+        n_points = observations.shape[1]
+        det_R = _np.linalg.det(cov_mat)
+        const_mvn = pow(2 * _np.pi, -n_points / 2) * (1 / _np.sqrt(det_R))
+    else:
+        const_mvn = 1.0
 
-    # Vectorize means:
-    means_vect = observations[:, np.newaxis]
+    # Vectorize means
+    means_vect = observations[:, _np.newaxis]
 
-    # Calculate differences and convert to 4D array (and its transpose):
+    # Calculate differences and convert to 4D array (and its transpose)
     diff = means_vect - prediction  # Shape: # means
-    diff_4d = diff[:, :, np.newaxis]
+    diff_4d = diff[:, :, _np.newaxis]
     transpose_diff_4d = diff_4d.transpose(0, 1, 3, 2)
 
     # Calculate values inside the exponent
-    inside_1 = np.einsum("abcd, dd->abcd", diff_4d, invR)
-    inside_2 = np.einsum("abcd, abdc->abc", inside_1, transpose_diff_4d)
+    inside_1 = _np.einsum("abcd, dd->abcd", diff_4d, inv_r)
+    inside_2 = _np.einsum("abcd, abdc->abc", inside_1, transpose_diff_4d)
     total_inside_exponent = inside_2.transpose(2, 1, 0)
-    total_inside_exponent = np.reshape(total_inside_exponent,
-                                       (total_inside_exponent.shape[1], total_inside_exponent.shape[2]))
+    total_inside_exponent = _np.reshape(
+        total_inside_exponent,
+        (total_inside_exponent.shape[1], total_inside_exponent.shape[2])
+    )
 
-    #likelihood = const_mvn * np.exp(-0.5 * total_inside_exponent)
-    likelihood = np.exp(-0.5 * total_inside_exponent)
-
+    likelihood = const_mvn * _np.exp(-0.5 * total_inside_exponent)
     if likelihood.shape[1] == 1:
-        likelihood = likelihood[:, 0]
+        return likelihood[:, 0]
+    else:
+        return likelihood
 
-    return likelihood
 
-
-def compute_bayesian_scores(prediction, observations, error_variance):
+def compute_bayesian_scores(prediction, observations, error_variance, enthropy_normalization="bayesian"):
     """
-    Compute the Bayesian Model Evidence (BME) and Relative entropy
+    Compute Bayesian Model Evidence (BME) and Relative Entropy (RE)
 
     Input
     ----------
@@ -76,11 +80,14 @@ def compute_bayesian_scores(prediction, observations, error_variance):
         observed / measured values
     error_variance : array [n_points]]
         error of the observations
+    enthropy_normalization : string
+        Method for entrhopy cross normalization. The default is "bayesian" for Bayesian weighting.
+        Other option is "rejection" for rejection sampling.
 
     Returns
     -------
     BME: float
-       bayesian model evidence
+        bayesian model evidence
     RE: float
         relative entropy
 
@@ -88,39 +95,39 @@ def compute_bayesian_scores(prediction, observations, error_variance):
     * MC is the total number of model runs and n_points is the number of points considered for the comparison
     """
 
-    # Likelihood calculation
-    likelihood = compute_fast_likelihood(prediction, observations, error_variance).reshape(1, prediction.shape[0])
+    # get likelihood
+    likelihood = compute_likelihood(prediction, observations, error_variance).reshape(1, prediction.shape[0])
 
     # BME calculation
-    BME = np.mean(likelihood)
+    BME = _np.mean(likelihood)
 
-    # For cases in which the prediction of the surrogate is not too bad
-    if BME > 0:
-
-        # Non normalized cross entropy with rejection sampling
-        #accepted = likelihood / np.amax(likelihood) >= np.random.rand(1, prediction.shape[0])
-        #exp_log_pred = np.mean(np.log(likelihood[accepted]))
-
-        # Non normalized cross entropy with bayesian weighting
-        non_zero_likel = likelihood[np.where(likelihood != 0)]
-        post_weigth = non_zero_likel / np.sum(non_zero_likel)
-        exp_log_pred = np.sum(post_weigth * np.log(non_zero_likel))
+    if not(BME <= 0):
+        # For cases in which the prediction of the surrogate is not too bad
+        if not ("bay" in enthropy_normalization.lower()):
+            # Non normalized cross entropy with rejection sampling
+            accepted = likelihood / _np.amax(likelihood) >= _np.random.rand(1, prediction.shape[0])
+            exp_log_pred = _np.mean(_np.log(likelihood[accepted]))
+        else:
+            # Non normalized cross entropy with bayesian weighting
+            non_zero_likel = likelihood[_np.where(likelihood != 0)]
+            post_weigth = non_zero_likel / _np.sum(non_zero_likel)
+            exp_log_pred = _np.sum(post_weigth * _np.log(non_zero_likel))
 
         # Relative entropy calculation
-        RE = exp_log_pred - np.log(BME)
-
-    # For cases in which the BME is zero (point selected from the prior gives really bad results, or the surrogate still
-    # is giving bad results)
+        RE = exp_log_pred - _np.log(BME)
     else:
+        # For cases in which the BME is zero (point selected from the prior gives bad results),
+        # or the surrogate is giving bad results.
         BME = 0
         RE = 0
-
     return BME, RE
 
 
 def BAL_selection_criteria(al_strategy, al_BME, al_RE):
     """
-    Gives the best value of the selected bayesian score and index of the associated parameter combination
+    Calculate the best value of the selected bayesian score and the index of the associated parameter combination
+
+    Input
     ----------
     al_strategy : string
         strategy for active learning, selected bayesian score
@@ -137,32 +144,34 @@ def BAL_selection_criteria(al_strategy, al_BME, al_RE):
         index of the associated parameter combination
 
     Notes:
-    * d_size_AL is the number of active learning sets (sets I take from the prior to do the active learning)
+    * d_size_AL is the number of active learning sets (sets from the prior for the active learning procedure)
     """
 
     if al_strategy == "BME":
-        al_value = np.amax(al_BME)
-        al_value_index = np.argmax(al_BME)
+        al_value = _np.amax(al_BME)
+        al_value_index = _np.argmax(al_BME)
 
-        if np.amax(al_BME) == 0:
-            print("Warning Active Learning: all values of Bayesian model evidences equal to 0")
-            print("Active Learning Action: training point have been selected randomly")
+        if _np.amax(al_BME) == 0:
+            print("WARNING: Active Learning -- all values of Bayesian model evidences are 0")
+            print("Active Learning Action: training points were selected randomly")
 
     elif al_strategy == "RE":
-        al_value = np.amax(al_RE)
-        al_value_index = np.argmax(al_RE)
+        al_value = _np.amax(al_RE)
+        al_value_index = _np.argmax(al_RE)
 
-        if np.amax(al_RE) == 0 and np.amax(al_BME) != 0:
-            al_value = np.amax(al_BME)
-            al_value_index = np.argmax(al_BME)
-            print("Warning Active Learning: all values of Relative entropies equal to 0")
-            print("Active Learning Action: training point have been selected according Bayesian model evidences")
-        elif np.amax(al_RE) == 0 and np.amax(al_BME) == 0:
-            al_value = np.amax(al_BME)
-            al_value_index = np.argmax(al_BME)
-            print("Warning Active Learning: all values of Relative entropies equal to 0")
-            print("Warning Active Learning: all values of Bayesian model evidences are also equal to 0")
-            print("Active Learning Action: training point have been selected randomly")
-
-    return al_value, al_value_index
-
+        if _np.amax(al_RE) == 0 and _np.amax(al_BME) != 0:
+            al_value = _np.amax(al_BME)
+            al_value_index = _np.argmax(al_BME)
+            print("WARNING: Active Learning -- all values of Relative entropies are 0")
+            print("Active Learning Action: training points were selected according to Bayesian model evidences")
+        elif _np.amax(al_RE) == 0 and _np.amax(al_BME) == 0:
+            al_value = _np.amax(al_BME)
+            al_value_index = _np.argmax(al_BME)
+            print("WARNING: Active Learning -- all values of Relative entropies are 0")
+            print("Warning Active Learning: all values of Bayesian model evidences are also 0")
+            print("Active Learning Action: training points were selected randomly")
+    try:
+        return al_value, al_value_index
+    except NameError:
+        print("ERROR: failed to calculate selection (unknown active learning strategy %s provided)" % str(al_strategy))
+        return _np.nan, _np.nan
