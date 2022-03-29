@@ -11,7 +11,6 @@ from selafin_io_pp import ppSELAFIN
 from config import *
 
 
-
 def update_steering_file(prior_distribution, parameters_name, initial_diameters,
                          auxiliary_names, gaia_name, telemac_name,
                          result_name_gaia, result_name_telemac, n_simulation):

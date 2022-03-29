@@ -6,7 +6,7 @@ inversion
 import numpy as _np  # use underscore import to avoid double-numpy imports with wildcards (import *)
 
 
-def compute_likelihood(prediction, observations, error_variance, const_mvn_method="simple"):
+def compute_likelihood(prediction, observations, error_variance, normalize=False):
     """
     Calculates the multivariate Gaussian likelihood between model predictions and
     measured/observed data taking independent errors (diagonal covariance matrix)
@@ -19,28 +19,32 @@ def compute_likelihood(prediction, observations, error_variance, const_mvn_metho
         observed / measured values
     error variance : array [n_points]]
         error of the observations
-    const_mvn_method : string
-        Default "simple" uses const_mvn=1.0 as constant outside the exponent of the
-        multivariate Gaussian likelihood. Any other string (e.g. const_mvn_method="calc"
-        makes the function calculating const_mvn (see p. XYZ in Acnuna thesis).
+    normalize : bool
+        Default False sets the constant before the exponent in eq. 3.14 (p. 27 in Acuna thesis)
+        to 1.0. This setting is recommended when
+        (1) the computational mesh does not vary, and
+        (2) many measurement points are available with small measurement error.
+        However, for enabling the comparison of multiple models or in the context of BME/information
+        entropy calculations, this value should be set to True.
 
     Returns
     -------
     likelihood: array [MC]
        likelihood value
 
-    Notes:
-    * MC is the total number of model runs and n_points is the number of points considered for the comparison
+    Notes
+    -----
+    MC is the total number of model runs and n_points is the number of points considered for the comparison
     """
 
     cov_mat = _np.diag(error_variance)  # covariance matrix
     inv_r = _np.linalg.inv(cov_mat)
 
     # Calculate constants
-    if not ("simple" in const_mvn_method):
+    if normalize:
         n_points = observations.shape[1]
         det_R = _np.linalg.det(cov_mat)
-        const_mvn = pow(2 * _np.pi, -n_points / 2) * (1 / _np.sqrt(det_R))
+        const_mvn = pow(2 * _np.pi, -n_points / 2) / _np.sqrt(det_R)
     else:
         const_mvn = 1.0
 
@@ -91,8 +95,9 @@ def compute_bayesian_scores(prediction, observations, error_variance, enthropy_n
     RE: float
         relative entropy
 
-    Notes:
-    * MC is the total number of model runs and n_points is the number of points considered for the comparison
+    Notes
+    -----
+    MC is the total number of model runs and n_points is the number of points considered for the comparison
     """
 
     # get likelihood
@@ -143,8 +148,9 @@ def BAL_selection_criteria(al_strategy, al_BME, al_RE):
     al_value_index: int
         index of the associated parameter combination
 
-    Notes:
-    * d_size_AL is the number of active learning sets (sets from the prior for the active learning procedure)
+    Notes
+    -----
+    d_size_AL is the number of active learning sets (sets from the prior for the active learning procedure)
     """
 
     if al_strategy == "BME":

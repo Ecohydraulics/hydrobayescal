@@ -37,7 +37,7 @@ project = u"Surrogates for Model Calibration"
 slug = re.sub(r"\W+", "-", project.lower())
 version = "1.0.0"
 release = "latest"
-author = u"Sebastian Schwindt, Eduardo Acuna Espinoza, Kilian Mouris, Farid Mohammadi, Sergey Oladyshkin"
+author = u"Sebastian Schwindt, Eduardo Acuna Espinoza, Maria Fernanda Morales Oreamuno, Kilian Mouris, Farid Mohammadi, Sergey Oladyshkin"
 copyright = author
 language = "en"
 
