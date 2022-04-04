@@ -21,10 +21,10 @@ def update_steering_file(prior_distribution, parameters_name, initial_diameters,
     :param list parameters_name: list of strings describing parameter names
     :param list initial_diameters: floats of diamaters
     :param list auxiliary_names: strings of auxiliary parameter names
-    :param str gaia_name:
-    :param str telemac_name:
-    :param str result_name_gaia:
-    :param str result_name_telemac:
+    :param str gaia_name: file name of Gaia cas
+    :param str telemac_name: file name of Telemac2d cas
+    :param str result_name_gaia: file name of gaia results SLF
+    :param str result_name_telemac: file name of telemac results SLF
     :param int n_simulation:
     :return:
     """
@@ -45,9 +45,8 @@ def update_steering_file(prior_distribution, parameters_name, initial_diameters,
     rewrite_parameter_file(parameters_name[2], updated_string, gaia_name)
 
     # Update settling velocity
-    rho_sed, rho_water, k_visc = 2650.0, 1000.0, 0.000001004
     new_diameters = initial_diameters * prior_distribution[3]
-    settling_velocity = calculate_settling_velocity(new_diameters[1:], rho_sed, rho_water, k_visc)
+    settling_velocity = calculate_settling_velocity(new_diameters[1:])
     updated_values = "; ".join(map("{:.3E}".format, settling_velocity))
     updated_values = "-9; " + updated_values.replace("E-0", "E-")
     updated_string = parameters_name[3] + " = " + updated_values
@@ -125,24 +124,21 @@ def rewrite_parameter_file(param_name, updated_string, directory):
     gaia_file.close()
 
 
-def calculate_settling_velocity(diameters, rho_sed, rho_water, k_visc=10**-6):
+def calculate_settling_velocity(diameters):
     """
     Calculate particle settling velocity as a function of diameter, densities of water and
     sediment, and kinematic viscosity
 
     :param np.array diameters: floats of sediment diameter in meters
-    :param float rho_sed: sediment density in kg/m3
-    :param float rho_water: water density in kg/m3
-    :param k_visc: kinematic viscosity in m2/s (default is 10**-6)
     :return np.array settling_vevlocity: settling velocities in m/s for every diameter in the diameters list
     """
     settling_velocity = np.zeros(diameters.shape[0])
-    s = rho_sed / rho_water
+    s = SED_DENSITY / WATER_DENSITY
     for i, d in enumerate(diameters):
         if d <= 0.0001:
-            settling_velocity[i] = (s - 1) * GRAVITY * d ** 2 / (18 * k_visc)
+            settling_velocity[i] = (s - 1) * GRAVITY * d ** 2 / (18 * KINEMATIC_VISCOSITY)
         elif 0.0001 < d < 0.001:
-            settling_velocity[i] = 10 * k_visc / d * (np.sqrt(1 + 0.01 * (s-1) * 9.81 * d**3 / k_visc**2) - 1)
+            settling_velocity[i] = 10 * KINEMATIC_VISCOSITY / d * (np.sqrt(1 + 0.01 * (s-1) * 9.81 * d**3 / KINEMATIC_VISCOSITY**2) - 1)
         else:
             settling_velocity[i] = 1.1 * np.sqrt((s - 1) * GRAVITY * d)
     return settling_velocity
@@ -157,7 +153,7 @@ def run_telemac(telemac_file_name, number_processors=1):
     :return None:
     """
     start_time = datetime.now()
-    bash_cmd = "telemac2d.py " + telemac_file_name + " --ncsize="+ str(number_processors)
+    bash_cmd = "telemac2d.py " + telemac_file_name + " --ncsize=" + str(number_processors)
     process = subprocess.Popen(bash_cmd .split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
     print("Telemac simulation finished")
