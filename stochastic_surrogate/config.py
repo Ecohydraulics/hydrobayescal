@@ -18,6 +18,13 @@ SIM_DIR = "../simulations"  # relative path for simulations
 GAIA_PARAMETERS = [p for p in _pd.read_csv(SCRIPT_DIR+"templates/parameters-gaia", header=None).to_dict()[0].values()]
 TM2D_PARAMETERS = [p for p in _pd.read_csv(SCRIPT_DIR+"templates/parameters-telemac2d", header=None).to_dict()[0].values()]
 
+# define relevant data ranges in user-input.xlsx
+TM_RANGE = "A6:B9"
+AL_RANGE = "A13:B18"
+PRIOR_DIR_RANGE = "A24:B27"
+PRIOR_INDIR_RANGE = "A30:B31"
+PRIOR_REC_RANGE = "A34:B34"
+
 # instantiate other global variables
 global CALIB_PARAMETERS  # list for calibration optimization parameters
 global CALIB_PTS  # numpy array to be loaded from calibration_points file
