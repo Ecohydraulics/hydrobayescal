@@ -54,7 +54,7 @@ Regular Usage
 
 Coming soon
 
-.. figure:: https://github.com/sschwindt/stochastic-surrogate/raw/main/docs/img/brower-icon-large.jpg
+.. figure:: https://github.com/sschwindt/stochastic-surrogate/raw/main/docs/img/browser-icon-large.jpg
    :alt: calibrate surrogate bayesian gaussian bal gpe
 
    *Intro figure.*
@@ -113,6 +113,6 @@ The library pputils-master by Pat Prodanovic (https://github.com/pprodano/pputil
 - auxiliary_functions_telemac: Contains auxiliary functions used to modify the input and output of the telemac files. These functions are specific to the parameters that wanted to be changed at the time, but they can be used as a base on how to modify Telemac's input and output files
 -init.py: Reference other folders.
 
-.. _user-input.xlsx: https://github.com/sschwindt/stochastic-surrogate/raw/main/docs/img/brower-icon-large.jpg
+.. _user-input.xlsx: https://github.com/sschwindt/stochastic-surrogate/raw/main/user-input.xlsx
 
 
