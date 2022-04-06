@@ -15,13 +15,13 @@ from telemac_fun import *
 
 # Prior distribution of calibration parameters
 N = 4  # number of calibration parameters (uncertainty parameters)
-NS = 10000  # sample size I take from my prior distributions
-input_distribution = np.zeros((NS, N))
-input_distribution[:, 0] = np.random.uniform(0.01, 0.1, NS)
-input_distribution[:, 1] = np.random.uniform(0.05, 0.4, NS)
-input_distribution[:, 2] = np.random.uniform(200, 500, NS)
-input_distribution[:, 3] = np.random.uniform(0.8, 1.7, NS)
-parameters_name = ["CLASSES CRITICAL SHEAR STRESS FOR MUD DEPOSITION",
+MC_SAMPLES = 10000  # sample size I take from my prior distributions
+input_distribution = np.zeros((MC_SAMPLES, N))
+input_distribution[:, 0] = np.random.uniform(0.01, 0.1, MC_SAMPLES)
+input_distribution[:, 1] = np.random.uniform(0.05, 0.4, MC_SAMPLES)
+input_distribution[:, 2] = np.random.uniform(200, 500, MC_SAMPLES)
+input_distribution[:, 3] = np.random.uniform(0.8, 1.7, MC_SAMPLES)  # multiplier for gran size and settling velocity
+CALIB_PARAMETERS = ["CLASSES CRITICAL SHEAR STRESS FOR MUD DEPOSITION",
                    "LAYERS CRITICAL EROSION SHEAR STRESS OF THE MUD",
                    "LAYERS MUD CONCENTRATION",
                    "CLASSES SETTLING VELOCITIES"]
@@ -34,55 +34,53 @@ observations = temp[:, 1].reshape(-1, 1)
 observations_error = temp[:, 2]
 
 # Bayesian updating
-iteration_limit = 15  # number of bayesian iterations
-mc_size = 10000  # mc size for parameter space
-prior_distribution = np.copy(input_distribution[:mc_size, :])
-d_size_AL = 1000  # number of active learning sets (sets I take from the prior to do the active learning).
-mc_size_AL = 100000  # active learning sampling size
-# Note: d_size_AL+ iteration_limit < mc_size
-al_strategy = "RE"
+IT_LIMIT = 15  # number of bayesian iterations
+MC_SAMPLES = 10000  # mc size for parameter space
+prior_distribution = np.copy(input_distribution[:MC_SAMPLES, :])
+AL_SAMPLES = 1000  # number of active learning sets (sets I take from the prior to do the active learning).
+MC_SAMPLES_AL = 100000  # active learning sampling size
+# Note: AL_SAMPLES+ IT_LIMIT < MC_SAMPLES
+AL_STRATEGY = "RE"
 
 # Telemac
 telemac_name = "run_liquid_tel.cas"
 gaia_name = "run_liquid_gaia.cas"
 result_name_gaia = "'res_gaia_PC"  # PC stands for parameter combination
 result_name_telemac = "'res_tel_PC"  # PC stands for parameter combination
-n_processors = "12"
+N_CPUS = "12"
 
 # Calibration parameters
 initial_diameters = np.array([0.001, 0.000024, 0.0000085, 0.0000023])
 calibration_variable = "BOTTOM"
 auxiliary_names = ["CLASSES SEDIMENT DIAMETERS"]
 
-# Paths
-path_results = "../results"
-path_simulations = "../simulations"
+
 
 # END OF USER INPUT  --------------------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------------------
 
 # Part 1. Initialization of information  ------------------------------------------------------------------------------
-BME = np.zeros((iteration_limit, 1))
-RE = np.zeros((iteration_limit, 1))
-al_BME = np.zeros((d_size_AL, 1))
-al_RE = np.zeros((d_size_AL, 1))
+BME = np.zeros((IT_LIMIT, 1))
+RE = np.zeros((IT_LIMIT, 1))
+al_BME = np.zeros((AL_SAMPLES, 1))
+al_RE = np.zeros((AL_SAMPLES, 1))
 
 # Part 2. Read initial collocation points  ----------------------------------------------------------------------------
-temp = np.loadtxt(os.path.abspath(os.path.expanduser(path_results))+"/parameter_file.txt", dtype=np.str, delimiter=";")
+temp = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR))+"/parameter_file.txt", dtype=np.str, delimiter=";")
 simulation_names = temp[:, 0]
 collocation_points = temp[:, 1:].astype(np.float)
 n_simulation = collocation_points.shape[0]
 
 # Part 3. Read the previously computed simulations of the numerical model in the initial collocation points -----------
-temp = np.loadtxt(os.path.abspath(os.path.expanduser(path_results)) + "/" + simulation_names[0] + "_" +
+temp = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR)) + "/" + simulation_names[0] + "_" +
                   calibration_variable + ".txt")
 model_results = np.zeros((collocation_points.shape[0], temp.shape[0]))
 for i, name in enumerate(simulation_names):
-    model_results[i, :] = np.loadtxt(os.path.abspath(os.path.expanduser(path_results))+"/" + name + "_" +
+    model_results[i, :] = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR))+"/" + name + "_" +
                                      calibration_variable + ".txt")[:, 1]
 
 # Loop for bayesian iterations
-for iter in range(0, iteration_limit):
+for iter in range(0, IT_LIMIT):
     # Part 4. Computation of surrogate model prediction in MC points using gaussian processes --------------------------
     surrogate_prediction = np.zeros((n_points, prior_distribution.shape[0]))
     surrogate_std = np.zeros((n_points, prior_distribution.shape[0]))
@@ -105,44 +103,43 @@ for iter in range(0, iteration_limit):
 
     # Part 7. Bayesian active learning (in output space) --------------------------------------------------------------
     # Index of the elements of the prior distribution that have not been used as collocation points
-    aux1 = np.where((prior_distribution[:d_size_AL+iter, :] == collocation_points[:, None]).all(-1))[1]
-    aux2 = np.invert(np.in1d(np.arange(prior_distribution[:d_size_AL+iter, :].shape[0]), aux1))
-    al_unique_index = np.arange(prior_distribution[:d_size_AL+iter, :].shape[0])[aux2]
+    aux1 = np.where((prior_distribution[:AL_SAMPLES+iter, :] == collocation_points[:, None]).all(-1))[1]
+    aux2 = np.invert(np.in1d(np.arange(prior_distribution[:AL_SAMPLES+iter, :].shape[0]), aux1))
+    al_unique_index = np.arange(prior_distribution[:AL_SAMPLES+iter, :].shape[0])[aux2]
 
-    for iAL in range(0, len(al_unique_index)):
+    for iAL, vAL in enumerate(al_unique_index):
         # Exploration of output subspace associated with a defined prior combination.
-        al_exploration = np.random.normal(size=(mc_size_AL, n_points))*surrogate_std[:, al_unique_index[iAL]] + \
-                         surrogate_prediction[:, al_unique_index[iAL]]
+        al_exploration = np.random.normal(size=(MC_SAMPLES_AL, n_points))*surrogate_std[:, vAL] + surrogate_prediction[:, vAL]
         # BAL scores computation
-        al_BME[iAL], al_RE[iAL] = compute_bayesian_scores(al_exploration, observations.T, total_error)
+        al_BME[iAL], al_RE[iAL] = compute_bayesian_scores(al_exploration, observations.T, total_error, AL_STRATEGY)
 
     # Part 8. Selection criteria for next collocation point ------------------------------------------------------
-    al_value, al_value_index = BAL_selection_criteria(al_strategy, al_BME, al_RE)
+    al_value, al_value_index = BAL_selection_criteria(AL_STRATEGY, al_BME, al_RE)
 
     # Part 9. Selection of new collocation point
     collocation_points = np.vstack((collocation_points, prior_distribution[al_unique_index[al_value_index], :]))
 
     # Part 10. Computation of the numerical model in the newly defined collocation point --------------------------
     # Update steering files
-    update_steering_file(collocation_points[-1, :], parameters_name, initial_diameters, auxiliary_names, gaia_name,
+    update_steering_file(collocation_points[-1, :], CALIB_PARAMETERS, initial_diameters, auxiliary_names, gaia_name,
                          telemac_name, result_name_gaia, result_name_telemac, n_simulation + 1 + iter)
     # Run telemac
-    run_telemac(telemac_name, n_processors)
+    run_telemac(telemac_name, N_CPUS)
 
     # Extract values of interest
     updated_string = result_name_gaia[1:] + str(n_simulation+1+iter) + ".slf"
-    save_name = path_results + "/PC" + str(n_simulation+1+iter) + "_" + calibration_variable + ".txt"
+    save_name = RESULTS_DIR + "/PC" + str(n_simulation+1+iter) + "_" + calibration_variable + ".txt"
     results = get_variable_value(updated_string, calibration_variable, nodes, save_name)
     model_results = np.vstack((model_results, results[:, 1].T))
 
     # Move the created files to their respective folders
-    shutil.move(result_name_gaia[1:] + str(n_simulation+1+iter) + ".slf", path_simulations)
-    shutil.move(result_name_telemac[1:] + str(n_simulation+1+iter) + ".slf", path_simulations)
+    shutil.move(result_name_gaia[1:] + str(n_simulation+1+iter) + ".slf", SIM_DIR)
+    shutil.move(result_name_telemac[1:] + str(n_simulation+1+iter) + ".slf", SIM_DIR)
 
     # Append the parameter used to a file
     new_line = "; ".join(map("{:.3f}".format, collocation_points[-1, :]))
     new_line = "PC" + str(n_simulation+1+iter) + "; " + new_line
-    append_new_line(path_results + "/parameter_file.txt", new_line)
+    append_new_line(RESULTS_DIR + "/parameter_file.txt", new_line)
 
     # Progress report
-    print("Bayesian iteration: " + str(iter+1) + "/" + str(iteration_limit))
+    print("Bayesian iteration: " + str(iter+1) + "/" + str(IT_LIMIT))

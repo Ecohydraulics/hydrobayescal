@@ -19,7 +19,7 @@ def update_steering_file(prior_distribution, parameters_name, initial_diameters,
 
     :param list prior_distribution: dep. stress in N/m2, eros. stress in N/m2, denisty in kg/m3, settling velocity in m/s
     :param list parameters_name: list of strings describing parameter names
-    :param list initial_diameters: floats of diamaters
+    :param list initial_diameters: floats of diameters
     :param list auxiliary_names: strings of auxiliary parameter names
     :param str gaia_name: file name of Gaia cas
     :param str telemac_name: file name of Telemac2d cas
@@ -138,7 +138,7 @@ def calculate_settling_velocity(diameters):
         if d <= 0.0001:
             settling_velocity[i] = (s - 1) * GRAVITY * d ** 2 / (18 * KINEMATIC_VISCOSITY)
         elif 0.0001 < d < 0.001:
-            settling_velocity[i] = 10 * KINEMATIC_VISCOSITY / d * (np.sqrt(1 + 0.01 * (s-1) * 9.81 * d**3 / KINEMATIC_VISCOSITY**2) - 1)
+            settling_velocity[i] = 10 * KINEMATIC_VISCOSITY / d * (np.sqrt(1 + 0.01 * (s-1) * GRAVITY * d**3 / KINEMATIC_VISCOSITY**2) - 1)
         else:
             settling_velocity[i] = 1.1 * np.sqrt((s - 1) * GRAVITY * d)
     return settling_velocity
