@@ -143,3 +143,30 @@ for iter in range(0, IT_LIMIT):
 
     # Progress report
     print("Bayesian iteration: " + str(iter+1) + "/" + str(IT_LIMIT))
+
+""" part 10 only used with earlier versiions
+# Part 10. Compute solution in final time step --------------------------------------------------------------------
+surrogate_prediction = np.zeros((n_points, prior_distribution.shape[0]))
+surrogate_std = np.zeros((n_points, prior_distribution.shape[0]))
+for i, model in enumerate(model_results.T):
+    kernel = RBF(length_scale=[1, 1], length_scale_bounds=[(0.01, 20), (0.01, 20)]) * np.var(model)
+    gp = GaussianProcessRegressor(kernel=kernel, alpha=0.0002, normalize_y=True, n_restarts_optimizer=10)
+    gp.fit(collocation_points, model)
+    surrogate_prediction[i, :], surrogate_std[i, :] = gp.predict(prior_distribution, return_std=True)
+
+likelihood_final = compute_likelihood(surrogate_prediction.T, observations.T, total_error)
+"""
+
+"""plot options for graphing (implement later)
+# Save final results of surrogate model to graph them later
+graph_likelihood_surrogates = np.zeros((prior_distribution.shape[0], 3))
+graph_likelihood_surrogates[:, :2] = prior_distribution
+graph_likelihood_surrogates[:, 2] = likelihood_final
+graph_list.append(np.copy(graph_likelihood_surrogates))
+graph_name.append("iteration: " + str(IT_LIMIT))
+
+
+# Plot comparison between surrogate model and reference solution
+plot_likelihoods(graph_list, graph_name)
+x=1
+"""

@@ -1,5 +1,5 @@
-# Here is where we can compute the full-complexity model. In this case, as a test, we are just going to evaluate a non
-# linear function
+# Here is where we can compute the full-complexity model. In this case, as a test, we
+# are just going to evaluate a non linear function
 import numpy as np
 import math
 
