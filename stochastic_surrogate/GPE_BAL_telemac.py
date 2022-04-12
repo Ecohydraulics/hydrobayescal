@@ -6,16 +6,36 @@ Gaussian Process Regression
 Method adapt: Oladyshkin et al. (2020). Bayesian Active Learning for the Gaussian Process
 Emulator Using Information Theory. Entropy, 22(8), 890.
 """
-
+import os
+import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 from BAL_fun import *
 from telemac_fun import *
+from usr_defs import *
+
+def get_input_defs(file_name="user-input.xlsx"):
+    """loads provided input file name as pandas dataframe
+
+        Args:
+            file_name (str): name of input file (default is user-input.xlsx)
+
+        Returns:
+            tbd
+    """
 
 
-# Prior distribution of calibration parameters
-N = 4  # number of calibration parameters (uncertainty parameters)
-MC_SAMPLES = 10000  # sample size I take from my prior distributions
+def BAL_GPE_flow(input_worbook_name="user-input.xlsx"):
+    """loads provided input file name as pandas dataframe
+
+        Args:
+            file_name (str): name of input file (default is user-input.xlsx)
+
+        Returns:
+            tbd
+    """
+    rewrite_globals(input_worbook_name)
+
 input_distribution = np.zeros((MC_SAMPLES, N))
 input_distribution[:, 0] = np.random.uniform(0.01, 0.1, MC_SAMPLES)
 input_distribution[:, 1] = np.random.uniform(0.05, 0.4, MC_SAMPLES)

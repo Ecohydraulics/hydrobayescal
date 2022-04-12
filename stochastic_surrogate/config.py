@@ -1,9 +1,10 @@
 """
-Global variables
+Global constants and variables
 """
 import os as _os
 import pandas as _pd
 
+# physics
 GRAVITY = 9.81  # gravitational acceleration in m/s2
 KINEMATIC_VISCOSITY = 10 ** -6  # kinematic viscosity in m2/s
 WATER_DENSITY = 10. ** 3  # water density in m3/kg
@@ -15,8 +16,14 @@ RESULTS_DIR = "../results"  # relative path for results
 SIM_DIR = "../simulations"  # relative path for simulations
 
 # get telemac and gaia control parameters to enable differentiated writing of steering files
-GAIA_PARAMETERS = [p for p in _pd.read_csv(SCRIPT_DIR+"templates/parameters-gaia", header=None).to_dict()[0].values()]
-TM2D_PARAMETERS = [p for p in _pd.read_csv(SCRIPT_DIR+"templates/parameters-telemac2d", header=None).to_dict()[0].values()]
+GAIA_PARAMETERS = _pd.read_csv(SCRIPT_DIR+"templates/parameters-gaia.csv", names=["parameter", "type"])
+TM2D_PARAMETERS = _pd.read_csv(SCRIPT_DIR+"templates/parameters-telemac2d.csv", names=["parameter", "type"])
+TM_TRANSLATOR = {
+    "TOPOGRAPHIC CHANGE": "BOTTOM",
+    "DEPTH": "DEPTH",
+    "VELOCITY": "VELOCITY",
+}
+
 
 # define relevant data ranges in user-input.xlsx
 TM_RANGE = "A6:B9"
@@ -25,14 +32,14 @@ PRIOR_DIR_RANGE = "A24:B27"
 PRIOR_INDIR_RANGE = "A30:B31"
 PRIOR_REC_RANGE = "A34:B34"
 
-# instantiate other global variables
-global CALIB_PARAMETERS  # list for calibration optimization parameters
-global CALIB_PTS  # numpy array to be loaded from calibration_points file
-global IT_LIMIT  # int limit for Bayesian iterations
-global MC_SAMPLES  # int for Monte Carlo samples
-global N_CPUS  # int number of CPUs to use for Telemac models
-global AL_SAMPLES  # int for no. of active learning sampling size
-global AL_STRATEGY  # str for active learning strategy
-
-
-
+# Global variables
+INPUT_XLSX_NAME = str()  # str of path to user-input.xlsx including filename
+CALIB_PAR_SET = {}  # dict for direct calibration optimization parameters
+CALIB_ID_PAR_SET = {}  # dict for indirect calibration parameters
+CALIB_PTS = None  # numpy array to be loaded from calibration_points file
+CALIB_TARGET = str()
+IT_LIMIT = int()  # int limit for Bayesian iterations
+MC_SAMPLES = int()  # int for Monte Carlo samples
+N_CPUS = int()  # int number of CPUs to use for Telemac models
+AL_SAMPLES = int()  # int for no. of active learning sampling size
+AL_STRATEGY = str()  # str for active learning strategy

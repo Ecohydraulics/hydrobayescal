@@ -72,7 +72,7 @@ def compute_likelihood(prediction, observations, error_variance, normalize=False
         return likelihood
 
 
-def compute_bayesian_scores(prediction, observations, error_variance, enthropy_normalization="bme"):
+def compute_bayesian_scores(prediction, observations, error_variance, entropy_normalization="bme"):
     """
     Compute Bayesian Model Evidence (BME) and Relative Entropy (RE)
 
@@ -84,8 +84,8 @@ def compute_bayesian_scores(prediction, observations, error_variance, enthropy_n
         observed / measured values
     error_variance : array [n_points]]
         error of the observations
-    enthropy_normalization : string
-        Method for entropy cross normalization. The default is "bayesian" for Bayesian weighting.
+    entropy_normalization : string
+        Method for entropy cross normalization. The default is "bme" for Bayesian weighting.
         Other option is "rejection" for rejection sampling.
 
     Returns
@@ -108,7 +108,7 @@ def compute_bayesian_scores(prediction, observations, error_variance, enthropy_n
 
     if not(BME <= 0):
         # For cases in which the prediction of the surrogate is not too bad
-        if not ("bme" in enthropy_normalization.lower()):
+        if not ("bme" in entropy_normalization.lower()):
             # Non normalized cross entropy with rejection sampling
             accepted = likelihood / _np.amax(likelihood) >= _np.random.rand(1, prediction.shape[0])
             exp_log_pred = _np.mean(_np.log(likelihood[accepted]))

@@ -8,22 +8,70 @@ from openpyxl import load_workbook
 from config import *
 
 
-def load_input_defs(file_name="user-input.xlsx"):
-    """loads provided input file name as pandas dataframe
+def assign_calib_ranges(direct_par_df, indirect_par_df, recalc_par_df):
+    """Parse user calibration ranges for parameters
+
+    :param pd.DataFrame direct_par_df: direct calibration parameters from user-input.xlsx
+    :param pd.DataFrame indirect_par_df: indirect calibration parameters from user-input.xlsx
+    :return:
+    """
+    global CALIB_PAR_SET  # dict for calibration optimization parameters and ranges
+    global CALIB_ID_PAR_SET  # dict for indirect calibration parameters
+
+    CALIB_PAR_SET
+    CALIB_ID_PAR_SET
+
+
+def load_input_defs():
+    """loads provided input file name as dictionary
+
+    Returns:
+        (dict): user input of input.xlsx (or custom file, if provided)
+    """
+    return {
+        "tm pars": read_wb_range(INPUT_XLSX_NAME, TM_RANGE),
+        "al pars": read_wb_range(INPUT_XLSX_NAME, AL_RANGE),
+        "direct priors": read_wb_range(INPUT_XLSX_NAME, PRIOR_DIR_RANGE),
+        "indirect priors": read_wb_range(INPUT_XLSX_NAME, PRIOR_INDIR_RANGE),
+        "recalculation priors": read_wb_range(INPUT_XLSX_NAME, PRIOR_REC_RANGE),
+    }
+
+
+def rewrite_globals(file_name="user-input.xlsx"):
+    """rewrite globals from config
 
     Args:
         file_name (str): name of input file (default is user-input.xlsx)
 
     Returns:
-        (dict): user input of input.xlsx (or costum file, if provided)
+        (dict): user input of input.xlsx (or custom file, if provided)
     """
-    return {
-        "tm pars": read_wb_range(file_name, TM_RANGE),
-        "al pars": read_wb_range(file_name, AL_RANGE),
-        "direct priors": read_wb_range(file_name, PRIOR_DIR_RANGE),
-        "indirect piors": read_wb_range(file_name, PRIOR_INDIR_RANGE),
-        "recalculation piors": read_wb_range(file_name, PRIOR_REC_RANGE),
-    }
+    # instantiate global variables to modify
+    global INPUT_XLSX_NAME  # str of path to user-input.xlsx including filename
+    global CALIB_PTS  # numpy array to be loaded from calibration_points file
+    global CALIB_TARGET # str of calibration target nature (e.g. topographic change)
+    global AL_STRATEGY  # str for active learning strategy
+    global IT_LIMIT  # int limit for Bayesian iterations
+    global MC_SAMPLES  # int for Monte Carlo samples
+    global MC_SAMPLES_AL  # int for Monte Carlo samples
+    global N_CPUS  # int number of CPUs to use for Telemac models
+    global AL_SAMPLES  # int for no. of active learning sampling size
+
+    # update input xlsx file name globally and load user definitions
+    INPUT_XLSX_NAME = file_name
+    user_defs = load_input_defs()  # dict
+
+    # update global variables with user definitions
+    N_CPUS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("CPU"), 1].values[0]
+    # CALIB_PARAMETERS = user_defs["direct priors"][0].to_list()
+    CALIB_PTS
+    CALIB_TARGET = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_target"), 1].values[0]
+
+    AL_STRATEGY = TM_TRANSLATOR[user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("strategy"), 1].values[0]]
+    IT_LIMIT = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("it\_limit"), 1].values[0]
+    AL_SAMPLES = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("al\_samples"), 1].values[0]
+    MC_SAMPLES = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("mc\_samples\)"), 1].values[0]
+    MC_SAMPLES_AL = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("mc\_samples\_al"), 1].values[0]
 
 
 def read_wb_range(file_name, read_range, sheet_name="MAIN"):

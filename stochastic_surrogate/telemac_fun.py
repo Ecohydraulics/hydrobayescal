@@ -2,10 +2,10 @@
 Functional core for coupling the Surrogate-Assisted Bayesian inversion technique with Telemac.
 """
 
-import os
+import os as _os
 import subprocess
 import shutil
-import numpy as np
+import numpy as _np
 from datetime import datetime
 from selafin_io_pp import ppSELAFIN
 from config import *
@@ -30,17 +30,17 @@ def update_steering_file(prior_distribution, parameters_name, initial_diameters,
     """
 
     # Update deposition stress
-    updated_values = np.round(np.ones(4) * prior_distribution[0], decimals=3)
+    updated_values = _np.round(_np.ones(4) * prior_distribution[0], decimals=3)
     updated_string = create_string(parameters_name[0], updated_values)
     rewrite_parameter_file(parameters_name[0], updated_string, gaia_name)
 
     # Update erosion stress
-    updated_values = np.round(np.ones(2) * prior_distribution[1], decimals=3)
+    updated_values = _np.round(_np.ones(2) * prior_distribution[1], decimals=3)
     updated_string = create_string(parameters_name[1], updated_values)
     rewrite_parameter_file(parameters_name[1], updated_string, gaia_name)
 
     # Update density
-    updated_values = np.round(np.ones(2) * prior_distribution[2], decimals=0)
+    updated_values = _np.round(_np.ones(2) * prior_distribution[2], decimals=0)
     updated_string = create_string(parameters_name[2], updated_values)
     rewrite_parameter_file(parameters_name[2], updated_string, gaia_name)
 
@@ -132,15 +132,15 @@ def calculate_settling_velocity(diameters):
     :param np.array diameters: floats of sediment diameter in meters
     :return np.array settling_vevlocity: settling velocities in m/s for every diameter in the diameters list
     """
-    settling_velocity = np.zeros(diameters.shape[0])
+    settling_velocity = _np.zeros(diameters.shape[0])
     s = SED_DENSITY / WATER_DENSITY
     for i, d in enumerate(diameters):
         if d <= 0.0001:
             settling_velocity[i] = (s - 1) * GRAVITY * d ** 2 / (18 * KINEMATIC_VISCOSITY)
         elif 0.0001 < d < 0.001:
-            settling_velocity[i] = 10 * KINEMATIC_VISCOSITY / d * (np.sqrt(1 + 0.01 * (s-1) * GRAVITY * d**3 / KINEMATIC_VISCOSITY**2) - 1)
+            settling_velocity[i] = 10 * KINEMATIC_VISCOSITY / d * (_np.sqrt(1 + 0.01 * (s-1) * GRAVITY * d**3 / KINEMATIC_VISCOSITY**2) - 1)
         else:
-            settling_velocity[i] = 1.1 * np.sqrt((s - 1) * GRAVITY * d)
+            settling_velocity[i] = 1.1 * _np.sqrt((s - 1) * GRAVITY * d)
     return settling_velocity
 
 
@@ -162,16 +162,16 @@ def run_telemac(telemac_file_name, number_processors=1):
 
 def run_gretel(telemac_file_name, number_processors, folder_rename):
     # Save original working directory
-    original_directory = os.getcwd()
+    original_directory = _os.getcwd()
 
     # Access folder with results
-    subfolders = [f.name for f in os.scandir(original_directory) if f.is_dir()]
+    subfolders = [f.name for f in _os.scandir(original_directory) if f.is_dir()]
     simulation_index = [i for i, s in enumerate(subfolders) if telemac_file_name in s]
     simulation_index = simulation_index[0]
     original_name = subfolders[simulation_index]
-    os.rename(original_name, folder_rename)
+    _os.rename(original_name, folder_rename)
     simulation_path = "./"+ folder_rename
-    os.chdir(simulation_path)
+    _os.chdir(simulation_path)
 
     # Run gretel code
     bash_cmd = "gretel.py --geo-file=T2DGEO --res-file=GAIRES --ncsize="+number_processors+" --bnd-file=T2DCLI"
@@ -187,7 +187,7 @@ def run_gretel(telemac_file_name, number_processors, folder_rename):
     # Copy result files in original folder
     shutil.copy("GAIRES", original_directory)
     shutil.copy("T2DRES", original_directory)
-    os.chdir(original_directory)
+    _os.chdir(original_directory)
 
 
 def rename_selafin(original_name, new_name):
@@ -201,8 +201,8 @@ def rename_selafin(original_name, new_name):
     :rtype: None
     """
 
-    if os.path.exists(original_name):
-        os.rename(original_name, new_name)
+    if _os.path.exists(original_name):
+        _os.rename(original_name, new_name)
     else:
         print("File not found")
 
@@ -238,8 +238,8 @@ def get_variable_value(file_name, calibration_variable, specific_nodes=None, sav
 
     # Get the values (for each node) for the variable of interest in the last time step
     modelled_results = slf.getVarValues()[index_variable_interest, :]
-    format_modelled_results = np.zeros((len(modelled_results), 2))
-    format_modelled_results[:, 0] = np.arange(1, len(modelled_results) + 1, 1)
+    format_modelled_results = _np.zeros((len(modelled_results), 2))
+    format_modelled_results[:, 0] = _np.arange(1, len(modelled_results) + 1, 1)
     format_modelled_results[:, 1] = modelled_results
 
     # Get specific values of the model results associated in certain nodes number, in case the user want to use just
@@ -249,8 +249,8 @@ def get_variable_value(file_name, calibration_variable, specific_nodes=None, sav
         format_modelled_results = format_modelled_results[specific_nodes[:, 0].astype(int) - 1, :]
 
     if len(save_name) != 0:
-        np.savetxt(save_name, format_modelled_results, delimiter="	",
-                   fmt=["%1.0f", "%1.3f"])
+        _np.savetxt(save_name, format_modelled_results, delimiter="	",
+                    fmt=["%1.0f", "%1.3f"])
 
     # Return the value of the variable of interest
     return format_modelled_results
