@@ -13,6 +13,7 @@ from sklearn.gaussian_process.kernels import RBF
 from BAL_fun import *
 from telemac_fun import *
 from usr_defs import *
+from surrogate import *
 
 def get_input_defs(file_name="user-input.xlsx"):
     """loads provided input file name as pandas dataframe
@@ -35,49 +36,43 @@ def BAL_GPE_flow(input_worbook_name="user-input.xlsx"):
             tbd
     """
     rewrite_globals(input_worbook_name)
-
-input_distribution = np.zeros((MC_SAMPLES, N))
-input_distribution[:, 0] = np.random.uniform(0.01, 0.1, MC_SAMPLES)
-input_distribution[:, 1] = np.random.uniform(0.05, 0.4, MC_SAMPLES)
-input_distribution[:, 2] = np.random.uniform(200, 500, MC_SAMPLES)
-input_distribution[:, 3] = np.random.uniform(0.8, 1.7, MC_SAMPLES)  # multiplier for gran size and settling velocity
-CALIB_PARAMETERS = ["CLASSES CRITICAL SHEAR STRESS FOR MUD DEPOSITION",
-                   "LAYERS CRITICAL EROSION SHEAR STRESS OF THE MUD",
-                   "LAYERS MUD CONCENTRATION",
-                   "CLASSES SETTLING VELOCITIES"]
-
-# Observations (measured values that are going to be used for calibration)
-temp = np.loadtxt("calibration_points.txt")
-n_points = temp.shape[0]
-nodes = temp[:, 0].reshape(-1, 1)
-observations = temp[:, 1].reshape(-1, 1)
-observations_error = temp[:, 2]
-
-# Bayesian updating
-IT_LIMIT = 15  # number of bayesian iterations
-MC_SAMPLES = 10000  # mc size for parameter space
-prior_distribution = np.copy(input_distribution[:MC_SAMPLES, :])
-AL_SAMPLES = 1000  # number of active learning sets (sets I take from the prior to do the active learning).
-MC_SAMPLES_AL = 100000  # active learning sampling size
-# Note: AL_SAMPLES+ IT_LIMIT < MC_SAMPLES
-AL_STRATEGY = "RE"
-
-# Telemac
-telemac_name = "run_liquid_tel.cas"
-gaia_name = "run_liquid_gaia.cas"
-result_name_gaia = "'res_gaia_PC"  # PC stands for parameter combination
-result_name_telemac = "'res_tel_PC"  # PC stands for parameter combination
-N_CPUS = "12"
-
-# Calibration parameters
-initial_diameters = np.array([0.001, 0.000024, 0.0000085, 0.0000023])
-calibration_variable = "BOTTOM"
-auxiliary_names = ["CLASSES SEDIMENT DIAMETERS"]
+    prior_distribution = update_distributions()
+    observations = get_observations()
 
 
+def update_distributions():
+    """Calculate uniform distributions for all user-defined parameters
 
-# END OF USER INPUT  --------------------------------------------------------------------------------------------------
-# ---------------------------------------------------------------------------------------------------------------------
+    :return numpy.ndarray prior_distribution: copy of all uniform input distributions of the calibration parameters
+    """
+    global CALIB_PAR_SET
+    prior_distribution = np.zeros((MC_SAMPLES, len(CALIB_PAR_SET)))
+    column = 0
+    for par in CALIB_PAR_SET.keys():
+        print(" * drawing {0} uniform random samples for {1}".format(par, str(MC_SAMPLES)))
+        CALIB_PAR_SET[par]["distribution"] = np.random.uniform(
+            CALIB_PAR_SET[par]["bounds"][0],
+            CALIB_PAR_SET[par]["bounds"][1],
+            MC_SAMPLES
+        )
+        prior_distribution[:, column] = np.copy(CALIB_PAR_SET[par]["distribution"])
+        column += 1
+    return prior_distribution
+
+def get_observations():
+    """Load observations stored in calibration_points.csv
+
+    :return:
+    """
+    print(" * reading cbservations file (%s)..." % CALIB_PTS)
+    observation_file = np.loadtxt(CALIB_PTS, delimiter=",")
+    return {
+        "no of points": observation_file.shape[0],
+        "node IDs": observation_file[:, 0].reshape(-1, 1),
+        "observation": observation_file[:, 1].reshape(-1, 1),
+        "observation error": observation_file[:, 2]
+    }
+
 
 # Part 1. Initialization of information  ------------------------------------------------------------------------------
 BME = np.zeros((IT_LIMIT, 1))
@@ -93,17 +88,17 @@ n_simulation = collocation_points.shape[0]
 
 # Part 3. Read the previously computed simulations of the numerical model in the initial collocation points -----------
 temp = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR)) + "/" + simulation_names[0] + "_" +
-                  calibration_variable + ".txt")
+                  CALIB_TARGET + ".txt")
 model_results = np.zeros((collocation_points.shape[0], temp.shape[0]))
 for i, name in enumerate(simulation_names):
     model_results[i, :] = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR))+"/" + name + "_" +
-                                     calibration_variable + ".txt")[:, 1]
+                                     CALIB_TARGET + ".txt")[:, 1]
 
 # Loop for bayesian iterations
 for iter in range(0, IT_LIMIT):
     # Part 4. Computation of surrogate model prediction in MC points using gaussian processes --------------------------
-    surrogate_prediction = np.zeros((n_points, prior_distribution.shape[0]))
-    surrogate_std = np.zeros((n_points, prior_distribution.shape[0]))
+    surrogate_prediction = np.zeros((observations["no of points"], prior_distribution.shape[0]))
+    surrogate_std = np.zeros((observations["no of points"], prior_distribution.shape[0]))
 
     for i, model in enumerate(model_results.T):
         kernel = RBF(length_scale=[0.05, 0.2, 150, 0.5], length_scale_bounds=[(0.001, 0.1), (0.001, 0.4), (5, 300), (0.02, 2)]) * np.var(model)
@@ -113,10 +108,10 @@ for iter in range(0, IT_LIMIT):
 
     # Part 5. Read or compute the other errors to incorporate in the likelihood function
     loocv_error = np.loadtxt("loocv_error_variance.txt")[:, 1]
-    total_error = (observations_error**2 + loocv_error)*5
+    total_error = (observations["observation error"]**2 + loocv_error)*5
 
     # Part 6. Computation of bayesian scores (in parameter space) -----------------------------------------------------
-    BME[iter], RE[iter] = compute_bayesian_scores(surrogate_prediction.T, observations.T, total_error)
+    BME[iter], RE[iter] = compute_bayesian_scores(surrogate_prediction.T, observations["observation"].T, total_error)
     np.savetxt("BME.txt", BME)
     np.savetxt("RE.txt", RE)
 
@@ -129,9 +124,9 @@ for iter in range(0, IT_LIMIT):
 
     for iAL, vAL in enumerate(al_unique_index):
         # Exploration of output subspace associated with a defined prior combination.
-        al_exploration = np.random.normal(size=(MC_SAMPLES_AL, n_points))*surrogate_std[:, vAL] + surrogate_prediction[:, vAL]
+        al_exploration = np.random.normal(size=(MC_SAMPLES_AL, observations["no of points"]))*surrogate_std[:, vAL] + surrogate_prediction[:, vAL]
         # BAL scores computation
-        al_BME[iAL], al_RE[iAL] = compute_bayesian_scores(al_exploration, observations.T, total_error, AL_STRATEGY)
+        al_BME[iAL], al_RE[iAL] = compute_bayesian_scores(al_exploration, observations["observation"].T, total_error, AL_STRATEGY)
 
     # Part 8. Selection criteria for next collocation point ------------------------------------------------------
     al_value, al_value_index = BAL_selection_criteria(AL_STRATEGY, al_BME, al_RE)
@@ -141,20 +136,20 @@ for iter in range(0, IT_LIMIT):
 
     # Part 10. Computation of the numerical model in the newly defined collocation point --------------------------
     # Update steering files
-    update_steering_file(collocation_points[-1, :], CALIB_PARAMETERS, initial_diameters, auxiliary_names, gaia_name,
-                         telemac_name, result_name_gaia, result_name_telemac, n_simulation + 1 + iter)
+    update_steering_file(collocation_points[-1, :], CALIB_PARAMETERS, CALIB_ID_PAR_SET[list(CALIB_ID_PAR_SET.keys()[0])]["classes"], list(CALIB_ID_PAR_SET.keys()[0]), GAIA_CAS,
+                         TM_CAS, RESULT_NAME_GAIA, RESULT_NAME_TM, n_simulation + 1 + iter)
     # Run telemac
-    run_telemac(telemac_name, N_CPUS)
+    run_telemac(TM_CAS, N_CPUS)
 
     # Extract values of interest
-    updated_string = result_name_gaia[1:] + str(n_simulation+1+iter) + ".slf"
-    save_name = RESULTS_DIR + "/PC" + str(n_simulation+1+iter) + "_" + calibration_variable + ".txt"
-    results = get_variable_value(updated_string, calibration_variable, nodes, save_name)
+    updated_string = RESULT_NAME_GAIA[1:] + str(n_simulation+1+iter) + ".slf"
+    save_name = RESULTS_DIR + "/PC" + str(n_simulation+1+iter) + "_" + CALIB_TARGET + ".txt"
+    results = get_variable_value(updated_string, CALIB_TARGET, observations["node IDs"], save_name)
     model_results = np.vstack((model_results, results[:, 1].T))
 
     # Move the created files to their respective folders
-    shutil.move(result_name_gaia[1:] + str(n_simulation+1+iter) + ".slf", SIM_DIR)
-    shutil.move(result_name_telemac[1:] + str(n_simulation+1+iter) + ".slf", SIM_DIR)
+    shutil.move(RESULT_NAME_GAIA[1:] + str(n_simulation+1+iter) + ".slf", SIM_DIR)
+    shutil.move(RESULT_NAME_TM[1:] + str(n_simulation+1+iter) + ".slf", SIM_DIR)
 
     # Append the parameter used to a file
     new_line = "; ".join(map("{:.3f}".format, collocation_points[-1, :]))
@@ -166,15 +161,15 @@ for iter in range(0, IT_LIMIT):
 
 """ part 10 only used with earlier versiions
 # Part 10. Compute solution in final time step --------------------------------------------------------------------
-surrogate_prediction = np.zeros((n_points, prior_distribution.shape[0]))
-surrogate_std = np.zeros((n_points, prior_distribution.shape[0]))
+surrogate_prediction = np.zeros((observations["no of points"], prior_distribution.shape[0]))
+surrogate_std = np.zeros((observations["no of points"], prior_distribution.shape[0]))
 for i, model in enumerate(model_results.T):
     kernel = RBF(length_scale=[1, 1], length_scale_bounds=[(0.01, 20), (0.01, 20)]) * np.var(model)
     gp = GaussianProcessRegressor(kernel=kernel, alpha=0.0002, normalize_y=True, n_restarts_optimizer=10)
     gp.fit(collocation_points, model)
     surrogate_prediction[i, :], surrogate_std[i, :] = gp.predict(prior_distribution, return_std=True)
 
-likelihood_final = compute_likelihood(surrogate_prediction.T, observations.T, total_error)
+likelihood_final = compute_likelihood(surrogate_prediction.T, observations["observation"].T, total_error)
 """
 
 """plot options for graphing (implement later)

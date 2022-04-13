@@ -11,6 +11,12 @@ config.py
 .. automodule:: stochastic_surrogate.config
     :members:
 
+usr_defs.py
+-----------
+
+.. automodule:: stochastic_surrogate.usr_defs
+    :members:
+
 BAL_fun.py
 -----------
 

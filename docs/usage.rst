@@ -2,8 +2,44 @@
 Usage
 =====
 
-Prepare Input
+TELEMAC Model
 -------------
+
+Follow the `TELEMAC tutorial <https://hydro-informatics.com/numerics/telemac.html>`_ to learn more.
+
+Measurement Data
+----------------
+
+Calibration Points
+^^^^^^^^^^^^^^^^^^
+
+The surrogate-assisted calibration procedure requires calibration points associated with mesh node IDs to layers of a Selafin (``.slf``) file. The calibration points should involve 120-180 measurements and provide measurements regarding either:
+
+* Topographic change (``.slf`` layer: BOTTOM)
+* Water depth (``.slf`` layer: DEPTH)
+* Flow velocity (``.slf`` layer: VELOCITY)
+
+The points should be stored in a text or csv file-like format where the file ending is less important than the requirement of using a **comma** as **column separator**, and **no header**:
+
+* The first column of the calibration points file should indicate the mesh node IDs
+* The second column should indicate the absolute measurement (in *m* or *m/s*)
+* The third column should indicate the measurement error.
+
+For instance, create a csv file that contains the following exemplary information in the first three rows (the ``...`` indicates 120-180 more rows needed):
+
+.. csv-table:: Exemplary Representation of a **calibration-points.csv** file.
+   :header: "Mesh node ID", "Absolute Value", "Error
+   :widths: 40, 40, 40
+
+   "3895", "155.4", "0.60"
+   "4884", "165.2", "0.25"
+   "4887", "161.8", "1.03"
+   "...", "...", "..."
+
+Download our `calibration-points.csv file <https://github.com/sschwindt/stochastic-surrogate/raw/main/calibration-points.csv>`_ to see a working example.
+
+Prepare Input Workbook
+----------------------
 
 Direct Calibration Parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -77,6 +113,16 @@ Implement the following code in a Python script and run that Python script:
 
 - After a successful run, the code will have produced the following files in ``...\your-data\``:
     + ``files`` das
+
+Output
+------
+
+The optimized simulation is stored in a sub-folder called **opt-reults** in the provided simulation directory. The produced files involve:
+
+* Updated steering ( ``.cas``) files for TELEMAC and, if used, Gaia:
+    * TELEMAC: res-tel-PC
+    * Gaia: res-gaia-PC
+
 
 Usage Example
 -------------
