@@ -78,13 +78,10 @@ def get_observations():
     }
 
 
-# Part 1. Initialization of information  ------------------------------------------------------------------------------
-
-
 # Part 2. Read initial collocation points  ----------------------------------------------------------------------------
-temp = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR))+"/parameter_file.txt", dtype=np.str, delimiter=";")
+temp = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR))+"/parameter_file.txt", dtype=str, delimiter=";")
 simulation_names = temp[:, 0]
-collocation_points = temp[:, 1:].astype(np.float)
+collocation_points = temp[:, 1:].astype(float)
 n_simulation = collocation_points.shape[0]
 
 # Part 3. Read the previously computed simulations of the numerical model in the initial collocation points -----------
