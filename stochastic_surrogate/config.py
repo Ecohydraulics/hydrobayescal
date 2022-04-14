@@ -1,8 +1,9 @@
 """
-Global constants and variables
+Global constant and variable definitions
 """
 import os as _os
 import pandas as _pd
+import numpy as _np
 
 # physics
 GRAVITY = 9.81  # gravitational acceleration in m/s2
@@ -35,7 +36,7 @@ PRIOR_DIR_RANGE = "A25:B28"
 PRIOR_INDIR_RANGE = "A31:B32"
 PRIOR_REC_RANGE = "A35:B35"
 
-# Global variables
+# global variables for user input
 INPUT_XLSX_NAME = str()  # str of path to user-input.xlsx including filename
 CALIB_PAR_SET = {}  # dict for direct calibration optimization parameters
 CALIB_ID_PAR_SET = {}  # dict for indirect calibration parameters
@@ -48,3 +49,9 @@ AL_SAMPLES = int()  # int for no. of active learning sampling size
 AL_STRATEGY = str()  # str for active learning strategy
 TM_CAS = str()
 GAIA_CAS = str()
+
+# global surrogate and active learning variables
+BME = _np.zeros((IT_LIMIT, 1))
+RE = _np.zeros((IT_LIMIT, 1))
+al_BME = _np.zeros((AL_SAMPLES, 1))
+al_RE = _np.zeros((AL_SAMPLES, 1))

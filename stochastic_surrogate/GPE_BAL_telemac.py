@@ -15,17 +15,6 @@ from telemac_fun import *
 from usr_defs import *
 from surrogate import *
 
-def get_input_defs(file_name="user-input.xlsx"):
-    """loads provided input file name as pandas dataframe
-
-        Args:
-            file_name (str): name of input file (default is user-input.xlsx)
-
-        Returns:
-            tbd
-    """
-
-
 def BAL_GPE_flow(input_worbook_name="user-input.xlsx"):
     """loads provided input file name as pandas dataframe
 
@@ -37,6 +26,7 @@ def BAL_GPE_flow(input_worbook_name="user-input.xlsx"):
     """
     rewrite_globals(input_worbook_name)
     prior_distribution = update_distributions()
+    update_al_variables()
     observations = get_observations()
 
 
@@ -59,6 +49,20 @@ def update_distributions():
         column += 1
     return prior_distribution
 
+
+def update_al_variables():
+    """update the global AL variables with user input"""
+    print(" *  updating (re-initializing) active learning variables...")
+    global BME
+    global RE
+    global al_BME
+    global al_RE
+    BME = np.zeros((IT_LIMIT, 1))
+    RE = np.zeros((IT_LIMIT, 1))
+    al_BME = np.zeros((AL_SAMPLES, 1))
+    al_RE = np.zeros((AL_SAMPLES, 1))
+
+
 def get_observations():
     """Load observations stored in calibration_points.csv
 
@@ -75,10 +79,7 @@ def get_observations():
 
 
 # Part 1. Initialization of information  ------------------------------------------------------------------------------
-BME = np.zeros((IT_LIMIT, 1))
-RE = np.zeros((IT_LIMIT, 1))
-al_BME = np.zeros((AL_SAMPLES, 1))
-al_RE = np.zeros((AL_SAMPLES, 1))
+
 
 # Part 2. Read initial collocation points  ----------------------------------------------------------------------------
 temp = np.loadtxt(os.path.abspath(os.path.expanduser(RESULTS_DIR))+"/parameter_file.txt", dtype=np.str, delimiter=";")
