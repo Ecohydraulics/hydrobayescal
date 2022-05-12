@@ -1,5 +1,5 @@
 import os, sys
-sys.path.append(os.path.abspath("")+"/stochastic_surrogate/")
+sys.path.append(os.path.abspath("")+"/stochastic_calibration/")
 from usr_defs import *
 
 input_fn = SCRIPT_DIR + "user-input.xlsx"

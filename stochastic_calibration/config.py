@@ -13,8 +13,7 @@ SED_DENSITY = 2650  # sediment density in m3/kg
 
 # directories
 SCRIPT_DIR = r"" + _os.path.dirname(__file__) + "/"
-RESULTS_DIR = "../results"  # relative path for results
-SIM_DIR = str()  # relative path for simulations
+
 
 # get telemac and gaia control parameters to enable differentiated writing of steering files
 GAIA_PARAMETERS = _pd.read_csv(SCRIPT_DIR+"templates/parameters-gaia.csv", names=["parameter", "type"])
@@ -38,20 +37,6 @@ PRIOR_REC_RANGE = "A35:B35"
 
 # global variables for user input
 INPUT_XLSX_NAME = str()  # str of path to user-input.xlsx including filename
-CALIB_PAR_SET = {}  # dict for direct calibration optimization parameters
-CALIB_ID_PAR_SET = {}  # dict for indirect calibration parameters
-CALIB_PTS = None  # numpy array to be loaded from calibration_points file
-CALIB_TARGET = str()
-IT_LIMIT = int()  # int limit for Bayesian iterations
-MC_SAMPLES = int()  # int for Monte Carlo samples
-N_CPUS = int()  # int number of CPUs to use for Telemac models
-AL_SAMPLES = int()  # int for no. of active learning sampling size
-AL_STRATEGY = str()  # str for active learning strategy
-TM_CAS = str()
-GAIA_CAS = str()
 
-# global surrogate and active learning variables
-BME = _np.zeros((IT_LIMIT, 1))
-RE = _np.zeros((IT_LIMIT, 1))
-al_BME = _np.zeros((AL_SAMPLES, 1))
-al_RE = _np.zeros((AL_SAMPLES, 1))
+
+
