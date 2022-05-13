@@ -16,9 +16,26 @@ from usr_defs import UserDefs
 from surrogate import *
 
 
-class BALGPE_4_TELEMAC(UserDefs):
-    def __init__(self, input_worbook_name="user-input.xlsx", *args, **kwargs):
-        # initialization of class variables
+class BAL_GPE(UserDefs):
+    """
+    The BAL_GPE object is the framework for running a stochastic calibration of a deterministic model by using a
+        Gaussian process emulator (GPE) - based surrogate model that is fitted through Bayesian active learning (BAL).
+        The deterministic full-complexity model is defined through a coupled software (default TELEMAC).
+
+    .. important::
+
+        The object must be instantiated with metadata stored in the user-input.xlsx file corresponding to the software
+        used. Visit https://stochastic-calibration.readthedocs.io to learn more.
+    """
+    def __init__(self, input_worbook_name="user-input.xlsx", software_coupling="telemac", *args, **kwargs):
+        """
+        Initializer of the BAL_GPE class.
+
+        :param str input_worbook_name: name of the user-input.xlsx file including its full directory
+        :param software_coupling: name of the software of the deterministic model (default: "telemac")
+        :param args: placeholder for consistency
+        :param kwargs: placeholder for consistency
+        """
         UserDefs.__init__(self, input_worbook_name)
         self.write_global_settings(self.input_xlsx_name)
         print("Successfully instantiated a BAL-GPE object for calibrating a TELEMAC model.")
