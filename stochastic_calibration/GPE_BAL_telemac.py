@@ -40,11 +40,7 @@ class BAL_GPE(UserDefs):
         self.write_global_settings(self.input_xlsx_name)
         print("Successfully instantiated a BAL-GPE object for calibrating a TELEMAC model.")
 
-        # global surrogate and active learning variables
-        BME = np.zeros((self.IT_LIMIT, 1))
-        RE = np.zeros((self.IT_LIMIT, 1))
-        al_BME = np.zeros((self.AL_SAMPLES, 1))
-        al_RE = np.zeros((self.AL_SAMPLES, 1))
+
 
 
     def run_calibration(self):

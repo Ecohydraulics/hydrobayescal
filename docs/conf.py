@@ -101,7 +101,7 @@ html_context = {
     "date": datetime.date.today().strftime("%Y-%m-%d"),
     "display_github": True,
     "github_user": "sschwindt",
-    "github_repo": "stochastic-surrogate",
+    "github_repo": "stochastic-calibration",
     "github_version": "main/",
     "conf_py_path": "/docs/"
 }

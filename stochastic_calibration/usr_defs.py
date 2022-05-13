@@ -29,6 +29,10 @@ class UserDefs:
         self.GAIA_CAS = str()
         self.RESULTS_DIR = "../results"  # relative path for results
         self.SIM_DIR = str()  # relative path for simulations
+        self.BME = None
+        self.RE = None
+        self.al_BME = None
+        self.al_RE = None
 
 
     def assign_calib_ranges(self, direct_par_df, indirect_par_df, recalc_par_df):
@@ -151,6 +155,12 @@ class UserDefs:
         self.SIM_DIR = r"" + user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("Simulation"), 1].values[0]
         self.N_CPUS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("CPU"), 1].values[0]
         self.RESULTS_DIR = self.SIM_DIR + "opt-results/"
+
+        # global surrogate and active learning variables
+        self.BME = _np.zeros((self.IT_LIMIT, 1))
+        self.RE = _np.zeros((self.IT_LIMIT, 1))
+        self.al_BME = _np.zeros((self.AL_SAMPLES, 1))
+        self.al_RE = _np.zeros((self.AL_SAMPLES, 1))
 
         self.check_user_input()
 
