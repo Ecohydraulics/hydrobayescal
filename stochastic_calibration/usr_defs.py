@@ -8,17 +8,22 @@ import numpy as _np
 from openpyxl import load_workbook
 from config import *
 from basic_functions import *
+import random as _rnd
 
 
 class UserDefs:
     def __init__(self, input_worbook_name="user-input.xlsx", *args, **kwargs):
         self.input_xlsx_name = input_worbook_name
-        print("Using %s to read user settings. To change the user settings, run OBJECT(bal_gpe4telemac).write_global_settings('path/to/workbook.xlsx')" % self.input_xlsx_name)
+        print(
+            "Using %s to read user settings. To change the user settings, run OBJECT(bal_gpe4telemac).write_global_settings('path/to/workbook.xlsx')" % self.input_xlsx_name)
 
+        self.file_write_dir = ""
+
+        # initialize capital letter class variables that are defined through the user XLSX file
         self.CALIB_PAR_SET = {}  # dict for direct calibration optimization parameters
         self.CALIB_ID_PAR_SET = {}  # dict for indirect calibration parameters
         self.CALIB_PTS = None  # numpy array to be loaded from calibration_points file
-        self.CALIB_TARGET = str() # str of calibration target nature (e.g. topographic change)
+        self.CALIB_TARGET = str()  # str of calibration target nature (e.g. topographic change)
         self.IT_LIMIT = int()  # int limit for Bayesian iterations
         self.MC_SAMPLES = int()  # int for Monte Carlo samples
         self.MC_SAMPLES_AL = int()  # int for Monte Carlo samples for active learning
@@ -34,27 +39,24 @@ class UserDefs:
         self.al_BME = None
         self.al_RE = None
 
-
     def assign_calib_ranges(self, direct_par_df, indirect_par_df, recalc_par_df):
         """Parse user calibration ranges for parameters
 
         :param pd.DataFrame direct_par_df: direct calibration parameters from user-input.xlsx
         :param pd.DataFrame indirect_par_df: indirect calibration parameters from user-input.xlsx
         :param pd.DataFrame recalc_par_df: recalculation parameters from user-input.xlsx
-        :return:
+        :return: None
         """
-
-
         dir_par_dict = dict(zip(direct_par_df[0].to_list(), direct_par_df[1].to_list()))
         for par, bounds in dir_par_dict.items():
             if not (("TELEMAC" or "GAIA") in par):
                 self.CALIB_PAR_SET.update({par: {"bounds": str2seq(bounds),
-                                            "distribution": None}})
+                                                 "distribution": None}})
 
         indir_par_dict = dict(zip(indirect_par_df[0].to_list(), indirect_par_df[1].to_list()))
         for par, bounds in indir_par_dict.items():
             self.CALIB_ID_PAR_SET.update({par: {"classes": str2seq(bounds),
-                                           "distribution": None}})
+                                                "distribution": None}})
             if not (("TELEMAC" or "GAIA") in par):
                 # erase CALIB_ID_PAR_SET in the last step, if user did not enable (OK because inexpensive)
                 self.CALIB_ID_PAR_SET = None
@@ -62,12 +64,12 @@ class UserDefs:
         recalc_par_dict = dict(zip(recalc_par_df[0].to_list(), recalc_par_df[1].to_list()))
         for par, bounds in recalc_par_dict.items():
             # loop not really needed but implemented for potential developments
-            if not(par in dir_par_dict) and bounds:
+            if not (par in dir_par_dict) and bounds:
                 # overwrite or add recalculation parameter in CALIB_PAR_SET dict
                 # here: bounds is a user-defined boolean
                 self.CALIB_PAR_SET.update({par: {"bounds": (self.CALIB_ID_PAR_SET["Multiplier range"]["classes"][0],
-                                                       self.CALIB_ID_PAR_SET["Multiplier range"]["classes"][1]),
-                                            "distribution": None}})
+                                                            self.CALIB_ID_PAR_SET["Multiplier range"]["classes"][1]),
+                                                 "distribution": None}})
 
         print(" * received direct calibration parameters: %s" % ", ".join(list(self.CALIB_PAR_SET.keys())))
         if self.CALIB_ID_PAR_SET:
@@ -101,6 +103,16 @@ class UserDefs:
         if self.MC_SAMPLES < (self.AL_SAMPLES + self.IT_LIMIT):
             print("ERROR: MC_SAMPLES < (AL_SAMPLES + IT_LIMIT)!")
             raise ValueError
+        try:
+            self.file_write_dir = r"" + self.RESULTS_DIR + "stochastic-calib-processID%s/" % str(_rnd.randint(1000,9999))
+            _os.mkdir(self.file_write_dir)
+            print(" * intermediate calibration results will be written to %s" % self.file_write_dir)
+        except PermissionError:
+            print("ERROR: Cannot write to %s (check user rights/path consistency)" % self.RESULTS_DIR)
+            raise PermissionError
+        except NotADirectoryError:
+            print("ERROR: %s is not a directory - adapt simulation directory (B8)" % self.RESULTS_DIR)
+            raise NotADirectoryError
 
     def load_input_defs(self):
         """loads provided input file name as dictionary
@@ -142,7 +154,8 @@ class UserDefs:
 
         # update global variables with user definitions
         self.CALIB_PTS = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_pts"), 1].values[0]
-        self.CALIB_TARGET = TM_TRANSLATOR[user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_target"), 1].values[0]]
+        self.CALIB_TARGET = TM_TRANSLATOR[
+            user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_target"), 1].values[0]]
 
         self.AL_STRATEGY = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("strategy"), 1].values[0]
         self.IT_LIMIT = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("it\_limit"), 1].values[0]

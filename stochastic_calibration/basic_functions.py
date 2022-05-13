@@ -1,4 +1,5 @@
 """fundamental Python functions"""
+from action_logger import Logger
 
 
 def str2seq(list_like_string, separator=",", return_type="tuple"):
@@ -20,3 +21,11 @@ def str2seq(list_like_string, separator=",", return_type="tuple"):
         return tuple(seq)
     else:
         return seq
+
+
+def log_actions(func):
+    def wrapper(*args, **kwargs):
+        logger = Logger("logfile")
+        func(*args, **kwargs)
+        logger.logging_stop()
+    return wrapper
