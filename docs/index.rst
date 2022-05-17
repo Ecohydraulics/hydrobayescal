@@ -4,7 +4,7 @@
 About
 =====
 
-This **Python3 package** uses Bayesian active learning (**BAL**) to wrap around Gaussian process emulators (**GPE**) for constructing a surrogate of complex, deterministic numerical models. To enable parameter adjustments at all levels, the code requires fully open source modeling software. This is why we decided to taylor the code for running it with **`TELEMAC <http://www.opentelemac.org/>`_**.
+This **Python3 package** uses Bayesian active learning (**BAL**) to wrap around Gaussian process emulators (**GPE**) for constructing a surrogate of complex, deterministic numerical models. To enable parameter adjustments at all levels, the code requires fully open source modeling software. This is why we decided to taylor the code for running it with `TELEMAC <http://www.opentelemac.org/>`_.
 
 The surrogate model is created using Gaussian Process Regression and evaluated using Bayesian model evidence and/or relative entropy. The codes implement the methods proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
 
@@ -74,7 +74,6 @@ In Anaconda Prompt, enter the following command sequence to install the librarie
 If you are struggling with the dark window and blinking cursor of Anaconda Prompt, worry not. You can also use Anaconda Navigator and install the four libraries (in the above order) in Anaconda Navigator.
 
 
-
 Install the Stochatic Surrogate Package
 ---------------------------------------
 
@@ -85,6 +84,17 @@ Still in Anaconda Prompt (or any other Python-pip-able Terminal), enter:
     pip install stochastic_surrogate
 
 With the ``stochastic_surrogate`` installed you are now ready to use it for running a stochastic optimization of your TELEMAC model. The `usage section <usage>` provides detailed explanations for running the optimization.
+
+Other Software
+--------------
+
+The code is bound to a numerical modeling software and modifying the input parameters requires an office program.
+
+Currently, the following numerical modeling software coupling is enabled (and needs to be installed for running a stochastic calibration):
+
+* TELEMAC2D and Gaia (`read how to install TELEMAC <https://hydro-informatics.com/get-started/install-telemac.html>`_)
+
+To edit the input.xlsx workbook, read our `office applications instructions <https://hydro-informatics.com/get-started/others.html#lo>`_.
 
 
 .. toctree::

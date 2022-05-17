@@ -3,7 +3,6 @@ Global constant and variable definitions
 """
 import os as _os
 import pandas as _pd
-import numpy as _np
 
 # physics
 GRAVITY = 9.81  # gravitational acceleration in m/s2
@@ -27,13 +26,18 @@ RESULT_NAME_GAIA = "'res-gaia-PC"  # PC stands for parameter combination
 RESULT_NAME_TM = "'res-tel-PC"  # PC stands for parameter combination
 
 # define relevant data ranges in user-input.xlsx
-TM_RANGE = "A6:B9"
-AL_RANGE = "A13:B19"
-PRIOR_DIR_RANGE = "A25:B28"
-PRIOR_INDIR_RANGE = "A31:B32"
-PRIOR_REC_RANGE = "A35:B35"
+TM_RANGE = "A6:B10"
+AL_RANGE = "A14:B21"
+PRIOR_SCA_RANGE = "A27:B30"
+PRIOR_VEC_RANGE = "A33:B35"
+PRIOR_REC_RANGE = "A38:B39"
+ZONAL_PAR_RANGE = "A42:A44"
 
-
+# define recalculation parameters
+RECALC_PARS = {
+    "CLASSES SEDIMENT DENSITY": "CLASSES SETTLING VELOCITIES",
+    "CLASSES SEDIMENT DIAMETERS": "CLASSES SETTLING VELOCITIES",
+}
 
 
 

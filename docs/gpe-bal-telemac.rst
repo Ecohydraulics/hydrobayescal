@@ -1,4 +1,4 @@
-Methodology by:
+Methods by:
 Oladyshkin, S., Mohammadi, F., Kroeker, I., & Nowak, W. (2020). Bayesian3 Active Learning for the Gaussian Process Emulator Using Information Theory. Entropy, 22(8), 890.
 ----------------------
 

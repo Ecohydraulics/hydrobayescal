@@ -41,10 +41,10 @@ Download our `calibration-points.csv file <https://github.com/sschwindt/stochast
 Prepare Input Workbook
 ----------------------
 
-Direct Calibration Parameters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Scalar Calibration Parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Currently, all Telemac2d and Gaia parameters that are available in the `user-input.xlsx`_ workbook are understood by the code (and can therefore also be theoretically used - we did not test every parameter combination, so some combinations might just crash). Select up to four direct calibration parameters and define physically meaningful parameter ranges. The ``lower_limit`` and ``upper_limit`` define the parameter ranges (e.g. use ``0.01, 0.1`` to define the selected parameter's ``lower_limit=0.01`` and ``upper_limit=0.1``, respectively). Between the given parameter ranges, the code will draw ``mc_samples`` (defined by the Active Learning parameters in `user-input.xlsx`_) to build the surrogate.
+Currently, all Telemac2d and Gaia parameters that are available in the `user-input.xlsx`_ workbook are understood by the code as scalars (and can therefore also be theoretically used - we did not test every parameter combination, so some combinations might just crash). Select up to four scalar calibration parameters and define physically meaningful parameter ranges. The ``lower_limit`` and ``upper_limit`` define the parameter ranges (e.g. use ``0.01, 0.1`` to define the selected parameter's ``lower_limit=0.01`` and ``upper_limit=0.1``, respectively). Between the given parameter ranges, the code will draw ``mc_samples`` (defined by the Active Learning parameters in `user-input.xlsx`_) to build the surrogate.
 
 .. note:: Why four parameters only?
 
@@ -65,11 +65,11 @@ For instance, to calibrate a suspended sediment load model (Gaia parameters) as 
     Make sure your Selafin file (``.slf``)  has the attribute ``BOTTOM`` for morphodynamic calibrations with respect to ``TOPOGRAPHIC CHANGE``.
     For ``DEPTH`` and ``VELOCITY`` based-calibration, the Selafin also needs to get these layer names (i.e, a ``DEPTH`` and/or ``VELOCITY`` layer, respectively) with values assigned from the calculation results and measurements!
 
-Indirect Calibration Parameters
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Multi-Class Calibration Parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Indirect calibration parameters will be varied within a multiplier range. For instance if the multiplier range is defined with ``0.8, 1.7`` the indirect parameter will be varied in a range between 0.8 to 1.7 times the initial values.
-Thus, the selected Indirect Calibration Parameter requires the definition of initial values (rather than a variation interval, as opposed to Direct Calibration Parameters).
+Multi-class calibration parameters are non-scalar model controls, such as multiple sediment classes. For instance, a morphodynamic model with three sediment classes may have three ``CLASSES SEDIMENT DIAMETERS: 0.001, 0.02, 0.05``. To enable the variation of such vector-like calibration parameters, we use a multiplier that can be defined in the **Multiplier range** field. For example, if the multiplier range is defined with ``0.8, 1.7`` the multi-class parameter will be varied in a range between 0.8 to 1.7 times the initial values.
+Thus, the selected Multi-Class Calibration Parameter requires the definition of initial values (rather than a variation interval that can be defined for Scalar Calibration Parameters).
 
 
 .. csv-table:: Exemplary Indirect Calibration Parameters for a Suspended Load Model with Value Ranges
@@ -82,10 +82,14 @@ Thus, the selected Indirect Calibration Parameter requires the definition of ini
 Recalculation Parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Updating of some parameters in the control (steering CAS) file will require updating also other parameters. Such recalculation parameters are automatically detected in `user-input.xlsx`_ as a function of available routines for **one Indirect Calibration Parameter only**. To avoid that the code uses automatically detected recalculation parameters, deactivate the detected parameter by switching the **Apply?** field to ``False`` (or ``0`` in LibreOffice).
-In addition, if the automatically detected recalculation parameter is in the list of direct calibration parameters, it will be automatically updated and you may completely ignore the recalculation parameter section. In this case, the direct calibration parameter will automatically be recalculated as a function of the indirect calibration parameter.
+Updating of some parameters in the control (steering CAS) file will require updating also other parameters. Such recalculation parameters are automatically detected in `user-input.xlsx`_ as a function of available routines for **max. two Multi-Class Calibration Parameter only** (computing time!). To avoid that the code uses automatically detected recalculation parameters, deactivate the detected parameter by switching the **Apply?** field to ``False`` (or ``0`` in LibreOffice/ONLYOFFICE).
+In addition, if an automatically detected recalculation parameter is in the list of scalar or multi-class calibration parameters, it will be automatically updated and you may completely ignore the recalculation parameter section. In this case, the direct calibration parameter will automatically be recalculated as a function of the indirect calibration parameter.
 
-For instance, if ``CLASSES SEDIMENT DIAMETERS`` is an indirect calibration parameter, those will affect the ``CLASSES SETTLING VELOCITIES`` in suspended load calculations. However, for running a bedload calculation, the ``CLASSES SEDIMENT VELOCITIES`` keyword does not make sense and should not be applied. If ``CLASSES SETTLING VELOCITIES`` was already selected in the list of direct calibration parameters, the settling velocities will be automatically recalculated.
+.. important::
+
+   Recalculation parameters are detected in the order of Multi-Class parameters. Thus, if the multi-class calibration parameter selected in cell B33 is detected to be associated with a recalculation parameter, the corresponding recalculation parameter will show up in cell B37. Analogously, if a multi-class parameter is selected in cell B34, any potential recalculation parameter will show up in cell B38.
+
+For instance, if ``CLASSES SEDIMENT DIAMETERS`` is a multi-class calibration parameter, which affects the ``CLASSES SETTLING VELOCITIES`` in suspended load calculations. However, for running a bedload calculation, the ``CLASSES SEDIMENT VELOCITIES`` keyword does not make sense and should not be applied. If ``CLASSES SETTLING VELOCITIES`` was already selected in the list of direct calibration parameters, the settling velocities will be automatically recalculated.
 
 
 Regular Usage

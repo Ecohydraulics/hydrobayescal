@@ -12,7 +12,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 from BAL_core import BAL
 from telemac_fun import *
-from usr_defs import *  # contains UserDefs and link to config
+from usr_defs import *  # contains UserDefs and link to config and basic_functions
 from surrogate import *
 
 
@@ -45,16 +45,14 @@ class BAL_GPE(UserDefs):
         self.collocation_points = np.ndarray(())  # assign with self.prepare_initial_model - will be used and updated in self.run_BAL
         print("Successfully instantiated a BAL-GPE object for calibrating a %s model." % software_coupling.upper())
 
+    @log_actions
     def run_calibration(self):
-        """loads provided input file name as pandas dataframe
-
-            Args:
-                file_name (str): name of input file (default is user-input.xlsx)
+        """loads provided input file name as pandas dataframe - all actions called from here are written to a logfile
 
             Returns:
                 tbd
         """
-
+        logger.info("STARTING CALIBRATION PROCESS")
         self.update_prior_distributions()
         self.load_observations()
 
@@ -63,6 +61,7 @@ class BAL_GPE(UserDefs):
         Modifies self.prior_distribution (numpy.ndarray): copy of all uniform input distributions
         of the calibration parameters.
         """
+        logger.info("-- updating prior distributions...")
         self.prior_distribution = np.zeros((self.MC_SAMPLES, len(self.CALIB_PAR_SET)))
         column = 0
         for par in self.CALIB_PAR_SET.keys():
@@ -102,7 +101,7 @@ class BAL_GPE(UserDefs):
         # Part 3. Read the previously computed simulations of the numerical model in the initial collocation points
         temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR)) + "/" + simulation_names[0] + "_" +
                           self.CALIB_TARGET + ".txt")
-        model_results = np.zeros((self.collocation_points.shape[0], temp.shape[0]))
+        model_results = np.zeros((self.collocation_points.shape[0], temp.shape[0])) # temp.shape=n_points
         for i, name in enumerate(simulation_names):
             model_results[i, :] = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR))+"/" + name + "_" +
                                              self.CALIB_TARGET + ".txt")[:, 1]
@@ -139,7 +138,6 @@ class BAL_GPE(UserDefs):
             surrogate_prediction[par, :], surrogate_std[par, :] = gp.predict(self.prior_distribution, return_std=True)
         return surrogate_prediction, surrogate_std
 
-
     def run_BAL(self, model_results, observations, prior=None):
         """ Bayesian iterations for updating the surrogate and calculating maximum likelihoods
 
@@ -164,8 +162,10 @@ class BAL_GPE(UserDefs):
             loocv_error = np.loadtxt("loocv_error_variance.txt")[:, 1]
             total_error = (observations["observation error"] ** 2 + loocv_error) * 5
 
-            # Part 6.4 Bayesian inference: Compute Bayesian scores of prior (in parameter space)
+            # Part 6.4 Bayesian inference: INSTANTIATE BAL object
             bal = BAL(observations=observations["observation"].T, error=total_error)
+            # OPTIONAL FOR CHECKING CONVERGENCE: Compute Bayesian scores of prior (in parameter space)
+            logger.info(" * writing prior BME and RE for BAL step no. {0} to ".format(str(bal_step)) + self.file_write_dir)
             self.BME[bal_step], self.RE[bal_step] = bal.compute_bayesian_scores(surrogate_prediction.T)
             np.savetxt(self.file_write_dir + "BMEprior_BALstep{0}.txt".format(str(bal_step)), self.BME)
             np.savetxt(self.file_write_dir + "REprior_BALstep{0}.txt".format(str(bal_step)), self.RE)
@@ -180,15 +180,22 @@ class BAL_GPE(UserDefs):
 
             for iAL, vAL in enumerate(al_unique_index):
                 # Exploration of output subspace associated with a defined prior combination.
-                al_exploration = np.random.normal(size=(self.MC_SAMPLES_AL, observations["no of points"]))*surrogate_std[:, vAL] + surrogate_prediction[:, vAL]
+                al_exploration = np.random.normal(
+                    size=(self.MC_SAMPLES_AL, observations["no of points"])
+                ) * surrogate_std[:, vAL] + surrogate_prediction[:, vAL]
                 # BAL scores computation
-                self.al_BME[iAL], self.al_RE[iAL] = bal.compute_bayesian_scores(al_exploration, self.AL_STRATEGY)
+                self.al_BME[iAL], self.al_RE[iAL] = bal.compute_bayesian_scores(
+                    al_exploration,
+                    self.AL_STRATEGY
+                )
 
             # Part 8. Selection criteria for next collocation point
             al_value, al_value_index = bal.selection_criteria(self.AL_STRATEGY, self.al_BME, self.al_RE)
 
-            # Part 9. Selection of new collocation point
-            self.collocation_points = np.vstack((self.collocation_points, self.prior_distribution[al_unique_index[al_value_index], :]))
+            # Part 9. Selection of new collocation points
+            self.collocation_points = np.vstack(
+                (self.collocation_points, self.prior_distribution[al_unique_index[al_value_index], :])
+            )
 
             # Part 10. Computation of the numerical model in the newly defined collocation point
             # Update steering files
@@ -225,6 +232,12 @@ class BAL_GPE(UserDefs):
             # Progress report
             print("Bayesian iteration: " + str(bal_step + 1) + "/" + str(self.IT_LIMIT))
 
+    def sample_collocation_points(self):
+        """Sample initial collocation points"""
+        n_cp = 5
+        collocation_points = np.zeros((n_cp, N))
+        collocation_points[:, 0] = np.random.uniform(-5, 5, n_cp)
+        collocation_points[:, 1] = np.random.uniform(-5, 5, n_cp)
 
     def __call__(self, *args, **kwargs):
         # no effective action: print class in system

@@ -6,7 +6,6 @@ import os as _os
 import pandas as _pd
 import numpy as _np
 from openpyxl import load_workbook
-from config import *
 from basic_functions import *
 import random as _rnd
 
@@ -21,9 +20,9 @@ class UserDefs:
 
         # initialize capital letter class variables that are defined through the user XLSX file
         self.CALIB_PAR_SET = {}  # dict for direct calibration optimization parameters
-        self.CALIB_ID_PAR_SET = {}  # dict for indirect calibration parameters
         self.CALIB_PTS = None  # numpy array to be loaded from calibration_points file
         self.CALIB_TARGET = str()  # str of calibration target nature (e.g. topographic change)
+        self.init_runs = int()  # int limit for initial full-complexity runs
         self.IT_LIMIT = int()  # int limit for Bayesian iterations
         self.MC_SAMPLES = int()  # int for Monte Carlo samples
         self.MC_SAMPLES_AL = int()  # int for Monte Carlo samples for active learning
@@ -31,6 +30,7 @@ class UserDefs:
         self.AL_SAMPLES = int()  # int for no. of active learning sampling size
         self.AL_STRATEGY = str()  # str for active learning strategy
         self.TM_CAS = str()
+        self.tm_config = str()  # telemac config file
         self.GAIA_CAS = str()
         self.RESULTS_DIR = "../results"  # relative path for results
         self.SIM_DIR = str()  # relative path for simulations
@@ -39,41 +39,39 @@ class UserDefs:
         self.al_BME = None
         self.al_RE = None
 
-    def assign_calib_ranges(self, direct_par_df, indirect_par_df, recalc_par_df):
+    def assign_calib_ranges(self, direct_par_df, vector_par_df, recalc_par_df):
         """Parse user calibration ranges for parameters
 
         :param pd.DataFrame direct_par_df: direct calibration parameters from user-input.xlsx
-        :param pd.DataFrame indirect_par_df: indirect calibration parameters from user-input.xlsx
+        :param pd.DataFrame vector_par_df: vector calibration parameters from user-input.xlsx
         :param pd.DataFrame recalc_par_df: recalculation parameters from user-input.xlsx
         :return: None
         """
+        # add scalar calibration parameters to CALIB_PAR_SET
         dir_par_dict = dict(zip(direct_par_df[0].to_list(), direct_par_df[1].to_list()))
         for par, bounds in dir_par_dict.items():
             if not (("TELEMAC" or "GAIA") in par):
                 self.CALIB_PAR_SET.update({par: {"bounds": str2seq(bounds),
-                                                 "distribution": None}})
+                                                 "initial val": _np.mean(str2seq(bounds)),
+                                                 "recalc par": None}})
 
-        indir_par_dict = dict(zip(indirect_par_df[0].to_list(), indirect_par_df[1].to_list()))
-        for par, bounds in indir_par_dict.items():
-            self.CALIB_ID_PAR_SET.update({par: {"classes": str2seq(bounds),
-                                                "distribution": None}})
-            if not (("TELEMAC" or "GAIA") in par):
-                # erase CALIB_ID_PAR_SET in the last step, if user did not enable (OK because inexpensive)
-                self.CALIB_ID_PAR_SET = None
-
+        # add vector calibration parameters to CALIB_PAR_SET and check for recalculation parameters
+        vec_par_dict = dict(zip(vector_par_df[0].to_list(), vector_par_df[1].to_list()))
         recalc_par_dict = dict(zip(recalc_par_df[0].to_list(), recalc_par_df[1].to_list()))
-        for par, bounds in recalc_par_dict.items():
-            # loop not really needed but implemented for potential developments
-            if not (par in dir_par_dict) and bounds:
-                # overwrite or add recalculation parameter in CALIB_PAR_SET dict
-                # here: bounds is a user-defined boolean
-                self.CALIB_PAR_SET.update({par: {"bounds": (self.CALIB_ID_PAR_SET["Multiplier range"]["classes"][0],
-                                                            self.CALIB_ID_PAR_SET["Multiplier range"]["classes"][1]),
-                                                 "distribution": None}})
+        for par, init_list in vec_par_dict.items():
+            if not (("TELEMAC" or "GAIA" or "Multiplier") in str(par)):
+                self.CALIB_PAR_SET.update({par: {"bounds": (str2seq(vec_par_dict["Multiplier range"])),
+                                                 "initial val": str2seq(init_list),
+                                                 "recalc par": None}})
+                if par in RECALC_PARS.keys():
+                    # check if parameter is a recalculation parameter (if yes -> check for user input FALSE or TRUE)
+                    try:
+                        if bool(recalc_par_dict[RECALC_PARS[par]]):
+                            self.CALIB_PAR_SET[par]["recalc par"] = RECALC_PARS[par]
+                    except KeyError:
+                        print("! Warning: found recalcution parameter %s that is not defined in config.py (skipping...")
 
-        print(" * received direct calibration parameters: %s" % ", ".join(list(self.CALIB_PAR_SET.keys())))
-        if self.CALIB_ID_PAR_SET:
-            print(" * received indirect calibration parameter: %s" % ", ".join(list(self.CALIB_ID_PAR_SET.keys())))
+        print(" * received the following calibration parameters: %s" % ", ".join(list(self.CALIB_PAR_SET.keys())))
 
     def check_user_input(self):
         """Check if global variables are correctly assigned"""
@@ -124,8 +122,8 @@ class UserDefs:
         return {
             "tm pars": self.read_wb_range(TM_RANGE),
             "al pars": self.read_wb_range(AL_RANGE),
-            "direct priors": self.read_wb_range(PRIOR_DIR_RANGE),
-            "indirect priors": self.read_wb_range(PRIOR_INDIR_RANGE),
+            "direct priors": self.read_wb_range(PRIOR_SCA_RANGE),
+            "vector priors": self.read_wb_range(PRIOR_VEC_RANGE),
             "recalculation priors": self.read_wb_range(PRIOR_REC_RANGE),
         }
 
@@ -145,10 +143,10 @@ class UserDefs:
         user_defs = self.load_input_defs()  # dict
 
         print(" * assigning user-defined variables...")
-        # assign direct, indirect, and recalculation parameters
+        # assign direct, vector, and recalculation parameters
         self.assign_calib_ranges(
             direct_par_df=user_defs["direct priors"],
-            indirect_par_df=user_defs["indirect priors"],
+            vector_par_df=user_defs["vector priors"],
             recalc_par_df=user_defs["recalculation priors"]
         )
 
@@ -158,12 +156,14 @@ class UserDefs:
             user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_target"), 1].values[0]]
 
         self.AL_STRATEGY = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("strategy"), 1].values[0]
+        self.init_runs = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("init\_runs"), 1].values[0]
         self.IT_LIMIT = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("it\_limit"), 1].values[0]
         self.AL_SAMPLES = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("al\_samples"), 1].values[0]
         self.MC_SAMPLES = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("mc\_samples\)"), 1].values[0]
         self.MC_SAMPLES_AL = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("mc\_samples\_al"), 1].values[0]
 
-        self.TM_CAS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("TELEMAC"), 1].values[0]
+        self.TM_CAS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("TELEMAC steering"), 1].values[0]
+        self.tm_config = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("TELEMAC config"), 1].values[0]
         self.GAIA_CAS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("Gaia"), 1].values[0]
         self.SIM_DIR = r"" + user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("Simulation"), 1].values[0]
         self.N_CPUS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("CPU"), 1].values[0]
