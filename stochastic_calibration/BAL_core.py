@@ -4,6 +4,7 @@ inversion
 """
 
 import numpy as _np  # use underscore import to avoid double-numpy imports with wildcards (import *)
+from config import *
 
 
 class BAL:
@@ -172,16 +173,16 @@ class BAL:
             if _np.amax(al_RE) == 0 and _np.amax(al_BME) != 0:
                 al_value = _np.amax(al_BME)
                 al_value_index = _np.argmax(al_BME)
-                print("WARNING: Active Learning -- all values of Relative entropies are 0")
-                print("Active Learning Action: training points were selected according to Bayesian model evidences")
+                logger_warn.warning("Active Learning -- all values of Relative entropies are 0")
+                logger.info("Active Learning Action: training points were selected according to Bayesian model evidences")
             elif _np.amax(al_RE) == 0 and _np.amax(al_BME) == 0:
                 al_value = _np.amax(al_BME)
                 al_value_index = _np.argmax(al_BME)
-                print("WARNING: Active Learning -- all values of Relative entropies are 0")
+                logger.info("Active Learning -- all values of Relative entropies are 0")
                 print("Warning Active Learning: all values of Bayesian model evidences are also 0")
                 print("Active Learning Action: training points were selected randomly")
         try:
             return al_value, al_value_index
         except NameError:
-            print("ERROR: failed to calculate selection (unknown active learning strategy %s provided)" % str(al_strategy))
+            logger_error.error("Failed to calculate selection (unknown active learning strategy %s provided)" % str(al_strategy))
             return _np.nan, _np.nan

@@ -1,0 +1,1 @@
+The original functions in this package-folder stem from https://github.com/tirthajyoti/Design-of-experiment-Python:master, which were developed by Dr. Tirthajyoti Sarkar (2018) and distributed under an MIT license. The functions were accordingly slightly modified here for the construction of an initial response surface.

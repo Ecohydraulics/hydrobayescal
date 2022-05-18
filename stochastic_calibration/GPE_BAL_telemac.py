@@ -11,7 +11,7 @@ import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 from BAL_core import BAL
-from telemac_fun import *
+from telemac_core import *
 from usr_defs import *  # contains UserDefs and link to config and basic_functions
 from surrogate import *
 
@@ -234,10 +234,17 @@ class BAL_GPE(UserDefs):
 
     def sample_collocation_points(self):
         """Sample initial collocation points"""
-        n_cp = 5
-        collocation_points = np.zeros((n_cp, N))
-        collocation_points[:, 0] = np.random.uniform(-5, 5, n_cp)
-        collocation_points[:, 1] = np.random.uniform(-5, 5, n_cp)
+        collocation_points = np.zeros((self.init_runs, self.n_calib_pars))
+        # assign minimum and maximum values of parameters to the first two tests
+        par_minima = []
+        par_maxima = []
+        for par in self.CALIB_PAR_SET.keys():
+            par_minima.append(self.CALIB_PAR_SET[par]["bounds"][0])
+            par_maxima.append(self.CALIB_PAR_SET[par]["bounds"][1])
+        collocation_points[:, 0] = np.array(par_minima)
+        collocation_points[:, 1] = np.array(par_maxima)
+        #collocation_points[:, 0] = np.random.uniform(-5, 5, n_cp)
+        #collocation_points[:, 1] = np.random.uniform(-5, 5, n_cp)
 
     def __call__(self, *args, **kwargs):
         # no effective action: print class in system

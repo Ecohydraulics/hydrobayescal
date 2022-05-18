@@ -1,5 +1,4 @@
 """fundamental Python functions"""
-from action_logger import Logger
 from config import *
 import numpy as _np
 
@@ -78,7 +77,15 @@ def str2seq(list_like_string, separator=",", return_type="tuple"):
 
 def log_actions(func):
     def wrapper(*args, **kwargs):
-        logger = Logger("logfile")
         func(*args, **kwargs)
-        logger.logging_stop()
+        for handler in logging.getLogger("stochastic_calibration").handlers:
+            handler.close()
+            logging.getLogger("stochastic_calibration").removeHandler(handler)
+        for handler in logging.getLogger("warnings").handlers:
+            handler.close()
+            logging.getLogger("warnings").removeHandler(handler)
+        for handler in logging.getLogger("errors").handlers:
+            handler.close()
+            logging.getLogger("errors").removeHandler(handler)
+        print("Check the logfiles: logfile.log, warnings.log, and errors.log.")
     return wrapper

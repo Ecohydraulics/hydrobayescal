@@ -27,6 +27,7 @@ class UserDefs:
         self.MC_SAMPLES = int()  # int for Monte Carlo samples
         self.MC_SAMPLES_AL = int()  # int for Monte Carlo samples for active learning
         self.N_CPUS = int()  # int number of CPUs to use for Telemac models
+        self.n_calib_pars = int()  # int number of calibration parameters
         self.AL_SAMPLES = int()  # int for no. of active learning sampling size
         self.AL_STRATEGY = str()  # str for active learning strategy
         self.TM_CAS = str()
@@ -70,7 +71,7 @@ class UserDefs:
                             self.CALIB_PAR_SET[par]["recalc par"] = RECALC_PARS[par]
                     except KeyError:
                         print("! Warning: found recalcution parameter %s that is not defined in config.py (skipping...")
-
+        self.n_calib_pars = len(self.CALIB_PAR_SET)
         print(" * received the following calibration parameters: %s" % ", ".join(list(self.CALIB_PAR_SET.keys())))
 
     def check_user_input(self):

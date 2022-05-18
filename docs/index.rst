@@ -38,6 +38,11 @@ To get the code running, the following software is needed and their installation
 - Pandas `>=1.3.5`
 - Matplotlib `>=3.1.2`
 
+The design of experiments-based construction of an initial response surface additionally needs the following packages:
+
+- pydoe (``pip install pydoe``)
+- diversipy (``pip install diversipy``)
+
 Start with downloading and installing the latest version of `Anaconda Python <https://www.anaconda.com/products/individual>`_.  Alternatively, downloading and installing a pure `Python <https://www.python.org/downloads/>`_ interpreter will also work. Detailed information about installing Python is available in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_.
 
 
