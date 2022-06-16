@@ -151,7 +151,7 @@ class BAL_GPE(UserDefs):
             self.prior_distribution = prior
 
         for bal_step in range(0, self.IT_LIMIT):
-            # Part 4. Computation of surrogate model prediction in MC points using gaussian processes
+            # Part 4. Computation of surrogate model prediction in mc_samples points using gaussian processes
             # get response surface
             surrogate_prediction, surrogate_std = self.get_surrogate_prediction(
                 model_results=model_results,
@@ -174,9 +174,14 @@ class BAL_GPE(UserDefs):
             # Part 6.5 Bayesian active learning (in output space)
             # Index of the elements of the prior distribution that have not been used as collocation points
             # extract n locations of interest for the number of observations
-            aux1 = np.where((self.prior_distribution[:self.AL_SAMPLES+bal_step, :] == self.collocation_points[:, None]).all(-1))[1]
-            aux2 = np.invert(np.in1d(np.arange(self.prior_distribution[:self.AL_SAMPLES+bal_step, :].shape[0]), aux1))
-            al_unique_index = np.arange(self.prior_distribution[:self.AL_SAMPLES+bal_step, :].shape[0])[aux2]
+            # find where colloation points are not used in prior distribution
+            none_use_idx = np.where((self.prior_distribution[:self.AL_SAMPLES+bal_step, :] == self.collocation_points[:, None]).all(-1))[1]
+            # verify whether each element of the prior_distribution array is also present in none_use_idx
+            idx = np.invert(np.in1d(
+                np.arange(self.prior_distribution[:self.AL_SAMPLES+bal_step, :].shape[0]),
+                none_use_idx
+            ))
+            al_unique_index = np.arange(self.prior_distribution[:self.AL_SAMPLES+bal_step, :].shape[0])[idx]
 
             for iAL, vAL in enumerate(al_unique_index):
                 # Exploration of output subspace associated with a defined prior combination.
@@ -232,8 +237,13 @@ class BAL_GPE(UserDefs):
             # Progress report
             print("Bayesian iteration: " + str(bal_step + 1) + "/" + str(self.IT_LIMIT))
 
-    def sample_collocation_points(self):
-        """Sample initial collocation points"""
+    def sample_collocation_points(self, method="uniform"):
+        """Sample initial collocation points
+
+        :param str method: experimental design method for sampling initial collocation points
+                            default is 'uniform'; other options
+                            (NOT YET IMPLEMENTED)
+        """
         collocation_points = np.zeros((self.init_runs, self.n_calib_pars))
         # assign minimum and maximum values of parameters to the first two tests
         par_minima = []
