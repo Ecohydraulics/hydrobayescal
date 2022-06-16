@@ -83,7 +83,7 @@ class BAL:
         else:
             return likelihood
 
-    def compute_bayesian_scores(self, prediction, entropy_normalization="bme"):
+    def compute_bayesian_scores(self, prediction, entropy_normalization="rejection"):
         """
         Compute Bayesian Model Evidence (BME) and Relative Entropy (RE)
 
@@ -92,8 +92,8 @@ class BAL:
         prediction : array [MC, n_points]
             predicted / modelled values
         entropy_normalization : string
-            Method for entropy cross normalization. The default is "bme" for Bayesian weighting.
-            Other option is "rejection" for rejection sampling.
+            Method for entropy cross normalization. The default is "rejection" for rejection sampling.
+            Other option is "bme" for Bayesian weighting.
 
         Returns
         -------
