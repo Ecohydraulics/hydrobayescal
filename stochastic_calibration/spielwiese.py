@@ -1,4 +1,7 @@
 import os, sys
+
+import self as self
+
 sys.path.append(os.path.abspath("")+"/stochastic_calibration/")
 from usr_defs import *
 input_fn = SCRIPT_DIR + "user-input.xlsx"
@@ -14,14 +17,14 @@ input_calib = os.path.abspath("")+ "/calibration-points.csv"
 # global myx
 # myx=1
 #
-@log_actions
-def modify():
-    myx = 5
-    logger.info("info message")
-    logger_warn.warning("warn message")
-    logger_error.error("error message")
-
-modify()
+# @log_actions
+# def modify():
+#     myx = 5
+#     logger.info("info message")
+#     logger_warn.warning("warn message")
+#     logger_error.error("error message")
+#
+# modify()
 
 #
 # modify()
@@ -33,3 +36,27 @@ modify()
 #     print(par)
 #
 #   print(bounds)
+from functools import partial, wraps
+
+class A:
+    def __init__(self):
+        #self.real_dec = partial(self.wrap_run, argument=self.run())
+        pass
+
+    def wrap_run(self, func):
+        print("PRE")
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            func(*args, **kwargs)
+        return wrapper
+        #print("POST")
+
+    @wraps(wrap_run)
+    def run(self):
+        print("Run A")
+        return True
+
+
+
+a = A()
+a.run()

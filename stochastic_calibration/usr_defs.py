@@ -7,7 +7,7 @@ import pandas as _pd
 import numpy as _np
 from openpyxl import load_workbook
 from basic_functions import *
-import random as _rnd
+import random as rnd
 
 
 class UserDefs:
@@ -30,6 +30,7 @@ class UserDefs:
         self.n_calib_pars = int()  # int number of calibration parameters
         self.AL_SAMPLES = int()  # int for no. of active learning sampling size
         self.AL_STRATEGY = str()  # str for active learning strategy
+        self.score_method = str()  # str for score caluculation method to use in BAL_core.BAL.compute_bayesian_scores
         self.TM_CAS = str()
         self.tm_config = str()  # telemac config file
         self.GAIA_CAS = str()
@@ -103,7 +104,7 @@ class UserDefs:
             print("ERROR: MC_SAMPLES < (AL_SAMPLES + IT_LIMIT)!")
             raise ValueError
         try:
-            self.file_write_dir = r"" + self.RESULTS_DIR + "stochastic-calib-processID%s/" % str(_rnd.randint(1000,9999))
+            self.file_write_dir = r"" + self.RESULTS_DIR + "stochastic-calib-processID%s/" % str(rnd.randint(1000,9999))
             _os.mkdir(self.file_write_dir)
             print(" * intermediate calibration results will be written to %s" % self.file_write_dir)
         except PermissionError:
@@ -157,6 +158,7 @@ class UserDefs:
             user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_target"), 1].values[0]]
 
         self.AL_STRATEGY = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("strategy"), 1].values[0]
+        self.score_method = user_defs["al pars"].loc[user_defs["al pars"][0].str.lower().contains("score"), 1].values[0]
         self.init_runs = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("init\_runs"), 1].values[0]
         self.IT_LIMIT = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("it\_limit"), 1].values[0]
         self.AL_SAMPLES = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("al\_samples"), 1].values[0]

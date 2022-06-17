@@ -83,7 +83,7 @@ class BAL:
         else:
             return likelihood
 
-    def compute_bayesian_scores(self, prediction, entropy_normalization="rejection"):
+    def compute_bayesian_scores(self, prediction, method="bayesian"):
         """
         Compute Bayesian Model Evidence (BME) and Relative Entropy (RE)
 
@@ -91,9 +91,11 @@ class BAL:
         ----------
         prediction : array [MC, n_points]
             predicted / modelled values
-        entropy_normalization : string
-            Method for entropy cross normalization. The default is "rejection" for rejection sampling.
-            Other option is "bme" for Bayesian weighting.
+        method : string
+            Method for entropy cross normalization.
+            Use "rejection" for rejection sampling.
+            Use "bayesian" for Bayesian weighting.
+            The default is "bme"
 
         Returns
         -------
@@ -105,6 +107,7 @@ class BAL:
         Notes
         -----
         MC is the total number of model runs and n_points is the number of points considered for the comparison
+        Rejection sampling follows the method proposed by Smith and Gelfand 1992
         """
 
         # get likelihood
@@ -115,7 +118,7 @@ class BAL:
 
         if not(BME <= 0):
             # For cases in which the prediction of the surrogate is not too bad
-            if not ("bme" in entropy_normalization.lower()):
+            if not ("bayesian" in method.lower()):
                 # Non normalized cross entropy with rejection sampling
                 accepted = likelihood / _np.amax(likelihood) >= _np.random.rand(1, prediction.shape[0])
                 exp_log_pred = _np.mean(_np.log(likelihood[accepted]))

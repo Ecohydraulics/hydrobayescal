@@ -8,6 +8,8 @@ Emulator Using Information Theory. Entropy, 22(8), 890.
 """
 import os
 import numpy as np
+from datetime import datetime
+from functools import wraps
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 from BAL_core import BAL
@@ -43,7 +45,37 @@ class BAL_GPE(UserDefs):
         self.n_simulation = int()
         self.prior_distribution = np.ndarray(())  # will be create and update in self.update_prior_distributions
         self.collocation_points = np.ndarray(())  # assign with self.prepare_initial_model - will be used and updated in self.run_BAL
+        self.bme_csv_prior = ""
+        self.re_csv_prior = ""
+        self.bme_score_file = None
+        self.re_score_file = None
         print("Successfully instantiated a BAL-GPE object for calibrating a %s model." % software_coupling.upper())
+
+    def initialize_score_writing(self, func):
+        """
+        Wrapper function for writing BME and RE scores to csv files (for convergence check-ups)
+        :param func: a function
+        :return: the same function
+        """
+        self.bme_csv_prior = self.RESULTS_DIR + "BMEprior-%s.csv" % str(rnd.randint(1000, 9999))
+        self.re_csv_prior = self.RESULTS_DIR + "REprior-%s.csv" % str(rnd.randint(1000, 9999))
+        logger.info("> Instantiated recording of information theory scores BME and RE:")
+        logger.info("  -- BME will be written to %s" % self.bme_csv_prior)
+        logger.info("  -- RE will be written to %s" % self.re_csv_prior)
+        with open(self.bme_csv_prior, mode="w+") as file:
+            file.write("Started BME logging at %s\n" % str(datetime.now()))
+        with open(self.re_csv_prior, mode="w+") as file:
+            file.write("Started relative entropy (RE) logging at %s\n" % str(datetime.now()))
+        self.bme_score_file = open(self.bme_csv_prior, mode="a")
+        self.re_score_file = open(self.re_csv_prior, mode="a")
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            func(*args, **kwargs)
+
+        self.bme_score_file.close()
+        self.re_score_file.close()
+        return wrapper
 
     @log_actions
     def run_calibration(self):
@@ -53,6 +85,7 @@ class BAL_GPE(UserDefs):
                 tbd
         """
         logger.info("STARTING CALIBRATION PROCESS")
+        self.initialize_score_writing()
         self.update_prior_distributions()
         self.load_observations()
 
@@ -125,12 +158,17 @@ class BAL_GPE(UserDefs):
         surrogate_prediction = np.zeros((number_of_points, self.prior_distribution.shape[0]))
         surrogate_std = np.zeros((number_of_points, self.prior_distribution.shape[0]))
 
+        # get length scales and their bounds
+        length_scales = [np.nanmean(self.CALIB_PAR_SET[par]["bounds"]) for par in self.CALIB_PAR_SET.keys()]
+        length_scale_bounds = [self.CALIB_PAR_SET[par]["bounds"] for par in self.CALIB_PAR_SET.keys()]
+
+        logger.info("   -- creating GPE with RBF kernel...")
         for par, model in enumerate(model_results.T):
             # construct square exponential, Radial-Basis Function kernel with means (lengths) and bounds of
             # calibration params, and multiply with variance of the model
             kernel = RBF(
-                length_scale=[0.05, 0.2, 150, 0.5],
-                length_scale_bounds=[(0.001, 0.1), (0.001, 0.4), (5, 300), (0.02, 2)]
+                length_scale=length_scales,  # original code: [0.05, 0.2, 150, 0.5],
+                length_scale_bounds=length_scale_bounds  # [(0.001, 0.1), (0.001, 0.4), (5, 300), (0.02, 2)]
             ) * np.var(model)
             # instantiate and fit GPR
             gp = GaussianProcessRegressor(kernel=kernel, alpha=0.0002, normalize_y=True, n_restarts_optimizer=10)
@@ -138,6 +176,7 @@ class BAL_GPE(UserDefs):
             surrogate_prediction[par, :], surrogate_std[par, :] = gp.predict(self.prior_distribution, return_std=True)
         return surrogate_prediction, surrogate_std
 
+    @wraps(initialize_score_writing)
     def run_BAL(self, model_results, observations, prior=None):
         """ Bayesian iterations for updating the surrogate and calculating maximum likelihoods
 
@@ -151,29 +190,35 @@ class BAL_GPE(UserDefs):
             self.prior_distribution = prior
 
         for bal_step in range(0, self.IT_LIMIT):
-            # Part 4. Computation of surrogate model prediction in mc_samples points using gaussian processes
-            # get response surface
+
+            # 6.1 get response surface
+            # Involves 4. and 11. (create and fit surrogate model with mc_samples points using a GPE)
+            logger.info(" * retreaving surrogate predictions for BAL step {0}".format(str(bal_step)))
             surrogate_prediction, surrogate_std = self.get_surrogate_prediction(
                 model_results=model_results,
                 number_of_points=observations["no of points"]
             )
 
-            # Part ?. Read or compute the other errors to incorporate in the likelihood function
+            # prepare 6.1.x: Read or compute the other errors to incorporate in the likelihood function
             loocv_error = np.loadtxt("loocv_error_variance.txt")[:, 1]
             total_error = (observations["observation error"] ** 2 + loocv_error) * 5
 
-            # Part 6.4 Bayesian inference: INSTANTIATE BAL object
+            # Part 6.1.x Bayesian inference: INSTANTIATE BAL object to evaluate initial surrogate model
             bal = BAL(observations=observations["observation"].T, error=total_error)
-            # OPTIONAL FOR CHECKING CONVERGENCE: Compute Bayesian scores of prior (in parameter space)
-            logger.info(" * writing prior BME and RE for BAL step no. {0} to ".format(str(bal_step)) + self.file_write_dir)
-            self.BME[bal_step], self.RE[bal_step] = bal.compute_bayesian_scores(surrogate_prediction.T)
-            np.savetxt(self.file_write_dir + "BMEprior_BALstep{0}.txt".format(str(bal_step)), self.BME)
-            np.savetxt(self.file_write_dir + "REprior_BALstep{0}.txt".format(str(bal_step)), self.RE)
+            # CHECK CONVERGENCE: Compute Bayesian scores of prior (in parameter space)
+            logger.info(" * writing prior BME and RE for BAL step no. {0} to ".format(str(bal_step)) + self.RESULTS_DIR)
+            # retrieve bayesian scores through rejection sampling
+            self.BME[bal_step], self.RE[bal_step] = bal.compute_bayesian_scores(surrogate_prediction.T, method=self.score_method)
+            try:
+                self.bme_score_file.write("%s\n" % str(self.BME[bal_step]))
+                self.re_score_file.write("%s\n" % str(self.RE[bal_step]))
+            except AttributeError:
+                logger.warn("NO BME / RE STORAGE FILE DEFINED - writing BME and RE to distinguished file in %s" % self.file_write_dir)
+                np.savetxt(self.file_write_dir + "BMEprior_BALstep{0}.txt".format(str(bal_step)), self.BME)
+                np.savetxt(self.file_write_dir + "REprior_BALstep{0}.txt".format(str(bal_step)), self.RE)
 
-
-            # Part 6.5 Bayesian active learning (in output space)
-            # Index of the elements of the prior distribution that have not been used as collocation points
-            # extract n locations of interest for the number of observations
+            # Bayesian active learning (in output space)
+            # 6.2 extract surrogate predictions at n locations of interest for the number of observations
             # find where colloation points are not used in prior distribution
             none_use_idx = np.where((self.prior_distribution[:self.AL_SAMPLES+bal_step, :] == self.collocation_points[:, None]).all(-1))[1]
             # verify whether each element of the prior_distribution array is also present in none_use_idx
@@ -181,23 +226,24 @@ class BAL_GPE(UserDefs):
                 np.arange(self.prior_distribution[:self.AL_SAMPLES+bal_step, :].shape[0]),
                 none_use_idx
             ))
+            # 6.3 get output space from priors
             al_unique_index = np.arange(self.prior_distribution[:self.AL_SAMPLES+bal_step, :].shape[0])[idx]
 
             for iAL, vAL in enumerate(al_unique_index):
-                # Exploration of output subspace associated with a defined prior combination.
+                # 6.3 and 6.4: explore output subspace associated with a defined prior combination
                 al_exploration = np.random.normal(
                     size=(self.MC_SAMPLES_AL, observations["no of points"])
                 ) * surrogate_std[:, vAL] + surrogate_prediction[:, vAL]
-                # BAL scores computation
+                # 6.5 and 6.6: BAL scores computation through Bayesian weighting or rejection sampling
                 self.al_BME[iAL], self.al_RE[iAL] = bal.compute_bayesian_scores(
                     al_exploration,
-                    self.AL_STRATEGY
+                    self.score_method
                 )
 
-            # Part 8. Selection criteria for next collocation point
+            # part 7. selection criteria for next collocation point
             al_value, al_value_index = bal.selection_criteria(self.AL_STRATEGY, self.al_BME, self.al_RE)
 
-            # Part 9. Selection of new collocation points
+            # part 9. Selection of new collocation points
             self.collocation_points = np.vstack(
                 (self.collocation_points, self.prior_distribution[al_unique_index[al_value_index], :])
             )

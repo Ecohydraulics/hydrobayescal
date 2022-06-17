@@ -28,11 +28,11 @@ RESULT_NAME_TM = "'res-tel-PC"  # PC stands for parameter combination
 
 # define relevant data ranges in user-input.xlsx
 TM_RANGE = "A6:B10"
-AL_RANGE = "A14:B21"
-PRIOR_SCA_RANGE = "A27:B30"
-PRIOR_VEC_RANGE = "A33:B35"
-PRIOR_REC_RANGE = "A38:B39"
-ZONAL_PAR_RANGE = "A42:A44"
+AL_RANGE = "A14:B22"
+PRIOR_SCA_RANGE = "A28:B31"
+PRIOR_VEC_RANGE = "A34:B36"
+PRIOR_REC_RANGE = "A39:B40"
+ZONAL_PAR_RANGE = "A43:A45"
 
 # define recalculation parameters
 RECALC_PARS = {
