@@ -20,14 +20,15 @@ This documentation is also as available as `style-adapted PDF <https://stochasti
     - `installation instructions for TELEMAC <https://hydro-informatics.com/get-started/install-telemac.html>`_
     - `TELEMAC tutorial <https://hydro-informatics.com/numerics/telemac.html>`_
 
+.. _requirements:
 
 Requirements \& Installation
 ============================
 
-*Time requirement: 5-10 min.*
+Python
+------
 
-Install Requirements
----------------------
+*Time requirement: 10 min.*
 
 To get the code running, the following software is needed and their installation instructions are provided below:
 
@@ -38,7 +39,7 @@ To get the code running, the following software is needed and their installation
 - Pandas `>=1.3.5`
 - Matplotlib `>=3.1.2`
 
-The design of experiments-based construction of an initial response surface additionally needs the following packages:
+A future release containing design of experiments-based construction of an initial response surface additionally needs the following packages:
 
 - pydoe (``pip install pydoe``)
 - diversipy (``pip install diversipy``)
@@ -50,7 +51,7 @@ Start with downloading and installing the latest version of `Anaconda Python <ht
 
     Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_, and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
 
-To install the requirements after installing Anaconda, open Anaconda Prompt (e.g., click on the Windows icon, tap ``anaconda prompt``, and hit ``enter``), and use one of the two following options
+To install the requirements after installing Anaconda, open Anaconda Prompt (e.g., click on the Windows icon, tap ``anaconda prompt``, and hit ``enter``), and use one of the two following options.
 
 Option 1: Recommended
 ~~~~~~~~~~~~~~~~~~~~~
@@ -61,7 +62,6 @@ Option 1: Recommended
 
     conda install pip
     pip install -r requirements.txt
-
 
 Option 2: Step-by-Step
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -74,15 +74,35 @@ In Anaconda Prompt, enter the following command sequence to install the librarie
     conda install -c anaconda openpyxl
     conda install -c conda-forge pandas
     conda install -c conda-forge matplotlib
+    conda install -c conda-forge qgis
     conda install -c phaustin pyutils
 
 If you are struggling with the dark window and blinking cursor of Anaconda Prompt, worry not. You can also use Anaconda Navigator and install the four libraries (in the above order) in Anaconda Navigator.
 
+.. tip:: Work with Python environments
 
-Install the Stochatic Surrogate Package
----------------------------------------
+    We recommend working with virtual (conda or venv) environments. If you want an environment (e.g., called ``myvenv_name``) to have access to system-wide libraries, open Terminal and enter: ``python3 -m venv myvenv_name --system-site-packages``
 
-Still in Anaconda Prompt (or any other Python-pip-able Terminal), enter:
+QGIS
+----
+*Time requirement: 10 min.*
+
+The calibration routines handle geospatial data (e.g., numerical meshes) with the open-source software QGIS. Visit `qgis.org/download <https://qgis.org/en/site/forusers/download.html>`_ for getting up-to-date installation instructions for your platform.
+
+TELEMAC
+-------
+
+*Time requirement: 60 min.*
+
+Currently, the calibration routines are tied to the open-source numerical modeling software TELEMAC. The developers provide installation instructions at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_ and we also provide a detailed installation guide at `https://hydro-informatics.com/get-started/install-telemac.html <https://hydro-informatics.com/get-started/install-telemac.html>`_.
+
+
+Install the Stochastic Surrogate Package
+----------------------------------------
+
+*Time requirement: <5 min.*
+
+In Anaconda Prompt or any other Python-pip-able Terminal, enter:
 
 .. code::
 
@@ -93,14 +113,9 @@ With the ``stochastic_surrogate`` installed you are now ready to use it for runn
 Other Software
 --------------
 
-The code is bound to a numerical modeling software and modifying the input parameters requires an office program.
+Editing the input.xlsx workbook requires an office program, such as LibreOffice or ONLYOFFICE DesktopEditors (for non-commercial use only). Fore more details, read our `office applications instructions <https://hydro-informatics.com/get-started/others.html#lo>`_.
 
-Currently, the following numerical modeling software coupling is enabled (and needs to be installed for running a stochastic calibration):
-
-* TELEMAC2D and Gaia (`read how to install TELEMAC <https://hydro-informatics.com/get-started/install-telemac.html>`_)
-
-To edit the input.xlsx workbook, read our `office applications instructions <https://hydro-informatics.com/get-started/others.html#lo>`_.
-
+We recommend working with GMSH for generating a computational mesh for the numerical model. Get GMSH at `https://gmsh.info <https://gmsh.info/>`_.
 
 .. toctree::
     :hidden:

@@ -19,6 +19,11 @@ The surrogate-assisted calibration procedure requires calibration points associa
 * Water depth (``.slf`` layer: DEPTH)
 * Flow velocity (``.slf`` layer: VELOCITY)
 
+.. important::
+
+    The measurements and computational mesh (``.slf``) must use the same spatial coordinate reference system (CRS) to ensure that the calibration routines will be able to compare modeled and measured quantities.
+
+
 The points should be stored in a text or csv file-like format where the file ending is less important than the requirement of using a **comma** as **column separator**, and **no header**:
 
 * The first column of the calibration points file should indicate the mesh node IDs
@@ -95,7 +100,12 @@ For instance, if ``CLASSES SEDIMENT DIAMETERS`` is a multi-class calibration par
 Regular Usage
 -------------
 
-Coming soon
+Launch Python Environment
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The extraction of geospatial information uses QGIS' mesh operations, which is why the Python environment needs to understand QGIS (read more in the :ref:`requirements` section). The standard sudo-installation of QGIS on Linux will make that the system's Python interpreter knows the ``qgis`` library. On Windows and in Anaconda environments, the qgis capacity can be installed
+
+
 
 .. figure:: https://github.com/sschwindt/stochastic-surrogate/raw/main/docs/img/browser-icon-large.jpg
    :alt: calibrate surrogate bayesian gaussian bal gpe
@@ -150,7 +160,7 @@ Provide main simulation folder (directory) with:
     - bc_liquid.liq: Liquid boundary condition (flow, sediment or tracers inflow/outflow)
     - bc_steady_tel.cli: File that defines the type and location of the boundary conditions.
     - geo_banda.slf: File that defines the mesh structure for the hydro-morphodynamic model.
-    -run_liquid_gaia.cas: Numerical configuration of the sediment transport model.
+    - run_liquid_gaia.cas: Numerical configuration of the sediment transport model.
     - run_liquid_tel.cas: Numerical configuretion of the hydrodynamic model.
 
 **simulations Folder:**

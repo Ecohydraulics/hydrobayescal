@@ -1,6 +1,4 @@
-"""
-License-free script borrowed and adapted from https://github.com/pprodano/pputils
-"""
+#
 #+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
 #                                                                       #
 #                                 selafin_io_pp.py                      # 

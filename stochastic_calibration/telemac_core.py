@@ -7,7 +7,7 @@ import subprocess
 import shutil
 import numpy as _np
 from datetime import datetime
-from selafin_io_pp import ppSELAFIN
+from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 from basic_functions import *
 
 
@@ -118,7 +118,7 @@ class TelemacModel:
 
 
 
-    def run_telemac(telemac_file_name, number_processors=1):
+    def run_telemac(self, telemac_file_name, number_processors=1):
         """
         Run a Telemac simulation
 
@@ -134,7 +134,7 @@ class TelemacModel:
         print("Simulation time= " + str(datetime.now() - start_time))
 
 
-    def run_gretel(telemac_file_name, number_processors, folder_rename):
+    def run_gretel(self, telemac_file_name, number_processors, folder_rename):
         # Save original working directory
         original_directory = _os.getcwd()
 
@@ -163,8 +163,7 @@ class TelemacModel:
         shutil.copy("T2DRES", original_directory)
         _os.chdir(original_directory)
 
-
-    def rename_selafin(original_name, new_name):
+    def rename_selafin(self, original_name, new_name):
         """
         Merged parallel computation meshes (gretel subroutine) does not add correct file endings.
         This funciton adds the correct file ending to the file name.
@@ -180,8 +179,7 @@ class TelemacModel:
         else:
             print("File not found")
 
-
-    def get_variable_value(file_name, calibration_variable, specific_nodes=None, save_name=""):
+    def get_variable_value(self, file_name, calibration_variable, specific_nodes=None, save_name=""):
         """
         Retrieve values of parameters
 
