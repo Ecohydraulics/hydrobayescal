@@ -90,17 +90,17 @@ Create boundary.shp
    * For **EPSG**, make sure to select the same projection as the DEM raster uses. For instance, the example `dem.tif` provided with this tutorial uses `EPSG:31494`.
    * Keep all other defaults and click **OK**.
 1. Enable **editing** of the new **boundary-raw** layer, and delineate the maximum wetted boundary of the model by drawing a polyline around it. **Important** is that the polyline is closed in the end (possible when **snapping is enabled**). When drawing the line, make sure that it is entirely in the region covered by the DEM. After drawing the boundary, **save the edits and disable (*toggle*) editing**.
-1. The raw boundary has an irregular spacing of corner points the stem from individual choices in the previous work step. Yet, the density of points will drive the mesh resolution in the following, which is why the raw boundary should be adapted with a re-sampling trick to yield regular point spacing at the model boundary. For this purpose, resample points at the target mesh resolution by opening QGIS' processing toolbox: expand the **Vector geometry** entry and click on **Split lines by maximum length**. In the popup window make the following settings:
+1. The raw boundary has an irregular spacing of corner points the stem from individual choices in the previous work step. Yet, the density of points will drive the mesh resolution in the following, which is why the raw boundary should be adapted with a re-sampling trick to yield regular point spacing at the model boundary. For this purpose, resample points at the target mesh resolution by opening QGIS' processing toolbox: expand the **Vector geometry** entry and click on **Points along geometry**. In the popup window make the following settings:
    * **Input layer**: select **boundary-raw**
-   * **Maximum line length**: use the targert mesh resolution (10 meters in the example)
-   * **Split** file name: click on the `...` button and define a file name (e.g., `boundary.shp`)
+   * **Distance**: use the targert mesh resolution (10 meters in the example)
+   * **Start** and **End** offsets: keep defaults of `0`
+   * **Interpolated points** file name: click on the `...` button and define a file name (e.g., `boundary-pts.shp`)
    * Click on **Run**
-
-The last step can also be achieved by calling python3 in the terminal (adapt file path):
-
-.. codeblock::
-
-   qgis_process run native:splitlinesbylength --distance_units=meters --area_units=m2 --ellipsoid=EPSG:7004 --INPUT=/home/public/example/boundary.shp --LENGTH=10 --OUTPUT=TEMPORARY_OUTPUT
+ 1. In the processing toolbox, expand the **Vector creation** entry and click on the **Points to path** tool to re-build a polyline from the previously resampled points:
+   * **Input layer**: select **boundary-pts**
+   * **Activate** the optional **Create closed path** checkbox
+   * **Paths** file name: click on the `...` button and define a file name (e.g., `boundary.shp`)
+   * Click on **Run**
 
 The successfull run of the tool has created the second required geospatial data item (after the DEM) in the form of the **boundary.shp** shapefile.
 
@@ -122,17 +122,20 @@ Create breaklines.shp
    * Additional notes: 
      - The breaklines should **not cross the boundary** (i.e., enable snapping when drawing). After drawing the breaklines, **save the edits and disable (*toggle*) editing**.
      - To enforce elongated triangles along the main streamline, consider drawing buffers between the left and rght bank shore lines. In QGIS, the **Offset lines** tool (**Processing Toolbox** > **Vector geometry** > **Offset lines**) aids in drawing a user-defined number of parallel lines between the banks at a user-defined distance. For instance, if the regular mesh size is 10 m, 9 parallel lines (i.e., segments) with distances of 5 m can be drawn to enforce a streamline-oriented mesh along an approximately 50-m wide active channel.
-1. Also the raw breaklines have an irregular spacing of corner points the stem from individual drawing choices. Again, to control the mesh resolution, the raw breaklines should be adapted with the re-sampling trick. Therefore, resample points at the target mesh resolution between lines by opening QGIS' processing toolbox: expand the **Vector geometry** entry and click on **Split lines by maximum length**. In the popup window make the following settings:
+1. Also the raw breaklines have an irregular spacing of corner points the stem from individual drawing choices. Again, to control the mesh resolution, the raw breaklines should be adapted with the re-sampling trick. Therefore, resample points at the target mesh resolution between lines by opening QGIS' processing toolbox: expand the **Vector geometry** entry and click on **Points along geometry**. In the popup window make the following settings:
    * **Input layer**: select **breaklines-raw**
-   * **Maximum line length**: use the targert mesh resolution (7 meters in the example)
-   * **Split** file name: click on the `...` button and define a file name (e.g., `breaklines.shp`)
+   * **Distance**: use the targert mesh resolution (7 meters in the example)
+   * **Start** and **End** offsets: keep defaults of `0`
+   * **Interpolated points** file name: click on the `...` button and define a file name (e.g., `breakline-pts.shp`)
+   * Click on **Run**
+ 1. In the processing toolbox, expand the **Vector creation** entry and click on the **Points to path** tool to re-build a polyline from the previously resampled points:
+   * **Input layer**: select **breakline-pts**
+   * **Paths** file name: click on the `...` button and define a file name (e.g., `breaklines.shp`)
    * Click on **Run**
 
-The last step can also be achieved by calling python3 in the terminal (adapt file path):
+.. tip::
 
-.. codeblock::
-
-   qgis_process run native:splitlinesbylength --distance_units=meters --area_units=m2 --ellipsoid=EPSG:7004 --INPUT=/home/public/example/breaklines.shp --LENGTH=10 --OUTPUT=TEMPORARY_OUTPUT
+   The **Points to path** tool might have created non-sense lines between points that should not have a connection. If non-sense lines exist, edit the new `breaklines.shp` file to remove these non-sense lines.
 
 The successfull run of the tool has created the third required geospatial data item in the form of the **breaklines.shp** shapefile.
 

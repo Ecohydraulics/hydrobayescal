@@ -200,10 +200,10 @@ def gis2gmsh(nodes_csv, boundary_csv, out_file_name="out.geo", lines_csv=None, h
 
         # write the constraint lines
         for i in range(0, n_lns):
-            if (i > 0):
+            if i > 0:
                 cur_lns_shapeid = shapeid_lns[i]
                 prev_lns_shapeid = shapeid_lns[i - 1]
-                if (cur_lns_shapeid - prev_lns_shapeid < 0.001):
+                if cur_lns_shapeid - prev_lns_shapeid < 0.001:
                     # fout.write(str(cur_lns_shapeid) + " " + str(prev_lns_shapeid) + " ")
                     fout.write("Line(" + str(count_lns) + str(") = {") +
                                str(node[minidx_lns[i - 1]]) + str(", ") + str(node[minidx_lns[i]]) + str("};") + "\n")
