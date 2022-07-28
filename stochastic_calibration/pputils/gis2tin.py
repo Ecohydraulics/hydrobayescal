@@ -16,9 +16,6 @@ from gis2triangle import gis2triangle
 from triangle2adcirc import triangle2adcirc
 from adcirc2wkt import adcirc2wkt
 import subprocess
-from ppmodules.readMesh import *  # to get all readMesh functions
-import matplotlib.tri as mtri  # matplotlib triangulations
-
 
 
 def gis2tin(nodes_csv, boundary_csv, lines_csv=None, out_grd="out.grd", holes_csv=None):

@@ -10,7 +10,6 @@
 # Date: June 29, 2015
 # Modified: July 21, 2022
 #
-import os
 import numpy as np
 from collections import OrderedDict
 

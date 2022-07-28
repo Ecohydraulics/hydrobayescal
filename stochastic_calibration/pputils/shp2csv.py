@@ -10,8 +10,7 @@
 # 
 # Date: Nov 1, 2016
 # Last Modified: July 22, 2022
-import sys
-from pyshp.shapefile import *  # pyshp class
+from pyshp.shapefile import *
 
 
 def shp2csv(shapefile, target_csv="converted-shp.csv"):
