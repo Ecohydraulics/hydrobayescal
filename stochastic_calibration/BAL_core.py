@@ -24,8 +24,8 @@ class BAL:
     def compute_likelihood(self, prediction, normalize=False):
         """
         Calculates the multivariate Gaussian likelihood between model predictions and
-        measured/observed data taking independent errors (diagonal covariance matrix)
-        Corresponds to a solver for eq. A.4 in Rasmussen and Williams (2006, p. 200)
+        measured/observed data taking independent errors (diagonal covariance matrix).
+        Corresponds to a solver for eq. A.4 in Rasmussen and Williams (2006, p. 200).
 
         Input
         ----------

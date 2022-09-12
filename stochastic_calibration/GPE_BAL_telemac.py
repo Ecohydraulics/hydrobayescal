@@ -162,16 +162,17 @@ class BAL_GPE(UserDefs):
         length_scales = [np.nanmean(self.CALIB_PAR_SET[par]["bounds"]) for par in self.CALIB_PAR_SET.keys()]
         length_scale_bounds = [self.CALIB_PAR_SET[par]["bounds"] for par in self.CALIB_PAR_SET.keys()]
 
-        logger.info("   -- creating GPE with RBF kernel...")
+        logger.info("   -- creating and fitting GPE with RBF kernel...")
+        kernel = RBF(
+            length_scale=length_scales,  # original code: [0.05, 0.2, 150, 0.5],
+            length_scale_bounds=length_scale_bounds  # [(0.001, 0.1), (0.001, 0.4), (5, 300), (0.02, 2)]
+        )
         for par, model in enumerate(model_results.T):
             # construct square exponential, Radial-Basis Function kernel with means (lengths) and bounds of
             # calibration params, and multiply with variance of the model
-            kernel = RBF(
-                length_scale=length_scales,  # original code: [0.05, 0.2, 150, 0.5],
-                length_scale_bounds=length_scale_bounds  # [(0.001, 0.1), (0.001, 0.4), (5, 300), (0.02, 2)]
-            ) * np.var(model)
+            ikernel = kernel * np.var(model)
             # instantiate and fit GPR
-            gp = GaussianProcessRegressor(kernel=kernel, alpha=0.0002, normalize_y=True, n_restarts_optimizer=10)
+            gp = GaussianProcessRegressor(kernel=ikernel, alpha=0.0002, normalize_y=True, n_restarts_optimizer=10)
             gp.fit(self.collocation_points, model)
             surrogate_prediction[par, :], surrogate_std[par, :] = gp.predict(self.prior_distribution, return_std=True)
         return surrogate_prediction, surrogate_std
