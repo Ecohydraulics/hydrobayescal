@@ -12,21 +12,39 @@ from basic_functions import *
 
 
 class TelemacModel:
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(self, model_dir, steering_file, n_processors=1, *args, **kwargs):
+        """
+        Constructor for the TelemacModel Class
+        :param str model_dir: directory (path) of the Telemac model (should end on "/" or "\\"
+        :param steering_file: name of the steering file to be used (should end on ".cas"); do not include directory
+        :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is 1
+        :param args:
+        :param kwargs:
+        """
+        self.mode_dir = model_dir
+        self.cas_name = steering_file
+        self.nproc = n_processors
 
-    def update_steering_file(self, prior_distribution, parameters_name, initial_diameters,
-                             auxiliary_names, gaia_name, telemac_name,
-                             result_name_gaia, result_name_telemac, n_simulation):
+    def update_steering_file(
+            self,
+            prior_distribution: list,
+            parameters_name: list,
+            initial_diameters: list,
+            auxiliary_names: list,
+            gaia_name: str,
+            result_name_gaia: str,
+            result_name_telemac: str,
+            n_simulation: int
+    ):
         """
         Update the Telemac2d and Gaia steering files
 
-        :param list prior_distribution: dep. stress in N/m2, eros. stress in N/m2, denisty in kg/m3, settling velocity in m/s
+        :param list prior_distribution: e.g., shear stress in N/m2, denisty in kg/m3, settling velocity in m/s
         :param list parameters_name: list of strings describing parameter names
         :param list initial_diameters: floats of diameters
         :param list auxiliary_names: strings of auxiliary parameter names
         :param str gaia_name: file name of Gaia cas
-        :param str telemac_name: file name of Telemac2d cas
+        :param str self.cas_name: file name of Telemac2d cas
         :param str result_name_gaia: file name of gaia results SLF
         :param str result_name_telemac: file name of telemac results SLF
         :param int n_simulation:
@@ -68,105 +86,131 @@ class TelemacModel:
         self.rewrite_steering_file("RESULTS FILE", updated_string, gaia_name)
         # Update result file name telemac
         updated_string = "RESULTS FILE" + "=" + result_name_telemac + str(n_simulation) + ".slf"
-        self.rewrite_steering_file("RESULTS FILE", updated_string, telemac_name)
+        self.rewrite_steering_file("RESULTS FILE", updated_string, self.cas_name)
 
-    def rewrite_steering_file(self, param_name, updated_string, directory):
+    def rewrite_steering_file(self, param_name, updated_string):
         """
-        Rewrite the steering file with new parameters
+        Rewrite the *.cas steering file with new (updated) parameters
 
         :param str param_name: name of parameter to rewrite
         :param str updated_string: new values for parameter
-        :param str directory: directory where the steering file is tp be saved
         :return None:
         """
 
-        # Save the variable of interest without unwanted spaces
+        # save the variable of interest without unwanted spaces
         variable_interest = param_name.rstrip().lstrip()
 
-        # Open the steering file with read permission and save a temporary copy
-        gaia_file = open(directory, "r")
-        read_steering = gaia_file.readlines()
+        # open steering file with read permission and save a temporary copy
+        if _os.path.isfile(self.mode_dir + self.cas_name):
+            cas_file = open(self.mode_dir + self.cas_name, "r")
+        else:
+            print("ERROR: no such steering file:\n" + self.mode_dir + self.cas_name)
+            return -1
+        read_steering = cas_file.readlines()
 
-        # If the updated_string have more 72 characters, then it divides it in two
+        # if the updated_string has more than 72 characters, then divide it into two
         if len(updated_string) >= 72:
             position = updated_string.find("=") + 1
-            updated_string = updated_string[:position].rstrip().lstrip() + "\n" + updated_string[position:].rstrip().lstrip()
+            updated_string = updated_string[:position].rstrip().lstrip() + "\n" + updated_string[
+                                                                                  position:].rstrip().lstrip()
 
-        # Preprocess the steering file. If in a previous case, a line had more than 72 characters then it was split in 2,
-        # so this loop clean all the lines that start with a number
+        # preprocess the steering file
+        # if in a previous case, a line had more than 72 characters then it was split into 2
+        # this loop cleans up all lines that start with a number
         temp = []
         for i, line in enumerate(read_steering):
             if not isinstance(line[0], int):
                 temp.append(line)
             else:
-                previous_line = read_steering[i-1].split("=")[0].rstrip().lstrip()
+                previous_line = read_steering[i - 1].split("=")[0].rstrip().lstrip()
                 if previous_line != variable_interest:
                     temp.append(line)
 
-        # Loop through all the lines of the temp file, until it finds the line with the parameter we are interested in,
+        # loop through all lines of the temp cas file, until it finds the line with the parameter of interest
         # and substitute it with the new formatted line
         for i, line in enumerate(temp):
             line_value = line.split("=")[0].rstrip().lstrip()
             if line_value == variable_interest:
                 temp[i] = updated_string + "\n"
 
-        # Rewrite and close the steering file
-        gaia_file = open(directory, "w")
-        gaia_file.writelines(temp)
-        gaia_file.close()
+        # rewrite and close the steering file
+        cas_file = open(self.mode_dir + self.cas_name, "w")
+        cas_file.writelines(temp)
+        cas_file.close()
 
+    def call_subroutine(self, bash_command):
+        """
+        Call a Terminal process with a bash command through subprocess.Popen
 
+        :param str bash_command: terminal process to call
+        :return int: 0 (success) or -1 (error - read output message)
+        """
 
+        print("* calling %s " % bash_command)
+        try:
+            process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
+            output, error = process.communicate()
+            print("* finished ")
+            return 0
+        except Exception as e:
+            print("WARNING: command failed:\n" + str(e))
+            return -1
 
-    def run_telemac(self, telemac_file_name, number_processors=1):
+    def run_telemac(self):
         """
         Run a Telemac simulation
 
-        :param str telemac_file_name: name of the steering file for the simulation (must end on .cas)
-        :param int number_processors: number of processor to use for parallelization (default: 1
         :return None:
         """
         start_time = datetime.now()
-        bash_cmd = "telemac2d.py " + telemac_file_name + " --ncsize=" + str(number_processors)
-        process = subprocess.Popen(bash_cmd .split(), stdout=subprocess.PIPE)
-        output, error = process.communicate()
-        print("Telemac simulation finished")
-        print("Simulation time= " + str(datetime.now() - start_time))
+        self.call_subroutine("telemac2d.py " + self.cas_name + " --ncsize=" + str(self.nproc))
+        print("TELEMAC simulation time: " + str(datetime.now() - start_time))
 
+    def run_gretel(self, telemac_file_name="SLF?", number_processors=1, sim_folder=""):
+        """
+        Launch Gretel for multi-core processing
 
-    def run_gretel(self, telemac_file_name, number_processors, folder_rename):
-        # Save original working directory
+        :param str telemac_file_name: name of a telemac file (SLF?)
+        :param int number_processors: number of processors for parallelization
+        :param str sim_folder: directory where the Telemac simulation lives
+        :return:
+        """
+        # save original working directory
         original_directory = _os.getcwd()
 
-        # Access folder with results
-        subfolders = [f.name for f in _os.scandir(original_directory) if f.is_dir()]
-        simulation_index = [i for i, s in enumerate(subfolders) if telemac_file_name in s]
-        simulation_index = simulation_index[0]
-        original_name = subfolders[simulation_index]
-        _os.rename(original_name, folder_rename)
-        simulation_path = "./"+ folder_rename
-        _os.chdir(simulation_path)
+        # access folder with results
+        try:
+            subfolders = [f.name for f in _os.scandir(original_directory) if f.is_dir()]
+        except AttributeError:
+            print("WARNING: No folders found in %s - skipping Gretel (parallel processing)" % original_directory)
+            return -1
+        try:
+            simulation_index_list = [i for i, s in enumerate(subfolders) if telemac_file_name in s]
+            simulation_index = simulation_index_list[0]
+            original_name = subfolders[simulation_index]
+            _os.rename(original_name, sim_folder)
+            simulation_path = "./" + sim_folder
+            _os.chdir(simulation_path)
+        except Exception as e:
+            print("WARNING: pre-processing for Gretel failed - skipping Gretel:\n" + str(e))
+            return -1
 
-        # Run gretel code
-        bash_cmd = "gretel.py --geo-file=T2DGEO --res-file=GAIRES --ncsize="+number_processors+" --bnd-file=T2DCLI"
-        process = subprocess.Popen(bash_cmd .split(), stdout=subprocess.PIPE)
-        output, error = process.communicate()
-        print("Finish Gretel for GAIA")
+        # run gretel code
+        bash_base = "gretel.py --geo-file=T2DGEO --res-file="
+        bash_ending = " --ncsize=" + str(number_processors) + " --bnd-file=T2DCLI"
 
-        bash_cmd = "gretel.py --geo-file=T2DGEO --res-file=T2DRES --ncsize="+number_processors+" --bnd-file=T2DCLI"
-        process = subprocess.Popen(bash_cmd .split(), stdout=subprocess.PIPE)
-        output, error = process.communicate()
-        print("Finish Gretel for Telemac")
+        self.call_subroutine(str(bash_base + "GAIRES" + bash_ending))  # merge gaia files
+        self.call_subroutine(str(bash_base + "T2DRES" + bash_ending))  # merge telemac files
 
-        # Copy result files in original folder
+        # copy result files into original folder
         shutil.copy("GAIRES", original_directory)
         shutil.copy("T2DRES", original_directory)
         _os.chdir(original_directory)
 
-    def rename_selafin(self, original_name, new_name):
+    def rename_selafin(self, original_name=".slf", new_name=".slf"):
         """
         Merged parallel computation meshes (gretel subroutine) does not add correct file endings.
-        This funciton adds the correct file ending to the file name.
+        This function adds the correct file ending to the file name.
 
         :param str original_name: original file name
         :param str new_name: new file name
@@ -177,54 +221,66 @@ class TelemacModel:
         if _os.path.exists(original_name):
             _os.rename(original_name, new_name)
         else:
-            print("File not found")
+            print("WARNING: SELAFIN file %s does not exist" % original_name)
 
-    def get_variable_value(self, file_name, calibration_variable, specific_nodes=None, save_name=""):
+    def get_variable_value(
+            self,
+            file_name=".slf",
+            calibration_variable="",
+            specific_nodes=None,
+            save_name=None
+    ):
         """
-        Retrieve values of parameters
+        Retrieve values of parameters (simulation parameters to calibrate)
 
-        :param str file_name:
-        :param calibration_variable:
-        :param specific_nodes:
-        :param str save_name:
+        :param str file_name: name of a SELAFIN *.slf file
+        :param str calibration_variable: name of calibration variable of interest
+        :param list or numpy.array specific_nodes: enable to only get values of specific nodes of interest
+        :param str save_name: name of a txt file where variable values should be written to
         :return:
         """
 
-        # Read the SELEFIN file
+        # read SELAFIN file
         slf = ppSELAFIN(file_name)
         slf.readHeader()
         slf.readTimes()
 
-        # Get the printout times
+        # get the printout times
         times = slf.getTimes()
+        # read variables names
+        variable_names = slf.getVarNames()
+        # remove unnecessary spaces from variables_names
+        variable_names = [v.strip() for v in variable_names]
+        # get position of the value of interest
+        index_variable_interest = variable_names.index(calibration_variable)
 
-        # Read the variables names
-        variables_names = slf.getVarNames()
-        # Removed unnecessary spaces from variables_names
-        variables_names = [v.strip() for v in variables_names]
-        # Get the position of the value of interest
-        index_variable_interest = variables_names.index(calibration_variable)
-
-        # Read the variables values in the last time step
+        # read the variables values in the last time step
         slf.readVariables(len(times) - 1)
 
-        # Get the values (for each node) for the variable of interest in the last time step
-        modelled_results = slf.getVarValues()[index_variable_interest, :]
-        format_modelled_results = _np.zeros((len(modelled_results), 2))
-        format_modelled_results[:, 0] = _np.arange(1, len(modelled_results) + 1, 1)
-        format_modelled_results[:, 1] = modelled_results
+        # get values (for each node) for the variable of interest at the last time step
+        modeled_results = slf.getVarValues()[index_variable_interest, :]
+        format_modeled_results = _np.zeros((len(modeled_results), 2))
+        format_modeled_results[:, 0] = _np.arange(1, len(modeled_results) + 1, 1)
+        format_modeled_results[:, 1] = modeled_results
 
-        # Get specific values of the model results associated in certain nodes number, in case the user want to use just
-        # some nodes for the comparison. This part only runs if the user specify the parameter specific_nodes. Otherwise
-        # this part is ommited and all the nodes of the model mesh are returned
+        # get specific values of the model results associated with certain nodes number
+        # to just compare selected nodes; requires that specific_nodes kwarg is defined
         if specific_nodes is not None:
-            format_modelled_results = format_modelled_results[specific_nodes[:, 0].astype(int) - 1, :]
+            format_modeled_results = format_modeled_results[specific_nodes[:, 0].astype(int) - 1, :]
 
         if len(save_name) != 0:
-            _np.savetxt(save_name, format_modelled_results, delimiter="	",
+            _np.savetxt(save_name, format_modeled_results, delimiter="	",
                         fmt=["%1.0f", "%1.3f"])
 
-        # Return the value of the variable of interest
-        return format_modelled_results
+        # return the value of the variable of interest at mesh nodes (all or specific_nodes of interest)
+        return format_modeled_results
 
+    def __call__(self, *args, **kwargs):
+        """
+        Call method forwards to self.run_telemac()
 
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        self.run_telemac()

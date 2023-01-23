@@ -1,15 +1,8 @@
-#!/usr/bin/env python3
-#
-# +!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
-#                                                                       #
-#                                 adcirc2wkt.py                         # 
-#                                                                       #
-# +!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
-#
-# Author: Pat Prodanovic, Ph.D., P.Eng., modularized by Sebastian Schwindt
-# 
-# Date: Feb 20, 2016 / July 22, 2022
-#
+"""
+Convert adcirc grid to WKT csv file
+Author: Pat Prodanovic, Ph.D., P.Eng., modularized by Sebastian Schwindt
+Date: Feb 20, 2016 / July 22, 2022
+"""
 from ppmodules.readMesh import *
 
 
@@ -23,8 +16,8 @@ def adcirc2wkt(adcirc_file="out.grd", output_file="outWKT.csv"):
     :return:
     """
     # create the element and node output files
-    output_file_e = output_file.rsplit('.', 1)[0] + '_e.csv'
-    output_file_n = output_file.rsplit('.', 1)[0] + '_n.csv'
+    output_file_e = output_file.rsplit(".", 1)[0] + "_e.csv"
+    output_file_n = output_file.rsplit(".", 1)[0] + "_n.csv"
 
     # to create the output file
     fout = open(output_file_e, "w")
@@ -33,35 +26,35 @@ def adcirc2wkt(adcirc_file="out.grd", output_file="outWKT.csv"):
     n, e, x, y, z, ikle = readAdcirc(adcirc_file)
 
     # write the header of the WKT file\
-    fout.write('WKT,element' + '\n')
+    fout.write("WKT,element" + "\n")
 
     for i in range(e):
-        fout.write('"POLYGON ((')
-        fout.write(str('{:.3f}'.format(x[ikle[i, 0]])) + ' ' +
-                   str('{:.3f}'.format(y[ikle[i, 0]])) + ' ' +
-                   str('{:.3f}'.format(z[ikle[i, 0]])) + ', ' +
+        fout.write("'POLYGON ((")
+        fout.write(str("{:.3f}".format(x[ikle[i, 0]])) + " " +
+                   str("{:.3f}".format(y[ikle[i, 0]])) + " " +
+                   str("{:.3f}".format(z[ikle[i, 0]])) + ", " +
 
-                   str('{:.3f}'.format(x[ikle[i, 1]])) + ' ' +
-                   str('{:.3f}'.format(y[ikle[i, 1]])) + ' ' +
-                   str('{:.3f}'.format(z[ikle[i, 1]])) + ',' +
+                   str("{:.3f}".format(x[ikle[i, 1]])) + " " +
+                   str("{:.3f}".format(y[ikle[i, 1]])) + " " +
+                   str("{:.3f}".format(z[ikle[i, 1]])) + "," +
 
-                   str('{:.3f}'.format(x[ikle[i, 2]])) + ' ' +
-                   str('{:.3f}'.format(y[ikle[i, 2]])) + ' ' +
-                   str('{:.3f}'.format(z[ikle[i, 2]])) + ', ' +
+                   str("{:.3f}".format(x[ikle[i, 2]])) + " " +
+                   str("{:.3f}".format(y[ikle[i, 2]])) + " " +
+                   str("{:.3f}".format(z[ikle[i, 2]])) + ", " +
 
-                   str('{:.3f}'.format(x[ikle[i, 0]])) + ' ' +
-                   str('{:.3f}'.format(y[ikle[i, 0]])) + ' ' +
-                   str('{:.3f}'.format(z[ikle[i, 0]])) + '))",' + str(i + 1) + '\n')
+                   str("{:.3f}".format(x[ikle[i, 0]])) + " " +
+                   str("{:.3f}".format(y[ikle[i, 0]])) + " " +
+                   str("{:.3f}".format(z[ikle[i, 0]])) + "))'," + str(i + 1) + "\n")
 
     # to generate the node file
     fout_n = open(output_file_n, "w")
 
     # write the header of the WKT file\
-    fout_n.write('WKT,node' + '\n')
+    fout_n.write("WKT,node" + "\n")
 
     for i in range(n):
-        fout_n.write('"POINT (')
-        fout_n.write(str('{:.3f}'.format(x[i])) + ' ' +
-                     str('{:.3f}'.format(y[i])) + ' ' +
-                     str('{:.3f}'.format(z[i])) + ')",' +
-                     str(i + 1) + '\n')
+        fout_n.write("'POINT (")
+        fout_n.write(str("{:.3f}".format(x[i])) + " " +
+                     str("{:.3f}".format(y[i])) + " " +
+                     str("{:.3f}".format(z[i])) + ")'," +
+                     str(i + 1) + "\n")
