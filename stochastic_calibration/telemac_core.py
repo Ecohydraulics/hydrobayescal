@@ -3,7 +3,6 @@ Functional core for coupling the Surrogate-Assisted Bayesian inversion technique
 """
 
 import os as _os
-import subprocess
 import shutil
 import numpy as _np
 from datetime import datetime
@@ -12,59 +11,95 @@ from basic_functions import *
 
 
 class TelemacModel:
-    def __init__(self, model_dir, steering_file, n_processors=1, *args, **kwargs):
+    def __init__(
+            self,
+            model_dir="",
+            calibration_parameters=None,
+            steering_file="tm.cas",
+            gaia_steering_file=None,
+            n_processors=1,
+            *args,
+            **kwargs
+    ):
         """
-        Constructor for the TelemacModel Class
-        :param str model_dir: directory (path) of the Telemac model (should end on "/" or "\\"
-        :param steering_file: name of the steering file to be used (should end on ".cas"); do not include directory
+        Constructor for the TelemacModel Class. Instantiating can take some seconds, so try to
+        be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops)
+
+        :param str model_dir: directory (path) of the Telemac model (should NOT end on "/" or "\\")
+        :param list calibration_parameters: computationally optional, but in the framework of Bayesian calibration,
+                    this argument must be provided
+        :param str steering_file: name of the steering file to be used (should end on ".cas"); do not include directory
+        :param str gaia_steering_file: name of a gaia steering file (optional)
         :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is 1
         :param args:
         :param kwargs:
         """
-        self.mode_dir = model_dir
-        self.cas_name = steering_file
+        self.model_dir = _os.path.abspath(model_dir)
+        self.tm_cas = "{}{}{}".format(self.model_dir, _os.sep, steering_file)
+        if gaia_steering_file:
+            print("* received gaia steering file: " + gaia_steering_file)
+            self.gaia_cas = "{}{}{}".format(self.model_dir, _os.sep, gaia_steering_file)
+        else:
+            self.gaia_cas = None
         self.nproc = n_processors
+
+        self.__calibration_parameters = False
+        if calibration_parameters:
+            self.__setattr__("calibration_parameters", calibration_parameters)
+
+    def __setattr__(self, name, value):
+        if name == "calibration_parameters":
+            # value corresponds to a list of parameters
+            self.calibration_parameters = {"telemac": [], "gaia": []}
+            for par in value:
+                if par in TM2D_PARAMETERS:
+                    self.calibration_parameters["telemac"].append(par)
+                    continue
+                if par in GAIA_PARAMETERS:
+                    self.calibration_parameters["gaia"].append(par)
 
     def update_steering_file(
             self,
-            prior_distribution: list,
-            parameters_name: list,
-            initial_diameters: list,
-            auxiliary_names: list,
-            gaia_name: str,
-            result_name_gaia: str,
-            result_name_telemac: str,
-            n_simulation: int
+            prior_distribution,
+            parameters_name,
+            initial_diameters,
+            auxiliary_names,
+            result_name_gaia,
+            result_name_telemac,
+            n_simulation
     ):
         """
-        Update the Telemac2d and Gaia steering files
+        Update the Telemac and Gaia steering files specifically for Bayesian calibration.
 
-        :param list prior_distribution: e.g., shear stress in N/m2, denisty in kg/m3, settling velocity in m/s
+        :param np.array prior_distribution: e.g., shear stress in N/m2, denisty in kg/m3, settling velocity in m/s
         :param list parameters_name: list of strings describing parameter names
         :param list initial_diameters: floats of diameters
         :param list auxiliary_names: strings of auxiliary parameter names
-        :param str gaia_name: file name of Gaia cas
-        :param str self.cas_name: file name of Telemac2d cas
         :param str result_name_gaia: file name of gaia results SLF
         :param str result_name_telemac: file name of telemac results SLF
         :param int n_simulation:
         :return:
         """
-
+        # update telemac calibration pars
+        for par in self.calibration_parameters["telemac"]:
+            pass
+        # update gaia calibration pars
+        for par in self.calibration_parameters["gaia"]:
+            pass
         # Update deposition stress
         updated_values = _np.round(_np.ones(4) * prior_distribution[0], decimals=3)
-        updated_string = create_string(parameters_name[0], updated_values)
-        self.rewrite_steering_file(parameters_name[0], updated_string, gaia_name)
+        updated_string = create_cas_string(parameters_name[0], updated_values)
+        self.rewrite_steering_file(parameters_name[0], updated_string, self.gaia_cas)
 
         # Update erosion stress
         updated_values = _np.round(_np.ones(2) * prior_distribution[1], decimals=3)
-        updated_string = create_string(parameters_name[1], updated_values)
-        self.rewrite_steering_file(parameters_name[1], updated_string, gaia_name)
+        updated_string = create_cas_string(parameters_name[1], updated_values)
+        self.rewrite_steering_file(parameters_name[1], updated_string, self.gaia_cas)
 
         # Update density
         updated_values = _np.round(_np.ones(2) * prior_distribution[2], decimals=0)
-        updated_string = create_string(parameters_name[2], updated_values)
-        self.rewrite_steering_file(parameters_name[2], updated_string, gaia_name)
+        updated_string = create_cas_string(parameters_name[2], updated_values)
+        self.rewrite_steering_file(parameters_name[2], updated_string, self.gaia_cas)
 
         # Update settling velocity
         new_diameters = initial_diameters * prior_distribution[3]
@@ -72,39 +107,46 @@ class TelemacModel:
         updated_values = "; ".join(map("{:.3E}".format, settling_velocity))
         updated_values = "-9; " + updated_values.replace("E-0", "E-")
         updated_string = parameters_name[3] + " = " + updated_values
-        self.rewrite_steering_file(parameters_name[3], updated_string, gaia_name)
+        self.rewrite_steering_file(parameters_name[3], updated_string, self.gaia_cas)
 
         # Update other variables
         new_diameters[0] = initial_diameters[0]  # the first non-cohesive diameter stays the same
         updated_values = "; ".join(map("{:.3E}".format, new_diameters))
         updated_values = updated_values.replace("E-0", "E-")
         updated_string = auxiliary_names[0] + " = " + updated_values
-        self.rewrite_steering_file(auxiliary_names[0], updated_string, gaia_name)
+        self.rewrite_steering_file(auxiliary_names[0], updated_string, self.gaia_cas)
 
         # Update result file name gaia
         updated_string = "RESULTS FILE" + "=" + result_name_gaia + str(n_simulation) + ".slf"
-        self.rewrite_steering_file("RESULTS FILE", updated_string, gaia_name)
+        self.rewrite_steering_file("RESULTS FILE", updated_string, self.gaia_cas)
         # Update result file name telemac
         updated_string = "RESULTS FILE" + "=" + result_name_telemac + str(n_simulation) + ".slf"
-        self.rewrite_steering_file("RESULTS FILE", updated_string, self.cas_name)
+        self.rewrite_steering_file("RESULTS FILE", updated_string, self.tm_cas)
 
-    def rewrite_steering_file(self, param_name, updated_string):
+    def rewrite_steering_file(self, param_name, updated_string, steering_module="telemac"):
         """
         Rewrite the *.cas steering file with new (updated) parameters
 
         :param str param_name: name of parameter to rewrite
         :param str updated_string: new values for parameter
+        :param str steering_module: either 'telemac' (default) or 'gaia'
         :return None:
         """
+
+        # check if telemac or gaia cas type
+        if "telemac" in steering_module:
+            steering_file_name = self.tm_cas
+        else:
+            steering_file_name = self.gaia_cas
 
         # save the variable of interest without unwanted spaces
         variable_interest = param_name.rstrip().lstrip()
 
         # open steering file with read permission and save a temporary copy
-        if _os.path.isfile(self.mode_dir + self.cas_name):
-            cas_file = open(self.mode_dir + self.cas_name, "r")
+        if _os.path.isfile(steering_file_name):
+            cas_file = open(steering_file_name, "r")
         else:
-            print("ERROR: no such steering file:\n" + self.mode_dir + self.cas_name)
+            print("ERROR: no such steering file:\n" + steering_file_name)
             return -1
         read_steering = cas_file.readlines()
 
@@ -134,36 +176,21 @@ class TelemacModel:
                 temp[i] = updated_string + "\n"
 
         # rewrite and close the steering file
-        cas_file = open(self.mode_dir + self.cas_name, "w")
+        cas_file = open(steering_file_name, "w")
         cas_file.writelines(temp)
         cas_file.close()
 
-    def call_subroutine(self, bash_command):
-        """
-        Call a Terminal process with a bash command through subprocess.Popen
-
-        :param str bash_command: terminal process to call
-        :return int: 0 (success) or -1 (error - read output message)
-        """
-
-        print("* calling %s " % bash_command)
-        try:
-            process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
-            output, error = process.communicate()
-            print("* finished ")
-            return 0
-        except Exception as e:
-            print("WARNING: command failed:\n" + str(e))
-            return -1
-
-    def run_telemac(self):
+    def run_simulation(self):
         """
         Run a Telemac simulation
+
+        .. note::
+            Generic function name to enable other simulation software in future implementations
 
         :return None:
         """
         start_time = datetime.now()
-        self.call_subroutine("telemac2d.py " + self.cas_name + " --ncsize=" + str(self.nproc))
+        call_subroutine("telemac2d.py " + self.tm_cas + " --ncsize=" + str(self.nproc))
         print("TELEMAC simulation time: " + str(datetime.now() - start_time))
 
     def run_gretel(self, telemac_file_name="SLF?", number_processors=1, sim_folder=""):
@@ -199,29 +226,29 @@ class TelemacModel:
         bash_base = "gretel.py --geo-file=T2DGEO --res-file="
         bash_ending = " --ncsize=" + str(number_processors) + " --bnd-file=T2DCLI"
 
-        self.call_subroutine(str(bash_base + "GAIRES" + bash_ending))  # merge gaia files
-        self.call_subroutine(str(bash_base + "T2DRES" + bash_ending))  # merge telemac files
+        call_subroutine(str(bash_base + "GAIRES" + bash_ending))  # merge gaia files
+        call_subroutine(str(bash_base + "T2DRES" + bash_ending))  # merge telemac files
 
         # copy result files into original folder
         shutil.copy("GAIRES", original_directory)
         shutil.copy("T2DRES", original_directory)
         _os.chdir(original_directory)
 
-    def rename_selafin(self, original_name=".slf", new_name=".slf"):
+    def rename_selafin(self, old_name=".slf", new_name=".slf"):
         """
         Merged parallel computation meshes (gretel subroutine) does not add correct file endings.
         This function adds the correct file ending to the file name.
 
-        :param str original_name: original file name
+        :param str old_name: original file name
         :param str new_name: new file name
         :return: None
         :rtype: None
         """
 
-        if _os.path.exists(original_name):
-            _os.rename(original_name, new_name)
+        if _os.path.exists(old_name):
+            _os.rename(old_name, new_name)
         else:
-            print("WARNING: SELAFIN file %s does not exist" % original_name)
+            print("WARNING: SELAFIN file %s does not exist" % old_name)
 
     def get_variable_value(
             self,
@@ -283,4 +310,4 @@ class TelemacModel:
         :param kwargs:
         :return:
         """
-        self.run_telemac()
+        self.run_simulation()

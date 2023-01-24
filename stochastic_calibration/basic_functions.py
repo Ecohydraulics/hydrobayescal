@@ -1,13 +1,14 @@
 """fundamental Python functions"""
 from config import *
 import numpy as _np
+import subprocess
 
 
 def append_new_line(file_name, text_to_append):
     """
     Add new line to steering file
 
-    :param str file_name: name of the file to which the line should be appended
+    :param str file_name: path and name of the file to which the line should be appended
     :param str text_to_append: text of the line to append
     :return None:
     """
@@ -21,6 +22,25 @@ def append_new_line(file_name, text_to_append):
             file_object.write("\n")
         # Append text at the end of file
         file_object.write(text_to_append)
+
+
+def call_subroutine(bash_command):
+    """
+    Call a Terminal process with a bash command through subprocess.Popen
+
+    :param str bash_command: terminal process to call
+    :return int: 0 (success) or -1 (error - read output message)
+    """
+
+    print("* calling %s " % bash_command)
+    try:
+        process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
+        output, error = process.communicate()
+        print("* finished ")
+        return 0
+    except Exception as e:
+        print("WARNING: command failed:\n" + str(e))
+        return -1
 
 
 def calculate_settling_velocity(diameters):
@@ -43,7 +63,7 @@ def calculate_settling_velocity(diameters):
     return settling_velocity
 
 
-def create_string(param_name, values):
+def create_cas_string(param_name, values):
     """
     Create string names with new values to be used in Telemac2d / Gaia steering files
 

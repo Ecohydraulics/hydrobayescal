@@ -133,7 +133,7 @@ graph_name.append("iteration: " + str(iteration_limit))
 
 # Part 11. Compute reference solution (only for explanatory purposes, with a real model the reference solution would
 # not be available ) ---------------------------------------------------------- ---------------------------------------
-likelihood_ref = compute_reference_solution(prior_distribution, t, observations.T, total_error)
+likelihood_ref = compute_reference_solution(prior_distribution, t, observations.T, total_error)  # Gaussian fast model
 graph_likelihood_reference = np.zeros((prior_distribution.shape[0], 3))
 graph_likelihood_reference[:, :2] = prior_distribution
 graph_likelihood_reference[:, 2] = likelihood_ref

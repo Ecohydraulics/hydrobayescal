@@ -15,7 +15,6 @@ from sklearn.gaussian_process.kernels import RBF
 from BAL_core import BAL
 from telemac_core import *
 from usr_defs import *  # contains UserDefs and link to config and basic_functions
-from surrogate import *
 
 
 class BAL_GPE(UserDefs):
@@ -29,7 +28,13 @@ class BAL_GPE(UserDefs):
         The object must be instantiated with metadata stored in the user-input.xlsx file corresponding to the software
         used. Visit https://stochastic-calibration.readthedocs.io to learn more.
     """
-    def __init__(self, input_worbook_name="user-input.xlsx", software_coupling="telemac", *args, **kwargs):
+    def __init__(
+            self,
+            input_worbook_name="user-input.xlsx",
+            software_coupling="telemac",
+            *args,
+            **kwargs
+    ):
         """
         Initializer of the BAL_GPE class.
 
@@ -38,18 +43,30 @@ class BAL_GPE(UserDefs):
         :param args: placeholder for consistency
         :param kwargs: placeholder for consistency
         """
-        UserDefs.__init__(self, input_worbook_name)
-        self.write_global_settings(self.input_xlsx_name)
-        self.software_coupling = software_coupling
+        UserDefs.__init__(self, input_worbook_name)  # get user def file
+        self.write_global_settings(self.input_xlsx_name)  # apply user defs
+        self.__numerical_model = None
+        self.__setattr__("numerical_model", software_coupling)
         self.observations = {}
         self.n_simulation = int()
-        self.prior_distribution = np.ndarray(())  # will be create and update in self.update_prior_distributions
+        self.prior_distribution = np.ndarray(())  # will create and update in self.update_prior_distributions
         self.collocation_points = np.ndarray(())  # assign with self.prepare_initial_model - will be used and updated in self.run_BAL
         self.bme_csv_prior = ""
         self.re_csv_prior = ""
         self.bme_score_file = None
         self.re_score_file = None
-        print("Successfully instantiated a BAL-GPE object for calibrating a %s model." % software_coupling.upper())
+
+    def __setattr__(self, name, value):
+        if name == "numerical_model":
+            if value == "telemac":
+                self.numerical_model = TelemacModel(
+                    model_dir=self.SIM_DIR,
+                    calibration_parameters=list(self.CALIB_PAR_SET.keys()),
+                    steering_file=self.TM_CAS,
+                    gaia_steering_file=self.GAIA_CAS,
+                    n_processors=self.N_CPUS
+                )
+                print("Instantiated a %s model for BAL." % value.upper())
 
     def initialize_score_writing(self, func):
         """
@@ -85,12 +102,17 @@ class BAL_GPE(UserDefs):
                 tbd
         """
         logger.info("STARTING CALIBRATION PROCESS")
-        self.initialize_score_writing()
-        self.update_prior_distributions()
+        # 1 - assign prior distributions
+        self.initiate_prior_distributions()
+        # 2 - load field observations
         self.load_observations()
+        # 3 - run initial simulations with full-complexity numerical model
+        self.run_initial_simulations()
+        # incomplete from here on - USE EDUARDO EMAIL
+        self.initialize_score_writing(self.run_BAL())
 
-    def update_prior_distributions(self):
-        """Calculate uniform distributions for all user-defined parameters.
+    def initiate_prior_distributions(self):
+        """Assign uniform distributions for all user-defined parameters.
         Modifies self.prior_distribution (numpy.ndarray): copy of all uniform input distributions
         of the calibration parameters.
         """
@@ -119,12 +141,17 @@ class BAL_GPE(UserDefs):
             "observation error": observation_file[:, 2]
         }
 
-    def prepare_initial_model(self):
+    def run_initial_simulations(self):
         """
+        Launch initial full complexity simulations
         TO DO
 
         Create baseline for response surface
         """
+        # INTERNAL NOTE: PLUG IN DESIGN OF EXPERIMENTS IN LATER VERSIONS HERE
+        for init_run_it in range(self.init_runs):
+            self.numerical_model.run_simulation()
+
         # Part 2. Read initial collocation points
         temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR))+"/parameter_file.txt", dtype=str, delimiter=";")
         simulation_names = temp[:, 0]
