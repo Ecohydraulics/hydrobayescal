@@ -12,7 +12,7 @@ Much thanks goes to these individuals. It has been converted to Python by Abraha
 """
 
 import re
-import numpy as np
+import numpy as _np
 
 #__all__ = ['np', 'fullfact_corrected', 'ff2n', 'fracfact']
 
@@ -64,11 +64,11 @@ def fullfact_corrected(levels):
                
     """
     n = len(levels)  # number of factors
-    nb_lines = np.prod(levels)  # number of trial conditions
-    H = np.zeros((nb_lines, n))
+    nb_lines = _np.prod(levels)  # number of trial conditions
+    H = _np.zeros((nb_lines, n))
     
     level_repeat = 1
-    range_repeat = np.prod(levels)
+    range_repeat = _np.prod(levels)
     for i in range(n):
         range_repeat //= levels[i]
         lvl = []
@@ -205,20 +205,20 @@ def fracfact(gen):
     
     # Fill in design with two level factorial design
     H1 = ff2n(len(I))
-    H = np.zeros((H1.shape[0], len(C)))
+    H = _np.zeros((H1.shape[0], len(C)))
     H[:, I] = H1
     
     # Recognize combinations and fill in the rest of matrix H2 with the proper
     # products
     for k in J:
         # For lowercase letters
-        xx = np.array([ord(c) for c in A[k]]) - 97
+        xx = _np.array([ord(c) for c in A[k]]) - 97
         
         # For uppercase letters
-        if np.any(xx<0):
-            xx = np.array([ord(c) for c in A[k]]) - 65
+        if _np.any(xx<0):
+            xx = _np.array([ord(c) for c in A[k]]) - 65
         
-        H[:, k] = np.prod(H1[:, xx], axis=1)
+        H[:, k] = _np.prod(H1[:, xx], axis=1)
     
     # Update design if gen includes "-" operator
     if R2:
@@ -308,7 +308,7 @@ def bbdesign_corrected(n, center=None):
         else:
             center = n
 
-    return np.c_[H.T, repeat_center(n, center).T].T
+    return _np.c_[H.T, repeat_center(n, center).T].T
 
 
 def repeat_center(n, repeat):
@@ -336,4 +336,4 @@ def repeat_center(n, repeat):
                [ 0.,  0.,  0.]])
        
     """
-    return np.zeros((repeat, n))
+    return _np.zeros((repeat, n))

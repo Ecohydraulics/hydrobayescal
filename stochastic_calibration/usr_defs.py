@@ -21,8 +21,9 @@ class UserDefs:
         # initialize capital letter class variables that are defined through the user XLSX file
         self.CALIB_PAR_SET = {}  # dict for direct calibration optimization parameters
         self.CALIB_PTS = None  # numpy array to be loaded from calibration_points file
-        self.CALIB_TARGET = str()  # str of calibration target nature (e.g. topographic change)
+        self.CALIB_TARGETS = []  # list of calibration target (measurement) data (e.g. topographic change)
         self.init_runs = int()  # int number of initial full-complexity runs
+        self.init_run_sampling = str()  # how the number of initial full-complexity runs should be sampled
         self.IT_LIMIT = int()  # int limit for Bayesian iterations
         self.MC_SAMPLES = int()  # int for Monte Carlo samples
         self.MC_SAMPLES_AL = int()  # int for Monte Carlo samples for active learning
@@ -35,7 +36,7 @@ class UserDefs:
         self.tm_config = str()  # telemac config file
         self.GAIA_CAS = None  # default should be None for compliance with TelemacModel class
         self.RESULTS_DIR = "../results"  # relative path for results
-        self.SIM_DIR = str()  # relative path for simulations
+        self.SIM_DIR = str()  # relative path for simulations - all paths must not end with any "/" or "\\"
         self.BME = None
         self.RE = None
         self.al_BME = None
@@ -57,21 +58,25 @@ class UserDefs:
                                                  "initial val": _np.mean(str2seq(bounds)),
                                                  "recalc par": None}})
 
-        # add vector calibration parameters to CALIB_PAR_SET and check for recalculation parameters
+        # add list-like vector calibration parameters to CALIB_PAR_SET and check for recalculation parameters
         vec_par_dict = dict(zip(vector_par_df[0].to_list(), vector_par_df[1].to_list()))
         recalc_par_dict = dict(zip(recalc_par_df[0].to_list(), recalc_par_df[1].to_list()))
         for par, init_list in vec_par_dict.items():
+            if "multiplier" in str(par).lower():
+                self.CALIB_PAR_SET.update({par: {"bounds": (str2seq(vec_par_dict["Multiplier range"])),
+                                                 "initial val": 1.0,
+                                                 "recalc par": None}})
             if not (("TELEMAC" or "GAIA" or "Multiplier") in str(par)):
                 self.CALIB_PAR_SET.update({par: {"bounds": (str2seq(vec_par_dict["Multiplier range"])),
                                                  "initial val": str2seq(init_list),
-                                                 "recalc par": None}})
+                                                 "recalc par": "Multiplier"}})
                 if par in RECALC_PARS.keys():
                     # check if parameter is a recalculation parameter (if yes -> check for user input FALSE or TRUE)
                     try:
                         if bool(recalc_par_dict[RECALC_PARS[par]]):
                             self.CALIB_PAR_SET[par]["recalc par"] = RECALC_PARS[par]
                     except KeyError:
-                        print("! Warning: found recalcution parameter %s that is not defined in config.py (skipping...")
+                        print("WARNING: found recalcution parameter %s that is not defined in config.py (skipping...")
         self.n_calib_pars = len(self.CALIB_PAR_SET)
         print(" * received the following calibration parameters: %s" % ", ".join(list(self.CALIB_PAR_SET.keys())))
 
@@ -128,6 +133,7 @@ class UserDefs:
         return {
             "tm pars": self.read_wb_range(TM_RANGE),
             "al pars": self.read_wb_range(AL_RANGE),
+            "meas data": self.read_wb_range(MEASUREMENT_DATA_RANGE),
             "direct priors": self.read_wb_range(PRIOR_SCA_RANGE),
             "vector priors": self.read_wb_range(PRIOR_VEC_RANGE),
             "recalculation priors": self.read_wb_range(PRIOR_REC_RANGE),
@@ -157,18 +163,23 @@ class UserDefs:
         )
 
         # update global variables with user definitions
+        # measurement data
+        for set_no in range(1, 5):
+            cell_val = str(user_defs["meas data"].loc[
+                               user_defs["meas data"][0].str.contains("calib\_target" + str(set_no)), 1].values[0])
+            if not ("none" in cell_val.lower()):
+                self.CALIB_TARGETS.append(TM_TRANSLATOR[cell_val])
+        # active learning parameters
         self.CALIB_PTS = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_pts"), 1].values[0]
-        self.CALIB_TARGET = TM_TRANSLATOR[
-            user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_target"), 1].values[0]]
-
         self.AL_STRATEGY = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("strategy"), 1].values[0]
         self.score_method = user_defs["al pars"].loc[user_defs["al pars"][0].str.lower().contains("score"), 1].values[0]
         self.init_runs = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("init\_runs"), 1].values[0]
+        self.init_run_sampling = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("init\_run\_sampling"), 1].values[0]
         self.IT_LIMIT = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("it\_limit"), 1].values[0]
         self.AL_SAMPLES = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("al\_samples"), 1].values[0]
         self.MC_SAMPLES = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("mc\_samples\)"), 1].values[0]
         self.MC_SAMPLES_AL = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("mc\_samples\_al"), 1].values[0]
-
+        # telemac parameters
         self.TM_CAS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("TELEMAC steering"), 1].values[0]
         self.tm_config = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("TELEMAC config"), 1].values[0]
         self.GAIA_CAS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("Gaia"), 1].values[0]

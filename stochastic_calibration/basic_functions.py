@@ -63,17 +63,6 @@ def calculate_settling_velocity(diameters):
     return settling_velocity
 
 
-def create_cas_string(param_name, values):
-    """
-    Create string names with new values to be used in Telemac2d / Gaia steering files
-
-    :param str param_name: name of parameter to update
-    :param list values: new values for the parameter
-    :return str: update parameter line for a steering file
-    """
-    return param_name + " = " + "; ".join(map(str, values))
-
-
 def str2seq(list_like_string, separator=",", return_type="tuple"):
     """Convert a list-like string into a tuple or list based on a separator such as comma or semi-column
 
@@ -93,6 +82,10 @@ def str2seq(list_like_string, separator=",", return_type="tuple"):
         return tuple(seq)
     else:
         return seq
+
+
+def update_recalc_bounds(str_list):
+    """"""
 
 
 def log_actions(func):

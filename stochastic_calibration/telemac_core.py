@@ -50,39 +50,41 @@ class TelemacModel:
     def __setattr__(self, name, value):
         if name == "calibration_parameters":
             # value corresponds to a list of parameters
-            self.calibration_parameters = {"telemac": [], "gaia": []}
+            self.calibration_parameters = {"telemac": {}, "gaia": {}}
             for par in value:
                 if par in TM2D_PARAMETERS:
-                    self.calibration_parameters["telemac"].append(par)
+                    self.calibration_parameters["telemac"].update({par: {"current value": _np.nan}})
                     continue
                 if par in GAIA_PARAMETERS:
-                    self.calibration_parameters["gaia"].append(par)
+                    self.calibration_parameters["gaia"].update({par: {"current value": _np.nan}})
+
+    @staticmethod
+    def create_cas_string(param_name, value):
+        """
+        Create string names with new values to be used in Telemac2d / Gaia steering files
+
+        :param str param_name: name of parameter to update
+        :param list value: new values for the parameter
+        :return str: update parameter line for a steering file
+        """
+        return param_name + " = " + "; ".join(map(str, value))
 
     def update_steering_file(
             self,
-            prior_distribution,
-            parameters_name,
-            initial_diameters,
-            auxiliary_names,
-            result_name_gaia,
-            result_name_telemac,
-            n_simulation
+            new_parameter_values,
     ):
         """
         Update the Telemac and Gaia steering files specifically for Bayesian calibration.
 
-        :param np.array prior_distribution: e.g., shear stress in N/m2, denisty in kg/m3, settling velocity in m/s
-        :param list parameters_name: list of strings describing parameter names
-        :param list initial_diameters: floats of diameters
-        :param list auxiliary_names: strings of auxiliary parameter names
-        :param str result_name_gaia: file name of gaia results SLF
-        :param str result_name_telemac: file name of telemac results SLF
-        :param int n_simulation:
+        :param dict new_parameter_values: provide a new parameter value for every calibration parameter
         :return:
         """
+
         # update telemac calibration pars
-        for par in self.calibration_parameters["telemac"]:
-            pass
+        for par in self.calibration_parameters["telemac"].keys():
+            updated_value = [str(new_parameter_values[par])]
+            self.calibration_parameters["telemac"][par]["current value"] = updated_value
+            updated_string = self.create_cas_string(par, updated_value)
         # update gaia calibration pars
         for par in self.calibration_parameters["gaia"]:
             pass

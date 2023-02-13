@@ -1,9 +1,10 @@
 """
-Stochastic calibration of a Telemac2d hydro-morphodynamic model using
-Surrogate-Assisted Bayesian inversion. The surrogate model is created using
-Gaussian Process Regression
+Bayesian calibration of a numerical model using surrogate-assisted Bayesian inversion with a
+Gaussian Process Emulator (GPE) as surrogate model (metamodel).
 
-Method adapt: Oladyshkin et al. (2020). Bayesian Active Learning for the Gaussian Process
+Full-complexity coupling is currently only available for the open-source TELEMAC modeling suite.
+
+Method adapted from: Oladyshkin et al. (2020). Bayesian Active Learning for the Gaussian Process
 Emulator Using Information Theory. Entropy, 22(8), 890.
 """
 import os
@@ -15,9 +16,10 @@ from sklearn.gaussian_process.kernels import RBF
 from BAL_core import BAL
 from telemac_core import *
 from usr_defs import *  # contains UserDefs and link to config and basic_functions
+from doepy.doe_control import DesignOfExperiment
 
 
-class BAL_GPE(UserDefs):
+class BALwithGPE(UserDefs):
     """
     The BAL_GPE object is the framework for running a stochastic calibration of a deterministic model by using a
         Gaussian process emulator (GPE) - based surrogate model that is fitted through Bayesian active learning (BAL).
@@ -55,6 +57,7 @@ class BAL_GPE(UserDefs):
         self.re_csv_prior = ""
         self.bme_score_file = None
         self.re_score_file = None
+        self.doe = DesignOfExperiment()
 
     def __setattr__(self, name, value):
         if name == "numerical_model":
@@ -148,15 +151,38 @@ class BAL_GPE(UserDefs):
 
         Create baseline for response surface
         """
-        # INTERNAL NOTE: PLUG IN DESIGN OF EXPERIMENTS IN LATER VERSIONS HERE
+
+        # make initial parameter value space -- PLUG IN DESIGN OF EXPERIMENTS IN LATER VERSIONS
+        direct_calib_pars = {}
+        for par, v in self.CALIB_PAR_SET.items():
+            # list-like calibration parameter values require recalculation by a multiplier
+            #  - only the multiplier can be used for doe, not the list-like values
+            if not v["recalc par"]:
+                direct_calib_pars.update({par: v})
+            if v["recalc par"] == "Multiplier":
+                if not ("Multiplier" in direct_calib_pars.keys()):
+                    direct_calib_pars.update({"Multiplier"})
+                self.CALIB_PAR_SET[par]["bounds"] = update_recalc_bounds()
+
+        self.doe.generate_multi_parameter_space(
+            parameter_dict=direct_calib_pars,
+            method=self.init_run_sampling,
+            total_number_of_samples=self.init_runs
+        )
+        self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters.csv")
+
+        # run initial simulations and update the steering file with new parameters before each run
         for init_run_it in range(self.init_runs):
+            self.numerical_model.update_steering_file(
+                new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_it, :]
+            )
             self.numerical_model.run_simulation()
 
         # Part 2. Read initial collocation points
         temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR))+"/parameter_file.txt", dtype=str, delimiter=";")
         simulation_names = temp[:, 0]
         self.collocation_points = temp[:, 1:].astype(float)
-        self.n_simulation = self.collocation_points.shape[0] # corresponds to m full-complexity runs?
+        self.n_simulation = self.collocation_points.shape[0]  # corresponds to m full-complexity runs?
 
         # Part 3. Read the previously computed simulations of the numerical model in the initial collocation points
         temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR)) + "/" + simulation_names[0] + "_" +
