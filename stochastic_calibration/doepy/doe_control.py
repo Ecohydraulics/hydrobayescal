@@ -75,7 +75,8 @@ class DesignOfExperiment:
         :param str method: must be listed in DesignOfExperiments.DESIGN_METHODS
         :param int total_number_of_samples: total number of samples, which should be a multiple of the
                             number of parameters
-        :return pandas.DataFrame: column heads are parameter names, rows correspond to parameter combinations
+        :return None: assigns the internal pandas.DataFrame where column heads are parameter names,
+                                                                rows correspond to parameter combinations
         """
 
         dict4parameter_file = {}  # required for pd.DataFrame and textfile with parameter combinations

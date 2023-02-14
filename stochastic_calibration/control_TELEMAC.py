@@ -8,16 +8,18 @@ import numpy as _np
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 from basic_functions import *
+from control_BASIC_MODEL import FullComplexityModel
 
 
-class TelemacModel:
+class TelemacModel(FullComplexityModel):
     def __init__(
             self,
             model_dir="",
             calibration_parameters=None,
-            steering_file="tm.cas",
+            control_file="tm.cas",
             gaia_steering_file=None,
             n_processors=1,
+            tm_xd="Telemac2d",
             *args,
             **kwargs
     ):
@@ -28,20 +30,32 @@ class TelemacModel:
         :param str model_dir: directory (path) of the Telemac model (should NOT end on "/" or "\\")
         :param list calibration_parameters: computationally optional, but in the framework of Bayesian calibration,
                     this argument must be provided
-        :param str steering_file: name of the steering file to be used (should end on ".cas"); do not include directory
+        :param str control_file: name of the steering file to be used (should end on ".cas"); do not include directory
         :param str gaia_steering_file: name of a gaia steering file (optional)
         :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is 1
+        :param str tm_xd: either 'Telemac2d' or 'Telemac3d'
         :param args:
         :param kwargs:
         """
-        self.model_dir = _os.path.abspath(model_dir)
-        self.tm_cas = "{}{}{}".format(self.model_dir, _os.sep, steering_file)
+        FullComplexityModel.__init__(self, model_dir=model_dir)
+
+        self.tm_cas = "{}{}{}".format(self.model_dir, _os.sep, control_file)
+        self.tm_results_file = "{}{}{}".format(self.res_dir, _os.sep, str("resIDX-" + control_file.strip(".cas") + ".slf"))
         if gaia_steering_file:
             print("* received gaia steering file: " + gaia_steering_file)
             self.gaia_cas = "{}{}{}".format(self.model_dir, _os.sep, gaia_steering_file)
+            self.gaia_results_file = "{}{}{}".format(self.res_dir, _os.sep,
+                                                     str("resIDX-" + gaia_steering_file.strip(".cas") + ".slf"))
         else:
             self.gaia_cas = None
+            self.gaia_results_file = None
         self.nproc = n_processors
+
+        self.tm_xd = tm_xd
+        self.tm_xd_dict = {
+            "Telemac2d": "telemac2d.py ",
+            "Telemac3d": "telemac3d.py ",
+        }
 
         self.__calibration_parameters = False
         if calibration_parameters:
@@ -64,66 +78,49 @@ class TelemacModel:
         Create string names with new values to be used in Telemac2d / Gaia steering files
 
         :param str param_name: name of parameter to update
-        :param list value: new values for the parameter
+        :param float or sequence value: new values for the parameter
         :return str: update parameter line for a steering file
         """
-        return param_name + " = " + "; ".join(map(str, value))
+        if isinstance(value, int) or isinstance(value, float) or isinstance(value, str):
+            return param_name + " = " + str(value)
+        else:
+            try:
+                return param_name + " = " + "; ".join(map(str, value))
+            except Exception as e:
+                print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(e)))
 
-    def update_steering_file(
+    def update_model_controls(
             self,
             new_parameter_values,
+            simulation_id=0,
     ):
-        """
+        """ In TELEMAC language: update the steering file
         Update the Telemac and Gaia steering files specifically for Bayesian calibration.
 
         :param dict new_parameter_values: provide a new parameter value for every calibration parameter
+                    * keys correspond to Telemac or Gaia keywords in the steering file
+                    * values are either scalar or list-like numpy arrays
+        :param int simulation_id: optionally set an identifier for a simulation (default is 0)
         :return:
         """
 
         # update telemac calibration pars
-        for par in self.calibration_parameters["telemac"].keys():
-            updated_value = [str(new_parameter_values[par])]
-            self.calibration_parameters["telemac"][par]["current value"] = updated_value
-            updated_string = self.create_cas_string(par, updated_value)
-        # update gaia calibration pars
-        for par in self.calibration_parameters["gaia"]:
-            pass
-        # Update deposition stress
-        updated_values = _np.round(_np.ones(4) * prior_distribution[0], decimals=3)
-        updated_string = create_cas_string(parameters_name[0], updated_values)
-        self.rewrite_steering_file(parameters_name[0], updated_string, self.gaia_cas)
+        for par, has_more in lookahead(self.calibration_parameters["telemac"].keys()):
+            self.calibration_parameters["telemac"][par]["current value"] = new_parameter_values[par]
+            updated_string = self.create_cas_string(par, new_parameter_values[par])
+            self.rewrite_steering_file(par, updated_string, self.tm_cas)
+            if not has_more:
+                updated_string = "RESULTS FILE" + " = " + self.tm_results_file.replace("IDX", f"{simulation_id:03d}")
+                self.rewrite_steering_file("RESULTS FILE", updated_string, self.tm_cas)
 
-        # Update erosion stress
-        updated_values = _np.round(_np.ones(2) * prior_distribution[1], decimals=3)
-        updated_string = create_cas_string(parameters_name[1], updated_values)
-        self.rewrite_steering_file(parameters_name[1], updated_string, self.gaia_cas)
-
-        # Update density
-        updated_values = _np.round(_np.ones(2) * prior_distribution[2], decimals=0)
-        updated_string = create_cas_string(parameters_name[2], updated_values)
-        self.rewrite_steering_file(parameters_name[2], updated_string, self.gaia_cas)
-
-        # Update settling velocity
-        new_diameters = initial_diameters * prior_distribution[3]
-        settling_velocity = calculate_settling_velocity(new_diameters[1:])
-        updated_values = "; ".join(map("{:.3E}".format, settling_velocity))
-        updated_values = "-9; " + updated_values.replace("E-0", "E-")
-        updated_string = parameters_name[3] + " = " + updated_values
-        self.rewrite_steering_file(parameters_name[3], updated_string, self.gaia_cas)
-
-        # Update other variables
-        new_diameters[0] = initial_diameters[0]  # the first non-cohesive diameter stays the same
-        updated_values = "; ".join(map("{:.3E}".format, new_diameters))
-        updated_values = updated_values.replace("E-0", "E-")
-        updated_string = auxiliary_names[0] + " = " + updated_values
-        self.rewrite_steering_file(auxiliary_names[0], updated_string, self.gaia_cas)
-
-        # Update result file name gaia
-        updated_string = "RESULTS FILE" + "=" + result_name_gaia + str(n_simulation) + ".slf"
-        self.rewrite_steering_file("RESULTS FILE", updated_string, self.gaia_cas)
-        # Update result file name telemac
-        updated_string = "RESULTS FILE" + "=" + result_name_telemac + str(n_simulation) + ".slf"
-        self.rewrite_steering_file("RESULTS FILE", updated_string, self.tm_cas)
+        # update gaia calibration pars - this intentionally does not iterate through self.calibration_parameters
+        for par, has_more in lookahead(self.calibration_parameters["gaia"].keys()):
+            self.calibration_parameters["gaia"][par]["current value"] = new_parameter_values[par]
+            updated_string = self.create_cas_string(par, new_parameter_values[par])
+            self.rewrite_steering_file(par, updated_string, self.gaia_cas)
+            if not has_more:
+                updated_string = "RESULTS FILE" + " = " + self.gaia_results_file.replace("IDX", f"{simulation_id:03d}")
+                self.rewrite_steering_file("RESULTS FILE", updated_string, self.gaia_cas)
 
     def rewrite_steering_file(self, param_name, updated_string, steering_module="telemac"):
         """
@@ -192,7 +189,10 @@ class TelemacModel:
         :return None:
         """
         start_time = datetime.now()
-        call_subroutine("telemac2d.py " + self.tm_cas + " --ncsize=" + str(self.nproc))
+        if self.nproc > 1:
+            call_subroutine(self.tm_xd_dict[self.tm_xd] + self.tm_cas + " --ncsize=" + str(self.nproc))
+        else:
+            call_subroutine(self.tm_xd_dict[self.tm_xd] + self.tm_cas)
         print("TELEMAC simulation time: " + str(datetime.now() - start_time))
 
     def run_gretel(self, telemac_file_name="SLF?", number_processors=1, sim_folder=""):

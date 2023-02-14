@@ -3,7 +3,7 @@ import os, sys
 import self as self
 
 sys.path.append(os.path.abspath("")+"/stochastic_calibration/")
-from usr_defs import *
+from usr_defs_TELEMAC import *
 input_fn = SCRIPT_DIR + "user-input.xlsx"
 input_calib = os.path.abspath("")+ "/calibration-points.csv"
 

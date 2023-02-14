@@ -4,7 +4,7 @@ inversion
 """
 
 import numpy as _np  # use underscore import to avoid double-numpy imports with wildcards (import *)
-from config import *
+from config_BASICS import *
 
 
 class BAL:

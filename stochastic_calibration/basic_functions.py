@@ -1,5 +1,5 @@
 """fundamental Python functions"""
-from config import *
+from config_TELEMAC import *
 import numpy as _np
 import subprocess
 
@@ -63,6 +63,25 @@ def calculate_settling_velocity(diameters):
     return settling_velocity
 
 
+def lookahead(iterable):
+    """Pass through all values of an iterable, augmented by the information if there are more values to come
+    after the current one (True), or if it is the last value (False).
+
+    Source: Ferdinand Beyer (2015) on https://stackoverflow.com/questions/1630320/what-is-the-pythonic-way-to-detect-the-last-element-in-a-for-loop
+    """
+    # Get an iterator and pull the first value.
+    it = iter(iterable)
+    last = next(it)
+    # Run the iterator to exhaustion (starting from the second value).
+    for val in it:
+        # Report the *previous* value (more to come).
+        yield last, True
+        last = val
+    # Report the last value.
+    yield last, False
+
+
+
 def str2seq(list_like_string, separator=",", return_type="tuple"):
     """Convert a list-like string into a tuple or list based on a separator such as comma or semi-column
 
@@ -82,10 +101,6 @@ def str2seq(list_like_string, separator=",", return_type="tuple"):
         return tuple(seq)
     else:
         return seq
-
-
-def update_recalc_bounds(str_list):
-    """"""
 
 
 def log_actions(func):

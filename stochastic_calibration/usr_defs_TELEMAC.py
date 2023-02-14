@@ -8,39 +8,18 @@ import numpy as _np
 from openpyxl import load_workbook
 from basic_functions import *
 import random as rnd
+from usr_defs_BASICS import UserDefs
 
 
-class UserDefs:
+class UserDefsTelemac(UserDefs):
     def __init__(self, input_worbook_name="user-input.xlsx", *args, **kwargs):
-        self.input_xlsx_name = input_worbook_name
-        print(
-            "Using %s to read user settings. To change the user settings, run OBJECT(bal_gpe4telemac).write_global_settings('path/to/workbook.xlsx')" % self.input_xlsx_name)
-
-        self.file_write_dir = ""
+        UserDefs.__init__(self, input_worbook_name=input_worbook_name)
 
         # initialize capital letter class variables that are defined through the user XLSX file
-        self.CALIB_PAR_SET = {}  # dict for direct calibration optimization parameters
-        self.CALIB_PTS = None  # numpy array to be loaded from calibration_points file
-        self.CALIB_TARGETS = []  # list of calibration target (measurement) data (e.g. topographic change)
-        self.init_runs = int()  # int number of initial full-complexity runs
-        self.init_run_sampling = str()  # how the number of initial full-complexity runs should be sampled
-        self.IT_LIMIT = int()  # int limit for Bayesian iterations
-        self.MC_SAMPLES = int()  # int for Monte Carlo samples
-        self.MC_SAMPLES_AL = int()  # int for Monte Carlo samples for active learning
         self.N_CPUS = int()  # int number of CPUs to use for Telemac models
-        self.n_calib_pars = int()  # int number of calibration parameters
-        self.AL_SAMPLES = int()  # int for no. of active learning sampling size
-        self.AL_STRATEGY = str()  # str for active learning strategy
-        self.score_method = str()  # str for score calculation method to use in BAL_core.BAL.compute_bayesian_scores
         self.TM_CAS = str()  # str of telemac steering file without its directory (CAS ONLY)
-        self.tm_config = str()  # telemac config file
+        self.tm_xD = str()  # defines to either use telemac2d or 3d
         self.GAIA_CAS = None  # default should be None for compliance with TelemacModel class
-        self.RESULTS_DIR = "../results"  # relative path for results
-        self.SIM_DIR = str()  # relative path for simulations - all paths must not end with any "/" or "\\"
-        self.BME = None
-        self.RE = None
-        self.al_BME = None
-        self.al_RE = None
 
     def assign_calib_ranges(self, direct_par_df, vector_par_df, recalc_par_df):
         """Parse user calibration ranges for parameters
@@ -67,17 +46,22 @@ class UserDefs:
                                                  "initial val": 1.0,
                                                  "recalc par": None}})
             if not (("TELEMAC" or "GAIA" or "Multiplier") in str(par)):
-                self.CALIB_PAR_SET.update({par: {"bounds": (str2seq(vec_par_dict["Multiplier range"])),
-                                                 "initial val": str2seq(init_list),
-                                                 "recalc par": "Multiplier"}})
+                try:
+                    self.CALIB_PAR_SET.update({par: {"bounds": (str2seq(vec_par_dict["Multiplier range"])),
+                                                     "initial val": _np.array(str2seq(init_list)),
+                                                     "recalc par": "Multiplier"}})
+                except Exception as e:
+                    print("ERROR: the list-like parameter {0} got assigned the value {1}, which I cannot convert to a numpy.array. Details:\n{2}".format(str(par), str(init_list), str(e)))
+                    raise ValueError
+
                 if par in RECALC_PARS.keys():
                     # check if parameter is a recalculation parameter (if yes -> check for user input FALSE or TRUE)
                     try:
                         if bool(recalc_par_dict[RECALC_PARS[par]]):
                             self.CALIB_PAR_SET[par]["recalc par"] = RECALC_PARS[par]
                     except KeyError:
-                        print("WARNING: found recalcution parameter %s that is not defined in config.py (skipping...")
-        self.n_calib_pars = len(self.CALIB_PAR_SET)
+                        print("WARNING: found recalcution parameter %s that is not defined in config_TELEMAC.py (skipping...")
+
         print(" * received the following calibration parameters: %s" % ", ".join(list(self.CALIB_PAR_SET.keys())))
 
     def check_user_input(self):
@@ -96,28 +80,9 @@ class UserDefs:
         if not (_os.path.isfile(self.CALIB_PTS)):
             print("ERROR: The Calibration CSV file %s does not exist." % str(self.CALIB_PTS))
             raise FileNotFoundError
-        if not (_os.path.isdir(self.RESULTS_DIR)):
-            try:
-                _os.mkdir(self.RESULTS_DIR)
-            except PermissionError:
-                print("ERROR: Cannot write to %s (check user rights/path consistency)" % self.RESULTS_DIR)
-                raise PermissionError
-            except NotADirectoryError:
-                print("ERROR: %s is not a directory - adapt simulation directory (B8)" % self.RESULTS_DIR)
-                raise NotADirectoryError
         if self.MC_SAMPLES < (self.AL_SAMPLES + self.IT_LIMIT):
             print("ERROR: MC_SAMPLES < (AL_SAMPLES + IT_LIMIT)!")
             raise ValueError
-        try:
-            self.file_write_dir = r"" + self.RESULTS_DIR + "stochastic-calib-processID%s/" % str(rnd.randint(1000,9999))
-            _os.mkdir(self.file_write_dir)
-            print(" * intermediate calibration results will be written to %s" % self.file_write_dir)
-        except PermissionError:
-            print("ERROR: Cannot write to %s (check user rights/path consistency)" % self.RESULTS_DIR)
-            raise PermissionError
-        except NotADirectoryError:
-            print("ERROR: %s is not a directory - adapt simulation directory (B8)" % self.RESULTS_DIR)
-            raise NotADirectoryError
         if not isinstance(self.N_CPUS, int):
             # this check is already implied in load_input_defs and kept here for consistency with later versions
             print("ERROR: %s is not a valid number of processors to use (min. 1, integer)" % str(self.N_CPUS))
@@ -181,7 +146,7 @@ class UserDefs:
         self.MC_SAMPLES_AL = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("mc\_samples\_al"), 1].values[0]
         # telemac parameters
         self.TM_CAS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("TELEMAC steering"), 1].values[0]
-        self.tm_config = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("TELEMAC config"), 1].values[0]
+        self.tm_xD = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("tm_xd"), 1].values[0]
         self.GAIA_CAS = user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("Gaia"), 1].values[0]
         self.SIM_DIR = r"" + user_defs["tm pars"].loc[user_defs["tm pars"][0].str.contains("Simulation"), 1].values[0]
         try:
@@ -189,7 +154,6 @@ class UserDefs:
         except ValueError:
             print("ERROR: %s is not a valid number of processors to use (min. 1, integer)" % str(self.N_CPUS))
             raise ValueError
-        self.RESULTS_DIR = self.SIM_DIR + "opt-results/"
 
         # global surrogate and active learning variables
         self.BME = _np.zeros((self.IT_LIMIT, 1))
@@ -198,17 +162,3 @@ class UserDefs:
         self.al_RE = _np.zeros((self.AL_SAMPLES, 1))
 
         self.check_user_input()
-
-    def read_wb_range(self, read_range, sheet_name="MAIN"):
-        """Read a certain range of a workbook only with openpyxl
-
-        :param str read_range: letter-number read range in workbook (e.g. "A2:B4")
-        :param str sheet_name: name of the sheet to read (default is MAIN from user-inpux.xlsx)
-        :return pd.DataFrame: xlsx contents in the defined range
-        """
-        ws = load_workbook(filename=self.input_xlsx_name, read_only=True, data_only=True)[sheet_name]
-        # Read the cell values into a list of lists
-        data_rows = []
-        for row in ws[read_range]:
-            data_rows.append([cell.value for cell in row])
-        return _pd.DataFrame(data_rows)

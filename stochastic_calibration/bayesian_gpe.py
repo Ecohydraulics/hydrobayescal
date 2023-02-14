@@ -3,6 +3,16 @@ Bayesian calibration of a numerical model using surrogate-assisted Bayesian inve
 Gaussian Process Emulator (GPE) as surrogate model (metamodel).
 
 Full-complexity coupling is currently only available for the open-source TELEMAC modeling suite.
+For any new model bindings create:
+    * a new config_SOFTWARE.py file (read instructions in config_BASICS.py) and add it to the imports here
+        The new model (Software) should then here be added as an option in __setattr__()
+    * a new control_SOFTWARE.py file (read instructions in control_BASIC_MODEL.py)
+    * an additional inheritance for the BALwithGPE class (e.g., UserDefsOpenFOAM) and initialize it
+        in __init__(), similar to the Telemac bindings (not forget to import the user_defs_MODEL.py here)
+    * a user file (e.g., a user input XLSX like the one for TELEMAC)
+    * a new documentation in docs/usage-SOFTWARE.rst and bind it to docs/index.rst
+Please do not forget to verify if the new Software works (i.e., provide a small showcase) before merging with main.
+
 
 Method adapted from: Oladyshkin et al. (2020). Bayesian Active Learning for the Gaussian Process
 Emulator Using Information Theory. Entropy, 22(8), 890.
@@ -11,15 +21,17 @@ import os
 import numpy as np
 from datetime import datetime
 from functools import wraps
+
+import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 from BAL_core import BAL
-from telemac_core import *
-from usr_defs import *  # contains UserDefs and link to config and basic_functions
+from control_TELEMAC import *
+from usr_defs_TELEMAC import *  # contains UserDefs and link to config and basic_functions
 from doepy.doe_control import DesignOfExperiment
 
 
-class BALwithGPE(UserDefs):
+class BALwithGPE(UserDefsTelemac):
     """
     The BAL_GPE object is the framework for running a stochastic calibration of a deterministic model by using a
         Gaussian process emulator (GPE) - based surrogate model that is fitted through Bayesian active learning (BAL).
@@ -45,7 +57,7 @@ class BALwithGPE(UserDefs):
         :param args: placeholder for consistency
         :param kwargs: placeholder for consistency
         """
-        UserDefs.__init__(self, input_worbook_name)  # get user def file
+        UserDefsTelemac.__init__(self, input_worbook_name)  # get user def file
         self.write_global_settings(self.input_xlsx_name)  # apply user defs
         self.__numerical_model = None
         self.__setattr__("numerical_model", software_coupling)
@@ -65,9 +77,10 @@ class BALwithGPE(UserDefs):
                 self.numerical_model = TelemacModel(
                     model_dir=self.SIM_DIR,
                     calibration_parameters=list(self.CALIB_PAR_SET.keys()),
-                    steering_file=self.TM_CAS,
+                    control_file=self.TM_CAS,
                     gaia_steering_file=self.GAIA_CAS,
-                    n_processors=self.N_CPUS
+                    n_processors=self.N_CPUS,
+                    tm_xd=self.tm_xD
                 )
                 print("Instantiated a %s model for BAL." % value.upper())
 
@@ -77,8 +90,8 @@ class BALwithGPE(UserDefs):
         :param func: a function
         :return: the same function
         """
-        self.bme_csv_prior = self.RESULTS_DIR + "BMEprior-%s.csv" % str(rnd.randint(1000, 9999))
-        self.re_csv_prior = self.RESULTS_DIR + "REprior-%s.csv" % str(rnd.randint(1000, 9999))
+        self.bme_csv_prior = self.numerical_model.res_dir + os.sep + "BMEprior-%s.csv" % str(rnd.randint(1000, 9999))
+        self.re_csv_prior = self.numerical_model.res_dir + os.sep + "REprior-%s.csv" % str(rnd.randint(1000, 9999))
         logger.info("> Instantiated recording of information theory scores BME and RE:")
         logger.info("  -- BME will be written to %s" % self.bme_csv_prior)
         logger.info("  -- RE will be written to %s" % self.re_csv_prior)
@@ -111,6 +124,8 @@ class BALwithGPE(UserDefs):
         self.load_observations()
         # 3 - run initial simulations with full-complexity numerical model
         self.run_initial_simulations()
+        # 4 - get initial collocation points
+        self.get_collocation_points()
         # incomplete from here on - USE EDUARDO EMAIL
         self.initialize_score_writing(self.run_BAL())
 
@@ -153,30 +168,51 @@ class BALwithGPE(UserDefs):
         """
 
         # make initial parameter value space -- PLUG IN DESIGN OF EXPERIMENTS IN LATER VERSIONS
-        direct_calib_pars = {}
+        calib_par_value_dict = {}
+        recalc_pars = {}
         for par, v in self.CALIB_PAR_SET.items():
             # list-like calibration parameter values require recalculation by a multiplier
             #  - only the multiplier can be used for doe, not the list-like values
             if not v["recalc par"]:
-                direct_calib_pars.update({par: v})
-            if v["recalc par"] == "Multiplier":
-                if not ("Multiplier" in direct_calib_pars.keys()):
-                    direct_calib_pars.update({"Multiplier"})
-                self.CALIB_PAR_SET[par]["bounds"] = update_recalc_bounds()
+                calib_par_value_dict.update({par: v})
+            else:
+                if v["recalc par"] == "Multiplier":
+                    if not ("Multiplier" in calib_par_value_dict.keys()):
+                        calib_par_value_dict.update({"Multiplier": v})
+                else:
+                    recalc_pars.update({par: [v["initial val"]]})
 
         self.doe.generate_multi_parameter_space(
-            parameter_dict=direct_calib_pars,
+            parameter_dict=calib_par_value_dict,
             method=self.init_run_sampling,
             total_number_of_samples=self.init_runs
         )
-        self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters.csv")
+        self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-scalars.csv")
+
+        # update any list-like parameter values and remove multiplier from calib par values
+        if "Multiplier" in calib_par_value_dict.keys():
+            for list_par, v in recalc_pars.keys():
+                initial_val = recalc_pars[list_par][0]  # preserve initial value
+                recalc_pars[list_par] = []  # re-initialize clean empty list
+                for mult in self.doe.df_parameter_spaces["Multiplier"]:
+                    recalc_pars[list_par] = initial_val * mult
+                self.doe.df_parameter_spaces = self.doe.df_parameter_spaces.join(
+                    pd.DataFrame(data={list_par: recalc_pars[list_par]})
+                )
+            # remove multiplier
+            self.doe.df_parameter_spaces.drop("Multiplier", axis=1, inplace=True)
+        # write final initial run parameters
+        self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-all.csv")
 
         # run initial simulations and update the steering file with new parameters before each run
         for init_run_it in range(self.init_runs):
-            self.numerical_model.update_steering_file(
-                new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_it, :]
+            self.numerical_model.update_model_controls(
+                new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_it, :],
+                simulation_id=init_run_it
             )
             self.numerical_model.run_simulation()
+
+    def get_collocation_points(self):
 
         # Part 2. Read initial collocation points
         temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR))+"/parameter_file.txt", dtype=str, delimiter=";")
@@ -309,10 +345,6 @@ class BALwithGPE(UserDefs):
                 list(self.CALIB_PAR_SET.keys()),
                 self.CALIB_ID_PAR_SET[list(self.CALIB_ID_PAR_SET.keys()[0])]["classes"],
                 list(self.CALIB_ID_PAR_SET.keys()[0]),
-                self.GAIA_CAS,
-                self.TM_CAS,
-                RESULT_NAME_GAIA,
-                RESULT_NAME_TM,
                 self.n_simulation + 1 + bal_step
             )
 
@@ -320,6 +352,7 @@ class BALwithGPE(UserDefs):
             run_telemac(self.TM_CAS, self.N_CPUS)
 
             # Extract values of interest
+            # RESULT_NAME now manages in telemac_core.update_steering file
             updated_string = RESULT_NAME_GAIA[1:] + str(self.n_simulation+1+bal_step) + ".slf"
             save_name = self.RESULTS_DIR + "/PC" + str(self.n_simulation+1+bal_step) + "_" + self.CALIB_TARGET + ".txt"
             results = get_variable_value(updated_string, self.CALIB_TARGET, observations["node IDs"], save_name)
