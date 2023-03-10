@@ -1,11 +1,19 @@
 
-Usage
-=====
+Usage with TELEMAC
+==================
 
-TELEMAC Model
--------------
+Extra Requirements
+------------------
 
-Follow the `TELEMAC tutorial <https://hydro-informatics.com/numerics/telemac.html>`_ to learn more.
+.. admonition:: New to TELEMAC?
+
+   Follow the `TELEMAC tutorial <https://hydro-informatics.com/numerics/telemac.html>`_ to learn more.
+
+The Bayesian calibration of a TELEMAC model has the following additional software requirements:
+
+* TELEMAC installation with parallel processing enabled through open MPI as described in our `TELEMAC installation guide <https://hydro-informatics.com/get-started/install-telemac.html>`_.
+* With the TELEMAC environment activated (e.g., ``source configs/pysource.openmpi.sh``) install MPI for Python:<\n> ``pip install mpi4py``
+
 
 Measurement Data
 ----------------

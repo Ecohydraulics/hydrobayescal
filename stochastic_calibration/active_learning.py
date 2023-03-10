@@ -7,7 +7,7 @@ import numpy as _np  # use underscore import to avoid double-numpy imports with 
 from config_BASICS import *
 
 
-class BAL:
+class Bal:
     """
     Bayesian active learning object with methods for computing the likelihood function, Bayesian scores, and
     selection criteria.

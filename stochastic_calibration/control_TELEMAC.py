@@ -274,6 +274,9 @@ class TelemacModel(FullComplexityModel):
         slf.readHeader()
         slf.readTimes()
 
+        ## FROM TELEMAC notebooks/telemac2d:
+        help(my_case.get_node)  # gets the nearest node number of an slf file
+
         # get the printout times
         times = slf.getTimes()
         # read variables names

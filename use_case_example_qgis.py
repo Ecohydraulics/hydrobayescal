@@ -8,7 +8,7 @@ from qgis.analysis import QgsNativeAlgorithms
 
 
 # load calibration package
-import stochastic_calibration as sc
+# import stochastic_calibration as sc
 
 # USER INPUT --------------------------
 slf_mesh = "/home/public/test-data/steady2d-restart/r2dsteady.slf"
@@ -16,6 +16,7 @@ qgis_install_path = "/usr"  # find in QGIS GUI > Plugins > Python Console > ente
 
 # END USER INPUT ----------------------
 
+# --- ACTIVATE QGIS -- transfer to wrapper function -- 2do
 # path to the qgis install location
 QgsApplication.setPrefixPath(qgis_install_path, True)
 # create a reference to the QgsApplication.
@@ -23,6 +24,9 @@ qgs = QgsApplication([], False)  # set second arg to True for GUI apps
 # load providers
 qgs.initQgis()
 
+# https://qgis.org/pyqgis/3.22/core/QgsMeshEditor.html
+
+# qgis_exportmeshedges(
 
 qgis_exportmeshvertices(
         INPUT='SELAFIN:"/home/public/test-data/steady2d-restart/r2dsteady.slf"',

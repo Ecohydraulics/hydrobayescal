@@ -25,7 +25,7 @@ from functools import wraps
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
-from BAL_core import BAL
+from active_learning import Bal
 from control_TELEMAC import *
 from usr_defs_TELEMAC import *  # contains UserDefs and link to config and basic_functions
 from doepy.doe_control import DesignOfExperiment
@@ -215,16 +215,18 @@ class BALwithGPE(UserDefsTelemac):
     def get_collocation_points(self):
 
         # Part 2. Read initial collocation points
-        temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR))+"/parameter_file.txt", dtype=str, delimiter=";")
-        simulation_names = temp[:, 0]
-        self.collocation_points = temp[:, 1:].astype(float)
-        self.n_simulation = self.collocation_points.shape[0]  # corresponds to m full-complexity runs?
+        with pd.read_csv(self.SIM_DIR + os.sep + self.collocation_file, delimiter=",", header=None) as collocation_df:
+            current_sim_names = collocation_df[0]
+            self.collocation_points = collocation_df[:, 1:].astype(float).to_numpy()
+
+
+        self.n_simulation = self.collocation_points.shape[0]  # corresponds to m full-complexity runs
 
         # Part 3. Read the previously computed simulations of the numerical model in the initial collocation points
-        temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR)) + "/" + simulation_names[0] + "_" +
+        temp = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR)) + "/" + current_sim_names[0] + "_" +
                           self.CALIB_TARGET + ".txt")
         model_results = np.zeros((self.collocation_points.shape[0], temp.shape[0])) # temp.shape=n_points
-        for i, name in enumerate(simulation_names):
+        for i, name in enumerate(current_sim_names):
             model_results[i, :] = np.loadtxt(os.path.abspath(os.path.expanduser(self.RESULTS_DIR))+"/" + name + "_" +
                                              self.CALIB_TARGET + ".txt")[:, 1]
 
@@ -257,7 +259,7 @@ class BALwithGPE(UserDefsTelemac):
             length_scale_bounds=length_scale_bounds  # [(0.001, 0.1), (0.001, 0.4), (5, 300), (0.02, 2)]
         )
         for par, model in enumerate(model_results.T):
-            # construct square exponential, Radial-Basis Function kernel with means (lengths) and bounds of
+            # construct squared exponential (radial-basis function) kernel with means (lengths) and bounds of
             # calibration params, and multiply with variance of the model
             ikernel = kernel * np.var(model)
             # instantiate and fit GPR
@@ -294,7 +296,7 @@ class BALwithGPE(UserDefsTelemac):
             total_error = (observations["observation error"] ** 2 + loocv_error) * 5
 
             # Part 6.1.x Bayesian inference: INSTANTIATE BAL object to evaluate initial surrogate model
-            bal = BAL(observations=observations["observation"].T, error=total_error)
+            bal = Bal(observations=observations["observation"].T, error=total_error)
             # CHECK CONVERGENCE: Compute Bayesian scores of prior (in parameter space)
             logger.info(" * writing prior BME and RE for BAL step no. {0} to ".format(str(bal_step)) + self.RESULTS_DIR)
             # retrieve bayesian scores through rejection sampling

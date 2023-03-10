@@ -131,7 +131,7 @@ We recommend working with GMSH for generating a computational mesh for the numer
 .. toctree::
     :hidden:
 
-    Usage <usage>
+    Usage with TELEMAC <usage-telemac>
 
 .. toctree::
     :hidden:
