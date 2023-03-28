@@ -6,9 +6,9 @@ import os as _os
 import pandas as _pd
 import numpy as _np
 from openpyxl import load_workbook
-from basic_functions import *
+from function_pool import *
 import random as rnd
-from usr_defs_BASICS import UserDefs
+from model_structure.usr_defs_standard import UserDefs
 
 
 class UserDefsTelemac(UserDefs):

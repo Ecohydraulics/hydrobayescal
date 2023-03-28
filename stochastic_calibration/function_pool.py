@@ -1,5 +1,5 @@
-"""fundamental Python functions"""
-from config_TELEMAC import *
+"""Function pool for usage at different package levels"""
+from model_structure.config_physics import *
 import numpy as _np
 import subprocess
 

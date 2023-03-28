@@ -10,7 +10,7 @@ FullComplexityModel class.
 import os as _os
 import numpy as _np
 from datetime import datetime
-from basic_functions import *
+from function_pool import *
 
 
 class FullComplexityModel:
@@ -18,7 +18,7 @@ class FullComplexityModel:
             self,
             model_dir="",
             calibration_parameters=None,
-            control_file="tm.cas",
+            control_file="control.file",
             *args,
             **kwargs
     ):

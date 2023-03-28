@@ -7,8 +7,8 @@ import shutil
 import numpy as _np
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
-from basic_functions import *
-from control_BASIC_MODEL import FullComplexityModel
+from function_pool import *
+from model_structure.control_full_complexity import FullComplexityModel
 
 
 class TelemacModel(FullComplexityModel):

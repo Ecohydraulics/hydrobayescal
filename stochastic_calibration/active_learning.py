@@ -4,7 +4,7 @@ inversion
 """
 
 import numpy as _np  # use underscore import to avoid double-numpy imports with wildcards (import *)
-from config_BASICS import *
+from config_logging import *
 
 
 class Bal:
@@ -189,3 +189,4 @@ class Bal:
         except NameError:
             logger_error.error("Failed to calculate selection (unknown active learning strategy %s provided)" % str(al_strategy))
             return _np.nan, _np.nan
+

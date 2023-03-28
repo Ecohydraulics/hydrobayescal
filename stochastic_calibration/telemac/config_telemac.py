@@ -2,7 +2,7 @@
 Global constant and variable definitions
 """
 import pandas as _pd
-from config_BASICS import *
+from config_logging import *
 
 # get telemac and gaia control parameters to enable differentiated writing of steering files
 GAIA_PARAMETERS = _pd.read_csv(SCRIPT_DIR+"templates/parameters-gaia.csv", names=["parameter", "type"])

@@ -6,8 +6,8 @@ Full-complexity coupling is currently only available for the open-source TELEMAC
 For any new model bindings create:
     * a new config_SOFTWARE.py file (read instructions in config_BASICS.py) and add it to the imports here
         The new model (Software) should then here be added as an option in __setattr__()
-    * a new control_SOFTWARE.py file (read instructions in control_BASIC_MODEL.py)
-    * an additional inheritance for the BALwithGPE class (e.g., UserDefsOpenFOAM) and initialize it
+    * a new control_SOFTWARE.py file (read instructions in model_structure.control_full_complexity.py)
+    * an additional inheritance for the BalWithGPE class (e.g., UserDefsOpenFOAM) and initialize it
         in __init__(), similar to the Telemac bindings (not forget to import the user_defs_MODEL.py here)
     * a user file (e.g., a user input XLSX like the one for TELEMAC)
     * a new documentation in docs/usage-SOFTWARE.rst and bind it to docs/index.rst
@@ -26,12 +26,10 @@ import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 from active_learning import Bal
-from control_TELEMAC import *
-from usr_defs_TELEMAC import *  # contains UserDefs and link to config and basic_functions
 from doepy.doe_control import DesignOfExperiment
 
 
-class BALwithGPE(UserDefsTelemac):
+class BalWithGPE(UserDefsTelemac):
     """
     The BAL_GPE object is the framework for running a stochastic calibration of a deterministic model by using a
         Gaussian process emulator (GPE) - based surrogate model that is fitted through Bayesian active learning (BAL).
