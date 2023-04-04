@@ -3,13 +3,14 @@ Bayesian calibration of a numerical model using surrogate-assisted Bayesian inve
 Gaussian Process Emulator (GPE) as surrogate model (metamodel).
 
 Full-complexity coupling is currently only available for the open-source TELEMAC modeling suite.
-For any new model bindings create:
-    * a new config_SOFTWARE.py file (read instructions in config_BASICS.py) and add it to the imports here
-        The new model (Software) should then here be added as an option in __setattr__()
+For any new model bindings create a new SOFTWARE sub-folder containing:
+    * a new config_SOFTWARE.py file
     * a new control_SOFTWARE.py file (read instructions in model_structure.control_full_complexity.py)
     * an additional inheritance for the BalWithGPE class (e.g., UserDefsOpenFOAM) and initialize it
-        in __init__(), similar to the Telemac bindings (not forget to import the user_defs_MODEL.py here)
+        in __init__(), similar to the Telemac bindings (not forget to import the user_defs_SOFTWARE.py here)
+Next, also add:
     * a user file (e.g., a user input XLSX like the one for TELEMAC)
+    * the new SOFTWARE an option in BalWithGPE.__setattr__() in this script
     * a new documentation in docs/usage-SOFTWARE.rst and bind it to docs/index.rst
 Please do not forget to verify if the new Software works (i.e., provide a small showcase) before merging with main.
 
@@ -18,15 +19,19 @@ Method adapted from: Oladyshkin et al. (2020). Bayesian Active Learning for the 
 Emulator Using Information Theory. Entropy, 22(8), 890.
 """
 import os
-import numpy as np
 from datetime import datetime
 from functools import wraps
-
+import random as rnd
+import numpy as np
 import pandas as pd
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
-from active_learning import Bal
-from doepy.doe_control import DesignOfExperiment
+
+# import own scripts
+from .active_learning import *
+from .doepy.doe_control import DesignOfExperiment
+from .telemac.control_telemac import TelemacModel
+from .telemac.usr_defs_telemac import UserDefsTelemac
 
 
 class BalWithGPE(UserDefsTelemac):
@@ -56,7 +61,7 @@ class BalWithGPE(UserDefsTelemac):
         :param kwargs: placeholder for consistency
         """
         UserDefsTelemac.__init__(self, input_worbook_name)  # get user def file
-        self.write_global_settings(self.input_xlsx_name)  # apply user defs
+        self.assign_global_settings(self.input_xlsx_name)  # apply user defs
         self.__numerical_model = None
         self.__setattr__("numerical_model", software_coupling)
         self.observations = {}
@@ -109,7 +114,7 @@ class BalWithGPE(UserDefsTelemac):
         return wrapper
 
     @log_actions
-    def run_calibration(self):
+    def full_calibration(self):
         """loads provided input file name as pandas dataframe - all actions called from here are written to a logfile
 
             Returns:
@@ -185,7 +190,7 @@ class BalWithGPE(UserDefsTelemac):
             method=self.init_run_sampling,
             total_number_of_samples=self.init_runs
         )
-        self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-scalars.csv")
+        self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-scalars.csv".replace("/", os.sep))
 
         # update any list-like parameter values and remove multiplier from calib par values
         if "Multiplier" in calib_par_value_dict.keys():

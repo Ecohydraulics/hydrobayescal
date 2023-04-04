@@ -2,13 +2,15 @@
 Instantiate global variables of user definitions made in user_input.xlsx
 """
 
-import os as _os
 import pandas as _pd
 import numpy as _np
 from openpyxl import load_workbook
-from function_pool import *
-import random as rnd
-from model_structure.usr_defs_standard import UserDefs
+
+# package scripts
+from .config_telemac import *  # contains os and sys
+from .function_pool import *
+from .model_structure.usr_defs_standard import UserDefs
+
 
 
 class UserDefsTelemac(UserDefs):
@@ -67,17 +69,17 @@ class UserDefsTelemac(UserDefs):
     def check_user_input(self):
         """Check if global variables are correctly assigned"""
         print(" * verifying directories...")
-        if not (_os.path.isdir(self.SIM_DIR)):
+        if not (os.path.isdir(self.SIM_DIR)):
             print("ERROR: Cannot find %s - please double-check input XLSX (cell B8).")
             raise NotADirectoryError
-        if not (_os.path.isfile(self.SIM_DIR + "/%s" % self.TM_CAS)):
+        if not (os.path.isfile(self.SIM_DIR + "/%s" % self.TM_CAS)):
             print("ERROR: The TELEMAC steering file %s does not exist." % str(self.SIM_DIR + "/%s" % self.TM_CAS))
             raise FileNotFoundError
         if self.GAIA_CAS:
-            if not (_os.path.isfile(self.SIM_DIR + "/%s" % self.GAIA_CAS)):
+            if not (os.path.isfile(self.SIM_DIR + "/%s" % self.GAIA_CAS)):
                 print("ERROR: The GAIA steering file %s does not exist." % str(self.SIM_DIR + "/%s" % self.GAIA_CAS))
                 raise FileNotFoundError
-        if not (_os.path.isfile(self.CALIB_PTS)):
+        if not (os.path.isfile(self.CALIB_PTS)):
             print("ERROR: The Calibration CSV file %s does not exist." % str(self.CALIB_PTS))
             raise FileNotFoundError
         if self.MC_SAMPLES < (self.AL_SAMPLES + self.IT_LIMIT):
@@ -104,7 +106,7 @@ class UserDefsTelemac(UserDefs):
             "recalculation priors": self.read_wb_range(PRIOR_REC_RANGE),
         }
 
-    def write_global_settings(self, file_name=None):
+    def assign_global_settings(self, file_name=None):
         """rewrite globals from config
 
         Args:

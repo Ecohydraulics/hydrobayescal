@@ -1,12 +1,16 @@
 """
 Global constant and variable definitions
 """
+import os, sys
 import pandas as _pd
-from config_logging import *
+
+# get package directories
+sys.path.insert(0, os.path.abspath(os.path.join(__file__, "../..".replace("/", os.sep))))
 
 # get telemac and gaia control parameters to enable differentiated writing of steering files
-GAIA_PARAMETERS = _pd.read_csv(SCRIPT_DIR+"templates/parameters-gaia.csv", names=["parameter", "type"])
-TM2D_PARAMETERS = _pd.read_csv(SCRIPT_DIR+"templates/parameters-telemac2d.csv", names=["parameter", "type"])
+TM_TEMPLATE_DIR = os.path.abspath(os.path.join(__file__, "..")) + os.sep + "templates" + os.sep
+GAIA_PARAMETERS = _pd.read_csv(TM_TEMPLATE_DIR+"parameters-gaia.csv", names=["parameter", "type"])
+TM2D_PARAMETERS = _pd.read_csv(TM_TEMPLATE_DIR+"parameters-telemac2d.csv", names=["parameter", "type"])
 TM_TRANSLATOR = {
     "TOPOGRAPHIC CHANGE": "BOTTOM",
     "DEPTH": "DEPTH",

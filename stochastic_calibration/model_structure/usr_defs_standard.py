@@ -36,6 +36,24 @@ class UserDefs:
         self.al_BME = None
         self.al_RE = None
 
+    def assign_global_settings(self, *args, **kwargs):
+        """Replace with method to assign Bayesian Calibration settings. Specifically, define
+        the following variables:
+
+        self.CALIB_PTS := calibration parameter points (str/file)
+        self.AL_STRATEGY := active learning strategy (str) (Entropy
+        self.score_method := score calculation method, either Bayesian weighting or rejection sampling (str)
+        self.init_runs := number of initial full-complexity runs (int)
+        self.init_run_sampling := strategy for determining calibration parameter values of initial runs (e.g., min-max)
+        self.IT_LIMIT := maximum number of active learning iterations (int), typically 50-100
+        self.AL_SAMPLES := no. of samples for moving from prior to posterior
+        self.MC_SAMPLES := no. of uniform samples from calibration parameter ranges
+        self.MC_SAMPLES_AL := number of monte carlo samples for exploring the output space
+
+        Make sure to also assign all other variables defined in the __init__ method
+        """
+        pass
+
     def check_user_input(self):
         """Not absolutely necessary but recommended: verify if global variables are correctly assigned"""
         pass

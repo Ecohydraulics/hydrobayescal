@@ -5,7 +5,7 @@ import os
 import logging
 
 # directories
-SCRIPT_DIR = r"" + os.path.dirname(__file__) + "/"
+SCRIPT_DIR = r"" + os.path.dirname(__file__) + os.sep
 
 # setup logging
 info_formatter = logging.Formatter("%(asctime)s - %(message)s")

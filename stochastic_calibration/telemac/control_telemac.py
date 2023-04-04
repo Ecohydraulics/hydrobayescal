@@ -2,13 +2,15 @@
 Functional core for coupling the Surrogate-Assisted Bayesian inversion technique with Telemac.
 """
 
-import os as _os
+from .config_telemac import *  # provides os and sys
 import shutil
 import numpy as _np
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
-from function_pool import *
-from model_structure.control_full_complexity import FullComplexityModel
+
+# get package script
+from .function_pool import *
+from .model_structure.control_full_complexity import FullComplexityModel
 
 
 class TelemacModel(FullComplexityModel):
@@ -39,12 +41,12 @@ class TelemacModel(FullComplexityModel):
         """
         FullComplexityModel.__init__(self, model_dir=model_dir)
 
-        self.tm_cas = "{}{}{}".format(self.model_dir, _os.sep, control_file)
-        self.tm_results_file = "{}{}{}".format(self.res_dir, _os.sep, str("resIDX-" + control_file.strip(".cas") + ".slf"))
+        self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
+        self.tm_results_file = "{}{}{}".format(self.res_dir, os.sep, str("resIDX-" + control_file.strip(".cas") + ".slf"))
         if gaia_steering_file:
             print("* received gaia steering file: " + gaia_steering_file)
-            self.gaia_cas = "{}{}{}".format(self.model_dir, _os.sep, gaia_steering_file)
-            self.gaia_results_file = "{}{}{}".format(self.res_dir, _os.sep,
+            self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, gaia_steering_file)
+            self.gaia_results_file = "{}{}{}".format(self.res_dir, os.sep,
                                                      str("resIDX-" + gaia_steering_file.strip(".cas") + ".slf"))
         else:
             self.gaia_cas = None
@@ -142,7 +144,7 @@ class TelemacModel(FullComplexityModel):
         variable_interest = param_name.rstrip().lstrip()
 
         # open steering file with read permission and save a temporary copy
-        if _os.path.isfile(steering_file_name):
+        if os.path.isfile(steering_file_name):
             cas_file = open(steering_file_name, "r")
         else:
             print("ERROR: no such steering file:\n" + steering_file_name)
@@ -205,11 +207,11 @@ class TelemacModel(FullComplexityModel):
         :return:
         """
         # save original working directory
-        original_directory = _os.getcwd()
+        original_directory = os.getcwd()
 
         # access folder with results
         try:
-            subfolders = [f.name for f in _os.scandir(original_directory) if f.is_dir()]
+            subfolders = [f.name for f in os.scandir(original_directory) if f.is_dir()]
         except AttributeError:
             print("WARNING: No folders found in %s - skipping Gretel (parallel processing)" % original_directory)
             return -1
@@ -217,9 +219,9 @@ class TelemacModel(FullComplexityModel):
             simulation_index_list = [i for i, s in enumerate(subfolders) if telemac_file_name in s]
             simulation_index = simulation_index_list[0]
             original_name = subfolders[simulation_index]
-            _os.rename(original_name, sim_folder)
+            os.rename(original_name, sim_folder)
             simulation_path = "./" + sim_folder
-            _os.chdir(simulation_path)
+            os.chdir(simulation_path)
         except Exception as e:
             print("WARNING: pre-processing for Gretel failed - skipping Gretel:\n" + str(e))
             return -1
@@ -234,7 +236,7 @@ class TelemacModel(FullComplexityModel):
         # copy result files into original folder
         shutil.copy("GAIRES", original_directory)
         shutil.copy("T2DRES", original_directory)
-        _os.chdir(original_directory)
+        os.chdir(original_directory)
 
     def rename_selafin(self, old_name=".slf", new_name=".slf"):
         """
@@ -247,8 +249,8 @@ class TelemacModel(FullComplexityModel):
         :rtype: None
         """
 
-        if _os.path.exists(old_name):
-            _os.rename(old_name, new_name)
+        if os.path.exists(old_name):
+            os.rename(old_name, new_name)
         else:
             print("WARNING: SELAFIN file %s does not exist" % old_name)
 
