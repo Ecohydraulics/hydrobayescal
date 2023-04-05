@@ -21,6 +21,7 @@ class TelemacModel(FullComplexityModel):
             control_file="tm.cas",
             gaia_steering_file=None,
             n_processors=1,
+            slf_input_file=".slf",
             tm_xd="Telemac2d",
             *args,
             **kwargs
@@ -35,12 +36,14 @@ class TelemacModel(FullComplexityModel):
         :param str control_file: name of the steering file to be used (should end on ".cas"); do not include directory
         :param str gaia_steering_file: name of a gaia steering file (optional)
         :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is 1
+        :param str slf_input_file: name of the SLF input file (without directory, file has to be located in model_dir)
         :param str tm_xd: either 'Telemac2d' or 'Telemac3d'
         :param args:
         :param kwargs:
         """
         FullComplexityModel.__init__(self, model_dir=model_dir)
 
+        self.slf_input_file = slf_input_file
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
         self.tm_results_file = "{}{}{}".format(self.res_dir, os.sep, str("resIDX-" + control_file.strip(".cas") + ".slf"))
         if gaia_steering_file:
@@ -180,6 +183,7 @@ class TelemacModel(FullComplexityModel):
         cas_file = open(steering_file_name, "w")
         cas_file.writelines(temp)
         cas_file.close()
+        return 0
 
     def run_simulation(self):
         """
@@ -196,47 +200,6 @@ class TelemacModel(FullComplexityModel):
         else:
             call_subroutine(self.tm_xd_dict[self.tm_xd] + self.tm_cas)
         print("TELEMAC simulation time: " + str(datetime.now() - start_time))
-
-    def run_gretel(self, telemac_file_name="SLF?", number_processors=1, sim_folder=""):
-        """
-        Launch Gretel for multi-core processing
-
-        :param str telemac_file_name: name of a telemac file (SLF?)
-        :param int number_processors: number of processors for parallelization
-        :param str sim_folder: directory where the Telemac simulation lives
-        :return:
-        """
-        # save original working directory
-        original_directory = os.getcwd()
-
-        # access folder with results
-        try:
-            subfolders = [f.name for f in os.scandir(original_directory) if f.is_dir()]
-        except AttributeError:
-            print("WARNING: No folders found in %s - skipping Gretel (parallel processing)" % original_directory)
-            return -1
-        try:
-            simulation_index_list = [i for i, s in enumerate(subfolders) if telemac_file_name in s]
-            simulation_index = simulation_index_list[0]
-            original_name = subfolders[simulation_index]
-            os.rename(original_name, sim_folder)
-            simulation_path = "./" + sim_folder
-            os.chdir(simulation_path)
-        except Exception as e:
-            print("WARNING: pre-processing for Gretel failed - skipping Gretel:\n" + str(e))
-            return -1
-
-        # run gretel code
-        bash_base = "gretel.py --geo-file=T2DGEO --res-file="
-        bash_ending = " --ncsize=" + str(number_processors) + " --bnd-file=T2DCLI"
-
-        call_subroutine(str(bash_base + "GAIRES" + bash_ending))  # merge gaia files
-        call_subroutine(str(bash_base + "T2DRES" + bash_ending))  # merge telemac files
-
-        # copy result files into original folder
-        shutil.copy("GAIRES", original_directory)
-        shutil.copy("T2DRES", original_directory)
-        os.chdir(original_directory)
 
     def rename_selafin(self, old_name=".slf", new_name=".slf"):
         """
@@ -256,23 +219,23 @@ class TelemacModel(FullComplexityModel):
 
     def get_variable_value(
             self,
-            file_name=".slf",
-            calibration_variable="",
+            slf_file_name=".slf",
+            calibration_par="",
             specific_nodes=None,
             save_name=None
     ):
         """
         Retrieve values of parameters (simulation parameters to calibrate)
 
-        :param str file_name: name of a SELAFIN *.slf file
-        :param str calibration_variable: name of calibration variable of interest
+        :param str slf_file_name: name of a SELAFIN *.slf file
+        :param str calibration_par: name of calibration variable of interest
         :param list or numpy.array specific_nodes: enable to only get values of specific nodes of interest
         :param str save_name: name of a txt file where variable values should be written to
         :return:
         """
 
         # read SELAFIN file
-        slf = ppSELAFIN(file_name)
+        slf = ppSELAFIN(slf_file_name)
         slf.readHeader()
         slf.readTimes()
 
@@ -286,7 +249,7 @@ class TelemacModel(FullComplexityModel):
         # remove unnecessary spaces from variables_names
         variable_names = [v.strip() for v in variable_names]
         # get position of the value of interest
-        index_variable_interest = variable_names.index(calibration_variable)
+        index_variable_interest = variable_names.index(calibration_par)
 
         # read the variables values in the last time step
         slf.readVariables(len(times) - 1)

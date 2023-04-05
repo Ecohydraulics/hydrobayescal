@@ -1,0 +1,205 @@
+% framework provided by pgf-umlcd.sty, a set of macros for drawing UML class diagrams
+% UML started on: 2023-04-05
+% written by: Sebastian Schwindt
+
+\documentclass{article}
+\usepackage[margin=10mm,landscape,a2paper]{geometry}
+\usepackage{hyperref}
+
+\usepackage[
+% school,
+% simplified
+]{pgf-umlcd}
+
+\usepackage{listings}
+
+\definecolor{listinggray}{gray}{0.92}
+\lstset{ %
+language=[LaTeX]TeX,
+breaklines=true,
+frame=single,
+% frameround=tttt,
+basicstyle=\footnotesize\ttfamily,
+backgroundcolor=\color{listinggray},
+keywordstyle=\color{blue}
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  anchorcolor=black,
+  citecolor=olive,
+  filecolor=magenta,
+  menucolor=red,
+  urlcolor=blue
+}
+
+% redefine UML package colors so that it hurts less in the eyes
+\renewcommand{\umlfillcolor}{gray_light}
+
+
+\begin{document}
+\section*{\texttt{\detokenize{stochastic_calibration}}}
+
+\begin{tikzpicture}
+	\begin{package}{model_structure}
+		\begin{class}[text width=10cm]{FullComplexityModel}{0,0}
+			\attribute{model_dir: os.path }
+			\attribute{control_file: str }
+			\attribute{collocation_file: str }
+			\attribute{res_dir: str }
+			
+			\operation{update_model_controls(new_parameter_values: dict, simulation_id: int): None}
+			\operation{run_simulation(None): None}
+		\end{class}
+		\begin{class}[text width=10cm]{UserDefs}{0,10}
+			\attribute{CALIB_PAR_SET: dict }
+			\attribute{CALIB_PTS: numpy }
+			\attribute{CALIB_TARGETS: list }
+			\attribute{init_runs: int }
+			\attribute{init_run_sampling: str}
+			\attribute{IT_LIMIT: int}
+			\attribute{MC_SAMPLES: int}
+			\attribute{MC_SAMPLES_AL: int}
+			\attribute{AL_SAMPLES: int}
+			\attribute{AL_STRATEGY: str}
+			\attribute{score_method: str}
+			\attribute{SIM_DIR: str}
+			\attribute{BME: None}
+			\attribute{RE: None}
+			\attribute{al_BME: None}
+			\attribute{al_RE: None}
+			
+			\operation{assign_global_settings(all attributes): None}
+			\operation{check_user_input(None): None}
+			\operation{read_wb_range(read_range: str, sheet_name: str): pd.df}
+		\end{class}
+		\begin{object}[text width=10cm]{\detokenize{config_physics}}{0,13}
+			\attribute{GRAVITY: 9.81 }
+			\attribute{KINEMATIC_VISCOSITY: 10 ** -6}
+			\attribute{WATER_DENSITY: 10. ** 3}
+			\attribute{SED_DENSITY: 2650 }
+		\end{object}
+	\end{package}
+
+	\begin{package}{telemac}
+		\begin{class}[text width=10cm]{TelemacModel}{13,0}
+			\inherit{FullComplexityModel}
+			\attribute{calibration_parameters: dict}
+			\attribute{control_file: str }
+			\attribute{nproc: int }
+			\attribute{slf_input_file: str}
+			\attribute{tm_cas: str }
+			\attribute{tm_results_file: str }
+			\attribute{tm_xd: str }
+			\attribute{tm_xd_dict: dict }
+			\attribute{**gaia_cas: str }
+			\attribute{**gaia_results_file: str }
+						
+			\operation{create_cas_string(param_name: str, value: var.): None}
+			\operation{get_variable_value(slf_file_name: str, calibration_par: str, specific_nodes: np.array, save_name: str): np.array}
+			\operation{rename_selafin(old_name=".slf", new_name=".slf"): None}
+			\operation{rewrite_steering_file(param_name: str, updated_string: str, steering_module="telemac"): int}
+			\operation{>> run_simulation}
+			\operation{>> update_model_controls}
+		\end{class}
+		\begin{class}[text width=10cm]{TelemacUserDefs}{13,5}
+			\inherit{UserDefs}
+			\attribute{N_CPUS: int }
+			\attribute{TM_CAS: str }
+			\attribute{tm_xD: str }
+			\attribute{GAIA_CAS: str }
+			
+			\operation{assign_calib_ranges(direct_par_df: pd.df, vector_par_df: pd.df, recalc_par_df: pd.df): None}
+			\operation{check_user_input(None): None}
+			\operation{>> assign_global_settings}
+		\end{class}
+		\begin{object}[text width=10cm]{\detokenize{config_telemac}}{13,11}
+			\attribute{TM_TEMPLATE_DIR: os.path }
+			\attribute{GAIA_PARAMETERS: pd.df}
+			\attribute{TM2D_PARAMETERS: pd.df}
+			\attribute{TM_TRANSLATOR: dict}
+			\attribute{AL_RANGE = "A14:B22"}
+			\attribute{MEASUREMENT_DATA_RANGE = "A23:B26"}
+			\attribute{PRIOR_SCA_RANGE = "A32:B35"}
+			\attribute{PRIOR_VEC_RANGE = "A38:B40"}
+			\attribute{PRIOR_REC_RANGE = "A43:B44"}
+			\attribute{ZONAL_PAR_RANGE = "A47:A49"}
+			\attribute{RECALC_PARS: dict}
+		\end{object}
+	\end{package}
+	
+	\begin{object}[text width=10cm]{\detokenize{function_pool}}{19,16}
+		\operation{append_new_line(file_name: str, text_to_append: str): None }
+	\end{object}
+
+	% associations for import directions
+	\ association { \detokenize{function_pool} }{ TelemacUserDefs }{0..1}{}{0..*}{import}
+
+\end{tikzpicture}
+
+\end{document}
+%\section{Basics}
+%\subsection{Class with attributes and operations}
+%Note: If you don't want to show empty parts in the diagrams, please
+%use \texttt{simplified} option, e.g. \lstinline|\usepackage[simplified]{pgf-umlcd}|.\\
+%\demo{class}
+%
+%\subsubsection{Visibility of attributes and operations}
+%\demo[0.8]{visibility}
+%
+%\subsubsection{Abstract class and interface}
+%\demo[0.5]{abstract-class}
+%\demo[0.5]{interface}
+%
+%\subsubsection{Object}
+%\demo[0.7]{object}
+%Note: Object with rounded corners and methods are used in German school for didactic reasons. You get the rounded corners with \lstinline|\usepackage[school]{pgf-umlcd}|. If you need both in one document you can switch it with \lstinline|\switchUmlcdSchool| \\
+%\switchUmlcdSchool
+%\demo[0.7]{object}
+%\demo[0.7]{object-include-methods}
+%
+%\subsubsection{Note}
+%The \lstinline|\umlnote| use the same syntax as tikz command
+%\lstinline|\node|, e.g. \lstinline|\umlnote[style] (name) at (coordinate) {text};|
+%
+%\demo[0.7]{note}
+%
+%\subsection{Inheritance and implement}
+%\subsubsection{Inheritance}
+%\demo{inheritance}
+%\subsubsection{Multiple Inheritance}
+%\demo{multiple-inheritance}
+% 
+%\subsubsection{Implement an interface}
+%\demo{implement-interface}
+%
+%\subsection{Association, Aggregation and Composition}
+%\subsubsection{Association} 
+%\demo{association}
+% 
+%\subsubsection{Unidirectional association}
+%\demo{unidirectional-association}
+%
+%\subsubsection{Aggregation}
+%\demo{aggregation}
+%
+%\subsubsection{Composition}
+%\demo{composition}
+%
+%\subsection{Package}
+%\demo{package}
+%
+%\section{Customization}
+%\subsection{Color settings}
+%The color of digram is defined by \lstinline|\umltextcolor|, \lstinline|\umldrawcolor| and \lstinline|\umlfillcolor|, such as:
+%
+%\demo{color} 
+%
+%\section{Examples}
+%\subsection{Abstract Factory}
+%\example{abstract-factory}
+
+
+
+

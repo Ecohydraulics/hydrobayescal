@@ -1,0 +1,20 @@
+\contentsline {section}{\numberline {1}Basics}{1}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Class with attributes and operations}{1}{subsection.1.1}%
+\contentsline {subsubsection}{\numberline {1.1.1}Visibility of attributes and operations}{2}{subsubsection.1.1.1}%
+\contentsline {subsubsection}{\numberline {1.1.2}Abstract class and interface}{2}{subsubsection.1.1.2}%
+\contentsline {subsubsection}{\numberline {1.1.3}Object}{2}{subsubsection.1.1.3}%
+\contentsline {subsubsection}{\numberline {1.1.4}Note}{3}{subsubsection.1.1.4}%
+\contentsline {subsection}{\numberline {1.2}Inheritance and implement}{3}{subsection.1.2}%
+\contentsline {subsubsection}{\numberline {1.2.1}Inheritance}{3}{subsubsection.1.2.1}%
+\contentsline {subsubsection}{\numberline {1.2.2}Multiple Inheritance}{4}{subsubsection.1.2.2}%
+\contentsline {subsubsection}{\numberline {1.2.3}Implement an interface}{4}{subsubsection.1.2.3}%
+\contentsline {subsection}{\numberline {1.3}Association, Aggregation and Composition}{4}{subsection.1.3}%
+\contentsline {subsubsection}{\numberline {1.3.1}Association}{4}{subsubsection.1.3.1}%
+\contentsline {subsubsection}{\numberline {1.3.2}Unidirectional association}{5}{subsubsection.1.3.2}%
+\contentsline {subsubsection}{\numberline {1.3.3}Aggregation}{5}{subsubsection.1.3.3}%
+\contentsline {subsubsection}{\numberline {1.3.4}Composition}{5}{subsubsection.1.3.4}%
+\contentsline {subsection}{\numberline {1.4}Package}{6}{subsection.1.4}%
+\contentsline {section}{\numberline {2}Customization}{6}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Color settings}{6}{subsection.2.1}%
+\contentsline {section}{\numberline {3}Examples}{7}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Abstract Factory}{7}{subsection.3.1}%
