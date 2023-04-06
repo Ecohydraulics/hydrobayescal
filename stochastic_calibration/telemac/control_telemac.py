@@ -9,8 +9,8 @@ from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 # get package script
-from .function_pool import *
-from .model_structure.control_full_complexity import FullComplexityModel
+from ..function_pool import *
+from ..model_structure.control_full_complexity import FullComplexityModel
 
 
 class TelemacModel(FullComplexityModel):
@@ -20,7 +20,7 @@ class TelemacModel(FullComplexityModel):
             calibration_parameters=None,
             control_file="tm.cas",
             gaia_steering_file=None,
-            n_processors=1,
+            n_processors=None,
             slf_input_file=".slf",
             tm_xd="Telemac2d",
             *args,
@@ -35,7 +35,7 @@ class TelemacModel(FullComplexityModel):
                     this argument must be provided
         :param str control_file: name of the steering file to be used (should end on ".cas"); do not include directory
         :param str gaia_steering_file: name of a gaia steering file (optional)
-        :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is 1
+        :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is None (use cas definition)
         :param str slf_input_file: name of the SLF input file (without directory, file has to be located in model_dir)
         :param str tm_xd: either 'Telemac2d' or 'Telemac3d'
         :param args:
@@ -195,7 +195,7 @@ class TelemacModel(FullComplexityModel):
         :return None:
         """
         start_time = datetime.now()
-        if self.nproc > 1:
+        if self.nproc:
             call_subroutine(self.tm_xd_dict[self.tm_xd] + self.tm_cas + " --ncsize=" + str(self.nproc))
         else:
             call_subroutine(self.tm_xd_dict[self.tm_xd] + self.tm_cas)
