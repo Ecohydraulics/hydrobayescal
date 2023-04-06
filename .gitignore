@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# large data in example folders
+examples/yuba/
+
 # pycharm
 .idea/
 

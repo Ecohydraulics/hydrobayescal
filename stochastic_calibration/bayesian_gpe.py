@@ -114,7 +114,7 @@ class BalWithGPE(UserDefsTelemac):
         return wrapper
 
     @log_actions
-    def full_calibration(self):
+    def full_model_calibration(self):
         """loads provided input file name as pandas dataframe - all actions called from here are written to a logfile
 
             Returns:
@@ -130,7 +130,7 @@ class BalWithGPE(UserDefsTelemac):
         # 4 - get initial collocation points
         self.get_collocation_points()
         # incomplete from here on - USE EDUARDO EMAIL
-        self.initialize_score_writing(self.run_BAL())
+        self.initialize_score_writing(self.runBal())
 
     def initiate_prior_distributions(self):
         """Assign uniform distributions for all user-defined parameters.
@@ -214,6 +214,7 @@ class BalWithGPE(UserDefsTelemac):
                 simulation_id=init_run_it
             )
             self.numerical_model.run_simulation()
+        return 0
 
     def get_collocation_points(self):
 
@@ -272,11 +273,10 @@ class BalWithGPE(UserDefsTelemac):
         return surrogate_prediction, surrogate_std
 
     @wraps(initialize_score_writing)
-    def run_BAL(self, model_results, observations, prior=None):
+    def runBal(self, model_results, prior=None):
         """ Bayesian iterations for updating the surrogate and calculating maximum likelihoods
 
         :param ndarray model_results: results of an initial full-complexity model run (before calling this function)
-        :param ndarray observations: data stored in calibration_points
         :param ndarray prior: prior distributions of calibration parameters stored in columns (option for modular use)
         :return:
         """
@@ -291,15 +291,15 @@ class BalWithGPE(UserDefsTelemac):
             logger.info(" * retreaving surrogate predictions for BAL step {0}".format(str(bal_step)))
             surrogate_prediction, surrogate_std = self.get_surrogate_prediction(
                 model_results=model_results,
-                number_of_points=observations["no of points"]
+                number_of_points=self.observations["no of points"]
             )
 
             # prepare 6.1.x: Read or compute the other errors to incorporate in the likelihood function
             loocv_error = np.loadtxt("loocv_error_variance.txt")[:, 1]
-            total_error = (observations["observation error"] ** 2 + loocv_error) * 5
+            total_error = (self.observations["observation error"] ** 2 + loocv_error) * 5
 
             # Part 6.1.x Bayesian inference: INSTANTIATE BAL object to evaluate initial surrogate model
-            bal = Bal(observations=observations["observation"].T, error=total_error)
+            bal = Bal(observations=self.observations["observation"].T, error=total_error)
             # CHECK CONVERGENCE: Compute Bayesian scores of prior (in parameter space)
             logger.info(" * writing prior BME and RE for BAL step no. {0} to ".format(str(bal_step)) + self.RESULTS_DIR)
             # retrieve bayesian scores through rejection sampling
@@ -374,6 +374,7 @@ class BalWithGPE(UserDefsTelemac):
 
             # Progress report
             print("Bayesian iteration: " + str(bal_step + 1) + "/" + str(self.IT_LIMIT))
+            return 0
 
     def sample_collocation_points(self, method="uniform"):
         """Sample initial collocation points

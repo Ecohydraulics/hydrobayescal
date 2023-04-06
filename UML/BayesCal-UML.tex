@@ -1,0 +1,321 @@
+% framework provided by pgf-umlcd.sty, a set of macros for drawing UML class diagrams
+% UML started on: 2023-04-05
+% written by: Sebastian Schwindt
+% not yet implemented DoE, pputils only partially (i.e., relevant)
+% OpenFOAM: 
+% 	* place between model_structure and telemac
+% 	* replace -- with -| links between model_structure and telemac
+
+\documentclass{article}
+\usepackage[margin=10mm,landscape,a2paper]{geometry}
+\usepackage{hyperref}
+
+\usepackage[
+% school,
+% simplified
+]{pgf-umlcd}
+
+\usepackage{listings}
+
+\definecolor{listinggray}{gray}{0.92}
+\lstset{ %
+language=[LaTeX]TeX,
+breaklines=true,
+frame=single,
+% frameround=tttt,
+basicstyle=\footnotesize\ttfamily,
+backgroundcolor=\color{listinggray},
+keywordstyle=\color{blue}
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  anchorcolor=black,
+  citecolor=olive,
+  filecolor=magenta,
+  menucolor=red,
+  urlcolor=blue
+}
+
+% redefine UML package colors so that it hurts less in the eyes
+\renewcommand{\umlfillcolor}{gray_light}
+
+
+\begin{document}
+\section*{\texttt{\detokenize{stochastic_calibration}}}
+
+\begin{tikzpicture}
+	\begin{package}{model_structure}
+		\begin{class}[text width=10cm]{FullComplexityModel}{0,-2}
+			\attribute{model_dir: os.path }
+			\attribute{control_file: str }
+			\attribute{collocation_file: str }
+			\attribute{res_dir: str }
+			
+			\operation{update_model_controls(new_parameter_values: dict, simulation_id: int): None}
+			\operation{run_simulation(None): None}
+		\end{class}
+		\begin{class}[text width=10cm]{UserDefs}{0,8}
+			\attribute{CALIB_PAR_SET: dict }
+			\attribute{CALIB_PTS: numpy }
+			\attribute{CALIB_TARGETS: list }
+			\attribute{init_runs: int }
+			\attribute{init_run_sampling: str}
+			\attribute{IT_LIMIT: int}
+			\attribute{MC_SAMPLES: int}
+			\attribute{MC_SAMPLES_AL: int}
+			\attribute{AL_SAMPLES: int}
+			\attribute{AL_STRATEGY: str}
+			\attribute{score_method: str}
+			\attribute{SIM_DIR: str}
+			\attribute{BME: None}
+			\attribute{RE: None}
+			\attribute{al_BME: None}
+			\attribute{al_RE: None}
+			
+			\operation{assign_global_settings(all attributes): None}
+			\operation{check_user_input(None): None}
+			\operation{read_wb_range(read_range: str, sheet_name: str): pd.df}
+		\end{class}
+		\begin{object}[text width=10cm]{\detokenize{config_physics}}{0,11}
+			\attribute{GRAVITY: 9.81 }
+			\attribute{KINEMATIC_VISCOSITY: 10 ** -6}
+			\attribute{WATER_DENSITY: 10. ** 3}
+			\attribute{SED_DENSITY: 2650 }
+		\end{object}
+	\end{package}
+
+	\begin{package}{telemac}
+		\begin{class}[text width=10cm]{TelemacModel}{26,0}
+			\inherit{FullComplexityModel}
+			\attribute{calibration_parameters: dict}
+			\attribute{control_file: str }
+			\attribute{nproc: int }
+			\attribute{slf_input_file: str}
+			\attribute{tm_cas: str }
+			\attribute{tm_results_file: str }
+			\attribute{tm_xd: str }
+			\attribute{tm_xd_dict: dict }
+			\attribute{**gaia_cas: str }
+			\attribute{**gaia_results_file: str }
+						
+			\operation{create_cas_string(param_name: str, value: var.): None}
+			\operation{get_variable_value(slf_file_name: str, calibration_par: str, specific_nodes: np.array, save_name: str): np.array}
+			\operation{rename_selafin(old_name=".slf", new_name=".slf"): None}
+			\operation{rewrite_steering_file(param_name: str, updated_string: str, steering_module="telemac"): int}
+			\operation{>> run_simulation}
+			\operation{>> update_model_controls}
+		\end{class}
+		\begin{class}[text width=10cm]{TelemacUserDefs}{26,5}
+			\inherit{UserDefs}
+			\attribute{N_CPUS: int }
+			\attribute{TM_CAS: str }
+			\attribute{tm_xD: str }
+			\attribute{GAIA_CAS: str }
+			
+			\operation{assign_calib_ranges(direct_par_df: pd.df, vector_par_df: pd.df, recalc_par_df: pd.df): None}
+			\operation{check_user_input(None): None}
+			\operation{>> assign_global_settings}
+		\end{class}
+		\begin{object}[text width=10cm]{\detokenize{config_telemac}}{26,11}
+			\attribute{TM_TEMPLATE_DIR: os.path }
+			\attribute{GAIA_PARAMETERS: pd.df}
+			\attribute{TM2D_PARAMETERS: pd.df}
+			\attribute{TM_TRANSLATOR: dict}
+			\attribute{AL_RANGE = "A14:B22"}
+			\attribute{MEASUREMENT_DATA_RANGE = "A23:B26"}
+			\attribute{PRIOR_SCA_RANGE = "A32:B35"}
+			\attribute{PRIOR_VEC_RANGE = "A38:B40"}
+			\attribute{PRIOR_REC_RANGE = "A43:B44"}
+			\attribute{ZONAL_PAR_RANGE = "A47:A49"}
+			\attribute{RECALC_PARS: dict}
+		\end{object}
+	\end{package}
+	\begin{package}{pputils/ppmodules/selafin_io_pp}
+		\begin{class}[text width=10cm]{ppSELAFIN}{39,10}
+			\attribute{float_type = 'f'}
+			\attribute{float_size = 4}			
+			\attribute{title: str}
+			\attribute{precision = 'SELAFIN '}
+			\attribute{NBV1 = 0}
+			\attribute{NBV2 = 0}
+			\attribute{vars: list }			
+			\attribute{vnames: list }
+			\attribute{vunits: list }
+			\attribute{IPARAM: list }
+			\attribute{NPLAN = 0}
+			\attribute{DATE = [1997, 8, 29, 2, 15, 0]}			
+			\attribute{NELEM = 0}
+			\attribute{NPOIN = 0}
+			\attribute{NDP = 0}		
+			\attribute{IKLE = np.zeros((self.NELEM, self.NPOIN), dtype=np.int32)}		
+			\attribute{IPOBO = np.zeros(self.NPOIN, dtype=np.int32)}
+			\attribute{x = np.zeros(self.NPOIN)}
+			\attribute{y = np.zeros(self.NPOIN)}	
+			\attribute{time: list}
+			\attribute{temp = np.zeros((self.NBV1, self.NPOIN))}			
+			\attribute{tempAtNode = np.zeros((0, 0))}
+			
+			\operation{readHeader(): None}
+			\operation{writeHeader(): None}
+			\operation{writeVariables(time: list, temp: np.array((NBV1, NPOIN))}
+			\operation{readTimes(): None}
+			\operation{readVariables(t_des: int): None}
+			\operation{readVariablesAtNode(node): None}
+			\operation{setPrecision(ftype: str, fsize: int): None}
+			\operation{getPrecision: (float_type, float_size), getNPOIN: NPOIN, getNELEM: NELEM, getTimes: time, getVarNames: vnames, getVarUnits: vunits, getNPLAN: int NPLAN, getIKLE: IKLE, getMeshX: x, getMeshY: y, getVarValues: temp, getVarValuesAtNode: tempAtNode, getIPOBO: IPOBO, getDATE: DATE, getMesh: (NELEM, NPOIN, NDP, IKLE, IPOBO, x, y)}
+			\operation{setTitle(title: str), setDATE(DATE:list[6e]), setVarNames(vnames:), setVarUnits(vunits:), setIPARAM(IPARAM:),setMesh(NELEM: int, NPOIN: int, NDP:int, IKLE: np.array, IPOBO: np.array, x: np.array, y: np.array)}
+		\end{class}
+%		\begin{object}{ppmodules.readMesh}
+%			\attribute{VARIOUS: not used}
+%		\end{object}
+%		\begin{object}{ppmodules.utilities}
+%			\attribute{VARIOUS: not used}
+%		\end{object}
+%		\begin{object}{ppmodules.writeMesh}
+%			\attribute{VARIOUS: not used}
+%		\end{object}
+	\end{package}
+	
+	\begin{object}[text width=10cm]{\detokenize{config_logging}}{0,26}
+		\attribute{SCRIPT_DIR: str}
+		\attribute{info_formatter: logging.Formatter}
+		\attribute{warn_formatter: logging.Formatter}
+		\attribute{error_formatter: logging.Formatter}
+		\attribute{logger: logging.getLogger("stochastic_calibration")}
+		\attribute{logger_warn: logging.getLogger("warnings")}
+		\attribute{logger_error: logging.getLogger("errors")}
+		\attribute{console_handler: logging.StreamHandler()}
+		\attribute{console_ehandler: logging.StreamHandler()}
+		\attribute{console_whandler: logging.StreamHandler()}
+		\attribute{info_handler=logging.FileHandler("logfile.log", "w")}
+		\attribute{warn_handler=logging.FileHandler("warnings.log", "w")}
+		\attribute{err_handler=logging.FileHandler("errors.log", "w")}
+	\end{object}
+
+	\begin{object}[text width=10cm]{\detokenize{function_pool}}{0,19}
+		\operation{append_new_line(file_name: str, text_to_append: str): None }
+		\operation{call_subroutine(bash_command: str): int}
+		\operation{calculate_settling_velocity(diameters: np. array): np.array}
+		\operation{concatenate_csv_pts(file_directory: os.path, *args: str/list): pd.df}
+		\operation{lookahead(iterable): bool}
+		\operation{str2seq(list_like_string: str, separator=",", return_type="tuple"): tuple/list}
+		\operation{log_actions(func: function): function}
+	\end{object}
+	
+	\begin{class}[text width=10cm]{Bal}{13,26}
+		\attribute{observations: np.array }
+		\attribute{error: np.array }
+		
+		\operation{compute_likelihood(prediction: np.array, normalize=False): np.array}
+		\operation{compute_bayesian_scores(prediction: np.array, method="weighting"): (float, float)}
+		\operation{selection_criteria(al_strategy: str, al_BME: np.array[d_size_AL], al_RE: np.array[d_size_AL]): (float, int)}
+	\end{class}
+
+	\begin{class}[text width=10cm]{BalWithGPE}{26,26}
+		\inherit{TelemacUserDefs}
+		
+		\attribute{__numerical_model = None}
+		\attribute{__setattr__("numerical_model", software_coupling)}
+		\attribute{observations = {}}
+		\attribute{n_simulation = int}
+		\attribute{prior_distribution = np.array(())}
+		\attribute{collocation_points = np.ndarray(())}
+		\attribute{bme_csv_prior = ""}
+		\attribute{re_csv_prior = ""}
+		\attribute{bme_score_file = None}
+		\attribute{re_score_file = None}
+		%\attribute{doe = DesignOfExperiment()}
+		
+		\operation{initialize_score_writing(func: function): function}
+		\operation{full_model_calibration(): None}
+		\operation{initiate_prior_distributions(): None}
+		\operation{load_observations(): None}
+		\operation{run_initial_simulations(): int}
+		\operation{get_collocation_points(): None}
+		\operation{get_surrogate_prediction(model_results: np.array, number_of_points: int, prior: np.array): (np.array(mean), np.array(std))}
+		\operation{runBal(model_results: np.array, prior=np.array): int}
+		\operation{sample_collocation_points(method="uniform"): None}		
+	\end{class}
+
+	% associations for import directions
+	\association{\detokenize{config_physics}}{}{}{\detokenize{function_pool}}{}{import}
+	\association{\detokenize{config_logging}}{}{}{\detokenize{function_pool}}{}{import}
+	\association{\detokenize{config_logging}}{}{}{Bal}{}{import}
+	\association{Bal}{}{}{BalWithGPE}{}{import}
+	\association{TelemacUserDefs}{}{}{BalWithGPE}{}{import}
+	\association{TelemacModel}{}{}{BalWithGPE}{}{import}
+	\association{\detokenize{function_pool}}{import}{}{TelemacUserDefs}{}{}
+	\association{\detokenize{function_pool}}{import}{}{FullComplexityModel}{}{}
+	\association{\detokenize{config_telemac}}{import}{}{TelemacUserDefs}{}{}
+	\draw[umlcd style dashed line,,opacity=0.58,line width=0.5mm,-stealth] (ppSELAFIN) --node[above, sloped,
+	black]{import} (TelemacModel);
+
+\end{tikzpicture}
+
+\end{document}
+%\section{Basics}
+%\subsection{Class with attributes and operations}
+%Note: If you don't want to show empty parts in the diagrams, please
+%use \texttt{simplified} option, e.g. \lstinline|\usepackage[simplified]{pgf-umlcd}|.\\
+%\demo{class}
+%
+%\subsubsection{Visibility of attributes and operations}
+%\demo[0.8]{visibility}
+%
+%\subsubsection{Abstract class and interface}
+%\demo[0.5]{abstract-class}
+%\demo[0.5]{interface}
+%
+%\subsubsection{Object}
+%\demo[0.7]{object}
+%Note: Object with rounded corners and methods are used in German school for didactic reasons. You get the rounded corners with \lstinline|\usepackage[school]{pgf-umlcd}|. If you need both in one document you can switch it with \lstinline|\switchUmlcdSchool| \\
+%\switchUmlcdSchool
+%\demo[0.7]{object}
+%\demo[0.7]{object-include-methods}
+%
+%\subsubsection{Note}
+%The \lstinline|\umlnote| use the same syntax as tikz command
+%\lstinline|\node|, e.g. \lstinline|\umlnote[style] (name) at (coordinate) {text};|
+%
+%\demo[0.7]{note}
+%
+%\subsection{Inheritance and implement}
+%\subsubsection{Inheritance}
+%\demo{inheritance}
+%\subsubsection{Multiple Inheritance}
+%\demo{multiple-inheritance}
+% 
+%\subsubsection{Implement an interface}
+%\demo{implement-interface}
+%
+%\subsection{Association, Aggregation and Composition}
+%\subsubsection{Association} 
+%\demo{association}
+% 
+%\subsubsection{Unidirectional association}
+%\demo{unidirectional-association}
+%
+%\subsubsection{Aggregation}
+%\demo{aggregation}
+%
+%\subsubsection{Composition}
+%\demo{composition}
+%
+%\subsection{Package}
+%\demo{package}
+%
+%\section{Customization}
+%\subsection{Color settings}
+%The color of digram is defined by \lstinline|\umltextcolor|, \lstinline|\umldrawcolor| and \lstinline|\umlfillcolor|, such as:
+%
+%\demo{color} 
+%
+%\section{Examples}
+%\subsection{Abstract Factory}
+%\example{abstract-factory}
+
+
+
+

@@ -12,7 +12,6 @@ from .function_pool import *
 from .model_structure.usr_defs_standard import UserDefs
 
 
-
 class UserDefsTelemac(UserDefs):
     def __init__(self, input_worbook_name="user-input.xlsx", *args, **kwargs):
         UserDefs.__init__(self, input_worbook_name=input_worbook_name)

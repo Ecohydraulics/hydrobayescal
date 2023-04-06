@@ -71,7 +71,7 @@ def concatenate_csv_pts(file_directory, *args):
     first CSV file name provided lives. The merged CSV file name starts with merged_ and also ends with the name
     of the first CSV file name provided.
 
-    :param file_directory: string of the directory where the CSV files live, and which must end on '/' or '\\'
+    :param file_directory: os.path of the directory where the CSV files live, and which must NOT end on '/' or '\\'
     :param args: string or list of csv files (only names) containing comma-seperated XYZ coordinates without header
     :return pandas.DataFrame: merged points
     """
