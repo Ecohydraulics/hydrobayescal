@@ -1,16 +1,26 @@
+#!/bin/bash
 """
 Functional core for coupling the Surrogate-Assisted Bayesian inversion technique with Telemac.
 """
+import shlex, pprint, sys, json
 
+# attention relative import usage according to docs/codedocs.rst
 from .config_telemac import *  # provides os and sys
 import shutil
 import numpy as _np
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
+from env_utils import get_envvars
+
+try:
+    from mpi4py import MPI
+except ImportError as e:
+    logging.warning("Could not import mpi4py")
+    print(e)
 
 # get package script
-from ..function_pool import *
-from ..model_structure.control_full_complexity import FullComplexityModel
+from function_pool import *  # provides os, subprocess, logging
+from model_structure.control_full_complexity import FullComplexityModel
 
 
 class TelemacModel(FullComplexityModel):
@@ -23,6 +33,8 @@ class TelemacModel(FullComplexityModel):
             n_processors=None,
             slf_input_file=".slf",
             tm_xd="Telemac2d",
+            tm_env_dir="",
+            tm_source="pysource.sh",
             *args,
             **kwargs
     ):
@@ -30,7 +42,7 @@ class TelemacModel(FullComplexityModel):
         Constructor for the TelemacModel Class. Instantiating can take some seconds, so try to
         be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops)
 
-        :param str model_dir: directory (path) of the Telemac model (should NOT end on "/" or "\\")
+        :param str model_dir: directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software
         :param list calibration_parameters: computationally optional, but in the framework of Bayesian calibration,
                     this argument must be provided
         :param str control_file: name of the steering file to be used (should end on ".cas"); do not include directory
@@ -38,6 +50,7 @@ class TelemacModel(FullComplexityModel):
         :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is None (use cas definition)
         :param str slf_input_file: name of the SLF input file (without directory, file has to be located in model_dir)
         :param str tm_xd: either 'Telemac2d' or 'Telemac3d'
+        :param str tm_source: full os.path of the telemac source .sh file (must NOT end on "/" or "\\")
         :param args:
         :param kwargs:
         """
@@ -62,20 +75,28 @@ class TelemacModel(FullComplexityModel):
             "Telemac3d": "telemac3d.py ",
         }
 
-        self.__calibration_parameters = False
-        if calibration_parameters:
-            self.__setattr__("calibration_parameters", calibration_parameters)
+        self.tm_src = tm_source
+        self.tm_env=tm_env_dir
+        self.case = None
+        self.case_loaded = False
+        # add Telemac source to sys.path and get environment parameters
+        sys.path.insert(0, self.tm_env + "{0}scripts{0}python3".format(os.sep))
+        self.env_vars = get_envvars(self.tm_src)
 
-    def __setattr__(self, name, value):
-        if name == "calibration_parameters":
-            # value corresponds to a list of parameters
-            self.calibration_parameters = {"telemac": {}, "gaia": {}}
-            for par in value:
-                if par in TM2D_PARAMETERS:
-                    self.calibration_parameters["telemac"].update({par: {"current value": _np.nan}})
-                    continue
-                if par in GAIA_PARAMETERS:
-                    self.calibration_parameters["gaia"].update({par: {"current value": _np.nan}})
+        self.calibration_parameters = False
+        if calibration_parameters:
+            self.set_calibration_parameters("calibration_parameters", calibration_parameters)
+
+
+    def set_calibration_parameters(self, name, value):
+        # value corresponds to a list of parameters
+        self.calibration_parameters = {"telemac": {}, "gaia": {}}
+        for par in value:
+            if par in TM2D_PARAMETERS:
+                self.calibration_parameters["telemac"].update({par: {"current value": _np.nan}})
+                continue
+            if par in GAIA_PARAMETERS:
+                self.calibration_parameters["gaia"].update({par: {"current value": _np.nan}})
 
     @staticmethod
     def create_cas_string(param_name, value):
@@ -93,6 +114,13 @@ class TelemacModel(FullComplexityModel):
                 return param_name + " = " + "; ".join(map(str, value))
             except Exception as e:
                 print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(e)))
+
+    def load_tm_case(self):
+        """Load Telemac case file and check its consistency."""
+        self.case.set_case()
+        self.case.init_state_default()
+        self.tm_env_loaded = True
+        logging.info(" * successfully activated TELEMAC environment: " + str(self.tm_env))
 
     def update_model_controls(
             self,
@@ -194,11 +222,88 @@ class TelemacModel(FullComplexityModel):
 
         :return None:
         """
+        # if not  self.tm_env_loaded:
+        #    self.load_tm_source()
+        # init_dir = os.getcwd()
+        # os.chdir(self.tm_env)
+        #
+        # try:
+        #     add_env_vars = {}
+        #     for ev in self.env_vars:
+        #         os.environ.get(ev["name"])
+        #         add_env_vars.update({ev["name"]: ev["value"]})
+        #     from telapy.api.t2d import Telemac2d
+        # except Exception as e:
+        #     logging.error(e)
+        #     print(e)
+        #     return -1
+        # exec("source " + open(self.tm_src).read())
+
+        #command = shlex.split("env -i /bin/bash -c 'source {0} && env'".format(self.tm_src))
+        #command = shlex.split("env -i /bin/bash -c 'source {self.tm_src} && env'")
+        command = shlex.split(f"/bin/bash -c 'set -a && source {self.tm_src} && env -0'")
+        # os.environ['a'] = 'a' * 100
+
+
+        # pipe = subprocess.Popen(". %s && env -0" % self.tm_src, stdout=subprocess.PIPE, shell=True, env=None)
+        # output = pipe.communicate()[0].decode()
+        # output = output[:-1]  # fix for index out for range in 'env[ line[0] ] = line[1]'
+        # env = {}
+        # # split using null char
+        # for line in output.split('\x00'):
+        #     line = line.split('=', 1)
+        #     if line.__len__() > 1:
+        #         print(line)
+        #         env[line[0]] = line[1]
+        # os.environ.update(env)
+
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE)
+        for line in proc.stdout:
+            (key, _, value) = line.decode().partition("=")
+            os.environ[key] = value.strip("\n")
+        proc.communicate()
+        pprint.pprint(dict(os.environ))
+
+        # os.environ.clear()
+        # os.environ.update(line.partition('=')[::2] for line in output.split('\0'))
+        # pprint.pprint(dict(os.environ))
+
+        # include_unexported_variables = True
+        # source = '%ssource %s' % ("set -a && " if include_unexported_variables else "", self.tm_src)
+        # dump = '/usr/bin/python -c "import os, json; print(json.dumps(dict(os.environ)))"'
+        # pipe = subprocess.Popen(['/bin/bash', '-c', '%s && %s' % (source, dump)], stdout=subprocess.PIPE)
+        # env= json.loads(pipe.stdout.read())
+        # os.environ = env
+
+
+        print("pypath: " + os.environ.get('PYTHONPATH'))
+        print("hometel: " + os.environ.get('HOMETEL'))
+        print("USETELCFG: " + os.environ.get('USETELCFG'))
+        from telapy.api.t2d import Telemac2d
+
+        os.chdir(self.model_dir)
         start_time = datetime.now()
-        if self.nproc:
-            call_subroutine(self.tm_xd_dict[self.tm_xd] + self.tm_cas + " --ncsize=" + str(self.nproc))
+
+        if "telemac2d" in self.tm_xd.lower():
+            self.case = Telemac2d(self.tm_cas, lang=2, comm=MPI.COMM_WORLD)
         else:
-            call_subroutine(self.tm_xd_dict[self.tm_xd] + self.tm_cas)
+            logging.warning("Other solvers than Telemac2d not available.")
+            return -1
+        if not self.tm_case_loaded:
+            self.load_tm_case()
+        # run simulations
+        self.case.run_all_time_steps()
+        # finalize case and flush memory
+        ierr = self.case.finzalize()
+        del self.case
+        self.case = None
+        os.chdir(init_dir)
+        # cmd_act = "source " + self.tm_env
+        # if self.nproc:
+        #     bash_cmd = cmd_act + "; " + self.tm_xd_dict[self.tm_xd] + self.tm_cas + " --ncsize=" + str(self.nproc)
+        # else:
+        #     bash_cmd = self.tm_xd_dict[self.tm_xd] + self.tm_cas
+        # call_subroutine(bash_cmd, environment={**os.environ, **add_env_vars})
         print("TELEMAC simulation time: " + str(datetime.now() - start_time))
 
     def rename_selafin(self, old_name=".slf", new_name=".slf"):

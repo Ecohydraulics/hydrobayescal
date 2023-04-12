@@ -11,7 +11,7 @@ SCRIPT_DIR = r"" + os.path.dirname(__file__) + os.sep
 info_formatter = logging.Formatter("%(asctime)s - %(message)s")
 warn_formatter = logging.Formatter("WARNING [%(asctime)s]: %(message)s")
 error_formatter = logging.Formatter("ERROR [%(asctime)s]: %(message)s")
-logger = logging.getLogger("stochastic_calibration")
+logger = logging.getLogger("HyBayesCal")
 logger.setLevel(logging.INFO)
 logger_warn = logging.getLogger("warnings")
 logger_warn.setLevel(logging.WARNING)

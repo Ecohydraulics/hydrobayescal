@@ -8,6 +8,7 @@ For any new model bindings create a new SOFTWARE sub-folder containing:
     * a new control_SOFTWARE.py file (read instructions in model_structure.control_full_complexity.py)
     * an additional inheritance for the BalWithGPE class (e.g., UserDefsOpenFOAM) and initialize it
         in __init__(), similar to the Telemac bindings (not forget to import the user_defs_SOFTWARE.py here)
+    * import the new SoftwareModel and SoftwareUserDefs classes in the HyBayesCal/__init__.py
 Next, also add:
     * a user file (e.g., a user input XLSX like the one for TELEMAC)
     * the new SOFTWARE an option in BalWithGPE.__setattr__() in this script
@@ -28,11 +29,11 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 
 # import own scripts
-from .active_learning import *
-from .doepy.doe_control import DesignOfExperiment
-from .telemac.control_telemac import TelemacModel
-from .telemac.usr_defs_telemac import UserDefsTelemac
-
+from active_learning import *
+from function_pool import log_actions
+from telemac.control_telemac import TelemacModel
+from telemac.usr_defs_telemac import UserDefsTelemac
+# from .doepy.doe_control import DesignOfExperiment  # for later implementation
 
 class BalWithGPE(UserDefsTelemac):
     """

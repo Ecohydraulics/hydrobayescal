@@ -6,3 +6,8 @@ Detailed code docs:
 https://stochastic-surrogate.readthedocs.io
 
 
+
+
+## Developer Docs
+
+### Update requirements

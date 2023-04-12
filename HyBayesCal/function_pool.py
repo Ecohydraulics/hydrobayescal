@@ -3,8 +3,8 @@ import subprocess, os, logging
 import numpy as _np
 import pandas as _pd
 
-from .config_logging import logger, logger_warn, logger_error
-from .model_structure.config_physics import *
+from config_logging import logger, logger_warn, logger_error
+from model_structure.config_physics import *
 
 
 def append_new_line(file_name, text_to_append):
@@ -27,7 +27,7 @@ def append_new_line(file_name, text_to_append):
         file_object.write(text_to_append)
 
 
-def call_subroutine(bash_command):
+def call_subroutine(bash_command, environment=None):
     """
     Call a Terminal process with a bash command through subprocess.Popen
 
@@ -35,10 +35,18 @@ def call_subroutine(bash_command):
     :return int: 0 (success) or -1 (error - read output message)
     """
 
-    print("* calling %s " % bash_command)
+    print("* CALLING SUBROUTINE: %s " % bash_command)
     try:
-        process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
-        output, error = process.communicate()
+        # process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
+        # output, error = process.communicate()
+        if environment:
+            # res = subprocess.run(bash_command, capture_output=True, shell=True, env=environment)
+            process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE,
+                                       shell=True, env=environment)
+            output, error = process.communicate()
+        else:
+            res = subprocess.run(bash_command, capture_output=True, shell=True)
+            print(res.stdout.decode())
         print("* finished ")
         return 0
     except Exception as e:
@@ -146,9 +154,9 @@ def str2seq(list_like_string, separator=",", return_type="tuple"):
 def log_actions(func):
     def wrapper(*args, **kwargs):
         func(*args, **kwargs)
-        for handler in logging.getLogger("stochastic_calibration").handlers:
+        for handler in logging.getLogger("HyBayesCal").handlers:
             handler.close()
-            logging.getLogger("stochastic_calibration").removeHandler(handler)
+            logging.getLogger("HyBayesCal").removeHandler(handler)
         for handler in logging.getLogger("warnings").handlers:
             handler.close()
             logging.getLogger("warnings").removeHandler(handler)

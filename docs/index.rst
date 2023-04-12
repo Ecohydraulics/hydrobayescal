@@ -9,7 +9,7 @@ This **Python3 package** uses Bayesian active learning (**BAL**) to wrap around 
 The surrogate model is created using Gaussian Process Regression and evaluated using Bayesian model evidence and/or relative entropy. The codes implement the methods proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
 
 
-This documentation is also as available as `style-adapted PDF <https://stochastic-surrogate.readthedocs.io/_/downloads/en/latest/pdf/>`_.
+This documentation is also as available as `style-adapted PDF <https://hybayescal.readthedocs.io/_/downloads/en/latest/pdf/>`_.
 
 .. admonition:: Good to Know
 
@@ -25,80 +25,67 @@ This documentation is also as available as `style-adapted PDF <https://stochasti
 Requirements \& Installation
 ============================
 
+HyBayesCal is a Python packages, which inherently requires Python, and the installation of a numerical modeling software. Currently, only Telemac bindings are enabled. This section guides through setting up Python for working with HyBayesCal and the Telemac system.
+
 Python
 ------
 
 *Time requirement: 10 min.*
 
-To get the code running, the following software is needed and their installation instructions are provided below:
+To get the code running, we strongly recommend creating a new conda or virtual environment as described in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_ with Python 3.10. ``HyBayesCal`` potentially also works with earlier Python3 versions, but it was developed and tested with v3.10.
 
-- Python `>=3.6`
-- NumPy `>=1.17.4`
-- Openpyxl `3.0.3`
-- PPutils
-- Pandas `>=1.3.5`
-- Matplotlib `>=3.1.2`
-
-A future release containing design of experiments-based construction of an initial response surface additionally needs the following packages:
-
-- pydoe (``pip install pydoe``)
-- diversipy (``pip install diversipy``)
-
-Start with downloading and installing the latest version of `Anaconda Python <https://www.anaconda.com/products/individual>`_.  Alternatively, downloading and installing a pure `Python <https://www.python.org/downloads/>`_ interpreter will also work. Detailed information about installing Python is available in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_.
-
+Windows user will have the best experience with Anaconda/conda env and Linux users with virtualenv.
 
 .. admonition:: New to Python?
 
     Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_, and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
 
-To install the requirements after installing Anaconda, open Anaconda Prompt (e.g., click on the Windows icon, tap ``anaconda prompt``, and hit ``enter``), and use one of the two following options.
 
-Option 1: Recommended
-~~~~~~~~~~~~~~~~~~~~~
+Conda on Windows
+++++++++++++++++
 
-`Download requirements.txt <https://github.com/sschwindt/stochastic-surrogate/raw/main/requirements.txt>`_ and, in Anaconda Prompt,  ``cd`` into the folder where you downloaded *requirements.txt*. Consider creating and activating a `new conda environment (at least Python 3.6) <https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands>`_. Install the requirements for ``stochastic_surrogate`` into the active environment with the following command sequence:
+Start with downloading and installing the latest version of `Anaconda Python <https://www.anaconda.com/products/individual>`_. Detailed information about installing Python is available in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_.
+
+After installing Anaconda, open Anaconda Prompt (e.g., click on the Windows icon, tap ``anaconda prompt``, and hit ``enter``), to create a new environment called ``HBCenv``:
+
+.. code-block::
+
+   conda create -n HBCenv python=3.10
+
+To install the requirements (i.e., needed Python libraries/packages), `download requirements.txt <https://github.com/sschwindt/hybayescal/raw/main/requirements.txt>`_ and, in Anaconda Prompt,  ``cd`` into the folder where you downloaded *requirements.txt*. Then, install the requirements for ``HyBayesCal`` into the active environment with the following command sequence:
 
 .. code-block::
 
     conda install pip
     pip install -r requirements.txt
 
-Option 2: Step-by-Step
-~~~~~~~~~~~~~~~~~~~~~~
 
-In Anaconda Prompt, enter the following command sequence to install the libraries in the **base** environment. The installation may take a while depending on your internet speed.
+Virtualenv on Linux
++++++++++++++++++++
+
+To create a virtual environment called ``HBCenv`` that has access to system-wide libraries on Linux, open Terminal and enter (create a new folder called *HyBayesCal* in the directory where you opened Terminal):
 
 .. code-block::
 
-    conda install -c anaconda numpy
-    conda install -c anaconda openpyxl
-    conda install -c conda-forge pandas
-    conda install -c conda-forge matplotlib
-    conda install -c conda-forge qgis
-    conda install -c phaustin pyutils
+   python3 -m venv HBCenv
 
-If you are struggling with the dark window and blinking cursor of Anaconda Prompt, worry not. You can also use Anaconda Navigator and install the four libraries (in the above order) in Anaconda Navigator.
+Next, activate the environment, `download requirements.txt <https://github.com/sschwindt/hybayescal/raw/main/requirements.txt>`_ and, ``cd`` into the directory where you downloaded ``requirements.txt`` to install the requirements:
 
-.. tip:: Work with Python environments
+.. code-block::
 
-    We recommend working with virtual (conda or venv) environments. If you want an environment (e.g., called ``myvenv_name``) to have access to system-wide libraries, open Terminal and enter: ``python3 -m venv myvenv_name --system-site-packages``
-
-QGIS
-----
-*Time requirement: 10 min.*
-
-The calibration routines handle geospatial data (e.g., numerical meshes) with the open-source software QGIS. Visit `qgis.org/download <https://qgis.org/en/site/forusers/download.html>`_ for getting up-to-date installation instructions for your platform.
-
-TELEMAC
--------
-
-*Time requirement: 60 min.*
-
-Currently, the calibration routines are tied to the open-source numerical modeling software TELEMAC. The developers provide installation instructions at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_ and we also provide a detailed installation guide at `https://hydro-informatics.com/get-started/install-telemac.html <https://hydro-informatics.com/get-started/install-telemac.html>`_.
+    source HBCenv/bin/activate
+    cd <TO/REQUIREMENTStxt-DOWNLOAD/FOLDER/>
+    pip install -r requirements.txt
 
 
-Install the Stochastic Surrogate Package
-----------------------------------------
+macOS
++++++
+
+On macOS, potentially both conda env and virtualenv work, but we could not test ``HyBayesCal`` on macOS. Thus, we recommend to follow the instructions for `installing Anaconda on macOS <https://docs.anaconda.com/anaconda/install/mac-os/>`_ and create a new conda environment as above-described in the *Conda on Windows* section.
+
+
+Install HyBayesCal
+------------------
 
 *Time requirement: <5 min.*
 
@@ -106,9 +93,57 @@ In Anaconda Prompt or any other Python-pip-able Terminal, enter:
 
 .. code::
 
-    pip install stochastic_surrogate
+    pip install HyBayesCal
 
-With the ``stochastic_surrogate`` installed you are now ready to use it for running a stochastic optimization of your TELEMAC model. The `usage section <usage>` provides detailed explanations for running the optimization.
+With the ``HyBayesCal`` installed you are now ready to use it for running a stochastic optimization of your TELEMAC model. The `usage section <usage>` provides detailed explanations for running the optimization.
+
+TELEMAC
+-------
+
+Install TELEMAC
++++++++++++++++
+*Time requirement: 60 min.*
+
+The calibration routines are tied to the open-source numerical modeling software TELEMAC. The developers provide installation instructions at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_, and we also provide a detailed installation guide at `https://hydro-informatics.com/get-started/install-telemac.html <https://hydro-informatics.com/get-started/install-telemac.html>`_ that is tweaked for HyBayesCal. We recommend to install TELEMAC with ``pysource.gfortranHPC.sh``.
+
+Load HBCenv with TELEMAC
+++++++++++++++++++++++++
+
+The simultaneous activation of the *HyBayesCal* environment and TELEMAC environment variables requires some tweaking, which can be achieved by source-ing our environment activation templates
+
+
+.. tabs::
+
+   .. tab:: Linux
+
+      **One-time actions**: `Download activateHBCtelemac.sh <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.sh>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
+      * In line 3, adapt ``TELEMAC_CONFIG_DIR`` to where your TELEMAC installation's config lives.
+      * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
+      * In line 5, adapt ``HBCenv_DIR`` to where you created ``HBCenv``.
+      * Save and close *activateHBCtelemac.sh*
+
+      **Regular load action**: To load the combined ``HBCenv`` and TELEMAC environments, open Terminal, ``cd`` to where you saved *activateHBCtelemac.sh*, and enter:
+
+      .. code-block::
+
+         source activateHBCtelemac.sh
+
+      If both environments are load without errors, you are good to go for running the codes.
+
+   .. tab:: Windows
+
+      .. warning::
+         The Windows implementation has not yet been tested and is fully experimental. It does most likely not work currently and should be used with uttermost caution. Feedback welcome.
+
+      **One-time actions**: `Download activateHBCtelemac.bat <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.bat>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
+      * In line 3, adapt ``TELEMAC_CONFIG_DIR`` to where your TELEMAC installation's config lives.
+      * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
+      * In line 5, adapt ``HBCenv_name`` if you did not use the name ``HBCenv`` for your conda environment.
+      * Save and close *activateHBCtelemac.bat*
+
+      **Regular load action**: Double-click on *activateHBCtelemac.bat*.
+
+      If both environments are load without errors, you are good to go for running the codes.
 
 Other Software
 --------------

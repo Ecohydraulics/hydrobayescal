@@ -8,7 +8,7 @@ from qgis.analysis import QgsNativeAlgorithms
 
 
 # load calibration package
-# import stochastic_calibration as sc
+# import HyBayesCal as sc
 
 # USER INPUT --------------------------
 slf_mesh = "/home/public/test-data/steady2d-restart/r2dsteady.slf"

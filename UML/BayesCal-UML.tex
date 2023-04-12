@@ -96,12 +96,15 @@ keywordstyle=\color{blue}
 			\attribute{tm_cas: str }
 			\attribute{tm_results_file: str }
 			\attribute{tm_xd: str }
+			\attribute{tm_env: str}
+			\attribute{tm_env_loaded: bool}
 			\attribute{tm_xd_dict: dict }
 			\attribute{**gaia_cas: str }
 			\attribute{**gaia_results_file: str }
 						
 			\operation{create_cas_string(param_name: str, value: var.): None}
 			\operation{get_variable_value(slf_file_name: str, calibration_par: str, specific_nodes: np.array, save_name: str): np.array}
+			\operation{load_tm_source(): bool}
 			\operation{rename_selafin(old_name=".slf", new_name=".slf"): None}
 			\operation{rewrite_steering_file(param_name: str, updated_string: str, steering_module="telemac"): int}
 			\operation{>> run_simulation}

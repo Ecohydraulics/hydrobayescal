@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
 setup(
-    name = "stochastic_calibration",
+    name = "HyBayesCal",
     packages = find_packages(),
 )

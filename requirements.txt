@@ -1,7 +1,6 @@
 matplotlib
+mpi4py
 numpy
 openpyxl
 pandas
-pputils
-setuptools
 scikit-learn

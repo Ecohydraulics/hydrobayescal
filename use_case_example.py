@@ -8,12 +8,12 @@ import shutil
 import numpy as _np
 import pandas as _pd
 from datetime import datetime
-# from stochastic_calibration.pputils.ppmodules.selafin_io_pp import ppSELAFIN
-# from stochastic_calibration.pputils import shp2csv
+# from HyBayesCal.pputils.ppmodules.selafin_io_pp import ppSELAFIN
+# from HyBayesCal.pputils import shp2csv
 
 
 # load calibration package
-import stochastic_calibration as sc
+import HyBayesCal as sc
 
 
 

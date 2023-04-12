@@ -8,8 +8,8 @@ from openpyxl import load_workbook
 
 # package scripts
 from .config_telemac import *  # contains os and sys
-from .function_pool import *
-from .model_structure.usr_defs_standard import UserDefs
+from function_pool import *
+from model_structure.usr_defs_standard import UserDefs
 
 
 class UserDefsTelemac(UserDefs):

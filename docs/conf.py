@@ -50,6 +50,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.githubpages",
     "sphinx.ext.todo",
+    "sphinx_tabs.tabs",
     # "sphinxcontrib.googleanalytics",
 ]
 
@@ -101,7 +102,7 @@ html_context = {
     "date": datetime.date.today().strftime("%Y-%m-%d"),
     "display_github": True,
     "github_user": "sschwindt",
-    "github_repo": "stochastic-calibration",
+    "github_repo": "hybayescal",
     "github_version": "main/",
     "conf_py_path": "/docs/"
 }

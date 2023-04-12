@@ -26,30 +26,29 @@ class FullComplexityModel:
         Constructor for the FullComplexityModel Class. Instantiating can take some seconds, so try to
         be efficient in creating objects of this class (i.e., avoid re-creating a new FullComplexityModel in long loops)
 
-        :param str model_dir: directory (path) of the Telemac model (should NOT end on "/" or "\\")
+        :param str model_dir: directory (path) of the model files (should NOT end on "/" or "\\") - not the software dir
         :param list calibration_parameters: computationally optional, but in the framework of Bayesian calibration,
                     this argument must be provided
         :param str control_file: name of the model control file to be used (e.g., Telemac: cas file); do not include directory
         :param args:
         :param kwargs:
         """
-        self.model_dir = _os.path.abspath(model_dir)
+        self.model_dir = model_dir
         self.control_file = control_file
         self.collocation_file = "calibration-par-combinations.csv"
-        self.res_dir = self.model_dir + _os.sep + "auto-results"
-        if not _os.path.exists(self.res_dir):
-            _os.makedirs(self.res_dir)
+        self.res_dir = model_dir + _os.sep + "auto-results"
+        if not _os.path.exists(model_dir + _os.sep + "auto-results"):
+            _os.makedirs(model_dir + _os.sep + "auto-results")
 
-        self.__calibration_parameters = False
+        self.calibration_parameters = False
         if calibration_parameters:
-            self.__setattr__("calibration_parameters", calibration_parameters)
+            self.set_calibration_parameters("calibration_parameters", calibration_parameters)
 
-    def __setattr__(self, name, value):
-        if name == "calibration_parameters":
-            # value corresponds to a list of parameters
-            self.calibration_parameters = {}
-            for par in value:
-                self.calibration_parameters.update({par: {"current value": _np.nan}})
+    def set_calibration_parameters(self, name, value):
+        # value corresponds to a list of parameters
+        self.calibration_parameters = {}
+        for par in value:
+            self.calibration_parameters.update({par: {"current value": _np.nan}})
 
     def update_model_controls(
             self,
