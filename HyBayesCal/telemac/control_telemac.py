@@ -237,6 +237,8 @@ class TelemacModel(FullComplexityModel):
         del self.case
         self.case = None
         os.chdir(init_dir)
+
+        
         # cmd_act = "source " + self.tm_env
         # if self.nproc:
         #     bash_cmd = cmd_act + "; " + self.tm_xd_dict[self.tm_xd] + self.tm_cas + " --ncsize=" + str(self.nproc)
