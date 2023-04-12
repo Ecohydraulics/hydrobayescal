@@ -145,12 +145,13 @@ The simultaneous activation of the *HyBayesCal* environment and TELEMAC environm
 
       If both environments are load without errors, you are good to go for running the codes.
 
+
 Other Software
 --------------
 
 Editing the input.xlsx workbook requires an office program, such as LibreOffice or ONLYOFFICE DesktopEditors (for non-commercial use only). Fore more details, read our `office applications instructions <https://hydro-informatics.com/get-started/others.html#lo>`_.
 
-We recommend working with GMSH for generating a computational mesh for the numerical model. Get GMSH at `https://gmsh.info <https://gmsh.info/>`_.
+We recommend working with GMSH for generating a computational mesh for the numerical model. Get GMSH at `https://gmsh.info <https://gmsh.info/>`_ and `QGIS <https://qgis.org>`_.
 
 .. toctree::
     :hidden:
