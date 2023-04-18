@@ -27,11 +27,12 @@ def append_new_line(file_name, text_to_append):
         file_object.write(text_to_append)
 
 
-def call_subroutine(bash_command, environment=None):
+def call_process(bash_command, environment=None):
     """
     Call a Terminal process with a bash command through subprocess.Popen
 
     :param str bash_command: terminal process to call
+    :param environment: run process in a specific environment (e.g.
     :return int: 0 (success) or -1 (error - read output message)
     """
 
@@ -41,8 +42,8 @@ def call_subroutine(bash_command, environment=None):
         # output, error = process.communicate()
         if environment:
             # res = subprocess.run(bash_command, capture_output=True, shell=True, env=environment)
-            process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE,
-                                       shell=True, env=environment)
+            process = subprocess.Popen(bash_command, stdout=subprocess.PIPE,
+                                       shell=True, stdin=None, env=environment)
             output, error = process.communicate()
         else:
             res = subprocess.run(bash_command, capture_output=True, shell=True)

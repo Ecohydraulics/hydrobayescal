@@ -1,9 +1,15 @@
+# coding: utf-8
 """
 Functional core for coupling the Surrogate-Assisted Bayesian inversion technique with Telemac.
 """
+import os, io, stat
+import sys
+import subprocess
 
 try:
     from telapy.api.t2d import Telemac2d
+    from telapy.api.t3d import Telemac3d
+    from telapy.tools.driven_utils import mpirun_cmd
 except ImportError as e:
     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HyBayesCal.telemac" % e)
     exit()
@@ -36,6 +42,9 @@ class TelemacModel(FullComplexityModel):
             n_processors=None,
             slf_input_file=".slf",
             tm_xd="Telemac2d",
+            load_case=False,
+            stdout=6,
+            python_shebang="#!/usr/bin/env python3",
             *args,
             **kwargs
     ):
@@ -51,6 +60,10 @@ class TelemacModel(FullComplexityModel):
         :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is None (use cas definition)
         :param str slf_input_file: name of the SLF input file (without directory, file has to be located in model_dir)
         :param str tm_xd: either 'Telemac2d' or 'Telemac3d'
+        :param bool load_case: True loads the control file as Telemac case upon instantiation (default: False)
+        :param int stdout: standard output (default=6 [console];  if 666 => file 'fort.666')
+        :param str python_shebang: header line for python files the code writes for parallel processing
+                                        (default="#!/usr/bin/env python3\n" for Debian-Linux)
         :param args:
         :param kwargs:
         """
@@ -68,6 +81,8 @@ class TelemacModel(FullComplexityModel):
             self.gaia_cas = None
             self.gaia_results_file = None
         self.nproc = n_processors
+        self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
+        self.shebang = python_shebang
 
         self.tm_xd = tm_xd
         self.tm_xd_dict = {
@@ -77,6 +92,10 @@ class TelemacModel(FullComplexityModel):
 
         self.case = None
         self.case_loaded = False
+        if load_case:
+            self.load_case()
+
+        self.stdout = stdout
 
         self.calibration_parameters = False
         if calibration_parameters:
@@ -109,19 +128,34 @@ class TelemacModel(FullComplexityModel):
             except Exception as e:
                 print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(e)))
 
-    def load_tm_case(self):
+    def load_case(self):
         """Load Telemac case file and check its consistency."""
+
+        # secure directories
+        init_dir = os.getcwd()
+        os.chdir(self.model_dir)
+
+        if "telemac2d" in self.tm_xd.lower():
+            self.case = Telemac2d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
+        elif "telemac3d" in self.tm_xd.lower():
+            self.case = Telemac3d(self.tm_cas, lang=2, comm=self.comm)
+        else:
+            logging.warning("Other solvers than Telemac2d/3d not available.")
+            return -1
+        if self.nproc > 1:
+            self.comm.Barrier()
         self.case.set_case()
         self.case.init_state_default()
-        self.tm_env_loaded = True
-        logging.info(" * successfully activated TELEMAC environment: " + str(self.tm_env))
+        self.case_loaded = True
+        os.chdir(init_dir)
+        logging.info(" * successfully activated TELEMAC case: " + str(self.tm_cas))
 
     def update_model_controls(
             self,
             new_parameter_values,
             simulation_id=0,
     ):
-        """ In TELEMAC language: update the steering file
+        """In TELEMAC language: update the steering file
         Update the Telemac and Gaia steering files specifically for Bayesian calibration.
 
         :param dict new_parameter_values: provide a new parameter value for every calibration parameter
@@ -207,45 +241,152 @@ class TelemacModel(FullComplexityModel):
         cas_file.close()
         return 0
 
-    def run_simulation(self):
+    def cmd2str(self, keyword):
+        """Convert a keyword into Python code for writing a Python script
+        used by self.mpirun(filename). Required for parallel runs.
+        Routine modified from telemac/scripts/python3/telapy/tools/study_t2d_driven.py
+
+        :param (str) keyword: keyword to convert into Python lines
         """
-        Run a Telemac simulation
+        # basically assume that Telemac2d should be called; otherwise overwrite with Telemac3d
+        telemac_import_str = "from telapy.api.t2d import Telemac2d\n"
+        telemac_object_str = "tXd = Telemac2d('"
+        if "3d" in self.tm_xd.lower():
+            telemac_import_str = "from telapy.api.t3d import Telemac3d\n"
+            telemac_object_str = "tXd = Telemac3d('"
 
-        .. note::
-            Generic function name to enable other simulation software in future implementations
+        if keyword == "header":
+            string = (self.shebang + "\n"
+                      "import sys\n"
+                      "sys.path.append('"+self.model_dir+"')\n" +
+                      telemac_import_str)
+        elif keyword == "commworld":
+            string = ("try:\n" +
+                      "    from mpi4py import MPI\n" +
+                      "    comm = MPI.COMM_WORLD\n" +
+                      "except:\n" +
+                      "    comm = None\n")
+        elif keyword == "create_simple_case":
+            string = (telemac_object_str + self.tm_cas +
+                      "', " +
+                      "comm=comm, " +
+                      "stdout=" + str(self.stdout) + ")\n")
+        elif keyword == "create_usr_fortran_case":
+            string = (telemac_object_str + self.tm_cas +
+                      "', " +
+                      "user_fortran='" + self.test_case.user_fortran + "', " +
+                      "comm=comm, " +
+                      "stdout=" + str(self.stdout) + ")\n")
+        elif keyword == "barrier":
+            string = "comm.Barrier()\n"
+        elif keyword == "setcase":
+            string = "tXd.set_case()\n"
+        elif keyword == "init":
+            string = "tXd.init_state_default()\n"
+        elif keyword == "run":
+            string = "tXd.run_all_time_steps()\n"
+        elif keyword == "finalize":
+            string = "tXd.finalize()\n"
+        elif keyword == "del":
+            string = "del(tXd)\n"
+        elif keyword == "resultsfile":
+            string = "tXd.set('MODEL.RESULTFILE', '" + \
+                self.tm_results_file + "')\n"
+        elif keyword == "newline":
+            string = "\n"
+        return string.encode()
 
-        :return None:
+    def create_launcher_file(self, filename):
+        """Create a Python file for running Telemac in a Terminal (required for parallel runs)
+        Routine modified from telemac/scripts/python3/telapy/tools/study_t2d_driven.py
+
+        :param (str) filename: name of the Python file for running it with MPI in Terminal
         """
-        print("pypath: " + os.environ.get('PYTHONPATH'))
-        print("hometel: " + os.environ.get('HOMETEL'))
-        print("USETELCFG: " + os.environ.get('USETELCFG'))
+        with io.FileIO(filename, "w") as file:
+            file.write(self.cmd2str("header"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("commworld"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("create_simple_case"))  # change this when using a usr fortran file
+            if self.nproc > 1:
+                file.write(self.cmd2str("barrier"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("setcase"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("resultsfile"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("init"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("newline"))
+            if self.nproc > 1:
+                file.write(self.cmd2str("barrier"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("run"))
+            file.write(self.cmd2str("newline"))
+            if self.nproc > 1:
+                file.write(self.cmd2str("barrier"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("finalize"))
+            file.write(self.cmd2str("newline"))
+            file.write(self.cmd2str("del"))
+        file.close()
+        os.chmod(filename, os.stat(filename).st_mode | stat.S_IEXEC)
 
-        os.chdir(self.model_dir)
+    def mpirun(self, filename):
+        """Launch a Python script called 'filename' in parallel
+        Routine modified from telemac/scripts/python3/telapy/tools/study_t2d_driven.py
+
+        :param (str) filename: Python file name for MPI execution
+        """
+        cmd = mpirun_cmd()
+        cmd = cmd.replace('<ncsize>', str(self.nproc))
+        cmd = cmd.replace('<exename>', filename)
+        cmd = cmd + ' 1> mpi.out 2> mpi.err'
+
+        _, return_code = self.call_tm_shell(cmd)
+        if return_code != 0:
+            raise Exception("\nERROR IN PARALLEL RUN.\n"
+                            "THE COMMAND IS : {} \n"
+                            " PROGRAM STOP.\n".format(cmd))
+
+    def run_simulation(self, filename="run_launcher.py"):
+        """ Run a Telemac2d or Telemac3d simulation with one or more processors
+        The number of processors to use is defined by self.nproc.
+
+        :param (str) filename: optional name for a Python file that will be automatically
+                        created to control the simulation
+        """
         start_time = datetime.now()
 
-        if "telemac2d" in self.tm_xd.lower():
-            self.case = Telemac2d(self.tm_cas, lang=2, comm=MPI.COMM_WORLD)
-        else:
-            logging.warning("Other solvers than Telemac2d not available.")
-            return -1
-        if not self.tm_case_loaded:
-            self.load_tm_case()
-        # run simulations
-        self.case.run_all_time_steps()
-        # finalize case and flush memory
-        ierr = self.case.finzalize()
-        del self.case
-        self.case = None
-        os.chdir(init_dir)
+        filename = os.path.join(self.model_dir, filename)
+        self.create_launcher_file(filename)
 
-        
-        # cmd_act = "source " + self.tm_env
-        # if self.nproc:
-        #     bash_cmd = cmd_act + "; " + self.tm_xd_dict[self.tm_xd] + self.tm_cas + " --ncsize=" + str(self.nproc)
-        # else:
-        #     bash_cmd = self.tm_xd_dict[self.tm_xd] + self.tm_cas
-        # call_subroutine(bash_cmd, environment={**os.environ, **add_env_vars})
+        if self.nproc == 1:
+            print("* sequential run (single processor)")
+            if not self.case_loaded:
+                # every case must be initiated before it running
+                self.load_case()
+            self.case.run_all_time_steps()
+        else:
+            print("* parallel run on {} processors".format(self.nproc))
+            try:
+                self.mpirun(filename)
+            except Exception as exception:
+                print(exception)
         print("TELEMAC simulation time: " + str(datetime.now() - start_time))
+
+    def call_tm_shell(self, cmd):
+        """ Run Telemac in a Terminal in the model directory
+
+        :param (str) cmd:  command to run
+        """
+        # abort = False
+        logging.info("* running {}\n -- patience (Telemac simulations can take time) -- check CPU acitivity...".format(cmd))
+        process = subprocess.Popen(cmd, cwd=r""+self.model_dir, shell=True, stdin=None,
+                                   stdout=subprocess.PIPE, env=os.environ)
+        (stdout, stderr) = process.communicate()
+        del stderr
+        return stdout, process.returncode
 
     def rename_selafin(self, old_name=".slf", new_name=".slf"):
         """

@@ -10,7 +10,6 @@ FullComplexityModel class.
 import os as _os
 import numpy as _np
 from datetime import datetime
-from function_pool import *
 
 
 class FullComplexityModel:

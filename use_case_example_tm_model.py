@@ -10,10 +10,12 @@ import HyBayesCal as hbc
 this_dir = os.path.abspath(os.path.join(__file__, ".."))
 
 # global user parameters
-tm_sh_dir = this_dir + os.sep + "pysource.gfortranHPC.sh"
-tm_env_dir = "/home/schwindt/Software/telemac/v8p4r0"
-tm_model_dir = this_dir + "{0}examples{0}yuba{0}tm-model-h20".format(os.sep)
+#tm_sh_dir = this_dir + os.sep + "pysource.gfortranHPC.sh"
+tm_model_dir = "/home/schwindt/Software/telemac/v8p4r0/examples/telemac2d/donau"
+# tm_model_dir = this_dir + "{0}examples{0}yuba{0}tm-model-lyr-h20".format(os.sep)
 cas_file = "yuba_steady_hotstart.cas"
+cas_file = "t2d_donau.cas"
+
 
 def run_telemac():
     """Instantiate a TelemacModel object with the minimally required parameters
@@ -24,6 +26,7 @@ def run_telemac():
         model_dir=tm_model_dir,
         control_file=cas_file,
         tm_xd="Telemac2d",
+        n_processors=4,
     )
 
     tm_model.run_simulation()

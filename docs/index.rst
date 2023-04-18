@@ -15,7 +15,7 @@ This documentation is also as available as `style-adapted PDF <https://hybayesca
 
     For working with this Python3 package, make sure to familiarize with the TELEMAC software suite.
 
-    We recommend to have a look at `hydro-informatics.com`_ and read the:
+    To familiarize with TELEMAC, visit `hydro-informatics.com`_ and read the:
 
     - `installation instructions for TELEMAC <https://hydro-informatics.com/get-started/install-telemac.html>`_
     - `TELEMAC tutorial <https://hydro-informatics.com/numerics/telemac.html>`_
@@ -144,6 +144,22 @@ The simultaneous activation of the *HyBayesCal* environment and TELEMAC environm
       **Regular load action**: Double-click on *activateHBCtelemac.bat*.
 
       If both environments are load without errors, you are good to go for running the codes.
+
+.. tip::
+
+   The bash environment can also be used with your IDE. For instance, in PyCharm:
+   
+   * Find the *Run* top menu > *Edit Configurations...* tool. 
+   * Select *Shell script*, enter ``HBCtelemac`` in the *Name* field, and find the ``activateHBCtelemac.sh`` script in the field *Script path*.
+   * On Linux, make sure the *Interpreter path* is ``/bin/bash``, and click *OK*.
+   * Activate the main Python script that you want to use for running *HyBayesCal*, and find the *Run/Debug Configurations* next to the green *Run* arrow (typically in top-right corner of the PyCharm window).
+   * In the *Run/Debug Configurations* window, look for the *Before launch* box (scroll down), click on **+** (*Add*) > *Run another configuration*, and select the above-created *HBCtelemac* configuration.
+   * Check the *Emulate Terminal in output console* box.
+   * Click *OK* and run your Python application with the *HBCtelemac* configuration.
+
+   Read more at `jetbrains.com/help <https://www.jetbrains.com/help/pycharm/run-debug-configuration-shell-script.html>`_.
+
+   If this option does not work, find the *Terminal* box in PyCharm, run ``source activateHBCtelemac.sh`` and execute your TELEMAC files from the PyCharm Terminal (e.g., ``python use_case_tm2d.py``. Either way, to run a Bayesian calibration, better directly use the system Terminal, not an IDE (computation load).
 
 
 Other Software
