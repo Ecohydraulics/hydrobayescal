@@ -64,7 +64,7 @@ class BalWithGPE(UserDefsTelemac):
         UserDefsTelemac.__init__(self, input_worbook_name)  # get user def file
         self.assign_global_settings(self.input_xlsx_name)  # apply user defs
         self.__numerical_model = None
-        self.__setattr__("numerical_model", software_coupling)
+        self.__set_model("numerical_model", software_coupling)
         self.observations = {}
         self.n_simulation = int()
         self.prior_distribution = np.ndarray(())  # will create and update in self.update_prior_distributions
@@ -75,7 +75,7 @@ class BalWithGPE(UserDefsTelemac):
         self.re_score_file = None
         self.doe = DesignOfExperiment()
 
-    def __setattr__(self, name, value):
+    def __set_model(self, name, value):
         if name == "numerical_model":
             if value == "telemac":
                 self.numerical_model = TelemacModel(

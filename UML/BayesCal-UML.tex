@@ -7,7 +7,7 @@
 % 	* replace -- with -| links between model_structure and telemac
 
 \documentclass{article}
-\usepackage[margin=10mm,landscape,a2paper]{geometry}
+\usepackage[margin=5mm,landscape,a2paper]{geometry}
 \usepackage{hyperref}
 
 \usepackage[
@@ -43,11 +43,11 @@ keywordstyle=\color{blue}
 
 
 \begin{document}
-\section*{\texttt{\detokenize{stochastic_calibration}}}
-
+\section*{\texttt{\detokenize{HyBayesCal}}}
+\thispagestyle{empty}
 \begin{tikzpicture}
 	\begin{package}{model_structure}
-		\begin{class}[text width=10cm]{FullComplexityModel}{0,-2}
+		\begin{class}[text width=10cm]{FullComplexityModel}{4,-2}
 			\attribute{model_dir: os.path }
 			\attribute{control_file: str }
 			\attribute{collocation_file: str }
@@ -56,7 +56,7 @@ keywordstyle=\color{blue}
 			\operation{update_model_controls(new_parameter_values: dict, simulation_id: int): None}
 			\operation{run_simulation(None): None}
 		\end{class}
-		\begin{class}[text width=10cm]{UserDefs}{0,8}
+		\begin{class}[text width=10cm]{UserDefs}{4,8}
 			\attribute{CALIB_PAR_SET: dict }
 			\attribute{CALIB_PTS: numpy }
 			\attribute{CALIB_TARGETS: list }
@@ -78,7 +78,7 @@ keywordstyle=\color{blue}
 			\operation{check_user_input(None): None}
 			\operation{read_wb_range(read_range: str, sheet_name: str): pd.df}
 		\end{class}
-		\begin{object}[text width=10cm]{\detokenize{config_physics}}{0,11}
+		\begin{object}[text width=10cm]{\detokenize{config_physics}}{4,11}
 			\attribute{GRAVITY: 9.81 }
 			\attribute{KINEMATIC_VISCOSITY: 10 ** -6}
 			\attribute{WATER_DENSITY: 10. ** 3}
@@ -87,30 +87,39 @@ keywordstyle=\color{blue}
 	\end{package}
 
 	\begin{package}{telemac}
-		\begin{class}[text width=10cm]{TelemacModel}{26,0}
+		\begin{class}[text width=10cm]{TelemacModel}{19,0}
 			\inherit{FullComplexityModel}
 			\attribute{calibration_parameters: dict}
+			\attribute{comm: mpi4py.MPI.Comm(mpi4py.MPI.COMM_WORLD)}
 			\attribute{control_file: str }
 			\attribute{nproc: int }
+			\attribute{results: TelemacFile() }
 			\attribute{slf_input_file: str}
+			\attribute{shebang: str }
+			\attribute{stdout: int (default: 6) }
 			\attribute{tm_cas: str }
 			\attribute{tm_results_file: str }
 			\attribute{tm_xd: str }
-			\attribute{tm_env: str}
-			\attribute{tm_env_loaded: bool}
+			\attribute{tm_case: Telemac2() / Telemac3d()}
+			\attribute{tm_case_loaded: bool}
 			\attribute{tm_xd_dict: dict }
 			\attribute{**gaia_cas: str }
 			\attribute{**gaia_results_file: str }
 						
+			\operation{call_tm_shell(cmd: str): (subprocess.PIPE, subprocess.Popen().returncode)}
+			\operation{cmd2string(keyword: str): str.encode()}
 			\operation{create_cas_string(param_name: str, value: var.): None}
+			\operation{create_launcher_pyscript(filename: str): None}
 			\operation{get_variable_value(slf_file_name: str, calibration_par: str, specific_nodes: np.array, save_name: str): np.array}
-			\operation{load_tm_source(): bool}
+			\operation{load_case(): int}
+			\operation{load_results(): None}
+			\operation{mpirun(filename: str): None}
 			\operation{rename_selafin(old_name=".slf", new_name=".slf"): None}
 			\operation{rewrite_steering_file(param_name: str, updated_string: str, steering_module="telemac"): int}
-			\operation{>> run_simulation}
+			\operation{>> run_simulation(filename: str, load_results=True)}
 			\operation{>> update_model_controls}
 		\end{class}
-		\begin{class}[text width=10cm]{TelemacUserDefs}{26,5}
+		\begin{class}[text width=10cm]{TelemacUserDefs}{19,4.8}
 			\inherit{UserDefs}
 			\attribute{N_CPUS: int }
 			\attribute{TM_CAS: str }
@@ -121,7 +130,7 @@ keywordstyle=\color{blue}
 			\operation{check_user_input(None): None}
 			\operation{>> assign_global_settings}
 		\end{class}
-		\begin{object}[text width=10cm]{\detokenize{config_telemac}}{26,11}
+		\begin{object}[text width=10cm]{\detokenize{config_telemac}}{19,10.9}
 			\attribute{TM_TEMPLATE_DIR: os.path }
 			\attribute{GAIA_PARAMETERS: pd.df}
 			\attribute{TM2D_PARAMETERS: pd.df}
@@ -220,7 +229,7 @@ keywordstyle=\color{blue}
 		\inherit{TelemacUserDefs}
 		
 		\attribute{__numerical_model = None}
-		\attribute{__setattr__("numerical_model", software_coupling)}
+		\attribute{__set_model("numerical_model", software_coupling)}
 		\attribute{observations = {}}
 		\attribute{n_simulation = int}
 		\attribute{prior_distribution = np.array(())}
@@ -245,13 +254,13 @@ keywordstyle=\color{blue}
 	% associations for import directions
 	\association{\detokenize{config_physics}}{}{}{\detokenize{function_pool}}{}{import}
 	\association{\detokenize{config_logging}}{}{}{\detokenize{function_pool}}{}{import}
-	\association{\detokenize{config_logging}}{}{}{Bal}{}{import}
+	\association{\detokenize{config_logging}}{}{import}{Bal}{}{}
 	\association{Bal}{}{}{BalWithGPE}{}{import}
-	\association{TelemacUserDefs}{}{}{BalWithGPE}{}{import}
-	\association{TelemacModel}{}{}{BalWithGPE}{}{import}
-	\association{\detokenize{function_pool}}{import}{}{TelemacUserDefs}{}{}
+	\association{TelemacUserDefs}{}{}{BalWithGPE}{import}{}
+	% \association{TelemacModel}{}{}{BalWithGPE}{import}{}
+	\association{\detokenize{function_pool}}{}{}{TelemacUserDefs}{}{import}
 	\association{\detokenize{function_pool}}{import}{}{FullComplexityModel}{}{}
-	\association{\detokenize{config_telemac}}{import}{}{TelemacUserDefs}{}{}
+	\association{\detokenize{config_telemac}}{}{}{TelemacUserDefs}{}{import}
 	\draw[umlcd style dashed line,,opacity=0.58,line width=0.5mm,-stealth] (ppSELAFIN) --node[above, sloped,
 	black]{import} (TelemacModel);
 
