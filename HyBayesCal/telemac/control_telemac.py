@@ -161,9 +161,20 @@ class TelemacModel(FullComplexityModel):
 
         if not self.case_loaded:
             self.load_case()
-        self.results = TelemacFile(self.tm_results_filename, bnd_file=self.case.get("MODEL.BCFILE"))
-        # to see more case variables that can be self.case.get()-ed, type print(self.case.variables)
 
+        if not os.path.isfile(self.tm_results_filename):
+            print("* overwriting Python-API provided user results filename with .cas-define results file:\n" + self.case.get("MODEL.RESULTFILE"))
+            self.tm_results_filename = os.path.join(self.model_dir, self.case.get("MODEL.RESULTFILE"))
+
+        boundary_file = os.path.join(self.model_dir, self.case.get("MODEL.BCFILE"))
+        try:
+            # TO DO: this crashes because of:
+            # ValueError: failed in converting 6th argument `liubor' of _hermes.get_bnd_value to C/Fortran array
+            self.results = TelemacFile(self.tm_results_filename, bnd_file=boundary_file)
+        except Exception as error:
+            print("ERROR: Could not load results:\n" + error)
+
+        # to see more case variables that can be self.case.get()-ed, type print(self.case.variables)
         # examples to access liquid boundary equilibrium
         liq_bnd_info = self.results.get_liq_bnd_info()
         print("Liquid BC info:\n" + str(liq_bnd_info))
@@ -388,6 +399,7 @@ class TelemacModel(FullComplexityModel):
             except Exception as exception:
                 print(exception)
         print("TELEMAC simulation time: " + str(datetime.now() - start_time))
+
         if load_results:
             self.load_results()
 
@@ -397,8 +409,9 @@ class TelemacModel(FullComplexityModel):
         :param (str) cmd:  command to run
         """
         logging.info("* running {}\n -- patience (Telemac simulations can take time) -- check CPU acitivity...".format(cmd))
-        process = subprocess.Popen(cmd, cwd=r""+self.model_dir, shell=True, stdin=None,
-                                   stdout=subprocess.PIPE, env=os.environ)
+
+        # do not use stdout=subprocess.PIPE because the simulation progress will not be shown otherwise
+        process = subprocess.Popen(cmd, cwd=r""+self.model_dir, shell=True, env=os.environ)
         stdout, stderr = process.communicate()
         del stderr
         return stdout, process.returncode
