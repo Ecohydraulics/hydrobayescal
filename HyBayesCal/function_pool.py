@@ -113,6 +113,7 @@ def concatenate_csv_pts(file_directory, *args):
 
     return merged_pts
 
+
 def lookahead(iterable):
     """Pass through all values of an iterable, augmented by the information if there are more values to come
     after the current one (True), or if it is the last value (False).

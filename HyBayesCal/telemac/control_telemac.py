@@ -72,7 +72,7 @@ class TelemacModel(FullComplexityModel):
 
         self.slf_input_file = slf_input_file
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
-        self.tm_results_filename = "{}{}{}".format(self.res_dir, os.sep, str("resIDX-" + control_file.strip(".cas") + ".slf"))
+        self.tm_results_filename = ""
         if gaia_steering_file:
             print("* received gaia steering file: " + gaia_steering_file)
             self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, gaia_steering_file)
@@ -98,15 +98,17 @@ class TelemacModel(FullComplexityModel):
             self.load_case()
 
         self.stdout = stdout
+        self.get_results_filename()  # requires stdout
 
         self.calibration_parameters = False
         if calibration_parameters:
-            self.set_calibration_parameters("calibration_parameters", calibration_parameters)
+            self.set_calibration_parameters(calibration_parameters)
 
-    def set_calibration_parameters(self, name, value):
-        # value corresponds to a list of parameters
+    def set_calibration_parameters(self, list_of_value_names):
+        # DELETE METHOD?
+        # value corresponds to a list of parameter names -- REALLY needed?!
         self.calibration_parameters = {"telemac": {}, "gaia": {}}
-        for par in value:
+        for par in list_of_value_names:
             if par in TM2D_PARAMETERS:
                 self.calibration_parameters["telemac"].update({par: {"current value": _np.nan}})
                 continue
@@ -127,57 +129,99 @@ class TelemacModel(FullComplexityModel):
         else:
             try:
                 return param_name + " = " + "; ".join(map(str, value))
-            except Exception as e:
-                print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(e)))
+            except Exception as error:
+                print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(error)))
 
-    def load_case(self):
-        """Load Telemac case file and check its consistency."""
+    def load_case(self, reset_state=True):
+        """Load Telemac case file and check its consistency.
+
+
+        """
 
         # secure directories
         init_dir = os.getcwd()
         os.chdir(self.model_dir)
 
-        # instantiate case
+        print("* instantiating case")
         if "telemac2d" in self.tm_xd.lower():
             self.case = Telemac2d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
         elif "telemac3d" in self.tm_xd.lower():
-            self.case = Telemac3d(self.tm_cas, lang=2, comm=self.comm)
+            self.case = Telemac3d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
         else:
-            logging.warning("Other solvers than Telemac2d/3d not available.")
+            print("ERROR: no other solvers than Telemac2d/3d available.")
             return -1
         if self.nproc > 1:
             self.comm.Barrier()
 
-        # set and initialize case
-        self.case.set_case()
-        self.case.init_state_default()
+        if self.nproc > 1:
+            self.comm.Barrier()
+        if reset_state:
+            print("* setting and initializing case...")
+            self.case.set_case()
+            self.case.init_state_default()
         self.case_loaded = True
         os.chdir(init_dir)
-        logging.info(" * successfully activated TELEMAC case: " + str(self.tm_cas))
+        print("* successfully activated TELEMAC case: " + str(self.tm_cas))
         return 0
 
-    def load_results(self):
-        """Load simulation results stored in TelemacModel.tm_results_filename"""
+    def close_case(self):
+        """Close and delete case."""
+        if self.case_loaded:
+            try:
+                self.case.finalize()
+                del self.case
+            except Exception as error:
+                print("ERROR: could not close case:\n   " + str(error))
+        self.case_loaded = False
 
-        if not self.case_loaded:
+    def reload_case(self):
+        """Iterative runs require first to close the current run."""
+        # close and delete case
+        self.close_case()
+        # load with new specs
+        self.load_case()
+
+    def get_results_filename(self):
+        """Routine is called with the __init__ and carefully written so that it can be called
+        externally any time, too."""
+        current_case_state = self.case_loaded
+        if not current_case_state:
             self.load_case()
+        self.tm_results_filename = "{}{}{}".format(self.model_dir, os.sep, self.case.get("MODEL.RESULTFILE"))
+        if not current_case_state:
+            self.close_case()
 
+    def load_results(self):
+        """Load simulation results stored in TelemacModel.tm_results_filename
+        THIS IS STILL BUGGY - SEE LIQUID BC COMMENT
+
+        :return int: 0 corresponds to success; -1 points to an error
+        """
+        print("* loading computed case: " + self.tm_cas)
+        if not self.case_loaded:
+            self.load_case(reset_state=False)
+        print("* opening results file: " + self.tm_results_filename)
         if not os.path.isfile(self.tm_results_filename):
-            print("* overwriting Python-API provided user results filename with .cas-define results file:\n" + self.case.get("MODEL.RESULTFILE"))
             self.tm_results_filename = os.path.join(self.model_dir, self.case.get("MODEL.RESULTFILE"))
-
+        print("* retrieving boundary file: " + self.tm_results_filename)
         boundary_file = os.path.join(self.model_dir, self.case.get("MODEL.BCFILE"))
+        print("* loaded results with boundary file " + boundary_file)
         try:
-            # TO DO: this crashes because of:
-            # ValueError: failed in converting 6th argument `liubor' of _hermes.get_bnd_value to C/Fortran array
             self.results = TelemacFile(self.tm_results_filename, bnd_file=boundary_file)
         except Exception as error:
-            print("ERROR: Could not load results:\n" + error)
+            print("ERROR: Could not load results:\n" + str(error))
+            return -1
 
         # to see more case variables that can be self.case.get()-ed, type print(self.case.variables)
         # examples to access liquid boundary equilibrium
-        liq_bnd_info = self.results.get_liq_bnd_info()
-        print("Liquid BC info:\n" + str(liq_bnd_info))
+        try:
+            # TO DO: this crashes because of:
+            # ValueError: failed in converting 6th argument `liubor' of _hermes.get_bnd_value to C/Fortran array
+            liq_bnd_info = self.results.get_liq_bnd_info()
+            print("Liquid BC info:\n" + str(liq_bnd_info))
+        except Exception as error:
+            print("WARNING: Could not load case liquid boundary info because of:\n   " + str(error))
+        return 0
 
     def update_model_controls(
             self,
@@ -191,8 +235,15 @@ class TelemacModel(FullComplexityModel):
                     * keys correspond to Telemac or Gaia keywords in the steering file
                     * values are either scalar or list-like numpy arrays
         :param int simulation_id: optionally set an identifier for a simulation (default is 0)
-        :return:
+        :return int:
         """
+
+        # move existing results to auto-saved-results sub-folder
+        try:
+            shutil.move(self.tm_results_filename, os.path.join(self.res_dir, self.tm_results_filename.split(os.sep)[-1]))
+        except Exception as error:
+            print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
+            return -1
 
         # update telemac calibration pars
         for par, has_more in lookahead(self.calibration_parameters["telemac"].keys()):
@@ -200,7 +251,7 @@ class TelemacModel(FullComplexityModel):
             updated_string = self.create_cas_string(par, new_parameter_values[par])
             self.rewrite_steering_file(par, updated_string, self.tm_cas)
             if not has_more:
-                updated_string = "RESULTS FILE" + " = " + self.tm_results_filename.replace("IDX", f"{simulation_id:03d}")
+                updated_string = "RESULTS FILE" + " = " + self.tm_results_filename.replace(".slf", f"{simulation_id:03d}" + ".slf")
                 self.rewrite_steering_file("RESULTS FILE", updated_string, self.tm_cas)
 
         # update gaia calibration pars - this intentionally does not iterate through self.calibration_parameters
@@ -209,8 +260,10 @@ class TelemacModel(FullComplexityModel):
             updated_string = self.create_cas_string(par, new_parameter_values[par])
             self.rewrite_steering_file(par, updated_string, self.gaia_cas)
             if not has_more:
-                updated_string = "RESULTS FILE" + " = " + self.gaia_results_file.replace("IDX", f"{simulation_id:03d}")
+                updated_string = "RESULTS FILE" + " = " + self.gaia_results_file.replace(".slf", f"{simulation_id:03d}" + ".slf")
                 self.rewrite_steering_file("RESULTS FILE", updated_string, self.gaia_cas)
+
+        return 0
 
     def rewrite_steering_file(self, param_name, updated_string, steering_module="telemac"):
         """
@@ -326,6 +379,8 @@ class TelemacModel(FullComplexityModel):
                      self.tm_results_filename + "')\n"
         elif keyword == "newline":
             string = "\n"
+        if len(string) < 1:
+            print("WARNING: empty argument written to run_launcher.py. This will likely cause and error.")
         return string.encode()
 
     def create_launcher_pyscript(self, filename):
@@ -353,6 +408,8 @@ class TelemacModel(FullComplexityModel):
                 file.write(self.cmd2str("barrier"))
             file.write(self.cmd2str("newline"))
             file.write(self.cmd2str("finalize"))
+            if self.nproc > 1:
+                file.write(self.cmd2str("barrier"))
             file.write(self.cmd2str("del"))
         file.close()
         os.chmod(filename, os.stat(filename).st_mode | stat.S_IEXEC)
@@ -373,27 +430,27 @@ class TelemacModel(FullComplexityModel):
             raise Exception("\nERROR IN PARALLEL RUN COMMAND: {} \n"
                             " PROGRAM STOP.\nCheck shebang, model_dir, and cas file.".format(cmd))
 
-    def run_simulation(self, filename="run_launcher.py", load_results=True):
+    def run_simulation(self, filename="run_launcher.py", load_results=False):
         """ Run a Telemac2d or Telemac3d simulation with one or more processors
         The number of processors to use is defined by self.nproc.
 
         :param (str) filename: optional name for a Python file that will be automatically
                         created to control the simulation
-        :param (bool) load_results: default value of True re-assigns TelemacModel.results = TelemacFile("results.slf")
+        :param (bool) load_results: default value of False; it True: load parameters of the results.slf file
         """
+
         start_time = datetime.now()
-
         filename = os.path.join(self.model_dir, filename)
-        self.create_launcher_pyscript(filename)
 
-        if self.nproc == 1:
+        if self.nproc <= 1:
             print("* sequential run (single processor)")
             if not self.case_loaded:
-                # every case must be initiated before it running
+                # every sequential case must be initiated here before it running - MPI runs are handled separately!
                 self.load_case()
             self.case.run_all_time_steps()
         else:
             print("* parallel run on {} processors".format(self.nproc))
+            self.create_launcher_pyscript(filename)
             try:
                 self.mpirun(filename)
             except Exception as exception:
@@ -402,6 +459,8 @@ class TelemacModel(FullComplexityModel):
 
         if load_results:
             self.load_results()
+        else:
+            self.close_case()
 
     def call_tm_shell(self, cmd):
         """ Run Telemac in a Terminal in the model directory
@@ -455,7 +514,7 @@ class TelemacModel(FullComplexityModel):
         slf.readTimes()
 
         ## FROM TELEMAC notebooks/telemac2d:
-        help(my_case.get_node)  # gets the nearest node number of an slf file
+        help(self.case.get_node)  # gets the nearest node number of an slf file
 
         # get the printout times
         times = slf.getTimes()

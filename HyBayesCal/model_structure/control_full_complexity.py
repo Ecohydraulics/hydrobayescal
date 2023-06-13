@@ -35,9 +35,9 @@ class FullComplexityModel:
         self.model_dir = model_dir
         self.control_file = control_file
         self.collocation_file = "calibration-par-combinations.csv"
-        self.res_dir = model_dir + _os.sep + "auto-results"
-        if not _os.path.exists(model_dir + _os.sep + "auto-results"):
-            _os.makedirs(model_dir + _os.sep + "auto-results")
+        self.res_dir = model_dir + _os.sep + "auto-saved-results"
+        if not _os.path.exists(model_dir + _os.sep + "auto-saved-results"):
+            _os.makedirs(model_dir + _os.sep + "auto-saved-results")
 
         self.calibration_parameters = False
         if calibration_parameters:
@@ -73,6 +73,7 @@ class FullComplexityModel:
         :return None:
         """
         start_time = datetime.now()
+        print("DUMMY CALL")
         # implement call to run the model from command line, for example:
         # call_subroutine("openTeleFoam " + self.control_file)
         print("Full-complexity simulation time: " + str(datetime.now() - start_time))

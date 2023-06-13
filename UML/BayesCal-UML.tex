@@ -93,28 +93,31 @@ keywordstyle=\color{blue}
 			\attribute{comm: mpi4py.MPI.Comm(mpi4py.MPI.COMM_WORLD)}
 			\attribute{control_file: str }
 			\attribute{nproc: int }
+			\attribute{python_shebang: str }
 			\attribute{results: TelemacFile() }
 			\attribute{slf_input_file: str}
-			\attribute{shebang: str }
 			\attribute{stdout: int (default: 6) }
 			\attribute{tm_cas: str }
-			\attribute{tm_results_file: str }
+			\attribute{tm_results_filename: str }
 			\attribute{tm_xd: str }
-			\attribute{tm_case: Telemac2() / Telemac3d()}
+			\attribute{tm_case: Telemac2d() / Telemac3d()}
 			\attribute{tm_case_loaded: bool}
 			\attribute{tm_xd_dict: dict }
 			\attribute{**gaia_cas: str }
 			\attribute{**gaia_results_file: str }
 						
-			\operation{call_tm_shell(cmd: str): (subprocess.PIPE, subprocess.Popen().returncode)}
-			\operation{cmd2string(keyword: str): str.encode()}
-			\operation{create_cas_string(param_name: str, value: var.): None}
-			\operation{create_launcher_pyscript(filename: str): None}
-			\operation{get_variable_value(slf_file_name: str, calibration_par: str, specific_nodes: np.array, save_name: str): np.array}
-			\operation{load_case(): int}
-			\operation{load_results(): None}
-			\operation{mpirun(filename: str): None}
-			\operation{rename_selafin(old_name=".slf", new_name=".slf"): None}
+			\operation{call_tm_shell(cmd: str): (subprocess.PIPE, subprocess.Popen().returncode) }
+			\operation{cmd2string(keyword: str): str.encode() }
+			\operation{create_cas_string(param_name: str, value: var.): None }
+			\operation{create_launcher_pyscript(filename: str): None }
+			\operation{get_results_filename(): None }
+			\operation{get_variable_value(slf_file_name: str, calibration_par: str, specific_nodes: np.array, save_name: str): np.array }
+			\operation{close_case(): None }
+			\operation{load_case(): int }
+			\operation{load_results(): None }
+			\operation{mpirun(filename: str): None }
+			\operation{reload_case(): None }
+			\operation{rename_selafin(old_name=".slf", new_name=".slf"): None }
 			\operation{rewrite_steering_file(param_name: str, updated_string: str, steering_module="telemac"): int}
 			\operation{>> run_simulation(filename: str, load_results=True)}
 			\operation{>> update_model_controls}

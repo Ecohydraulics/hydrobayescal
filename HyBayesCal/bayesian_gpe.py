@@ -63,8 +63,9 @@ class BalWithGPE(UserDefsTelemac):
         """
         UserDefsTelemac.__init__(self, input_worbook_name)  # get user def file
         self.assign_global_settings(self.input_xlsx_name)  # apply user defs
+        self.software_coupling = software_coupling
         self.__numerical_model = None
-        self.__set_model("numerical_model", software_coupling)
+        self.__set__num_model()
         self.observations = {}
         self.n_simulation = int()
         self.prior_distribution = np.ndarray(())  # will create and update in self.update_prior_distributions
@@ -75,18 +76,17 @@ class BalWithGPE(UserDefsTelemac):
         self.re_score_file = None
         self.doe = DesignOfExperiment()
 
-    def __set_model(self, name, value):
-        if name == "numerical_model":
-            if value == "telemac":
-                self.numerical_model = TelemacModel(
-                    model_dir=self.SIM_DIR,
-                    calibration_parameters=list(self.CALIB_PAR_SET.keys()),
-                    control_file=self.TM_CAS,
-                    gaia_steering_file=self.GAIA_CAS,
-                    n_processors=self.N_CPUS,
-                    tm_xd=self.tm_xD
-                )
-                print("Instantiated a %s model for BAL." % value.upper())
+    def __set__num_model(self):
+        if self.software_coupling.lower() == "telemac":
+            self.numerical_model = TelemacModel(
+                model_dir=self.SIM_DIR,
+                calibration_parameters=list(self.CALIB_PAR_SET.keys()),
+                control_file=self.TM_CAS,
+                gaia_steering_file=self.GAIA_CAS,
+                n_processors=self.N_CPUS,
+                tm_xd=self.tm_xD
+            )
+            print("Instantiated %s for BAL." % self.software_coupling.upper())
 
     def initialize_score_writing(self, func):
         """
@@ -209,12 +209,19 @@ class BalWithGPE(UserDefsTelemac):
         self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-all.csv")
 
         # run initial simulations and update the steering file with new parameters before each run
-        for init_run_it in range(self.init_runs):
-            self.numerical_model.update_model_controls(
-                new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_it, :],
-                simulation_id=init_run_it
-            )
-            self.numerical_model.run_simulation()
+        for init_run_id, has_more in lookahead(self.init_runs):
+            self.numerical_model.run_simulation()  # auto-checks if case is loaded
+            if has_more:
+                self.numerical_model.update_model_controls(
+                    new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_id, :],
+                    simulation_id=init_run_id
+                )
+                # only sequential: re-instantiate the numerical model with new control (CAS) settings
+                # parallel will already have set case_loaded to False
+                if self.numerical_model.case_loaded:
+                    self.numerical_model.reload_case()
+            else:
+                self.numerical_model.close_case()
         return 0
 
     def get_collocation_points(self):
