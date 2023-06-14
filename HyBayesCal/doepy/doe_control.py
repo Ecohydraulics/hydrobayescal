@@ -12,7 +12,7 @@ Note::
 from random import choice
 import numpy as _np
 import pandas as _pd
-import DOE_functions as doef
+# import DOE_functions as doef  # for later implementation
 
 
 class DesignOfExperiment:
@@ -80,6 +80,10 @@ class DesignOfExperiment:
         """
 
         dict4parameter_file = {}  # required for pd.DataFrame and textfile with parameter combinations
+        # build parameter combination (PC) index dict
+        index_dict = {}
+        [index_dict.update({i: "PC{}".format(i+1)}) for i in range(total_number_of_samples)]
+        # generate n samples for every calibration parameter
         for par in parameter_dict.keys():
             parameter_dict[par]["value array"] = self.generate_interval(
                 minimum=parameter_dict[par]["bounds"][0],
@@ -90,6 +94,7 @@ class DesignOfExperiment:
             dict4parameter_file.update({par: parameter_dict[par]["value array"]})
 
         self.df_parameter_spaces = _pd.DataFrame.from_dict(data=dict4parameter_file)
+        self.df_parameter_spaces.rename(index=index_dict)
 
     @staticmethod
     def min_equalInterval_max(minimum, maximum, n):

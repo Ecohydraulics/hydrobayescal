@@ -33,7 +33,8 @@ from active_learning import *
 from function_pool import log_actions
 from telemac.control_telemac import TelemacModel
 from telemac.usr_defs_telemac import UserDefsTelemac
-# from .doepy.doe_control import DesignOfExperiment  # for later implementation
+from doepy.doe_control import DesignOfExperiment  # for later implementation
+
 
 class BalWithGPE(UserDefsTelemac):
     """
@@ -158,7 +159,8 @@ class BalWithGPE(UserDefsTelemac):
         observation_file = np.loadtxt(self.CALIB_PTS, delimiter=",")
         self.observations = {
             "no of points": observation_file.shape[0],
-            "node IDs": observation_file[:, 0].reshape(-1, 1),
+            "X": observation_file[:, 0].reshape(-1, 1),
+            "Y": observation_file[:, 0].reshape(-1, 1),
             "observation": observation_file[:, 1].reshape(-1, 1),
             "observation error": observation_file[:, 2]
         }
@@ -186,12 +188,19 @@ class BalWithGPE(UserDefsTelemac):
                 else:
                     recalc_pars.update({par: [v["initial val"]]})
 
+        # currently only equal or random sampling enabled through doepy.doe.control
+        # this will be IMPROVED in a future release to full DoE methods (see doepy.scripts)
         self.doe.generate_multi_parameter_space(
             parameter_dict=calib_par_value_dict,
             method=self.init_run_sampling,
             total_number_of_samples=self.init_runs
         )
-        self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-scalars.csv".replace("/", os.sep))
+        self.doe.df_parameter_spaces.to_csv(
+            self.SIM_DIR + "{}parameter-file.csv".format(os.sep),
+            sep=";",
+            index=True,
+            header=False
+        )
 
         # update any list-like parameter values and remove multiplier from calib par values
         if "Multiplier" in calib_par_value_dict.keys():

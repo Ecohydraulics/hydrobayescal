@@ -193,7 +193,7 @@ class TelemacModel(FullComplexityModel):
 
     def load_results(self):
         """Load simulation results stored in TelemacModel.tm_results_filename
-        THIS IS STILL BUGGY - SEE LIQUID BC COMMENT
+        THIS IS BUGGY - SEE LIQUID BC COMMENT
 
         :return int: 0 corresponds to success; -1 points to an error
         """
