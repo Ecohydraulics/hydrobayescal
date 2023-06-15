@@ -156,14 +156,24 @@ class BalWithGPE(UserDefsTelemac):
         """Load observations stored in calibration_points.csv to self.observations
         """
         print(" * reading observations file (%s)..." % self.CALIB_PTS)
-        observation_file = np.loadtxt(self.CALIB_PTS, delimiter=",")
-        self.observations = {
-            "no of points": observation_file.shape[0],
-            "X": observation_file[:, 0].reshape(-1, 1),
-            "Y": observation_file[:, 0].reshape(-1, 1),
-            "observation": observation_file[:, 1].reshape(-1, 1),
-            "observation error": observation_file[:, 2]
-        }
+        self.observations = pd.read_csv(self.CALIB_PTS, header=None)  # omit header for robust renaming
+        # update column names to code-common keywords
+        column_names = {0: "X", 1: "Y"}
+        [column_names.update({2*(c+1): v, 2*(c+1)+1: "{}-err".format(v)}) for c, v in enumerate(self.CALIB_TARGETS)]
+        try:
+            self.observations.rename(columns=column_names, inplace=True)
+        except Exception as error:
+            print("ERROR: could not align calibration point column names with user-defined target calibration quantities\n\t{}".format(str(error)))
+            raise LookupError
+
+        # observation_file = np.loadtxt(self.CALIB_PTS, delimiter=",")
+        # self.observations = {
+        #     "no of points": observation_file.shape[0],
+        #     "X": observation_file[:, 0].reshape(-1, 1),
+        #     "Y": observation_file[:, 0].reshape(-1, 1),
+        #     "observation": observation_file[:, 1].reshape(-1, 1),
+        #     "observation error": observation_file[:, 2]
+        # }
 
     def run_initial_simulations(self):
         """

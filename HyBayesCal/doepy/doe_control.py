@@ -94,7 +94,7 @@ class DesignOfExperiment:
             dict4parameter_file.update({par: parameter_dict[par]["value array"]})
 
         self.df_parameter_spaces = _pd.DataFrame.from_dict(data=dict4parameter_file)
-        self.df_parameter_spaces.rename(index=index_dict)
+        self.df_parameter_spaces.rename(index=index_dict, inplace=True)
 
     @staticmethod
     def min_equalInterval_max(minimum, maximum, n):
