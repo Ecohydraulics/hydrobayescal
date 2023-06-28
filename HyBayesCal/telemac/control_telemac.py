@@ -195,7 +195,8 @@ class TelemacModel(FullComplexityModel):
 
     def load_results(self):
         """Load simulation results stored in TelemacModel.tm_results_filename
-        THIS IS BUGGY - SEE LIQUID BC COMMENT
+
+        Cannot work if case.init_default_state() was applied before.
 
         :return int: 0 corresponds to success; -1 points to an error
         """
@@ -215,8 +216,6 @@ class TelemacModel(FullComplexityModel):
         # to see more case variables that can be self.case.get()-ed, type print(self.case.variables)
         # examples to access liquid boundary equilibrium
         try:
-            # TO DO: this crashes because of:
-            # ValueError: failed in converting 6th argument `liubor' of _hermes.get_bnd_value to C/Fortran array
             liq_bnd_info = self.results.get_liq_bnd_info()
             print("Liquid BC info:\n" + str(liq_bnd_info))
         except Exception as error:
