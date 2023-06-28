@@ -47,8 +47,8 @@ VARIABLES FOR GRAPHIC PRINTOUTS             : 'U,V,S,B,H,M,W'
 /
 TIME STEP                                   : 0.5
 /
-NUMBER OF TIME STEPS                        :  1200
-GRAPHIC PRINTOUT PERIOD                     :  1200
+NUMBER OF TIME STEPS                        :  2000
+GRAPHIC PRINTOUT PERIOD                     :  1000
 LISTING PRINTOUT PERIOD                     :  100
 /
 /----------------------------------------------------------------------

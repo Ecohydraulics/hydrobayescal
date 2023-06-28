@@ -10,11 +10,11 @@ import os.path
 import HyBayesCal as hbc
 
 # global constant parameters
-this_dir = os.path.abspath(os.path.join(__file__, ".."))
+this_dir = os.path.abspath(".")
 
 # global user parameters
-tm_model_dir = "/home/schwindt/Software/telemac/v8p4r0/examples/telemac2d/donau"
-cas_file = "t2d_donau.cas"
+tm_model_dir = os.path.join(this_dir, "examples/donau")
+cas_file = "t2d-donau-const-n-FV.cas"
 
 
 def run_telemac():
@@ -26,10 +26,10 @@ def run_telemac():
         model_dir=tm_model_dir,
         control_file=cas_file,
         tm_xd="Telemac2d",
-        n_processors=4,
+        n_processors=1,
     )
 
-    tm_model.run_simulation(load_results=True)
+    tm_model.run_simulation(load_results=False)
 
 
 if __name__ == "__main__":

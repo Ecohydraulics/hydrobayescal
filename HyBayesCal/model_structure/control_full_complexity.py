@@ -42,6 +42,7 @@ class FullComplexityModel:
         self.calibration_parameters = False
         if calibration_parameters:
             self.set_calibration_parameters("calibration_parameters", calibration_parameters)
+        self.supervisor_dir = _os.getcwd()  # preserve directory of code that is controlling the full complexity model
 
     def set_calibration_parameters(self, name, value):
         # value corresponds to a list of parameters
