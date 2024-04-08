@@ -70,4 +70,5 @@ class UserDefs:
         data_rows = []
         for row in ws[read_range]:
             data_rows.append([cell.value for cell in row])
+            print(data_rows)
         return _pd.DataFrame(data_rows)

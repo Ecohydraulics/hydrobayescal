@@ -1,8 +1,8 @@
 #!/bin/bash
 # User definitions
-TELEMAC_CONFIG_DIR=/home/schwindt/Software/telemac/v8p4r0/configs
+TELEMAC_CONFIG_DIR=/home/amintvm/modeling/telemac-mascaret/configs
 TELEMAC_CONFIG_NAME=pysource.gfortranHPC.sh
-HBCenv_DIR=/home/schwindt/venv/HBCenv
+HBCenv_DIR=/home/amintvm/modeling/HyBayesCal-pckg/HBCenv
 
 
 # SCRIPT ACTIONS - DO NOT MODIFY BELOW

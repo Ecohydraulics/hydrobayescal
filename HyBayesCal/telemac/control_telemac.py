@@ -5,7 +5,7 @@ Functional core for coupling the Surrogate-Assisted Bayesian inversion technique
 import os, io, stat
 import sys
 import subprocess
-
+import pdb
 try:
     from telapy.api.t2d import Telemac2d
     from telapy.api.t3d import Telemac3d
@@ -503,12 +503,13 @@ class TelemacModel(FullComplexityModel):
         """
 
         # read SELAFIN file
+
         slf = ppSELAFIN(slf_file_name)
         slf.readHeader()
         slf.readTimes()
 
         ## FROM TELEMAC notebooks/telemac2d:
-        help(self.case.get_node)  # gets the nearest node number of an slf file
+        #help(self.case.get_node)  # gets the nearest node number of an slf file
 
         # get the printout times
         times = slf.getTimes()
@@ -521,7 +522,6 @@ class TelemacModel(FullComplexityModel):
 
         # read the variables values in the last time step
         slf.readVariables(len(times) - 1)
-
         # get values (for each node) for the variable of interest at the last time step
         modeled_results = slf.getVarValues()[index_variable_interest, :]
         format_modeled_results = _np.zeros((len(modeled_results), 2))

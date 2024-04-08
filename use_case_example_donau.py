@@ -10,26 +10,18 @@ import os.path
 import HyBayesCal as hbc
 
 # global constant parameters
-this_dir = os.path.abspath(".")
+#this_dir = os.path.abspath(".")
 
 # global user parameters
-tm_model_dir = os.path.join(this_dir, "examples/donau")
-cas_file = "t2d-donau-const-n-FV.cas"
-
+input_worbook_name = "/home/amintvm/modeling/hybayescal/tm-user-input_parameters.xlsx"
 
 def run_telemac():
-    """Instantiate a TelemacModel object with the minimally required parameters
+    """Instantiate a TelemacModel object with the required parameters
 
     :return: None
     """
-    tm_model = hbc.TelemacModel(
-        model_dir=tm_model_dir,
-        control_file=cas_file,
-        tm_xd="Telemac2d",
-        n_processors=1,
-    )
-
-    tm_model.run_simulation(load_results=False)
+    tm_model = hbc.BalWithGPE(input_worbook_name)
+    tm_model.run_initial_simulations()
 
 
 if __name__ == "__main__":

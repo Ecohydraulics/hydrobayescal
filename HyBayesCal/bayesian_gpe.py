@@ -25,14 +25,18 @@ from functools import wraps
 import random as rnd
 import numpy as np
 import pandas as pd
+import subprocess
+import shutil
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 
 # import own scripts
 from active_learning import *
 from function_pool import log_actions
-from telemac.control_telemac import TelemacModel
-from telemac.usr_defs_telemac import UserDefsTelemac
+#from telemac.control_telemac import TelemacModel
+#from telemac.usr_defs_telemac import UserDefsTelemac
+from telemac.usr_defs_telemac import *
+from file_creator import *
 from doepy.doe_control import DesignOfExperiment  # for later implementation
 
 
@@ -66,7 +70,7 @@ class BalWithGPE(UserDefsTelemac):
         self.assign_global_settings(self.input_xlsx_name)  # apply user defs
         self.software_coupling = software_coupling
         self.__numerical_model = None
-        self.__set__num_model()
+        #self.__set__num_model()
         self.observations = {}
         self.n_simulation = int()
         self.prior_distribution = np.ndarray(())  # will create and update in self.update_prior_distributions
@@ -78,7 +82,9 @@ class BalWithGPE(UserDefsTelemac):
         self.doe = DesignOfExperiment()
 
     def __set__num_model(self):
+
         if self.software_coupling.lower() == "telemac":
+            from telemac.control_telemac import TelemacModel
             self.numerical_model = TelemacModel(
                 model_dir=self.SIM_DIR,
                 calibration_parameters=list(self.CALIB_PAR_SET.keys()),
@@ -182,8 +188,9 @@ class BalWithGPE(UserDefsTelemac):
 
         Create baseline for response surface
         """
-
         # make initial parameter value space -- PLUG IN DESIGN OF EXPERIMENTS IN LATER VERSIONS
+
+
         calib_par_value_dict = {}
         recalc_pars = {}
         for par, v in self.CALIB_PAR_SET.items():
@@ -226,21 +233,86 @@ class BalWithGPE(UserDefsTelemac):
             self.doe.df_parameter_spaces.drop("Multiplier", axis=1, inplace=True)
         # write final initial run parameters
         self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-all.csv")
-
+        print(self.doe.df_parameter_spaces)
         # run initial simulations and update the steering file with new parameters before each run
-        for init_run_id, has_more in lookahead(self.init_runs):
-            self.numerical_model.run_simulation()  # auto-checks if case is loaded
-            if has_more:
-                self.numerical_model.update_model_controls(
-                    new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_id, :],
-                    simulation_id=init_run_id
-                )
-                # only sequential: re-instantiate the numerical model with new control (CAS) settings
-                # parallel will already have set case_loaded to False
-                if self.numerical_model.case_loaded:
-                    self.numerical_model.reload_case()
+        # for init_run_id, has_more in lookahead(self.init_runs):
+        #     self.numerical_model.run_simulation()  # auto-checks if case is loaded
+
+        case_file_base = self.TM_CAS
+        tm_model_dir = self.SIM_DIR
+        source_file = tm_model_dir + case_file_base
+        #activateTM_path = "//home/amintvm/modeling/HyBayesCal-pckg/env-scripts/activateTM.sh"
+        #results_filename_base = "r2d-donau"
+        cas_lines = [line for line in [cas_line_1, cas_line_2, cas_line_3, cas_line_4,cas_line_results_file] if line]
+        calib_param_names=list(self.CALIB_PAR_SET.keys())
+        df_calib_param_values=self.doe.df_parameter_spaces.applymap(lambda x: round(x, 4))
+        results_filename_list= cas_creator(source_file, tm_model_dir, self.init_runs,
+                                                          results_filename_base, df_calib_param_values,calib_param_names,cas_lines)
+
+        calib_targets_string = ".".join(self.CALIB_TARGETS)
+
+        print(results_filename_list)
+        print(calib_targets_string)
+
+
+
+        auto_saved_results_path = os.path.join(tm_model_dir, "auto-saved-results")
+        print("Starting multiple run simulation...")
+
+        for i, result_filename_path in zip(range(1, self.init_runs + 1), results_filename_list):
+
+            # Calls and runs the shell file .sh that activates Telemac environment and runs the python file .py which starts a Telemac simulation
+            # The shell file has to be run (sourcing Telemac source pysource.xxxxx.sh) everytime a simulation starts within the loop.
+            case_file = f"{case_file_base}"
+            case_file = case_file.split('.')
+            if len(case_file) == 2:
+                case_file = f"{case_file[0]}-{i}.{case_file[1]}"
             else:
-                self.numerical_model.close_case()
+                print("Invalid file name format")
+            print(f"RUNNING .cas FILE>>> {case_file}")
+            run_TMactivation_command = f"source {activateTM_path}"  # Activates Telemac
+            python_instantiation_path = os.path.join(this_dir, "HyBayesCal/telemac/script.py")
+            run_python_command = (f"python {python_instantiation_path} "
+                                  f"{i} {case_file} "
+                                  f"{result_filename_path} "
+                                  f"{results_filename_base} "
+                                  f"{tm_model_dir} {self.tm_xD} "
+                                  f"{self.N_CPUS} {calib_targets_string}"
+                                  )
+            combined_command = f"/bin/bash -c '{run_TMactivation_command} && {run_python_command}'"
+            try:
+                subprocess.run(combined_command, shell=True, check=True)
+                shutil.copy2(result_filename_path, auto_saved_results_path)
+                #os.remove(result_filename_path)
+                #logging.info(f".slf and .txt files for: '{result_filename_path}' copied to >>>>>> auto-saved-results.")
+                print(f".slf and .txt files for: '{result_filename_path}' copied to >>>>>> auto-saved-results.")
+            except subprocess.CalledProcessError as e:
+                print(f"Error occurred during run {i}: {e}")
+            except Exception as e:
+                print(f"An error occurred during run {i}: {e}")
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        #     # self.__set__num_model()
+        #     self.numerical_model.run_simulation()  # auto-checks if case is loaded
+        #     run_TMactivation_command = f"source {activateTM_path}"
+        #     combined_command = f"/bin/bash -c '{run_TMactivation_command}'"
+        #     subprocess.run(combined_command, shell=True, check=True)
+            # if has_more:
+            #     self.numerical_model.update_model_controls(
+            #         new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_id, :],
+            #         simulation_id=init_run_id
+            #     )
+            #     # only sequential: re-instantiate the numerical model with new control (CAS) settings
+            #     # parallel will already have set case_loaded to False
+            #     if self.numerical_model.case_loaded:
+            #         self.numerical_model.reload_case()
+            # else:
+            #     self.numerical_model.close_case()
         return 0
 
     def get_collocation_points(self):
