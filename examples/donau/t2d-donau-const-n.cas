@@ -1,3 +1,4 @@
+/ SSC NOTE: THIS YIELDS MASS CONSERVATION BUT REQUIRES 30 MINUTES TO RUN ON 4 CPUs
 /
 /  DONAU : TESTING NEW POSSIBILITIES ON FRICTION
 /          DEVELOPPED AT BAW
@@ -31,7 +32,7 @@
 /----------------------------------------------------------------------
 /
 BOUNDARY CONDITIONS FILE                     : geo-donau.cli
-GEOMETRY FILE                                : geo-donau.slf
+GEOMETRY FILE                                : geo-donau-no-fric.slf
 RESULTS FILE                                 : r2d-donau.slf
 CHECKING THE MESH : YES
 PREVIOUS COMPUTATION FILE                    : donau-restart.slf
@@ -47,7 +48,7 @@ VARIABLES FOR GRAPHIC PRINTOUTS             : 'U,V,S,B,H,M,W'
 /
 TIME STEP                                   : 0.5
 /
-NUMBER OF TIME STEPS                        :  2000
+NUMBER OF TIME STEPS                        :  50000
 GRAPHIC PRINTOUT PERIOD                     :  1000
 LISTING PRINTOUT PERIOD                     :  100
 /
@@ -55,16 +56,16 @@ LISTING PRINTOUT PERIOD                     :  100
 /                    BOUNDARY CONDITIONS
 /----------------------------------------------------------------------
 /
-PRESCRIBED ELEVATIONS                       : 309.205 ; 309.205
-PRESCRIBED FLOWRATES                        : 218.0 ; 218.0
+PRESCRIBED ELEVATIONS                       : 309.205 ; 0
+PRESCRIBED FLOWRATES                        : 0 ; 218.0
 MAXIMUM NUMBER OF BOUNDARIES                : 50
 /
 /----------------------------------------------------------------------
 /                      INITIAL CONDITIONS
 /----------------------------------------------------------------------
 /
-INITIAL CONDITIONS                          :'CONSTANT ELEVATION'
-INITIAL ELEVATION                           : 309.4D0
+/INITIAL CONDITIONS                          :'CONSTANT ELEVATION'
+/INITIAL ELEVATION                           : 309.4D0
 /
 /----------------------------------------------------------------------
 /                       NUMERICAL OPTIONS
@@ -78,32 +79,43 @@ SOLVER OPTION				    : 5
 SOLVER ACCURACY                             : 1.D-6
 MAXIMUM NUMBER OF ITERATIONS FOR SOLVER     : 70
 TYPE OF ADVECTION                           : 1;5
-IMPLICITATION FOR DEPTH                     : 1.
+IMPLICITATION FOR DEPTH                     : 0.6
 IMPLICITATION FOR VELOCITY                  : 0.55
+/
+/                     PARAMETERS DRIVING MASS CONSERVATION
+/----------------------------------------------------------------------
+OPTION FOR THE DIFFUSION OF VELOCITIES : 2 / only option to get mass conservation but can cause problems with tidal flats
+SCHEME FOR ADVECTION OF VELOCITIES : 3 / use 3, also for FV - MATRIX STORAGE must be 3
+SCHEME OPTION FOR ADVECTION OF VELOCITIES : 4 / overrides SUPG OPTION and OPTION FOR CHARACTERISTICS
+NUMBER OF CORRECTIONS OF DISTRIBUTIVE SCHEMES : 2 / increase for higher accuracy and longer computing time, requires SCHEME OF ADVECTION 3,4,5, or 15 and OPTION 2,3,4
+TYPE OF SOURCES : 2 / 2=Dirc is the only possibility for mass conservations, the default=1 means linearn function and is not mass conservative
+CONTINUITY CORRECTION : YES / particularly important when not only discharge but also depth is imposed at boundaries
+/H CLIPPING should not be modified because it would impair mass conservation
+/
 /
 /----------------------------------------------------------------------
 /                       TURBULENCE MODEL
 /----------------------------------------------------------------------
 /
-TURBULENCE MODEL                            : 2
+TURBULENCE MODEL                            : 3 / other turbulence models bump into mass loss
 /
 /--------------------------------------------------------/
 /   FRICTION PARAMETERS                                  /
 /--------------------------------------------------------/
 LAW OF BOTTOM FRICTION            : 4 / use Mannings n
-FRICTION COEFFICIENT              : 0.025
+FRICTION COEFFICIENT              : 0.036 / optimum value for mass balance: 0.021345
+LAW OF FRICTION ON LATERAL BOUNDARIES = 5
+ROUGHNESS COEFFICIENT OF BOUNDARIES = 0.01
+VEGETATION FRICTION = NO
 /
 /FRICTION DATA                      : YES
 /FRICTION DATA FILE                 : roughness.tbl
 /ZONES FILE                         : geo-donau.bfr
 /MAXIMUM NUMBER OF FRICTION DOMAINS : 10
-/VEGETATION FRICTION : NO
-/LAW OF FRICTION ON LATERAL BOUNDARIES : 5
-/ROUGHNESS COEFFICIENT OF BOUNDARIES : 0.01
 /
 / DEFAULT VALUE UNTIL V8P1 KEPT FOR NON REGRESSION
 TREATMENT OF THE LINEAR SYSTEM : 2
 CONTINUITY CORRECTION : YES 
 TREATMENT OF NEGATIVE DEPTHS : 2
-MASS-LUMPING ON H : 1.0
+MASS-LUMPING ON H : 1.0  / mass lumping is no good for mass conservation because of smoothing
 SUPG OPTION : 2;0
