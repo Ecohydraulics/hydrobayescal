@@ -1,13 +1,12 @@
 # About
 
-Original codes forked from https://github.com/eduardoAcunaEspinoza/surrogated_assisted_bayesian_calibration and transformed to packaged documentation.
+Package applies on top of
+https://git.iws.uni-stuttgart.de/inversemodeling/bayesvalidrox
 
-Detailed code docs:
-https://stochastic-surrogate.readthedocs.io
+Tweaked for turbulence modeling in free surface flows.
+
+Detailed code docs to be provided at:
+https://hybayescal.readthedocs.io
 
 
-
-
-## Developer Docs
-
-### Update requirements
+## Update requirements
