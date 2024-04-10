@@ -2,7 +2,9 @@
 Creates .cas files according to the number in full complexity models
 """
 from config import *
-import random
+import os
+import pandas as pd
+
 def cas_creator(source_file, tm_model_dir, init_runs,results_filename_base,df_calib_param_values,calib_param_names,cas_lines):
     """
     Author - Andres
@@ -67,19 +69,7 @@ def cas_creator(source_file, tm_model_dir, init_runs,results_filename_base,df_ca
 
     return results_filename_list
 
-def column_to_list(df, calib_param):
-    """
-    Extracts values from a specified column of a DataFrame and returns them as a list.
-
-    Args:
-        df (DataFrame): The DataFrame containing the data.
-        column_name (str): The name of the column from which to extract values.
-
-    Returns:
-        list: A list of values from the specified column.
-    """
-    return df[calib_param].tolist()
-def sim_output_df(tm_model_dir, init_runs,results_filename_base,output_excel_file_name,random_param):
+def sim_output_df(init_runs,results_filename_base,output_excel_file_name,auto_saved_results_path,calib_quantity):
     """
     Creates DataFrame from simulation outputs and saves to Excel.
 
@@ -91,28 +81,28 @@ def sim_output_df(tm_model_dir, init_runs,results_filename_base,output_excel_fil
     - random_param: List of random calibration parameters.
 
     Returns:
-    - df_outputs: DataFrame of simulation outputs.
+    - df_outputs: DataFrame of simulation outputs for all the selected calibration quantities and parameter combinations.
 
     """ 
     # Initializes an empty DataFrame to store the data
     results_filename_list_txt = []
-    auto_saved_results_path=os.path.join(tm_model_dir,"auto-saved-results")
-    for index in range(1,init_runs+1):
-        # Gets the file name without the extension
-        result_path_txt= auto_saved_results_path+f"/{results_filename_base}"+f"-{index}"+".txt"
-        results_filename_list_txt.append(result_path_txt)
+    for simulation in range(1, init_runs + 1):
+        for quantity in calib_quantity:
+            result_path_txt = auto_saved_results_path + f"/{results_filename_base}-{simulation}_{quantity}.txt"
+            results_filename_list_txt.append(result_path_txt)
+    # column_names = [txt_path.split('-')[-1].split('.')[0] for txt_path in results_filename_list_txt]
     df_outputs = pd.DataFrame()
     # Loops through each file path
     for file_path in results_filename_list_txt:
-        # Reads the text file into a DataFrame
+        # Reads the output text files into a DataFrame
         data = pd.read_csv(file_path, header=None, delimiter='\s+')
-        # Extracts the second column and append it to the DataFrame
         df_outputs = pd.concat([df_outputs, data.iloc[:, 1]], axis=1)
     # Sets column names
-    column_names = [f"File: {results_filename_base}-{i+1} - {random_param[i]:.3f}" for i in range(len(results_filename_list_txt))]
+    column_names = ['Outputs for .CAS file # '+txt_path.split('-')[-1].split('.')[0] for txt_path in results_filename_list_txt]
     df_outputs.columns = column_names
     df_outputs['TM Nodes'] = range(1, len(df_outputs) + 1)
     df_outputs.set_index('TM Nodes', inplace=True)
+    #df_outputs_filtered_calib_nodes=
     df_outputs.to_excel(auto_saved_results_path + "/" + output_excel_file_name)
     print("DataFrame saved to Excel file:", output_excel_file_name)
     return df_outputs

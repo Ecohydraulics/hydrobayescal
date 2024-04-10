@@ -1,6 +1,0 @@
-matplotlib
-mpi4py
-numpy
-openpyxl
-pandas
-scikit-learn

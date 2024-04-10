@@ -39,13 +39,15 @@ RECALC_PARS = {
 }
 this_dir = os.path.abspath(".")
 
-
 activateTM_path = os.path.abspath(os.path.join(this_dir, "env-scripts", "activateTM.sh"))
-results_filename_base = "r2d-donau"
 
-cas_line_1= 'INITIAL ELEVATION:309.4D0'
-cas_line_2='ROUGHNESS COEFFICIENT OF BOUNDARIES:0.01'
-cas_line_3='TIME STEP                                   : 0.5'
-cas_line_4=''
 
-cas_line_results_file="RESULTS FILE:r2d-donau.slf"
+
+# results_filename_base = "r2d-donau"
+#
+# cas_line_1= 'INITIAL ELEVATION:309.4D0'
+# cas_line_2='ROUGHNESS COEFFICIENT OF BOUNDARIES:0.01'
+# cas_line_3='TIME STEP                                   : 0.5'
+# cas_line_4=''
+#
+# cas_line_results_file="RESULTS FILE:r2d-donau.slf"

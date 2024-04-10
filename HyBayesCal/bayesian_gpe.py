@@ -234,18 +234,13 @@ class BalWithGPE(UserDefsTelemac):
         # write final initial run parameters
         self.doe.df_parameter_spaces.to_csv(self.SIM_DIR + "/initial-run-parameters-all.csv")
         print(self.doe.df_parameter_spaces)
-        # run initial simulations and update the steering file with new parameters before each run
-        # for init_run_id, has_more in lookahead(self.init_runs):
-        #     self.numerical_model.run_simulation()  # auto-checks if case is loaded
 
         case_file_base = self.TM_CAS
         tm_model_dir = self.SIM_DIR
         source_file = tm_model_dir + case_file_base
-        #activateTM_path = "//home/amintvm/modeling/HyBayesCal-pckg/env-scripts/activateTM.sh"
-        #results_filename_base = "r2d-donau"
         cas_lines = [line for line in [cas_line_1, cas_line_2, cas_line_3, cas_line_4,cas_line_results_file] if line]
         calib_param_names=list(self.CALIB_PAR_SET.keys())
-        df_calib_param_values=self.doe.df_parameter_spaces.applymap(lambda x: round(x, 4))
+        df_calib_param_values = self.doe.df_parameter_spaces.apply(lambda x: x.map(lambda val: round(val, 4)))
         results_filename_list= cas_creator(source_file, tm_model_dir, self.init_runs,
                                                           results_filename_base, df_calib_param_values,calib_param_names,cas_lines)
 
@@ -283,37 +278,15 @@ class BalWithGPE(UserDefsTelemac):
             try:
                 subprocess.run(combined_command, shell=True, check=True)
                 shutil.copy2(result_filename_path, auto_saved_results_path)
-                #os.remove(result_filename_path)
-                #logging.info(f".slf and .txt files for: '{result_filename_path}' copied to >>>>>> auto-saved-results.")
+                os.remove(result_filename_path)
                 print(f".slf and .txt files for: '{result_filename_path}' copied to >>>>>> auto-saved-results.")
             except subprocess.CalledProcessError as e:
                 print(f"Error occurred during run {i}: {e}")
             except Exception as e:
                 print(f"An error occurred during run {i}: {e}")
-        #
-        #
-        #
-        #
-        #
-        #
-        #
-        #     # self.__set__num_model()
-        #     self.numerical_model.run_simulation()  # auto-checks if case is loaded
-        #     run_TMactivation_command = f"source {activateTM_path}"
-        #     combined_command = f"/bin/bash -c '{run_TMactivation_command}'"
-        #     subprocess.run(combined_command, shell=True, check=True)
-            # if has_more:
-            #     self.numerical_model.update_model_controls(
-            #         new_parameter_values=self.doe.df_parameter_spaces.loc[init_run_id, :],
-            #         simulation_id=init_run_id
-            #     )
-            #     # only sequential: re-instantiate the numerical model with new control (CAS) settings
-            #     # parallel will already have set case_loaded to False
-            #     if self.numerical_model.case_loaded:
-            #         self.numerical_model.reload_case()
-            # else:
-            #     self.numerical_model.close_case()
-        return 0
+
+        df_outputs = sim_output_df(self.init_runs,results_filename_base,output_excel_file_name,auto_saved_results_path,self.CALIB_TARGETS)
+        return df_outputs
 
     def get_collocation_points(self):
 
