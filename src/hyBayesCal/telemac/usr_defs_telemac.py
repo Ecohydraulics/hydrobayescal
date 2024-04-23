@@ -64,12 +64,12 @@ class UserDefsTelemac(UserDefs):
                         print("WARNING: found recalcution parameter %s that is not defined in config_TELEMAC.py (skipping...")
 
         print(" * received the following calibration parameters: %s" % ", ".join(list(self.CALIB_PAR_SET.keys())))
-
+        print(self.CALIB_PAR_SET)
     def check_user_input(self):
         """Check if global variables are correctly assigned"""
         print(" * verifying directories...")
         if not (os.path.isdir(self.SIM_DIR)):
-            print("ERROR: Cannot find %s - please double-check input XLSX (cell B8).")
+            print(f"ERROR: Cannot find {self.SIM_DIR} - please double-check input XLSX (cell B8).")
             raise NotADirectoryError
         if not (os.path.isfile(self.SIM_DIR + "/%s" % self.TM_CAS)):
             print("ERROR: The TELEMAC steering file %s does not exist." % str(self.SIM_DIR + "/%s" % self.TM_CAS))
@@ -138,7 +138,7 @@ class UserDefsTelemac(UserDefs):
         # active learning parameters
         self.CALIB_PTS = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("calib\_pts"), 1].values[0]
         self.AL_STRATEGY = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("strategy"), 1].values[0]
-        self.score_method = user_defs["al pars"].loc[user_defs["al pars"][0].str.lower().contains("score"), 1].values[0]
+        self.score_method = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("score"), 1].values[0]
         self.init_runs = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("init\_runs"), 1].values[0]
         self.init_run_sampling = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("init\_run\_sampling"), 1].values[0]
         self.IT_LIMIT = user_defs["al pars"].loc[user_defs["al pars"][0].str.contains("it\_limit"), 1].values[0]

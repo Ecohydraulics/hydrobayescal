@@ -35,9 +35,9 @@ class FullComplexityModel:
         self.model_dir = model_dir
         self.control_file = control_file
         self.collocation_file = "calibration-par-combinations.csv"
-        self.res_dir = model_dir + _os.sep + "auto-saved-results"
-        if not _os.path.exists(model_dir + _os.sep + "auto-saved-results"):
-            _os.makedirs(model_dir + _os.sep + "auto-saved-results")
+        self.res_dir = model_dir + _os.sep + "auto-saved-results1"
+        if not _os.path.exists(model_dir + _os.sep + "auto-saved-results1"):
+            _os.makedirs(model_dir + _os.sep + "auto-saved-results1")
 
         self.calibration_parameters = False
         if calibration_parameters:

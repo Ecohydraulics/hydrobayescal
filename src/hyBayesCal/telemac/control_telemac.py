@@ -1,11 +1,16 @@
+
 # coding: utf-8
 """
 Functional core for coupling the Surrogate-Assisted Bayesian inversion technique with Telemac.
 """
-import os, io, stat
-import sys
+import os, io, stat,sys
 import subprocess
-
+from scipy import spatial
+from datetime import datetime, date, time, timedelta
+import numpy as np
+import pandas as _pd
+import pdb
+import json
 try:
     from telapy.api.t2d import Telemac2d
     from telapy.api.t3d import Telemac3d
@@ -16,34 +21,39 @@ except ImportError as e:
     exit()
 
 # attention relative import usage according to docs/codedocs.rst
-from .config_telemac import *  # provides os and sys
+from src.hyBayesCal.telemac.config_telemac import * # provides os and sys
+from src.hyBayesCal.telemac.global_config import *
 import shutil
 import numpy as _np
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
-
 try:
     from mpi4py import MPI
 except ImportError as e:
     logging.warning("Could not import mpi4py")
     print(e)
 
-# get package script
-from function_pool import *  # provides os, subprocess, logging
-from model_structure.control_full_complexity import FullComplexityModel
-
+# get package scripts
+from src.hyBayesCal.function_pool import *  # provides os, subprocess, logging
+from src.hyBayesCal.model_structure.control_full_complexity import FullComplexityModel
+from src.hyBayesCal.doepy.doe_control import DesignOfExperiment
+#pdb.set_trace()
 
 class TelemacModel(FullComplexityModel):
     def __init__(
             self,
             model_dir="",
             calibration_parameters=None,
+            calibration_values_ranges=None,
+            calibration_quantities=None,
+            calibration_pts_file_path=None,
             control_file="tm.cas",
+            results_file_name_base='result_file',
             gaia_steering_file=None,
             n_processors=None,
-            slf_input_file=".slf",
+            parameter_sampling_method=None,
             tm_xd="Telemac2d",
-            load_case=True,
+            load_case=True, # True
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
             *args,
@@ -54,12 +64,15 @@ class TelemacModel(FullComplexityModel):
         be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops)
 
         :param str model_dir: directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software
-        :param list calibration_parameters: computationally optional, but in the framework of Bayesian calibration,
-                    this argument must be provided
+        :param list calibration_parameters: Telemac model parameters to be modified for model calibration. (up to 4 possible)
+        :param list calibration_values_ranges: List of ranges for each of the calibration parameters.
+        :param list calibration_quantities: Model outputs (quantities) to be extracted from Telemac .slf output files for calibration purposes. (up to 4 possible)
         :param str control_file: name of the steering file to be used (should end on ".cas"); do not include directory
         :param str gaia_steering_file: name of a gaia steering file (optional)
         :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is None (use cas definition)
-        :param str slf_input_file: name of the SLF input file (without directory, file has to be located in model_dir)
+        :param str parameter_sampling_method: Sampling method for the selected calibration parameters. Two options: 1) MIN - equal interval - MAX
+                                            or 2)    MIN - random - MAX,
+
         :param str tm_xd: either 'Telemac2d' or 'Telemac3d'
         :param bool load_case: True loads the control file as Telemac case upon instantiation (default: True) - recommended for reading results
         :param int stdout: standard output (default=6 [console];  if 666 => file 'fort.666')
@@ -69,10 +82,30 @@ class TelemacModel(FullComplexityModel):
         :param kwargs:
         """
         FullComplexityModel.__init__(self, model_dir=model_dir)
-
-        self.slf_input_file = slf_input_file
+        self.calibration_parameters=calibration_parameters  #
+        self.parameter_sampling_method=parameter_sampling_method
+        self.init_runs=init_runs
+        self.calibration_values_ranges = calibration_values_ranges
+        self.calibration_quantities=calibration_quantities
+        self.calibration_pts_df=_pd.read_csv(calibration_pts_file_path)
+        #self.slf_input_file = slf_input_file
+        self.doe = DesignOfExperiment()
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
         self.tm_results_filename = ""
+        self.num_run=int(sys.argv[1])
+        print(self.num_run)
+        #pdb.set_trace()
+        if self.num_run == 1:
+            self.calibration_values_list=self.parameter_sampling(self.calibration_parameters,self.calibration_values_ranges,self.parameter_sampling_method,self.init_runs)
+        else:
+            df = _pd.read_csv(self.model_dir + "/initial-run-parameters-all.csv", sep=',', index_col=0)  # Assuming the first column is the index
+            print(df)
+            # Iterate over each row and extract values as a list
+            self.parameter_values_dict = {}
+            for index, row in df.iterrows():
+                self.parameter_values_dict[index] = row.values.tolist()
+            self.calibration_values_list=df.loc['PC'+str(self.num_run)].tolist()
+
         if gaia_steering_file:
             print("* received gaia steering file: " + gaia_steering_file)
             self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, gaia_steering_file)
@@ -81,6 +114,12 @@ class TelemacModel(FullComplexityModel):
         else:
             self.gaia_cas = None
             self.gaia_results_file = None
+        self.tm_results_filename = results_file_name_base + '-' + str(self.num_run) +'.slf'
+        self.calibration_parameters.append('RESULTS FILE')
+        self.calibration_values_list.append(self.tm_results_filename)
+        for param, val in zip(self.calibration_parameters, self.calibration_values_list):
+            cas_string = self.create_cas_string(param, val)
+            self.rewrite_steering_file(param, cas_string, steering_module="telemac")
         self.nproc = n_processors
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
         self.results = None  # will hold results loaded through self.load_results()
@@ -97,18 +136,23 @@ class TelemacModel(FullComplexityModel):
         self.case_loaded = False
         if load_case:
             self.load_case()
-        self.get_results_filename()  # required for Telemac runs through stdout
+        #pdb.set_trace()
+        # self.get_results_filename()  # required for Telemac runs through stdout
+        print(self.tm_results_filename)
+        # pdb.set_trace()
+        # self.load_results()
+        #self.calibration_parameters = False
 
-        self.calibration_parameters = False
-        if calibration_parameters:
-            self.set_calibration_parameters(calibration_parameters)
-
+        #self.extract_data_point(self.tm_results_filename, 800, 790, 'output_file.csv')
+        # if calibration_parameters:
+        #     self.set_calibration_parameters(calibration_parameters)
+        #self.create_cas_string(calibration_parameters,calibration_values)
     def set_calibration_parameters(self, list_of_value_names):
         # DELETE METHOD?
         # value corresponds to a list of parameter names -- REALLY needed?!
         self.calibration_parameters = {"telemac": {}, "gaia": {}}
         for par in list_of_value_names:
-            if par in TM2D_PARAMETERS:
+            if par in TM2D_PARAMETERS.iloc[:, 0].values:
                 self.calibration_parameters["telemac"].update({par: {"current value": _np.nan}})
                 continue
             if par in GAIA_PARAMETERS:
@@ -131,7 +175,7 @@ class TelemacModel(FullComplexityModel):
             except Exception as error:
                 print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(error)))
 
-    def load_case(self, reset_state=False):
+    def load_case(self, reset_state=True):
         """Load Telemac case file and check its consistency.
 
         Parameters
@@ -149,7 +193,10 @@ class TelemacModel(FullComplexityModel):
 
         print("* loading {} case...".format(str(self.tm_xd)))
         if "telemac2d" in self.tm_xd.lower():
+            #pdb.set_trace()
+            print(self.case)
             self.case = Telemac2d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
+            print(self.case)
         elif "telemac3d" in self.tm_xd.lower():
             self.case = Telemac3d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
         else:
@@ -162,6 +209,7 @@ class TelemacModel(FullComplexityModel):
         self.comm.Barrier()
 
         if reset_state:
+            #pdb.set_trace()
             self.case.init_state_default()
 
         self.case_loaded = True
@@ -170,10 +218,13 @@ class TelemacModel(FullComplexityModel):
 
     def close_case(self):
         """Close and delete case."""
+        pdb.set_trace()
         if self.case_loaded:
             try:
                 self.case.finalize()
+                print(self.case)
                 del self.case
+                print(self.case)
             except Exception as error:
                 print("ERROR: could not close case:\n   " + str(error))
         self.case_loaded = False
@@ -456,6 +507,7 @@ class TelemacModel(FullComplexityModel):
         if load_results:
             self.load_results()
 
+        self.extract_data_point(self.tm_results_filename,self.calibration_pts_df)
     def call_tm_shell(self, cmd):
         """ Run Telemac in a Terminal in the model directory
 
@@ -503,12 +555,13 @@ class TelemacModel(FullComplexityModel):
         """
 
         # read SELAFIN file
+
         slf = ppSELAFIN(slf_file_name)
         slf.readHeader()
         slf.readTimes()
 
         ## FROM TELEMAC notebooks/telemac2d:
-        help(self.case.get_node)  # gets the nearest node number of an slf file
+        #help(self.case.get_node)  # gets the nearest node number of an slf file
 
         # get the printout times
         times = slf.getTimes()
@@ -521,7 +574,6 @@ class TelemacModel(FullComplexityModel):
 
         # read the variables values in the last time step
         slf.readVariables(len(times) - 1)
-
         # get values (for each node) for the variable of interest at the last time step
         modeled_results = slf.getVarValues()[index_variable_interest, :]
         format_modeled_results = _np.zeros((len(modeled_results), 2))
@@ -540,12 +592,222 @@ class TelemacModel(FullComplexityModel):
         # return the value of the variable of interest at mesh nodes (all or specific_nodes of interest)
         return format_modeled_results
 
-    def __call__(self, *args, **kwargs):
-        """
-        Call method forwards to self.run_telemac()
+    def parameter_sampling(self,calibration_parameters,calibration_values,parameter_sampling_method,total_number_of_samples):
 
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        self.run_simulation()
+        try:
+            if parameter_sampling_method=='1':
+                sampling_method ='MIN - equal interval - MAX'
+            elif parameter_sampling_method=='2':
+                sampling_method ='MIN - random - MAX'
+        except subprocess.CalledProcessError as e:
+            print(f"nor sampling method selected for calibration parameters: {e}")
+        #pdb.set_trace()
+        calib_par_value_dict = {}
+        for param, range_ in zip(calibration_parameters, calibration_values):
+            calib_par_value_dict[param] = {'name': param, 'bounds': range_}
+
+        # currently only equal or random sampling enabled through doepy.doe.control
+        # this will be IMPROVED in a future release to full DoE methods (see doepy.scripts)
+        self.doe.generate_multi_parameter_space(
+            parameter_dict=calib_par_value_dict,
+            method=sampling_method,
+            total_number_of_samples=total_number_of_samples
+        )
+        self.doe.df_parameter_spaces.to_csv(
+            self.model_dir + "{}parameter-file.csv".format(os.sep),
+            sep=";",
+            index=True,
+            header=False
+        )
+        self.doe.df_parameter_spaces.to_csv(self.model_dir + "/initial-run-parameters-all.csv")
+        print(self.doe.df_parameter_spaces.loc['PC1'].tolist())
+
+        return self.doe.df_parameter_spaces.loc['PC1'].tolist()
+
+    #def extract_data_point(self,input_slf_file,calib_pts_file_path,json_name='json_file'):
+    def extract_data_point(self, input_slf_file, calibration_pts_df, json_name='json_file'):
+        #calibration_pts_df=_pd.read_csv(calib_pts_file_path)
+        input_file = os.path.join(self.model_dir, input_slf_file)
+        json_path = os.path.join(self.model_dir, f"{json_name}.json") #f"{json_name}_{self.num_run}.json"
+        keys = list(calibration_pts_df.iloc[:, 0])
+        #keys= [simulation + f"_{self.num_run}" for simulation in keys]
+        modeled_values_dict = {}
+        for key,h in zip(keys,range(len(calibration_pts_df))):
+            #modeled_values_dict = {}
+            #input_file = os.path.join(self.model_dir, input_slf_file)
+            xu = calibration_pts_df.iloc[h,1]
+            #print(xu)
+            yu = calibration_pts_df.iloc[h,2]
+            #print(yu)
+
+            #output_file = os.path.join(self.model_dir, f"{output_file}_{self.num_run}.txt")
+
+            # reads the *.slf file
+            slf = ppSELAFIN(input_file)
+            slf.readHeader()
+            slf.readTimes()
+
+            # get times of the selafin file, and the variable names
+            times = slf.getTimes()
+            variables = slf.getVarNames()
+            units = slf.getVarUnits()
+            # get the start date from the result file
+            # this is a numpy array of [yyyy mm dd hh mm ss]
+            # date = slf.getDATE()
+            # year = date[0]
+            # month = date[1]
+            # day = date[2]
+            # hour = date[3]
+            # minute = date[4]
+            # second = date[5]
+            #
+            # # use the date info from the above array to construct a python datetime
+            # # object, in order to display day/time
+            # try:
+            #     pydate = datetime(year, month, day, hour, minute, second)
+            # except:
+            #     print('Date in file invalid. Printing default date in output file.')
+            #     pydate = datetime(1997, 8, 29, 2, 15, 0)
+            #
+            # # this is the time step in seconds, as read from the file
+            # # assumes the time steps are regular
+            # if (len(times) > 1):
+            #     pydelta = times[1] - times[0]
+            # else:
+            #     pydelta = 0.0
+
+            # number of variables
+            NVAR = len(variables)
+
+            # to remove duplicate spaces from variables and units
+            for i in range(NVAR):
+                variables[i] = ' '.join(variables[i].split())
+                units[i] = ' '.join(units[i].split())
+            #print(variables)
+            #variables = list(set(variables) & set(self.calibration_quantities))
+            print(variables)
+            print(self.calibration_quantities)
+
+            common_indices = []
+
+            # Iterate over the secondary list
+            for value in self.calibration_quantities:
+                # Find the index of the value in the original list
+                index = variables.index(value)
+                # Add the index to the common_indices list
+                common_indices.append(index)
+            print(common_indices)
+            # gets some of the mesh properties from the *.slf file
+            NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+
+            # determine if the *.slf file is 2d or 3d by reading how many planes it has
+            NPLAN = slf.getNPLAN()
+            #fout.write('The file has ' + str(NPLAN) + ' planes' + '\n')
+
+            # store just the x and y coords
+            x2d = x[0:int(len(x) / NPLAN)]
+            y2d = y[0:int(len(x) / NPLAN)]
+
+            # create a KDTree object
+            source = np.column_stack((x2d, y2d))
+            tree = spatial.cKDTree(source)
+
+            # find the index of the node the user is seeking
+            d, idx = tree.query((xu, yu), k=1)
+
+            # print the node location to the output file
+            print('Extraction performed at: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
+            print('Note this is the closest node to the input coordinate!' + '\n')
+
+            # now we need this index for all planes
+            idx_all = np.zeros(NPLAN, dtype=np.int32)
+
+            # the first plane
+            idx_all[0] = idx
+
+            # start at second plane and go to the end
+            for i in range(1, NPLAN, 1):
+                idx_all[i] = idx_all[i - 1] + (NPOIN / NPLAN)
+
+            ########################################################################
+            # extract results for every plane (if there are multiple planes that is)
+            #modeled_values_dict = {}
+            for p in range(NPLAN):
+                slf.readVariablesAtNode(idx_all[p])
+                results = slf.getVarValuesAtNode()
+                results_calibration = results[-1]
+                print(results)
+                print(results_calibration)
+                    # Initialize an empty list to store values for this key
+                modeled_values_dict[key] = []
+                # Iterate over the common indices
+                for index in common_indices:
+                    # Extract value from the last row based on the index
+                    value = results_calibration[index]
+                    # Append the value to the list for the current key
+                    modeled_values_dict[key].append(value)
+            print(modeled_values_dict)
+            # New dictionary to store the differentiated values
+            differentiated_dict = {}
+
+            # Iterate over the keys and values of the original dictionary
+            for key, values in modeled_values_dict.items():
+                # Create a dictionary to store the differentiated values for the current key
+                differentiated_values = {}
+                # Iterate over the titles and corresponding values
+                for title, value in zip(self.calibration_quantities, values):
+                    # Add the title and corresponding value to the dictionary
+                    differentiated_values[title] = value
+                # Add the differentiated values for the current key to the new dictionary
+                differentiated_dict[key] = differentiated_values
+
+            print(differentiated_dict)
+
+        # Define the condition for file deletion
+        if self.num_run == 1:
+            try:
+                os.remove(json_path)
+                print("File deleted successfully!")
+            except FileNotFoundError:
+                print("No result file found. Creating a new file.")
+            # Set your condition here
+
+        if os.path.exists(json_path):
+            # File exists, so open it for writing
+            #pdb.set_trace()
+            with open(json_path, "r") as file:
+                original_data = json.load(file)
+                for key, value in modeled_values_dict.items():
+                     if key in original_data:
+                        original_data[key].append(value)
+                     else:
+                        original_data[key] = [value]
+                with open(json_path, 'w') as file:
+                    json.dump(original_data, file,indent=4)
+        else:
+        # Save the updated JSON file
+            #pdb.set_trace()
+            with open(json_path, "w") as file:
+                for key in modeled_values_dict:
+                    # Convert the existing list into a nested list with a single element
+                    modeled_values_dict[key] = [modeled_values_dict[key]]
+                json.dump(modeled_values_dict, file,indent=4)
+
+def run_telemac():
+    my_object=TelemacModel(
+        model_dir=cas_file_simulation_path,
+        control_file=cas_file_name,
+        calibration_parameters=calib_parameter_list,
+        calibration_values_ranges=parameter_ranges_list,
+        calibration_pts_file_path=calib_pts_file_path,
+        calibration_quantities=calib_quantity_list,
+        results_file_name_base=results_file_name_base,
+        tm_xd='Telemac2d',
+        n_processors=NCPS,
+        parameter_sampling_method=parameter_sampling_method
+        )
+    #my_object.set_calibration_parameters()
+    my_object.run_simulation()
+    #my_object.extract_data_point('r2d-weirs-2.slf', calib_pts_file_path)
+if __name__ == "__main__":
+    run_telemac()

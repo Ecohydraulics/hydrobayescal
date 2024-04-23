@@ -28,9 +28,9 @@ class DesignOfExperiment:
 
         """
         self.__DESIGN_METHODS = [
-            "MIN - equal interval - MAX"
-            "MIN - random - MAX"
-            "Random"
+            "MIN - equal interval - MAX",
+            "MIN - random - MAX",
+            "Random",
             "DOE functions (doef) not yet implemented -- 2DO"
         ]
 
@@ -123,8 +123,8 @@ class DesignOfExperiment:
         """
         try:
             rand_array = self.randomInterval(minimum, maximum, n)
-            rand_array[0] = min
-            rand_array[-1] = max
+            rand_array[0] = minimum
+            rand_array[-1] = maximum
             return rand_array
         except Exception as e:
             print("ERROR: could not generate equally distanced parameter space:\n " + str(e))
