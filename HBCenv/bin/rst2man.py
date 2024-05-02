@@ -1,4 +1,4 @@
-#!/home/amintvm/modeling/hybayescalpycourse/HBCenv/bin/python3
+#!/home/IWS/hidalgo/Documents/hybayescal/HBCenv/bin/python3
 
 # Author:
 # Contact: grubert@users.sf.net
@@ -15,7 +15,7 @@ man page writer to output from ReStructuredText source.
 import locale
 try:
     locale.setlocale(locale.LC_ALL, '')
-except Exception:
+except:
     pass
 
 from docutils.core import publish_cmdline, default_description

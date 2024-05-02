@@ -1,8 +1,8 @@
 #!/bin/bash
 # User definitions
-TELEMAC_CONFIG_DIR=/home/amintvm/modeling/telemac-mascaret/configs
+TELEMAC_CONFIG_DIR=/home/modelling/telemac/v8p5r0/configs
 TELEMAC_CONFIG_NAME=pysource.gfortranHPC.sh
-HBCenv_DIR=/home/amintvm/modeling/hybayescal/HBCenv
+HBCenv_DIR=/home/IWS/hidalgo/Documents/hybayescal/HBCenv
 
 
 # SCRIPT ACTIONS - DO NOT MODIFY BELOW
@@ -42,5 +42,3 @@ feedback
 
 # go back to act dir
 cd $ACT_DIR
-
-
