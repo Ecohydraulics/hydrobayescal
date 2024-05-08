@@ -1,38 +1,34 @@
-import os
-from datetime import datetime
-from functools import wraps
-import random as rnd
-import numpy as np
-import pandas as pd
-import subprocess
-import shutil
-
 # import own scripts
-
-from src.hyBayesCal.telemac.global_config import init_runs
-base_path_control_telemac = os.path.dirname(os.path.abspath(__file__))
-script_path_control_telemac = os.path.join(base_path_control_telemac,"src", "hyBayesCal", "telemac", "control_telemac.py")
-
-
-# =====================================================
-# ===========GLOBAL SIMULATION PARAMETERS==============
-# =====================================================
+from global_config import *
+from src.hyBayesCal.telemac.control_telemac import TelemacModel
 
 
 class TelemacSimulations():
+    def __init__(self):
+        self.init_runs = init_runs
 
-    def run_multiple_simulations(self,script_path,simulation_num):
-        try:
-            subprocess.run(["python", script_path,simulation_num], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Error: {e}")
-            exit()
-        else:
-            print("Telemac run completed.")
+    def run_multiple_simulations(self, runs):
+        for i in range(runs):  # Use 'runs' instead of 'init_runs'
+            simulation_num = i + 1
+            TM_instance = TelemacModel(
+                model_dir=cas_file_simulation_path,
+                control_file=cas_file_name,
+                calibration_parameters=calib_parameter_list,
+                calibration_values_ranges=parameter_ranges_list,
+                calibration_pts_file_path=calib_pts_file_path,
+                calibration_quantities=calib_quantity_list,
+                tm_xd=Telemac_solver,
+                n_processors=NCPS,
+                parameter_sampling_method=parameter_sampling_method,
+                dict_output_name=dict_output_name,
+                results_file_name_base=results_file_name_base,
+                num_run=simulation_num,
+                init_runs=runs
+            )
+            TM_instance()  # Call the TelemacModel instance like a function
+
 
 if __name__ == "__main__":
+    instance = TelemacSimulations()
+    instance.run_multiple_simulations(init_runs)  # Pass 'init_runs' to the method
 
-    for i in range(init_runs):
-        simulation_num=str(i+1)
-        instance = TelemacSimulations()
-        instance.run_multiple_simulations(script_path_control_telemac,simulation_num)

@@ -12,7 +12,7 @@ Note::
 from random import choice
 import numpy as _np
 import pandas as _pd
-# import DOE_functions as doef  # for later implementation
+import DOE_functions as doef  # for later implementation
 
 
 class DesignOfExperiment:
