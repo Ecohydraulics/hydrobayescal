@@ -37,7 +37,7 @@ project = u"Surrogates for Model Calibration"
 slug = re.sub(r"\W+", "-", project.lower())
 version = "1.0.0"
 release = "latest"
-author = u"Sebastian Schwindt, Eduardo Acuna Espinoza, Maria Fernanda Morales Oreamuno, Kilian Mouris, Farid Mohammadi, Sergey Oladyshkin"
+author = u"Andrés Heredia, Federica Scolari, Sebastian Schwindt, Maria Fernanda Morales Oreamuno, Farid Mohammadi"
 copyright = author
 language = "en"
 
@@ -65,7 +65,7 @@ suppress_warnings = ["image.nonlocal_uri"]
 pygments_style = "sphinx"
 
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/3.8", None),
+    "python": ("https://docs.python.org/3.12", None),
     "rtd": ("https://docs.readthedocs.io/en/latest/", None),
     "sphinx": ("http://www.sphinx-doc.org/en/stable/", None),
 }
@@ -101,7 +101,7 @@ html_theme_options = {
 html_context = {
     "date": datetime.date.today().strftime("%Y-%m-%d"),
     "display_github": True,
-    "github_user": "sschwindt",
+    "github_user": "Ecohydraulics",
     "github_repo": "hybayescal",
     "github_version": "main/",
     "conf_py_path": "/docs/"
