@@ -3,7 +3,7 @@ Core DOE functions
 """
 from pyDOE import *
 from pyDOE_corrected import *
-from diversipy import *
+#from diversipy import *
 import pandas as _pd
 import numpy as _np
 

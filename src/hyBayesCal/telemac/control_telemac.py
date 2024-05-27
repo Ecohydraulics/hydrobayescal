@@ -1,16 +1,19 @@
 
 # coding: utf-8
 """
-Functional core for coupling Telemac with the Surrogate-Assisted Bayesian inversion technique.
+Functional core for controling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
+
 """
 import io, stat,shutil
 import subprocess
+
 from scipy import spatial
-from datetime import datetime, date, time, timedelta
+#from datetime import datetime, date, time, timedelta
 import numpy as np
 import pandas as _pd
-import pdb
+import csv
 import json
+
 
 try:
     from telapy.api.t2d import Telemac2d
@@ -34,27 +37,30 @@ except ImportError as e:
 # get package scripts
 from function_pool import *  # provides os, subprocess, logging
 from model_structure.control_full_complexity import FullComplexityModel
-from doepy.doe_control import DesignOfExperiment
+#from doepy.doe_control import DesignOfExperiment
 #pdb.set_trace()
 
 class TelemacModel(FullComplexityModel):
+
     def __init__(
             self,
             model_dir="",
+            res_dir="",
             control_file="tm.cas",
             calibration_parameters=None,
-            calibration_values_ranges=None,
+            collocation_points=None,
             calibration_pts_file_path=None,
             calibration_quantities=None,
             tm_xd="",
             n_processors=None,
-            parameter_sampling_method=None,
+            gaia_steering_file=None,
+            init_runs=None,
+            calibration_phase='',
             dict_output_name="",
             results_file_name_base="",
-            gaia_steering_file=None,
-            num_run=None,
-            init_runs=None,
-            load_case=False,
+            BAL_new_set_parameters=None,
+            n_max_tp=None,
+            BAL_iteration=None,
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
             *args,
@@ -64,19 +70,29 @@ class TelemacModel(FullComplexityModel):
         Constructor for the TelemacModel Class. Instantiating can take some seconds, so try to
         be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops)
 
-        :param str model_dir: directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software
-        :param list calibration_parameters: List of Telemac model parameters to be modified for model calibration. (up to 4 possible)
-        :param list calibration_values_ranges: List of the selected ranges for each of the calibration parameters.
-        :param list calibration_quantities: Model outputs (quantities) to be extracted from Telemac .slf output files for calibration purposes. (up to 4 possible)
-        :param str calibration_pts_file_path: Complete path of the .csv file containing the coordinates x,y of the measurement points
-                                                and the measured values of the selected calibration quantity/(ies).
-        :param str control_file: name of the steering file to be used (should end on ".cas"); do not include directory
-        :param str gaia_steering_file: name of a gaia steering file (optional)
-        :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is None (use cas definition)
-        :param str parameter_sampling_method: Sampling method for the selected calibration parameters. Two options: 1) MIN - equal interval - MAX
-                                            or 2)    MIN - random - MAX,
+        Atributes
+        ____________
 
-        :param str tm_xd: either 'Telemac2d' or 'Telemac3d'
+        :param str model_dir: Directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software
+        :param str res_dir: Directory (path) of the folder where a subfolder called "auto-saved-results" will be created to store all the results files.
+        :param str control_file: Name of the steering file to be used (should end on ".cas"); do not include directory.
+        :param list calibration_parameters: List of Telemac model parameters considered for model calibration. (up to 4 possible)
+        :param np.array: Array with shape (init_runs,n_params) containing the parameter combinations for Telemac iterative simulations.
+        :param str calibration_pts_file_path: Complete path of the .csv file containing the description, coordinates x,y of the measurement points
+                                            and the measured values of the selected calibration quantity/(ies) at those points.
+        :param list calibration_quantities: Model outputs (quantities) to be extracted from Telemac .slf output files
+                                            for calibration purposes. (up to 4 possible)
+        :param str tm_xd: Either 'Telemac2d' or 'Telemac3d'
+        :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is None (use cas definition)
+        :param str gaia_steering_file: Name of a gaia steering file (optional)
+        :param int init_runs: Number of initial runs for initial_surrogate construction.
+        :param str calibration_phase: Phase of the calibration process. The code divides the process in two parts:
+                                    "initial_surrogate_phase": Initial construction of the surrogate model with the number of initial runs (init_runs)
+                                    "BAL_phase": Bayesian Active Learning phase. Iterative learning of the surrogate model.
+        :param str dict_output_name : Name of the external.json file containing the model outputs of the calibration quantities for ALL model runs (initial_surrogate_phase + BAL_phase)
+        :param str results_file_name_base: Name of the RESULTS FILE to be iteratively changed in the .cas file
+
+
         :param bool load_case: True loads the control file as Telemac case upon instantiation (default: True) - recommended for reading results
         :param int stdout: standard output (default=6 [console];  if 666 => file 'fort.666')
         :param str python_shebang: header line for python files the code writes for parallel processing
@@ -84,23 +100,22 @@ class TelemacModel(FullComplexityModel):
         :param args:
         :param kwargs:
         """
-        FullComplexityModel.__init__(self, model_dir=model_dir)
+        FullComplexityModel.__init__(self, model_dir=model_dir,res_dir=res_dir)
 
-        self.num_run=num_run
         self.calibration_parameters=calibration_parameters
-        self.parameter_sampling_method=parameter_sampling_method
-        self.init_runs=init_runs
-        self.calibration_values_ranges = calibration_values_ranges
+        #self.parameter_sampling_method=parameter_sampling_method
+        self.init_runs=int(init_runs)
+        self.collocation_points = collocation_points
         self.calibration_quantities=calibration_quantities
         self.calibration_pts_df=_pd.read_csv(calibration_pts_file_path)
-        self.doe = DesignOfExperiment()
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
         self.dict_output_name=dict_output_name
         self.results_file_name_base=results_file_name_base
-        self.tm_results_filename = self.results_file_name_base + '_' + str(self.num_run) + '.slf'
         self.gaia_steering_file=gaia_steering_file
-
-        print("Running full complexity model " + str(self.num_run))
+        self.BAL_new_set_parameters=BAL_new_set_parameters
+        self.calibration_phase=calibration_phase
+        self.n_max_tp=n_max_tp
+        self.BAL_iteration=BAL_iteration
         self.nproc = n_processors
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
         self.results = None  # will hold results loaded through self.load_results()
@@ -115,17 +130,17 @@ class TelemacModel(FullComplexityModel):
         }
 
         self.stdout = stdout
+        self.num_run=None
         self.case = None
         self.case_loaded = False
-        #self.loading_case=load_case    Not necessary if the idea is only running the model. It makles sense to load the case if
-        # I want to run get_results_filename or load_results
+        self.output_data=None
 
-    def cas_creation_doe(self):
+    def cas_creation(self,collocation_point_values,calibration_parameters):
         """
         Modifies the .cas steering file for each of the initial Telemac runs according to the parameter sampling
         method based on DoE (Design of Experiments). For the very first run, the calibration values are created and stored as data frame and saved
-        in a .csv file called initial-run-parameters.csv. From the second run, this .csv file is read and the code extracts the next calibration parameter combinations.
-        After the .cas file has been modified, it is loaded.
+        in a .csv file called initial-run-parameters.csv. From the second run on, this .csv file is read and the code extracts the next calibration parameter combinations.
+        After the .cas file has been modified, it is loaded for the model simulation.
 
         # ----------- Until now it is possible to modify only the calibration parameters that were indicated in the global_config.py
         # ----------- However, the idea would be also to modify the roughness file of Telemac .tbl according to the roughness zones in the .brf. file (To be implemented)
@@ -135,51 +150,16 @@ class TelemacModel(FullComplexityModel):
         None
 
         """
-
-        if self.num_run == 1:
-            df_doe_calibration_values, self.calibration_values_list = self.parameter_sampling(
-                self.calibration_parameters, self.calibration_values_ranges, self.parameter_sampling_method,
-                self.init_runs)
-            print(
-                "The calibration values for the selected number of full complexity runs are: \n " + df_doe_calibration_values.to_string())
-        else:
-            df_doe_calibration_values = _pd.read_csv(self.model_dir + "/initial-runs-parameters.csv", sep=',',
-                                                     index_col=0)
-            print(
-                "The calibration values for the selected number of full complexity runs are: \n " + df_doe_calibration_values.to_string())
-            # Iterate over each row and extract calibration values as a list
-            self.parameter_values_dict = {}
-            for index, row in df_doe_calibration_values.iterrows():
-                self.parameter_values_dict[index] = row.values.tolist()
-            self.calibration_values_list = df_doe_calibration_values.loc['PC' + str(self.num_run)].tolist()
-
-            ## In this point I need to add code that reads the new added parameter combination after Bayesian Rejection samplig?? has been done to initia_run_parameters.csv.
-            ## This new set of parameters are assigned to self.calibration_values_list which is needed to modify the .cas file.
-            ## This step has to be added for Bayesian calibration.
-
-            if self.gaia_steering_file:
-                print("* received gaia steering file: " + self.gaia_steering_file)
-                self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
-                self.gaia_results_file = "{}{}{}".format(self.res_dir, os.sep,
-                                                         str("resIDX-" + self.gaia_steering_file.strip(".cas") + ".slf"))
-            else:
-                self.gaia_cas = None
-                self.gaia_results_file = None
-
-        self.calibration_parameters.append('RESULTS FILE')
-        self.calibration_values_list.append(self.tm_results_filename)
+        self.tm_results_filename = self.results_file_name_base + '_' + str(self.num_run) + '.slf'
+        calibration_parameters.append('RESULTS FILE')
+        collocation_point_values.append(self.tm_results_filename)
         print('Results file name for this simulation:' + self.tm_results_filename)
-
-        # These are the lines of code that modify the .cas file depending on the calibration_parameters[list] and calibration_values_list
-        # The values_list is a list that contains the calibration parameters values for each of the parameters in calibration_parameters.
-        # From this point we can create a new set of parameters to modify the .cas file for learning the surrogate model.
-
-        for param, val in zip(self.calibration_parameters, self.calibration_values_list):
+        for param, val in zip(calibration_parameters, collocation_point_values):
             cas_string = self.create_cas_string(param, val)
             self.rewrite_steering_file(param, cas_string, steering_module="telemac")
 
-    @staticmethod
-    def create_cas_string(param_name, value):
+    #@staticmethod
+    def create_cas_string(self,param_name, value):
         """
         Create string names with new values to be used in Telemac2d / Gaia steering files
 
@@ -204,209 +184,6 @@ class TelemacModel(FullComplexityModel):
                 return param_name + " = " + "; ".join(map(str, value))
             except Exception as error:
                 print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(error)))
-
-    def load_case(self, reset_state=True):
-        """
-        Load Telemac case file and check its consistency.
-
-        Parameters
-        ----------
-        reset_state (bool): use to activate case.init_state_default(); default is ``False``. Only set to ``True`` for
-            running Telemac through the Python API. Otherwise, results cannot be loaded.
-
-        Returns
-        -------
-
-        """
-
-        print("* switching to model directory (if needed, cd back to TelemacModel.supervisor_dir)")
-        os.chdir(self.model_dir)
-
-        print("* loading {} case...".format(str(self.tm_xd)))
-        if "telemac2d" in self.tm_xd.lower():
-            self.case = Telemac2d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
-        elif "telemac3d" in self.tm_xd.lower():
-            self.case = Telemac3d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
-        else:
-            print("ERROR: only Telemac2d/3d available, not {}.".format(str(self.tm_xd)))
-            return -1
-        self.comm.Barrier()
-
-        print("* setting and initializing case...")
-        self.case.set_case()
-        self.comm.Barrier()
-
-        if reset_state:
-            #pdb.set_trace()
-            self.case.init_state_default()
-
-        self.case_loaded = True
-        print("* successfully activated TELEMAC case: " + str(self.tm_cas))
-        return 0
-
-    def close_case(self):
-        """
-        Closes and deletes case.
-
-        Parameters
-        ----------
-            None
-
-        Returns
-        -------
-            None
-        """
-
-        if self.case_loaded:
-            try:
-                self.case.finalize()
-                print(self.case)
-                del self.case
-                print(self.case)
-            except Exception as error:
-                print("ERROR: could not close case:\n   " + str(error))
-        self.case_loaded = False
-
-    def reload_case(self):
-        """
-        Iterative runs require first to close the current run.
-
-        Parameters
-        ----------
-
-
-        Returns
-        -------
-
-        """
-
-        # close and delete case
-        self.close_case()
-        # load with new specs
-        self.load_case()
-
-    def get_results_filename(self):
-        """
-        Routine is called with the __init__ and carefully written so that it can be called
-        externally any time, too.
-
-        Retrieves the results file name from the .slf file when a case is loaded.
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        None
-
-        """
-
-        try:
-            #pdb.set_trace()
-
-            # The aim of the following 2-line code is to extract the RESULTFILE nem from the .cas file and assign it as the
-            # self.results_file_name_base, but it cannot be done since it needs a loaded case first.
-
-            self.tm_results_filename = self.case.get("MODEL.RESULTFILE")
-            # self.results_file_name_base=re.split(r'[._]', self.results_file_name_base)
-            # self.results_file_name_base=self.results_file_name_base[0]
-
-        except Exception as err:
-            print("ERROR: could not retrieve results filename. Is the case loaded?\n\nTraceback:\n{}".format(str(err)))
-
-    def load_results(self):
-        """
-        Load simulation results stored in TelemacModel.tm_results_filename
-
-        Cannot work if case.init_default_state() was applied before.
-
-        Parameters
-        ----------
-            None
-
-        Returns
-        ----------
-            int: 0 corresponds to success.
-            int: -1 points to an error.
-        """
-        print("* opening results file: " + self.tm_results_filename)
-        if not os.path.isfile(self.tm_results_filename):
-            self.get_results_filename()
-        print("* retrieving boundary file: " + self.tm_results_filename)
-        boundary_file = os.path.join(self.model_dir, self.case.get("MODEL.BCFILE"))
-        print("* loading results with boundary file " + boundary_file)
-        try:
-            os.chdir(self.model_dir)  # make sure to work in the model dir
-            self.results = TelemacFile(self.tm_results_filename, bnd_file=boundary_file)
-        except Exception as error:
-            print("ERROR: could not load results. Did you use TelemacModel.load_case(reset_state=True)?\n" + str(error))
-            return -1
-
-        # to see more case variables that can be self.case.get()-ed, type print(self.case.variables)
-        # examples to access liquid boundary equilibrium
-        try:
-            liq_bnd_info = self.results.get_liq_bnd_info()
-            print("Liquid BC info:\n" + str(liq_bnd_info))
-        except Exception as error:
-            print("WARNING: Could not load case liquid boundary info because of:\n   " + str(error))
-        return 0
-
-    def update_model_controls(self,**kwargs):#,
-            #new_parameter_values,
-            #simulation_id=0,
-    #):
-
-        """
-        In TELEMAC language: update the steering file
-        Update the Telemac and Gaia steering files specifically for Bayesian calibration.
-
-        Parameters
-        ----------
-            new_parameter_values: dict
-                    Provides a new parameter value for every calibration parameter
-                    * keys correspond to Telemac or Gaia keywords in the steering file
-                    * values are either scalar or list-like numpy arrays
-            simulation_id: int
-                    Identifier for .cas updates
-        Returns
-        ----------
-            int: 0 corresponds to success.
-            int: -1 points to an error.
-
-        """
-
-        # move existing results to auto-saved-results sub-folder
-        try:
-            print(self.tm_results_filename)
-            print(self.res_dir)
-            if os.path.exists(os.path.join(self.res_dir,self.tm_results_filename)):
-                # Remove the existing destination file
-                os.remove(os.path.join(self.res_dir,self.tm_results_filename))
-            shutil.move(os.path.join(self.model_dir,self.tm_results_filename),self.res_dir)
-        except Exception as error:
-            print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
-        return -1
-
-        # update telemac calibration pars
-        # for par, has_more in lookahead(self.calibration_parameters["telemac"].keys()):
-        #     self.calibration_parameters["telemac"][par]["current value"] = new_parameter_values[par]
-        #     updated_string = self.create_cas_string(par, new_parameter_values[par])
-        #     self.rewrite_steering_file(par, updated_string, self.tm_cas)
-        #     if not has_more:
-        #         updated_string = "RESULTS FILE" + " = " + self.tm_results_filename.replace(".slf", f"{simulation_id:03d}" + ".slf")
-        #         self.rewrite_steering_file("RESULTS FILE", updated_string, self.tm_cas)
-        #
-        # # update gaia calibration pars - this intentionally does not iterate through self.calibration_parameters
-        # for par, has_more in lookahead(self.calibration_parameters["gaia"].keys()):
-        #     self.calibration_parameters["gaia"][par]["current value"] = new_parameter_values[par]
-        #     updated_string = self.create_cas_string(par, new_parameter_values[par])
-        #     self.rewrite_steering_file(par, updated_string, self.gaia_cas)
-        #     if not has_more:
-        #         updated_string = "RESULTS FILE" + " = " + self.gaia_results_file.replace(".slf", f"{simulation_id:03d}" + ".slf")
-        #         self.rewrite_steering_file("RESULTS FILE", updated_string, self.gaia_cas)
-
-        #return 0
 
     def rewrite_steering_file(self, param_name, updated_string, steering_module="telemac"):
         """
@@ -610,7 +387,7 @@ class TelemacModel(FullComplexityModel):
             raise Exception("\nERROR IN PARALLEL RUN COMMAND: {} \n"
                             " PROGRAM STOP.\nCheck shebang, model_dir, and cas file.".format(cmd))
 
-    def run_simulation(self, filename="run_launcher.py", load_results=False):
+    def run_single_simulation(self, filename="run_launcher.py", load_results=False):
         """
         Run a Telemac2d or Telemac3d simulation with one or more processors
         The number of processors to use is defined by self.nproc.
@@ -625,6 +402,7 @@ class TelemacModel(FullComplexityModel):
         ----------
             None
         """
+        print("Running full complexity model " + str(self.num_run))
 
         start_time = datetime.now()
         filename = os.path.join(self.model_dir, filename)
@@ -643,6 +421,44 @@ class TelemacModel(FullComplexityModel):
 
         if load_results:
             self.load_results()
+
+        self.extract_data_point(self.tm_results_filename, self.calibration_pts_df,
+                                self.dict_output_name)
+    def run_multiple_simulations(
+            self,
+            collocation_points=None,
+            BAL_mode=True
+    ):
+        calibration_parameters = self.calibration_parameters
+        if BAL_mode:
+            if collocation_points is not None:
+                collocation_points = self.collocation_points
+                collocation_points = self.collocation_points
+                array_list = collocation_points.tolist()
+
+                # Open a CSV file and write the header and array data
+                with open(self.res_dir + os.sep + "auto-saved-results"+ "/initial-runs-parameters.csv", mode='w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(calibration_parameters)  # Write the header
+                    writer.writerows(array_list)  # Write the array data
+                np.save(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
+
+                for i in range(self.init_runs):
+                    self.num_run = i + 1
+                    collocation_point_sim_list=collocation_points[i].tolist()
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    self.run_single_simulation()
+
+            else:
+                self.num_run = self.BAL_iteration+self.init_runs
+                if self.BAL_new_set_parameters is not None:
+                    collocation_point_sim_list=(self.BAL_new_set_parameters).tolist()[0]
+                    update_collocation_pts_file(self.res_dir + os.sep + "auto-saved-results" + "/initial-runs-parameters.csv", new_collocation_point=collocation_point_sim_list)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    self.run_single_simulation()
+                else:
+                    raise ValueError("BAL_new_set_parameters is None. Please provide valid parameters.")
+
 
     def call_tm_shell(self, cmd):
         """
@@ -666,28 +482,6 @@ class TelemacModel(FullComplexityModel):
         del stderr
         return stdout, process.returncode
 
-    def rename_selafin(self, old_name=".slf", new_name=".slf"):
-        """
-        Merged parallel computation meshes (gretel subroutine) does not add correct file endings.
-        This function adds the correct file ending to the file name.
-
-        Parameters
-        ----------
-            old_name: string
-                original file name
-            new_name: string
-                new file name
-        Returns
-        ----------
-            None
-
-        """
-
-        if os.path.exists(old_name):
-            os.rename(old_name, new_name)
-        else:
-            print("WARNING: SELAFIN file %s does not exist" % old_name)
-
     def output_processing(self):
         """
         Process the data to be extracted from the .slf files.
@@ -701,79 +495,52 @@ class TelemacModel(FullComplexityModel):
             None
 
         """
-        original_outputs= self.extract_data_point(self.tm_results_filename, self.calibration_pts_df,
-                                                  self.dict_output_name)
+        # output_data= self.extract_data_point(self.tm_results_filename, self.calibration_pts_df,
+        #                                           self.dict_output_name)
         #self.update_model_controls()
-        return original_outputs
-    def parameter_sampling(self,calibration_parameters,calibration_values_ranges,parameter_sampling_method,total_number_of_samples):
-        """
-        Creates (equally separated or ramdom) values for the selected calibration parameters.
-        Creates values for 'n' rows corresponding to the number of initial runs and 'p' columns corresponding to the number of calibration parameters
 
-        Parameters
-        ----------
-            calibration_parameters: string
-                Names of the selected calibration parameters
-            calibration_values: list
-                Ranges of selection for each of the calibration parameters
-            parameter_sampling_method: string
-                DoE sampling 1) 'MIN - equal interval - MAX' or 2) 'MIN - random - MAX'
+        with open(self.json_path, "r") as file:
+            self.output_data = json.load(file)
 
-        Returns
-        ----------
-            df_doe_calibration_values: Dataframe
-                Dataframe containing the values for each of the initial runs (rows) and calibration parameters (columns).
-            calibration_values_list: List
-                PC parameter combination values for the PCth run.
+        n_calibration_pts = len(self.calibration_pts_df.iloc[:, 0])
+        n_total_runs = self.init_runs+self.BAL_iteration
 
-        """
-        global sampling_method
-        try:
-            if parameter_sampling_method=='1':
-                sampling_method ='MIN - equal interval - MAX'
-            elif parameter_sampling_method=='2':
-                sampling_method ='MIN - random - MAX'
-        except subprocess.CalledProcessError as e:
-            print(f"nor sampling method selected for calibration parameters: {e}")
-        #pdb.set_trace()
-        calib_par_value_dict = {}
-        for param, range_ in zip(calibration_parameters, calibration_values_ranges):
-            calib_par_value_dict[param] = {'name': param, 'bounds': range_}
 
-        # currently only equal or random sampling enabled through doepy.doe.control
-        # this will be IMPROVED in a future release to full DoE methods (see doepy.scripts)
-        self.doe.generate_multi_parameter_space(
-            parameter_dict=calib_par_value_dict,
-            method=sampling_method,
-            total_number_of_samples=total_number_of_samples
-        )
+        # Initialize a 2D NumPy array with zeros
+        np_model_results = np.zeros((n_total_runs, n_calibration_pts))
 
-        self.doe.df_parameter_spaces.to_csv(self.model_dir + "/initial-runs-parameters.csv")
-        df_doe_calibration_values=self.doe.df_parameter_spaces
-        calibration_values_list=self.doe.df_parameter_spaces.loc['PC'+str(self.num_run)].tolist()
-        return df_doe_calibration_values,calibration_values_list
+        # Populate the array with the values from the dictionary
+        for i, key in enumerate(self.output_data.keys()):
+            values = self.output_data[key]
+            np_model_results[:len(values), i] = np.array(values).flatten()
+
+        np.save(os.path.join(self.res_dir + os.sep + "auto-saved-results", 'model_results.npy'), np_model_results)
+        return np_model_results
 
     def extract_data_point(self, input_slf_file, calibration_pts_df, output_json_name):
         """
         This function extracts the (calibration quantities) model outputs from the input_slf_file.slf using the points located
          in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from the closest node
         in the mesh to the x,y measurement coordinate.
-
+        Note that the function is called for EACH model run, and stores the model outputs in a dictionary saved in a .json file. That means
+        if the surrogate model needs 'n' runs of the complex numerical model, this function is called 'n' times and the dictionary will store
+        the model outputs for the 'n' simulations.
 
         Parameters
         ----------
             input_slf_file: string
                 Name of the slf file containing the model outputs.
             calibration_pts_df: Dataframe
-                Data rame with the name (description) of the measurement node , x, y and the measured value of the calibration quantity.
+                Data frame with the name (description) of the measurement node , x, y and the measured value of the calibration quantity.
 
-                P1 / X / Y / Measured Value
+                P1 / X / Y / Measured Value /Measured error
 
             output_name: string
                 Name of the .json file containing a dictionary with the model outputs (selected calibration quantities) and calibration points' description.
 
         Returns
         ----------
+            np_model_results: Numpy 2D array (# initial runs x # calibration points ) of the model outputs for each calibration point and model run.
             output_data_detailed: Dictionary
                 Nested dictionary containing the model outputs (selected calibration quantities) at the calibration points.
 
@@ -784,12 +551,13 @@ class TelemacModel(FullComplexityModel):
 
         global differentiated_dict
         input_file = os.path.join(self.model_dir, input_slf_file)
-        json_path = os.path.join(self.model_dir, f"{output_json_name}.json")
-        json_path_detailed = os.path.join(self.model_dir, f"{output_json_name}_detailed.json")#f"{json_name}_{self.num_run}.json"
+        self.json_path = os.path.join(self.model_dir, f"{output_json_name}.json")
+        self.json_path_detailed = os.path.join(self.model_dir, f"{output_json_name}_detailed.json")#f"{json_name}_{self.num_run}.json"
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
         print('Extracting values from results file ' + str(self.tm_results_filename) + '\n')
         print('Extracting calibration quantities ' + str(self.calibration_quantities)+ '\n')
+
 
         for key,h in zip(keys,range(len(calibration_pts_df))):
             xu = calibration_pts_df.iloc[h,1]
@@ -903,40 +671,40 @@ class TelemacModel(FullComplexityModel):
         if self.num_run == 1:
             try:
                 # Removes the output_file.json when starting a new run of the code
-                os.remove(json_path)
+                os.remove(self.json_path)
                 try:
-                    os.remove(json_path_detailed)
+                    os.remove(self.json_path_detailed)
                 except FileNotFoundError:
                     print("No detailed result file found. Creating a new file.")
             except FileNotFoundError:
                 print("No nested result file found. Creating a new file.")
 
-        if os.path.exists(json_path):
+        if os.path.exists(self.json_path):
             # File exists, so open it for writing
             #pdb.set_trace()
-            with open(json_path, "r") as file:
+            with open(self.json_path, "r") as file:
                 output_data = json.load(file)
                 for key, value in modeled_values_dict.items():
                      if key in output_data:
                         output_data[key].append(value)
                      else:
                         output_data[key] = [value]
-                with open(json_path, 'w') as file:
+                with open(self.json_path, 'w') as file:
                     json.dump(output_data, file, indent=4)
 
         else:
         # Save the updated JSON file
             #pdb.set_trace()
-            with open(json_path, "w") as file:
+            with open(self.json_path, "w") as file:
                 for key in modeled_values_dict:
                     # Convert the existing list into a nested list with a single element
                     modeled_values_dict[key] = [modeled_values_dict[key]]
                 json.dump(modeled_values_dict, file,indent=4)
 
-        if os.path.exists(json_path_detailed):
+        if os.path.exists(self.json_path_detailed):
             # File exists, so open it for writing
             #pdb.set_trace()
-            with open(json_path_detailed, "r") as file:
+            with open(self.json_path_detailed, "r") as file:
                 output_data_detailed = json.load(file)
                 for key, new_values in differentiated_dict.items():
                     if key in output_data_detailed:
@@ -950,11 +718,11 @@ class TelemacModel(FullComplexityModel):
                         # If the key does not exist, create a new list containing the new values
                         output_data_detailed[key] = [new_values]
 
-                with open(json_path_detailed, 'w') as file:
+                with open(self.json_path_detailed, 'w') as file:
                     json.dump(output_data_detailed, file, indent=4)
         else:
         # Save the updated JSON file
-            with open(json_path_detailed, "w") as file:
+            with open(self.json_path_detailed, "w") as file:
                 for key in differentiated_dict:
                     # Convert the existing list into a nested list with a single element
                     differentiated_dict[key] = differentiated_dict[key]
@@ -963,28 +731,374 @@ class TelemacModel(FullComplexityModel):
         try:
             print(self.tm_results_filename)
             print(self.res_dir)
-            if os.path.exists(os.path.join(self.res_dir,self.tm_results_filename)):
+            if os.path.exists(os.path.join(self.res_dir + os.sep + "auto-saved-results",self.tm_results_filename)):
                 # Remove the existing destination file
-                os.remove(os.path.join(self.res_dir,self.tm_results_filename))
-            shutil.move(os.path.join(self.model_dir,self.tm_results_filename),self.res_dir)
+                os.remove(os.path.join(self.res_dir + os.sep + "auto-saved-results",self.tm_results_filename))
+            shutil.move(os.path.join(self.model_dir,self.tm_results_filename),self.res_dir + os.sep + "auto-saved-results")
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
-        if self.num_run == self.init_runs:
-            with open(json_path_detailed, "r") as file:
-                output_data_detailed = json.load(file)
-            # with open(json_path, "r") as file:
-            #     output_data = json.load(file)
-            return output_data_detailed
 
-    def __call__(self, *args, **kwargs):
-        """
-        Call method forwards to self.run_simulation()
 
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        self.cas_creation_doe()
-        self.run_simulation()
-        self.output_processing()
+    # def __call__(self, *args, **kwargs):
+    #     """
+    #     Call method forwards to self.run_simulation()
+    #
+    #     :param args:
+    #     :param kwargs:
+    #     :return:
+    #     """
+    #     # for i in range(self.init_runs):
+    #     #     self.num_run = i + 1
+    #     #     collocation_points=self.cas_creation_doe()
+    #     #     self.run_single_simulation()
+    #
+    #     collocation_points=self.run_multiple_simulations()
+    #     model_results,observations,error=self.output_processing()
+    #
+    #     return model_results,collocation_points,observations,error
+
+
+    # def cas_creation_doe(self):
+    #     """
+    #     Modifies the .cas steering file for each of the initial Telemac runs according to the parameter sampling
+    #     method based on DoE (Design of Experiments). For the very first run, the calibration values are created and stored as data frame and saved
+    #     in a .csv file called initial-run-parameters.csv. From the second run on, this .csv file is read and the code extracts the next calibration parameter combinations.
+    #     After the .cas file has been modified, it is loaded for the model simulation.
+    #
+    #     # ----------- Until now it is possible to modify only the calibration parameters that were indicated in the global_config.py
+    #     # ----------- However, the idea would be also to modify the roughness file of Telemac .tbl according to the roughness zones in the .brf. file (To be implemented)
+    #
+    #     Returns
+    #     -------
+    #     None
+    #
+    #     """
+    #     global np_doe_collocation_points, df_doe_collocation_points
+    #     self.tm_results_filename = self.results_file_name_base + '_' + str(self.num_run) + '.slf'
+    #     if self.num_run == 1:
+    #         df_doe_collocation_points,self.calibration_values_list= self.parameter_sampling(
+    #             self.calibration_parameters, self.calibration_values_ranges, self.parameter_sampling_method,
+    #             self.init_runs)
+    #         print(df_doe_collocation_points)
+    #         print(
+    #             "The calibration values for the selected number of full complexity runs are: \n " + df_doe_collocation_points.to_string())
+    #         np_doe_collocation_points = df_doe_collocation_points.values
+    #         np.save(os.path.join(self.res_dir, 'colocation_points.npy'), np_doe_collocation_points)
+    #
+    #     elif self.num_run<=self.n_max_tp:
+    #         df_doe_collocation_points = _pd.read_csv(self.model_dir + "/initial-runs-parameters.csv", sep=',',
+    #                                                  index_col=0)
+    #         print(
+    #             "The calibration values for the selected number of full complexity runs are: \n " + df_doe_collocation_points.to_string())
+    #         # Iterate over each row and extract calibration values as a list
+    #         self.parameter_values_dict = {}
+    #         for index, row in df_doe_collocation_points.iterrows():
+    #             self.parameter_values_dict[index] = row.values.tolist()
+    #         self.calibration_values_list = df_doe_collocation_points.loc['PC' + str(self.num_run)].tolist()
+    #
+    #         ## In this point I need to add code that reads the new added parameter combination after Bayesian Rejection sampling?? has been done to initia_run_parameters.csv.
+    #         ## This new set of parameters are assigned to self.calibration_values_list which is needed to modify the .cas file.
+    #         ## This step has to be added for Bayesian calibration.
+    #
+    #         if self.gaia_steering_file:
+    #             print("* received gaia steering file: " + self.gaia_steering_file)
+    #             self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
+    #             self.gaia_results_file = "{}{}{}".format(self.res_dir, os.sep,
+    #                                                      str("resIDX-" + self.gaia_steering_file.strip(".cas") + ".slf"))
+    #         else:
+    #             self.gaia_cas = None
+    #             self.gaia_results_file = None
+    #
+    #     self.calibration_parameters.append('RESULTS FILE')
+    #     self.calibration_values_list.append(self.tm_results_filename)
+    #     print('Results file name for this simulation:' + self.tm_results_filename)
+    #     np_doe_collocation_points = df_doe_collocation_points.values
+    #     np.save(os.path.join(self.res_dir, 'colocation_points.npy'), np_doe_collocation_points)
+    #
+    #     # These are the lines of code that modify the .cas file depending on the calibration_parameters[list] and calibration_values_list
+    #     # The self.calibration_values_list is a list that contains the values for each calibration parameters contained in self.calibration_parameters.
+    #     # From this point we can create a new set of parameters to modify the .cas file for learning the surrogate model.
+    #
+    #     for param, val in zip(self.calibration_parameters, self.calibration_values_list):
+    #         cas_string = self.create_cas_string(param, val)
+    #         self.rewrite_steering_file(param, cas_string, steering_module="telemac")
+    #
+    #     return np_doe_collocation_points
+
+
+    # def parameter_sampling(self,calibration_parameters,calibration_values_ranges,parameter_sampling_method,total_number_of_samples):
+    #     """
+    #     Creates (equally separated or ramdom) values for the selected calibration parameters.
+    #     Creates values for 'n' rows corresponding to the number of initial runs and 'p' columns corresponding to the number of calibration parameters
+    #
+    #     Parameters
+    #     ----------
+    #         calibration_parameters: string
+    #             Names of the selected calibration parameters
+    #         calibration_values_ranges: list
+    #             Ranges of selection for each of the calibration parameters
+    #         parameter_sampling_method: string
+    #             DoE sampling 1) 'MIN - equal interval - MAX' or 2) 'MIN - random - MAX' or 3) Latin Hypercube Sampling
+    #
+    #     Returns
+    #     ----------
+    #         df_doe_calibration_values: Dataframe
+    #             Dataframe containing the values for each of the initial runs (rows) and calibration parameters (columns).
+    #         calibration_values_list: List
+    #             PC parameter combination values for the PCth run.
+    #
+    #     """
+    #     global sampling_method
+    #     try:
+    #         if parameter_sampling_method=='1':
+    #             sampling_method ='MIN - equal interval - MAX'
+    #         elif parameter_sampling_method=='2':
+    #             sampling_method ='MIN - random - MAX'
+    #         elif parameter_sampling_method == '3':
+    #             sampling_method = 'lhs'#
+    #     except subprocess.CalledProcessError as e:
+    #         print(f"nor sampling method selected for calibration parameters: {e}")
+    #     #pdb.set_trace()
+    #     calib_par_value_dict = {}
+    #     for param, range_ in zip(calibration_parameters, calibration_values_ranges):
+    #         calib_par_value_dict[param] = {'bounds': range_} #'name': param,
+    #
+    #     print(calib_par_value_dict)
+    #     # currently only equal or random sampling enabled through doepy.doe.control
+    #     # this will be IMPROVED in a future release to full DoE methods (see doepy.scripts)
+    #     self.doe.generate_multi_parameter_space(
+    #         parameter_dict=calib_par_value_dict,
+    #         method=sampling_method,
+    #         total_number_of_samples=total_number_of_samples
+    #     )
+    #
+    #     self.doe.df_parameter_spaces.to_csv(self.model_dir + "/initial-runs-parameters.csv")
+    #     df_doe_calibration_values=self.doe.df_parameter_spaces
+    #     calibration_values_list=self.doe.df_parameter_spaces.loc['PC'+str(self.num_run)].tolist()
+    #     return df_doe_calibration_values,calibration_values_list
+
+    # def load_results(self):
+    #     """
+    #     Load simulation results stored in TelemacModel.tm_results_filename
+    #
+    #     Cannot work if case.init_default_state() was applied before.
+    #
+    #     Parameters
+    #     ----------
+    #         None
+    #
+    #     Returns
+    #     ----------
+    #         int: 0 corresponds to success.
+    #         int: -1 points to an error.
+    #     """
+    #     print("* opening results file: " + self.tm_results_filename)
+    #     if not os.path.isfile(self.tm_results_filename):
+    #         self.get_results_filename()
+    #     print("* retrieving boundary file: " + self.tm_results_filename)
+    #     boundary_file = os.path.join(self.model_dir, self.case.get("MODEL.BCFILE"))
+    #     print("* loading results with boundary file " + boundary_file)
+    #     try:
+    #         os.chdir(self.model_dir)  # make sure to work in the model dir
+    #         self.results = TelemacFile(self.tm_results_filename, bnd_file=boundary_file)
+    #     except Exception as error:
+    #         print("ERROR: could not load results. Did you use TelemacModel.load_case(reset_state=True)?\n" + str(error))
+    #         return -1
+    #
+    #     # to see more case variables that can be self.case.get()-ed, type print(self.case.variables)
+    #     # examples to access liquid boundary equilibrium
+    #     try:
+    #         liq_bnd_info = self.results.get_liq_bnd_info()
+    #         print("Liquid BC info:\n" + str(liq_bnd_info))
+    #     except Exception as error:
+    #         print("WARNING: Could not load case liquid boundary info because of:\n   " + str(error))
+    #     return 0
+
+    # def close_case(self):
+    #     """
+    #     Closes and deletes case.
+    #
+    #     Parameters
+    #     ----------
+    #         None
+    #
+    #     Returns
+    #     -------
+    #         None
+    #     """
+    #
+    #     if self.case_loaded:
+    #         try:
+    #             self.case.finalize()
+    #             print(self.case)
+    #             del self.case
+    #             print(self.case)
+    #         except Exception as error:
+    #             print("ERROR: could not close case:\n   " + str(error))
+    #     self.case_loaded = False
+    #
+    # def reload_case(self):
+    #     """
+    #     Iterative runs require first to close the current run.
+    #
+    #     Parameters
+    #     ----------
+    #
+    #
+    #     Returns
+    #     -------
+    #
+    #     """
+    #
+    #     # close and delete case
+    #     self.close_case()
+    #     # load with new specs
+    #     self.load_case()
+
+    # def load_case(self, reset_state=True):
+    #     """
+    #     Load Telemac case file and check its consistency.
+    #
+    #     Parameters
+    #     ----------
+    #     reset_state (bool): use to activate case.init_state_default(); default is ``False``. Only set to ``True`` for
+    #         running Telemac through the Python API. Otherwise, results cannot be loaded.
+    #
+    #     Returns
+    #     -------
+    #
+    #     """
+    #
+    #     print("* switching to model directory (if needed, cd back to TelemacModel.supervisor_dir)")
+    #     os.chdir(self.model_dir)
+    #
+    #     print("* loading {} case...".format(str(self.tm_xd)))
+    #     if "telemac2d" in self.tm_xd.lower():
+    #         self.case = Telemac2d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
+    #     elif "telemac3d" in self.tm_xd.lower():
+    #         self.case = Telemac3d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
+    #     else:
+    #         print("ERROR: only Telemac2d/3d available, not {}.".format(str(self.tm_xd)))
+    #         return -1
+    #     self.comm.Barrier()
+    #
+    #     print("* setting and initializing case...")
+    #     self.case.set_case()
+    #     self.comm.Barrier()
+    #
+    #     if reset_state:
+    #         #pdb.set_trace()
+    #         self.case.init_state_default()
+    #
+    #     self.case_loaded = True
+    #     print("* successfully activated TELEMAC case: " + str(self.tm_cas))
+    #     return 0
+
+    # def rename_selafin(self, old_name=".slf", new_name=".slf"):
+    #     """
+    #     Merged parallel computation meshes (gretel subroutine) does not add correct file endings.
+    #     This function adds the correct file ending to the file name.
+    #
+    #     Parameters
+    #     ----------
+    #         old_name: string
+    #             original file name
+    #         new_name: string
+    #             new file name
+    #     Returns
+    #     ----------
+    #         None
+    #
+    #     """
+    #
+    #     if os.path.exists(old_name):
+    #         os.rename(old_name, new_name)
+    #     else:
+    #         print("WARNING: SELAFIN file %s does not exist" % old_name)
+
+    # def update_model_controls(self,**kwargs):#,
+    #         #new_parameter_values,
+    #         #simulation_id=0,
+    # #):
+    #
+    #     """
+    #     In TELEMAC language: update the steering file
+    #     Update the Telemac and Gaia steering files specifically for Bayesian calibration.
+    #
+    #     Parameters
+    #     ----------
+    #         new_parameter_values: dict
+    #                 Provides a new parameter value for every calibration parameter
+    #                 * keys correspond to Telemac or Gaia keywords in the steering file
+    #                 * values are either scalar or list-like numpy arrays
+    #         simulation_id: int
+    #                 Identifier for .cas updates
+    #     Returns
+    #     ----------
+    #         int: 0 corresponds to success.
+    #         int: -1 points to an error.
+    #
+    #     """
+    #
+    #     # move existing results to auto-saved-results sub-folder
+    #     try:
+    #         print(self.tm_results_filename)
+    #         print(self.res_dir)
+    #         if os.path.exists(os.path.join(self.res_dir,self.tm_results_filename)):
+    #             # Remove the existing destination file
+    #             os.remove(os.path.join(self.res_dir,self.tm_results_filename))
+    #         shutil.move(os.path.join(self.model_dir,self.tm_results_filename),self.res_dir)
+    #     except Exception as error:
+    #         print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
+    #     return -1
+    #
+    #     # update telemac calibration pars
+    #     # for par, has_more in lookahead(self.calibration_parameters["telemac"].keys()):
+    #     #     self.calibration_parameters["telemac"][par]["current value"] = new_parameter_values[par]
+    #     #     updated_string = self.create_cas_string(par, new_parameter_values[par])
+    #     #     self.rewrite_steering_file(par, updated_string, self.tm_cas)
+    #     #     if not has_more:
+    #     #         updated_string = "RESULTS FILE" + " = " + self.tm_results_filename.replace(".slf", f"{simulation_id:03d}" + ".slf")
+    #     #         self.rewrite_steering_file("RESULTS FILE", updated_string, self.tm_cas)
+    #     #
+    #     # # update gaia calibration pars - this intentionally does not iterate through self.calibration_parameters
+    #     # for par, has_more in lookahead(self.calibration_parameters["gaia"].keys()):
+    #     #     self.calibration_parameters["gaia"][par]["current value"] = new_parameter_values[par]
+    #     #     updated_string = self.create_cas_string(par, new_parameter_values[par])
+    #     #     self.rewrite_steering_file(par, updated_string, self.gaia_cas)
+    #     #     if not has_more:
+    #     #         updated_string = "RESULTS FILE" + " = " + self.gaia_results_file.replace(".slf", f"{simulation_id:03d}" + ".slf")
+    #     #         self.rewrite_steering_file("RESULTS FILE", updated_string, self.gaia_cas)
+    #
+    #     #return 0
+
+    # def get_results_filename(self):
+    #     """
+    #     Routine is called with the __init__ and carefully written so that it can be called
+    #     externally any time, too.
+    #
+    #     Retrieves the results file name from the .slf file when a case is loaded.
+    #
+    #     Parameters
+    #     ----------
+    #     None
+    #
+    #     Returns
+    #     -------
+    #     None
+    #
+    #     """
+    #
+    #     try:
+    #         #pdb.set_trace()
+    #
+    #         # The aim of the following 2-line code is to extract the RESULTFILE nem from the .cas file and assign it as the
+    #         # self.results_file_name_base, but it cannot be done since it needs a loaded case first.
+    #
+    #         self.tm_results_filename = self.case.get("MODEL.RESULTFILE")
+    #         # self.results_file_name_base=re.split(r'[._]', self.results_file_name_base)
+    #         # self.results_file_name_base=self.results_file_name_base[0]
+    #
+    #     except Exception as err:
+    #         print("ERROR: could not retrieve results filename. Is the case loaded?\n\nTraceback:\n{}".format(str(err)))

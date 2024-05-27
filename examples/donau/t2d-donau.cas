@@ -32,7 +32,7 @@
 /
 BOUNDARY CONDITIONS FILE                     : geo-donau.cli
 GEOMETRY FILE                                : geo-donau.slf
-RESULTS FILE = TelemacResults_10.slf
+RESULTS FILE = R_donau_7.slf
 CHECKING THE MESH = YES
 PREVIOUS COMPUTATION FILE                    : donau-restart.slf
 COMPUTATION CONTINUED                       : YES
@@ -64,7 +64,7 @@ MAXIMUM NUMBER OF BOUNDARIES                : 50
 /----------------------------------------------------------------------
 /
 INITIAL CONDITIONS                          :'CONSTANT ELEVATION'
-INITIAL ELEVATION = 312.5
+INITIAL ELEVATION = 316.9691753130332
 /
 /----------------------------------------------------------------------
 /                       NUMERICAL OPTIONS
@@ -98,7 +98,7 @@ ZONES FILE                         = geo-donau.bfr
 MAXIMUM NUMBER OF FRICTION DOMAINS = 10
 VEGETATION FRICTION = NO
 LAW OF FRICTION ON LATERAL BOUNDARIES = 5
-ROUGHNESS COEFFICIENT OF BOUNDARIES = 0.08
+ROUGHNESS COEFFICIENT OF BOUNDARIES = 0.3941347558555421
 /
 / DEFAULT VALUE UNTIL V8P1 KEPT FOR NON REGRESSION
 TREATMENT OF THE LINEAR SYSTEM = 2

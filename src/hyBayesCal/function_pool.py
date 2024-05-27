@@ -2,6 +2,7 @@
 import subprocess, os, logging
 import numpy as _np
 import pandas as _pd
+import csv
 
 from config_logging import logger, logger_warn, logger_error
 from model_structure.config_physics import *
@@ -167,3 +168,25 @@ def log_actions(func):
             logging.getLogger("errors").removeHandler(handler)
         print("Check the logfiles: logfile.log, warnings.log, and errors.log.")
     return wrapper
+def update_collocation_pts_file(file_path, new_collocation_point):
+    """
+    Append a new row to a CSV file.
+
+    :param file_path: Path to the CSV file.
+    :param new_collocation_point: List of values to be added as a new row.
+    :param new_collocation_point_description: The number to be appended to the 'PC' description.
+    """
+    # Create the PC description
+
+    # Ensure new_set_parameters is a list
+    if not isinstance(new_collocation_point, list):
+        raise ValueError("new_set_parameters must be a list")
+
+    # Create the new line with the PC description and the new parameters
+    new_line = new_collocation_point
+
+    # Open the file in append mode and write the new row
+    with open(file_path, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(new_line)
+

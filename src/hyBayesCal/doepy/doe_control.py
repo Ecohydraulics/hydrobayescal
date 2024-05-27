@@ -10,10 +10,11 @@ Note::
         * Random: randomly sample n initial calibration parameter values
 """
 from random import choice
+from pyDOE import *
 import numpy as _np
 import pandas as _pd
-import DOE_functions as doef  # for later implementation
-
+#import DOE_functions as doef  # for later implementation
+import matplotlib.pyplot as plt
 
 class DesignOfExperiment:
     def __init__(self):
@@ -30,7 +31,7 @@ class DesignOfExperiment:
         self.__DESIGN_METHODS = [
             "MIN - equal interval - MAX",
             "MIN - random - MAX",
-            "Random",
+            "lhs",
             "DOE functions (doef) not yet implemented -- 2DO"
         ]
 
@@ -61,6 +62,8 @@ class DesignOfExperiment:
             return self.min_randomInterval_max(minimum, maximum, n)
         if method.lower() == "interval":
             return self.randomInterval(minimum, maximum, n)
+        if method.lower() == "lhs":
+            return self.latin_hs(minimum, maximum, n)
         if "DOE functions (doef)" in method:
             print("SORRY: I cannot yet deal with Box-DoE methods")
             return _np.array([])
@@ -90,13 +93,15 @@ class DesignOfExperiment:
                 maximum=parameter_dict[par]["bounds"][1],
                 n=total_number_of_samples,
                 method=method,
+
             )
             dict4parameter_file.update({par: parameter_dict[par]["value array"]})
-
+            print(dict4parameter_file)
         self.df_parameter_spaces = _pd.DataFrame.from_dict(data=dict4parameter_file)
         self.df_parameter_spaces.rename(index=index_dict, inplace=True)
+        #Plots parameter combination points in the multiparameter space.
+        self.ploting_param_space(dict4parameter_file)
 
-    @staticmethod
     def min_equalInterval_max(minimum, maximum, n):
         """ Generate n equally distanced values for a parameter between a minimum and
             a maximum value
@@ -125,6 +130,7 @@ class DesignOfExperiment:
             rand_array = self.randomInterval(minimum, maximum, n)
             rand_array[0] = minimum
             rand_array[-1] = maximum
+            print(rand_array)
             return rand_array
         except Exception as e:
             print("ERROR: could not generate equally distanced parameter space:\n " + str(e))
@@ -141,10 +147,31 @@ class DesignOfExperiment:
         """
         try:
             base_space = _np.linspace(start=minimum, stop=maximum, num=n * 100)
+            print(base_space)
             return _np.array([choice(base_space) for _ in range(n)])
         except Exception as e:
             print("ERROR: could not generate equally distanced parameter space:\n " + str(e))
             return _np.array([])
 
+    @staticmethod
+    def latin_hs(minimum, maximum, n, iterations=1000,criterion='maximin',number_factors=1,):
+        samples_array=lhs(number_factors, n, criterion, iterations)
+        samples_array = samples_array * (maximum - minimum) + minimum
+        samples_array = np.array(samples_array).flatten()
+        return samples_array
 
+    def ploting_param_space(self,dict_param_values):
+        fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
+        # Plot each parameter on its corresponding subplot
+        for i, (param_name, param_values) in enumerate(dict_param_values.items()):
+            axs[i].scatter(range(len(param_values)), param_values)
+            axs[i].set_title(param_name)
+            axs[i].set_xlabel('Index')
+            axs[i].set_ylabel('Value')
+
+        # Adjust layout to prevent overlap
+        plt.tight_layout()
+
+        # Show the plot
+        plt.show()
