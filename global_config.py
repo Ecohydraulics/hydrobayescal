@@ -1,5 +1,7 @@
 """
+Global user-defined settings for Telemac full complexity simulations.
 
+Author: Andres Heredia M.Sc.
 """
 import os
 
@@ -19,7 +21,7 @@ cas_file_name= 't2d-donau.cas'
 Telemac_solver='1'
 
 # ===========Steering file (.cas) folder path==============
-cas_file_simulation_path='/home/IWS/hidalgo/Documents/hybayescal/examples/donau/'
+cas_file_simulation_path='/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/'
 
 # ===========Results folder path (Folder where you want to save the following files: )==============
 # .slf (For all simulations)
@@ -28,7 +30,7 @@ cas_file_simulation_path='/home/IWS/hidalgo/Documents/hybayescal/examples/donau/
 # model_results.npy
 #
 #
-results_folder_path='/home/IWS/hidalgo/Documents/hybayescal/examples/donau/'
+results_folder_path='/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/'
 
 # =============Calibration points .csv file (complete file path) =============
 #Example: /home/.../..../hydroBayesCal/Simulations/..../calibration-pts.csv
@@ -36,13 +38,13 @@ results_folder_path='/home/IWS/hidalgo/Documents/hybayescal/examples/donau/'
 # Header:         Point  |    X       |	     Y	     |       MEASUREMENT 1	     |   ERROR 1
 # Content:          P1   |  71122.89  |	  9514.50    |     	    2.409	         |   0.0254
 
-calib_pts_file_path= '/home/IWS/hidalgo/Documents/hybayescal/examples/donau/Bal-data/calibration-pts_H.csv'
+calib_pts_file_path= '/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/Bal-data/calibration-pts_H.csv'
 
 # =====================Number of CPUs for Telemac Simulations==========================
 n_cpus= 16
 
 # ======Initial full-complexity model runs (init_runs) (Initial training points for surrogate model)=========
-init_runs=6
+init_runs=4
 
 # ======Calibration parameters=========
 # Note: The calibration parameters MUST coincide with the way they are written in the .cas file
@@ -53,7 +55,8 @@ calib_parameter_4=''
 
 
 # ======Range of values for calibration exploration =========
-# According to the prior knowledge of the calibration parameters, assign a RANGE [min. value , max. value] for calibration purposes
+# According to the prior knowledge of the calibration parameters, assign a RANGE [min. value , max. value]
+# for calibration purposes
 param_range_1=[0.009,0.8]
 param_range_2=[304,320]
 param_range_3=''
@@ -74,7 +77,7 @@ parameter_ranges_list=[value for value in [param_range_1, param_range_2, param_r
 #*** VELOCITY V     : Velocity in Y direction       [M/S]
 #*** FREE SURFACE   : Z(Bottom) + Water Depth       [M]
 #*** BOTTOM         : Z(Bottom)                     [M]
-
+#*** SCALAR VELOCITY: Scalar velocity               [M/S]
 
 ## Calibration quantity 1(calib_target1)
 calib_quantity_1='SCALAR VELOCITY'
@@ -116,7 +119,7 @@ parameter_sampling_method = 'latin_hypercube'
 # ======Maximum number of training points (At the end of the calibration process)=========
 # n_max_tp > init_runs
 
-n_max_tp =10
+n_max_tp =6
 # ======Prior samples (parameter combinations) from the selected ranges for surrogate model evaluation=========
 n_samples=10000
 

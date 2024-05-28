@@ -1,5 +1,5 @@
 """
-Code that trains a Gaussian Process Emulator (GPE) for a hydrodynamic Telemac Model. (possible to couple with other
+Code that trains a Gaussian Process Emulator (GPE) for any full complex model (i.e., hydrodynamnic models). (possible to couple with other
 open source hydrodynamic softwares.)
 Can use normal training (once) or sequential training (BAL, SF, Sobol)
 """
@@ -50,11 +50,11 @@ if __name__ == "__main__":
     # path_np_model_results='/home/IWS/hidalgo/Documents/hybayescal/examples/donau/auto-saved-results/model_results.npy'
     # np_model_results = np.load(path_np_model_results)
     # np_collocation_points = np.load(path_np_collocation_points)
-    # =====================================================
-    # =============   INPUT DATA  ================
-    # =====================================================
+
+    #  INPUT DATA
+
     # paths ..........................................................................
-    results_path = Path('Results')  # Folder where to save results
+    results_path = Path(results_folder_path)  # Folder where to save results
 
     # surrogate data .................................................................
     parallelize = False  # to parallelize surrogate training, BAL
@@ -63,11 +63,15 @@ if __name__ == "__main__":
 
     # Importing measurement quantities and measurement errors at calibration points.............................
     calibration_pts_df = _pd.read_csv(calib_pts_file_path)
+
     # Importing measured values of the calibration quantity at the calibration points.
-    np_observations = calibration_pts_df.iloc[:, 3].to_numpy().reshape(1,-1)
+    np_observations = calibration_pts_df.iloc[:, 3].to_numpy().reshape(1, -1)
+
     # Importing errors at calibration points
     np_error = calibration_pts_df.iloc[:, 4].to_numpy()
-    n_loc = np_observations.size  # number of output locations (i.e., calibration points) / Surrogates to train. (One surrogate per calibration point)
+
+    # number of output locations (i.e., calibration points) / Surrogates to train. (One surrogate per calibration point)
+    n_loc = np_observations.size
     input_data_path = None
 
     ndim = len(calib_parameter_list)  # number of calibration parameters
@@ -117,9 +121,7 @@ if __name__ == "__main__":
         exp_design.setup_gpe(library=gp_library  # set gpy or skl as libraries
                              )
 
-    #     # =====================================================
-    #     # =============   COLLOCATION POINTS  ================
-    #     # =====================================================
+    # COLLOCATION POINTS
     #
     #     # Collocation points ...................................................
     #     # This part is specific to the problem: here you add the functions to create input sets and evaluate the model/read
@@ -135,16 +137,14 @@ if __name__ == "__main__":
     #     the gpe_skl.py or gpe_gpytorh.py classes"""
 
     complex_model = HydroSimulations()
-    np_model_results = complex_model.run(collocation_points=np_collocation_points,
-                                     BAL_iteration = 0,
-                                     BAL_new_set_parameters = None)
-
+    np_model_results = complex_model.run(collocation_points=np_collocation_points, bal_iteration=0,
+                                         bal_new_set_parameters=None,bal_mode=True)
 
     collocation_points = np_collocation_points
     model_evaluations = np_model_results
 
     print(
-        f'<<< Will run <{exp_design.n_iter + 1}> GP training iterations and <{exp_design.n_evals}> GP evaluations. >>>')
+        f"<<< Will run ({exp_design.n_iter + 1}) GP training iterations and ({exp_design.n_evals}) GP evaluations. >>> ")
 
     #
     # =====================================================
@@ -153,8 +153,7 @@ if __name__ == "__main__":
 
     # Reference data .......................................................
     prior = exp_design.generate_samples(n_samples)
-    # ref_output = nonlinear_model(params=prior, loc=pt_loc)
-    #
+
     prior_logpdf = np.log(exp_design.JDist.pdf(prior.T)).reshape(-1)
     # ref_scores = BayesianInference(model_predictions=ref_output,
     #                                observations=obs,
@@ -179,7 +178,7 @@ if __name__ == "__main__":
     #     # =====================================================
     #     """This part can be ommited, if the files can be saved directly in the results_path folder"""
     #     # Create folder for specific case ....................................................................
-    results_folder = results_path / f'ndim_{ndim}_nout_{n_loc}'
+    results_folder = results_path / f'surrogate_{results_file_name_base}_ndim_{ndim}_nout_{n_loc}'
     if not results_folder.exists():
         logger.info(f'Creating folder {results_folder}')
         results_folder.mkdir(parents=True)
@@ -193,31 +192,28 @@ if __name__ == "__main__":
     #     # Arrays to save results ---------------------------------------------------------------------------- #
     #
     bayesian_dict = {
-         'N_tp': np.zeros(exp_design.n_iter + 1),
-         'BME': np.zeros(exp_design.n_iter + 1),  # To save BME value for each GPE, after training
-         'ELPD': np.zeros(exp_design.n_iter + 1),
-         'RE': np.zeros(exp_design.n_iter + 1),  # To save RE value for each GPE, after training
-         'IE': np.zeros(exp_design.n_iter + 1),
-         'post_size': np.zeros(exp_design.n_iter + 1),
-         f'{exp_design.exploit_method}_{exp_design.util_func}': np.zeros(exp_design.n_iter),
-         'util_func': np.empty(exp_design.n_iter, dtype=object)
+        'N_tp': np.zeros(exp_design.n_iter + 1),
+        'BME': np.zeros(exp_design.n_iter + 1),  # To save BME value for each GPE, after training
+        'ELPD': np.zeros(exp_design.n_iter + 1),
+        'RE': np.zeros(exp_design.n_iter + 1),  # To save RE value for each GPE, after training
+        'IE': np.zeros(exp_design.n_iter + 1),
+        'post_size': np.zeros(exp_design.n_iter + 1),
+        f'{exp_design.exploit_method}_{exp_design.util_func}': np.zeros(exp_design.n_iter),
+        'util_func': np.empty(exp_design.n_iter, dtype=object)
     }
 
     eval_dict = {}
 
     #     # ========================================================================================================= #
     exploration_set = exp_design.generate_samples(n_samples_exploration_BAL)  # for BAL
-    #     # =====================================================
-    #     # =============   SURROGATE MODEL TRAINING  ===========
-    #     # =====================================================
-    #
-    #
+
+    # SURROGATE MODEL TRAINING
 
     # --------------------------------
     t_start = time.time()
-    #     # --------------------------------
-    #
-    print('Starting surrogate training with the INITIAL COLLOCATION POINTS')
+    # --------------------------------
+
+    print('Starting surrogate training with initial collocation points')
     for it in range(0, exp_design.n_iter + 1):  # Train the GPE a maximum of "iteration_limit" times
 
         # 1. Train surrogate
@@ -263,6 +259,11 @@ if __name__ == "__main__":
                              verbose=False)
 
         # Train the GPR
+        if it == exp_design.n_iter:
+            logger.info(f'------------ Training final model with the last training point: {new_tp}     -------------------')
+        elif it > 0:
+            logger.info(f'------------ Training model with new training point: {new_tp}   -------------------')
+
         sm.train_()
 
         # 2. Validate GPR
@@ -319,11 +320,9 @@ if __name__ == "__main__":
 
             #update_collocation_pts_file()
             #             # Evaluate model in new TP: This is specific to each problem --------
-            #complex_model = HydroSimulations()
-            #print(new_tp)
-            np_model_results = complex_model.run(collocation_points=None,
-                                             BAL_iteration=it + 1,
-                                             BAL_new_set_parameters=new_tp)
+            bal_iteration = it + 1
+            np_model_results = complex_model.run(collocation_points=None, bal_iteration=bal_iteration,
+                                                 bal_new_set_parameters=new_tp, bal_mode=True)
 
             #new_output = nonlinear_model(params=new_tp, loc=pt_loc)
             #             # -------------------------------------------------------------------
@@ -338,24 +337,24 @@ if __name__ == "__main__":
 
             # collocation_points = np_collocation_points
             # model_evaluations = np_model_results
-#             # Plot process
-#             if it % exp_design.eval_step == 0:
-#                 if ndim == 1:
-#                     if SD.do_tradeoff:
-#                         plot_1d_bal_tradeoff(prior, surrogate_output['output'], surrogate_output['lower_ci'],
-#                                              surrogate_output['upper_ci'], SD.candidates,
-#                                              SD, collocation_points, model_evaluations, it, obs)
-#                     else:
-#                         plot_1d_gpe_bal(prior, surrogate_output['output'], surrogate_output['lower_ci'],
-#                                         surrogate_output['upper_ci'], SD.candidates,
-#                                         SD.total_score, collocation_points, model_evaluations, it, obs)
-#                 if ndim < 3:
-#                     plot_likelihoods(prior, bi_gpe.likelihood, prior, ref_scores.likelihood,
-#                                      n_iter=it + 1)
-#
-#                 stop=1
+        #             # Plot process
+        #             if it % exp_design.eval_step == 0:
+        #                 if ndim == 1:
+        #                     if SD.do_tradeoff:
+        #                         plot_1d_bal_tradeoff(prior, surrogate_output['output'], surrogate_output['lower_ci'],
+        #                                              surrogate_output['upper_ci'], SD.candidates,
+        #                                              SD, collocation_points, model_evaluations, it, obs)
+        #                     else:
+        #                         plot_1d_gpe_bal(prior, surrogate_output['output'], surrogate_output['lower_ci'],
+        #                                         surrogate_output['upper_ci'], SD.candidates,
+        #                                         SD.total_score, collocation_points, model_evaluations, it, obs)
+        #                 if ndim < 3:
+        #                     plot_likelihoods(prior, bi_gpe.likelihood, prior, ref_scores.likelihood,
+        #                                      n_iter=it + 1)
+        #
+        #                 stop=1
 
-        logger.info(f'------------ Finished iteration {it + 1}/{exp_design.n_iter} -------------------')
+            logger.info(f'------------ Finished iteration {it + 1}/{exp_design.n_iter} -------------------')
 
 #     # Plot all TP:
 #     if ndim == 1:
