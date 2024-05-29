@@ -131,3 +131,29 @@ n_samples_exploration_BAL=2000
 # Choose between these two GPE libraries:
 # gpy: GPyTorch or skl: Scikit-Learn
 gp_library = 'gpy'
+
+#
+bal_mode=True
+
+# Store the variables in a dictionary user_inputs
+user_inputs = {
+    'cas_file_name': cas_file_name,
+    'Telemac_solver': Telemac_solver,
+    'cas_file_simulation_path': cas_file_simulation_path,
+    'results_folder_path': results_folder_path,
+    'calib_pts_file_path':calib_pts_file_path,
+    'n_cpus':n_cpus,
+    'init_runs':init_runs,
+    'calib_parameter_list':calib_parameter_list,
+    'parameter_ranges_list':parameter_ranges_list,
+    'calib_quantity_list':calib_quantity_list,
+    'dict_output_name':dict_output_name,
+    'results_file_name_base':results_file_name_base,
+    'parameter_sampling_method':parameter_sampling_method,
+    'n_max_tp':n_max_tp,
+    'n_samples':n_samples,
+    'n_samples_exploration_bal':n_samples_exploration_BAL,
+    'gp_library':gp_library,
+    'bal_mode': bal_mode,
+
+}

@@ -1,6 +1,6 @@
 """
-Code that trains a Gaussian Process Emulator (GPE) for any full complex model (i.e., hydrodynamnic models). (possible to couple with other
-open source hydrodynamic softwares.)
+Code that trains a Gaussian Process Emulator (GPE) for any full complex model (i.e., hydrodynamnic models).
+Possible to couple with any other open source hydrodynamic software.
 Can use normal training (once) or sequential training (BAL, SF, Sobol)
 """
 import time
@@ -18,10 +18,9 @@ sys.path.append(str(par_path / 'src'))
 sys.path.append(str(par_path / 'src/hyBayesCal/surrogate_modelling'))
 sys.path.append(str(par_path / 'src/hyBayesCal/utils'))
 
-#from analytical_model import nonlinear_model
 #from src.hyBayesCal.plots.plots_1d_2d import *
 
-from global_config import *
+from user_inputs import user_inputs
 from telemac_coupling import HydroSimulations
 
 from src.hyBayesCal.surrogate_modelling.bal_functions import BayesianInference, SequentialDesign
@@ -40,7 +39,6 @@ from src.hyBayesCal.utils.log import *
 warnings.filterwarnings("ignore")
 #matplotlib.use("Qt5Agg")
 
-
 if __name__ == "__main__":
 
     ## Uncomment these lines if you need to retrieve the collocation points and model results as numpy arrays for surrogate mo
@@ -54,15 +52,15 @@ if __name__ == "__main__":
     #  INPUT DATA
 
     # paths ..........................................................................
-    results_path = Path(results_folder_path)  # Folder where to save results
+    results_path = Path(user_inputs['results_folder_path'])  # Folder where to save results
 
     # surrogate data .................................................................
     parallelize = False  # to parallelize surrogate training, BAL
     # GP library .....................................................................
-    gp_library = gp_library  # gpy: GPyTorch or skl: Scikit-Learn
+    gp_library = user_inputs['gp_library']  # gpy: GPyTorch or skl: Scikit-Learn
 
     # Importing measurement quantities and measurement errors at calibration points.............................
-    calibration_pts_df = _pd.read_csv(calib_pts_file_path)
+    calibration_pts_df = _pd.read_csv(user_inputs['calib_pts_file_path'])
 
     # Importing measured values of the calibration quantity at the calibration points.
     np_observations = calibration_pts_df.iloc[:, 3].to_numpy().reshape(1, -1)
@@ -74,8 +72,8 @@ if __name__ == "__main__":
     n_loc = np_observations.size
     input_data_path = None
 
-    ndim = len(calib_parameter_list)  # number of calibration parameters
-    output_names = calib_quantity_list  # Name for the different calibration quantities. Model outputs
+    ndim = len(user_inputs['calib_parameter_list'])  # number of calibration parameters
+    output_names = user_inputs['calib_quantity_list']  # Name for the different calibration quantities. Model outputs
 
     obs = np_observations  # observation values, for each loc np.array[1 x No. Observations]
     error_pp = np_error  # np.array [No. observations x 1]
@@ -94,9 +92,9 @@ if __name__ == "__main__":
     # # One "Marginal" for each parameter.
     for i in range(ndim):
         Inputs.add_marginals()  # Create marginal for parameter "i"
-        Inputs.Marginals[i].name = calib_parameter_list[i]  # Parameter name
+        Inputs.Marginals[i].name = user_inputs['calib_parameter_list'][i]  # Parameter name
         Inputs.Marginals[i].dist_type = 'uniform'  # Parameter distribution (see exp_design.py --> build_dist()
-        Inputs.Marginals[i].parameters = parameter_ranges_list[i]  # Inputs needed for distribution
+        Inputs.Marginals[i].parameters = user_inputs['parameter_ranges_list'][i]  # Inputs needed for distribution
 
     # # Experimental design: ....................................................................
 
@@ -104,10 +102,10 @@ if __name__ == "__main__":
                            exploit_method='bal',  # bal, space_filling, sobol
                            explore_method='random',  # method to sample from parameter set for active learning
                            training_step=1,  # No. of training points to sample in each iteration
-                           sampling_method='latin_hypercube',  # how to sample the initial training points
+                           sampling_method=user_inputs['parameter_sampling_method'],  # how to sample the initial training points
                            main_meta_model='gpr',  # main surrogate method: 'gpr' or 'apce'
-                           n_initial_tp=init_runs,  # Number of initial training points (min = n_trunc*2)
-                           n_max_tp=n_max_tp,  # max number of tp to use
+                           n_initial_tp=user_inputs['init_runs'],  # Number of initial training points (min = n_trunc*2)
+                           n_max_tp=user_inputs['n_max_tp'],  # max number of tp to use
                            training_method='sequential',  # normal (train only once) or sequential (Active Learning)
                            util_func='dkl',  # criteria for bal (dkl, bme, ie, dkl_bme) or SF (default: global_mc)
                            eval_step=1,  # every how many iterations to evaluate the surrogate
@@ -126,7 +124,7 @@ if __name__ == "__main__":
     #     # Collocation points ...................................................
     #     # This part is specific to the problem: here you add the functions to create input sets and evaluate the model/read
     #     # already-run model runs.
-    np_collocation_points = exp_design.generate_samples(n_samples=exp_design.n_init_tp,
+    collocation_points = exp_design.generate_samples(n_samples=exp_design.n_init_tp,
                                                         sampling_method=exp_design.sampling_method)
 
     # ===============================================
@@ -136,12 +134,12 @@ if __name__ == "__main__":
     #     """NOTE: The collocation points and model results should be in numpy-array form, and in the order needed by
     #     the gpe_skl.py or gpe_gpytorh.py classes"""
 
-    complex_model = HydroSimulations()
-    np_model_results = complex_model.run(collocation_points=np_collocation_points, bal_iteration=0,
-                                         bal_new_set_parameters=None,bal_mode=True)
+    complex_model = HydroSimulations(user_inputs,user_inputs['bal_mode'])
+    model_results = complex_model.run(collocation_points=collocation_points, bal_iteration=0,
+                                      bal_new_set_parameters=None,)
 
-    collocation_points = np_collocation_points
-    model_evaluations = np_model_results
+    collocation_points = collocation_points
+    model_evaluations = model_results
 
     print(
         f"<<< Will run ({exp_design.n_iter + 1}) GP training iterations and ({exp_design.n_evals}) GP evaluations. >>> ")
@@ -152,7 +150,7 @@ if __name__ == "__main__":
     # =====================================================
 
     # Reference data .......................................................
-    prior = exp_design.generate_samples(n_samples)
+    prior = exp_design.generate_samples(user_inputs['n_samples'])
 
     prior_logpdf = np.log(exp_design.JDist.pdf(prior.T)).reshape(-1)
     # ref_scores = BayesianInference(model_predictions=ref_output,
@@ -178,7 +176,7 @@ if __name__ == "__main__":
     #     # =====================================================
     #     """This part can be ommited, if the files can be saved directly in the results_path folder"""
     #     # Create folder for specific case ....................................................................
-    results_folder = results_path / f'surrogate_{results_file_name_base}_ndim_{ndim}_nout_{n_loc}'
+    results_folder = results_path / f'surrogate_{user_inputs["results_file_name_base"]}_ndim_{ndim}_nout_{n_loc}'
     if not results_folder.exists():
         logger.info(f'Creating folder {results_folder}')
         results_folder.mkdir(parents=True)
@@ -205,10 +203,9 @@ if __name__ == "__main__":
     eval_dict = {}
 
     #     # ========================================================================================================= #
-    exploration_set = exp_design.generate_samples(n_samples_exploration_BAL)  # for BAL
+    exploration_set = exp_design.generate_samples(user_inputs["n_samples_exploration_bal"])  # for BAL
 
     # SURROGATE MODEL TRAINING
-
     # --------------------------------
     t_start = time.time()
     # --------------------------------
@@ -225,10 +222,10 @@ if __name__ == "__main__":
             # Setting up initial length scales and length scales bounds for Radial Basis Function (RBF) kernel
             if it == 0:
                 length_scales = []
-                for param_range in parameter_ranges_list:
+                for param_range in user_inputs['parameter_ranges_list']:
                     length_scale = sum(param_range) / len(param_range)
                     length_scales.append(length_scale)
-                length_scales_bounds = [tuple(param_range) for param_range in parameter_ranges_list]
+                length_scales_bounds = [tuple(param_range) for param_range in user_inputs['parameter_ranges_list']]
 
             kernel = 1 * RBF(length_scale=length_scales, length_scale_bounds=length_scales_bounds)
 
@@ -309,31 +306,28 @@ if __name__ == "__main__":
             SD = SequentialDesign(exp_design=exp_design, sm_object=sm, obs=obs, errors=total_error,
                                   do_tradeoff=False)  #multiprocessing=parallelize
 
-            # new_tp, util_fun = SD.run_sequential_design(prior_samples=prior_samples)
+            #new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
             SD.gaussian_assumption = True
             new_tp, util_fun = SD.run_sequential_design(prior_samples=exploration_set)
             #pdb.set_trace()
             print(new_tp)
             bayesian_dict[f'{exp_design.exploit_method}_{exp_design.util_func}'][it] = SD.selected_criteria[0]
             bayesian_dict['util_func'][it] = util_fun
-            #print(bayesian_dict)
 
-            #update_collocation_pts_file()
-            #             # Evaluate model in new TP: This is specific to each problem --------
+            # Evaluate model in new TP: This is specific to each problem --------
             bal_iteration = it + 1
-            np_model_results = complex_model.run(collocation_points=None, bal_iteration=bal_iteration,
-                                                 bal_new_set_parameters=new_tp, bal_mode=True)
+            model_results = complex_model.run(collocation_points=None, bal_iteration=bal_iteration,
+                                              bal_new_set_parameters=new_tp)
 
             #new_output = nonlinear_model(params=new_tp, loc=pt_loc)
-            #             # -------------------------------------------------------------------
-            #
-            #             # Update collocation points:
+            #-------------------------------------------------------
+            # Update collocation points:
             if exp_design.exploit_method == 'sobol':
                 collocation_points = new_tp
-                model_evaluations = np_model_results
+                model_evaluations = model_results
             else:
                 collocation_points = np.vstack((collocation_points, new_tp))
-                model_evaluations = np_model_results
+                model_evaluations = model_results
 
             # collocation_points = np_collocation_points
             # model_evaluations = np_model_results

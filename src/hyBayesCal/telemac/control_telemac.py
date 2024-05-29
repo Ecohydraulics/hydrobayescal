@@ -3,6 +3,7 @@
 """
 Functional core for controling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
 
+Author: Andres Heredia MSc.
 """
 import io, stat,shutil
 import subprocess
@@ -63,7 +64,7 @@ class TelemacModel(FullComplexityModel):
         Constructor for the TelemacModel Class. Instantiating can take some seconds, so try to
         be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops)
 
-        Atributes
+        Attributes
         ____________
 
         :param str model_dir: Directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software
@@ -129,7 +130,7 @@ class TelemacModel(FullComplexityModel):
         calibration parameters.
 
         Until now it is possible to modify only
-        the calibration parameters that were indicated in the global_config.py.
+        the calibration parameters that were indicated in the user_inputs.py.
         However, the idea would be also to modify the roughness file of Telemac .tbl
         according to the roughness zones in the .brf. file (To be implemented).
         Parameters
@@ -154,7 +155,11 @@ class TelemacModel(FullComplexityModel):
             self.rewrite_steering_file(param, cas_string, steering_module="telemac")
 
     #@staticmethod
-    def create_cas_string(self,param_name, value):
+    def create_cas_string(
+            self,
+            param_name,
+            value
+    ):
         """
         Create string names with new values to be used in Telemac2d / Gaia steering files
 
@@ -180,7 +185,12 @@ class TelemacModel(FullComplexityModel):
             except Exception as error:
                 print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(error)))
 
-    def rewrite_steering_file(self, param_name, updated_string, steering_module="telemac"):
+    def rewrite_steering_file(
+            self,
+            param_name,
+            updated_string,
+            steering_module="telemac"
+    ):
         """
         Rewrites the *.cas steering file with new (updated) parameters
 
@@ -386,7 +396,11 @@ class TelemacModel(FullComplexityModel):
             raise Exception("\nERROR IN PARALLEL RUN COMMAND: {} \n"
                             " PROGRAM STOP.\nCheck shebang, model_dir, and cas file.".format(cmd))
 
-    def run_single_simulation(self, filename="run_launcher.py", load_results=True):
+    def run_single_simulation(
+            self,
+            filename="run_launcher.py",
+            load_results=True
+    ):
         """
         Runs a Telemac2d or Telemac3d simulation with one or more processors
         The number of processors to use is defined by self.nproc.
@@ -421,19 +435,18 @@ class TelemacModel(FullComplexityModel):
         # if load_results:
         #     self.load_results()
         if load_results:
-            self.extract_data_point(self.tm_results_filename, self.calibration_pts_df,
-                                self.dict_output_name)
+            self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name)
     def run_multiple_simulations(
             self,
             collocation_points=None,
             bal_new_set_parameters=None,
             bal_iteration=int(),
             bal_mode=True
-
     ):
         """
-        Runs multiple times Telemac2d or Telemac3d simulations.
-        The number of processors to use is defined by self.nproc.
+        Runs multiple times Telemac2d or Telemac3d simulations with a set of collocation points and
+        new set of calibration parameters when bal_mode is chosen.
+        The number of processors to use is defined by self.nproc in user_inputs
 
         Parameters
         ----------
@@ -469,7 +482,6 @@ class TelemacModel(FullComplexityModel):
                     collocation_point_sim_list=collocation_points[i].tolist()
                     self.cas_creation(collocation_point_sim_list, calibration_parameters)
                     self.run_single_simulation()
-
             else:
                 self.bal_iteration = bal_iteration
                 self.num_run = self.bal_iteration+self.init_runs
@@ -528,12 +540,13 @@ class TelemacModel(FullComplexityModel):
 
         Parameters
         ----------
-        dict_output_name
-        None
+        dict_output_name: String
+            Name of the json file that contains the dictionary with the model outputs.
 
         Returns
         ----------
-            None
+        model_results: Array
+            Contains the model outputs as a 2D Numpy array with shape [No. runs x No. calibration points]
 
         """
         # output_data= self.extract_data_point(self.tm_results_filename, self.calibration_pts_df,
@@ -559,32 +572,32 @@ class TelemacModel(FullComplexityModel):
 
         return model_results
 
-    def extract_data_point(self, input_slf_file, calibration_pts_df, output_json_name):
+    def extract_data_point(self, input_slf_file, calibration_pts_df, output_name):
         """
-        This function extracts the (calibration quantities) model outputs from the input_slf_file.slf using the points located
-         in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from the closest node
-        in the mesh to the x,y measurement coordinate.
-        Note that the function is called for EACH model run, and stores the model outputs in a dictionary saved in a .json file. That means
-        if the surrogate model needs 'n' runs of the complex numerical model, this function is called 'n' times and the dictionary will store
-        the model outputs for the 'n' simulations.
+        Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
+        in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from
+        the closest node in the mesh to the x,y measurement coordinate.
+        Note that the function is called for EACH model run, and stores the model outputs sequentially in a dictionary
+        saved in a .json file. That means if the surrogate model needs 'n' runs of the complex numerical model, this
+        function is called 'n' times and the dictionary will store the model outputs for the 'n' simulations.
 
         Parameters
         ----------
-            input_slf_file: string
-                Name of the slf file containing the model outputs.
-            calibration_pts_df: Dataframe
-                Data frame with the name (description) of the measurement node , x, y and the measured value of the calibration quantity.
+        input_slf_file: string
+            Name of the slf file containing the model outputs.
+        calibration_pts_df: Dataframe
+            Df with the name (description) of the calibration point , coordinates x, y and the measured value/error
+            of the calibration quantity.
+            P1 / X / Y / Measured Value /Measured error
 
-                P1 / X / Y / Measured Value /Measured error
-
-            output_name: string
-                Name of the .json file containing a dictionary with the model outputs (selected calibration quantities) and calibration points' description.
+        output_name: string
+            Name of the .json file containing a dictionary with the model outputs (selected calibration quantities)
+            and calibration points' description.
 
         Returns
         ----------
-            np_model_results: Numpy 2D array (# initial runs x # calibration points ) of the model outputs for each calibration point and model run.
-            output_data_detailed: Dictionary
-                Nested dictionary containing the model outputs (selected calibration quantities) at the calibration points.
+        None
+            Externally saves the model results as a dictionary in a json file.
 
         """
 
@@ -593,8 +606,8 @@ class TelemacModel(FullComplexityModel):
 
         global differentiated_dict
         input_file = os.path.join(self.model_dir, input_slf_file)
-        self.json_path = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_json_name}.json")
-        self.json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_json_name}_detailed.json")#f"{json_name}_{self.num_run}.json"
+        self.json_path = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}.json")
+        self.json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}_detailed.json")#f"{json_name}_{self.num_run}.json"
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
         print('Extracting values from results file ' + str(self.tm_results_filename) + '\n')
@@ -808,7 +821,7 @@ class TelemacModel(FullComplexityModel):
     #     in a .csv file called initial-run-parameters.csv. From the second run on, this .csv file is read and the code extracts the next calibration parameter combinations.
     #     After the .cas file has been modified, it is loaded for the model simulation.
     #
-    #     # ----------- Until now it is possible to modify only the calibration parameters that were indicated in the global_config.py
+    #     # ----------- Until now it is possible to modify only the calibration parameters that were indicated in the user_inputs.py
     #     # ----------- However, the idea would be also to modify the roughness file of Telemac .tbl according to the roughness zones in the .brf. file (To be implemented)
     #
     #     Returns
