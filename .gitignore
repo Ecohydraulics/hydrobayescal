@@ -5,6 +5,7 @@ __pycache__/
 
 # large data in example folders
 examples/
+*.pickle
 
 # pycharm
 .idea/
