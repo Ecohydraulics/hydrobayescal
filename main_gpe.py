@@ -20,20 +20,20 @@ sys.path.append(str(par_path / 'src/hyBayesCal/utils'))
 
 #from src.hyBayesCal.plots.plots_1d_2d import *
 
-from user_inputs import user_inputs
-from telemac_coupling import HydroSimulations
+from user_settings import user_inputs
+from src.hydroBayesCal.hydro_simulations import HydroSimulations
 
-from src.hyBayesCal.surrogate_modelling.bal_functions import BayesianInference, SequentialDesign
-from src.hyBayesCal.surrogate_modelling.gpe_skl import *
-from src.hyBayesCal.surrogate_modelling.gpe_gpytorch import *
-from src.hyBayesCal.surrogate_modelling.inputs import Input
-from src.hyBayesCal.surrogate_modelling.exp_design_ import ExpDesign
+from src.hydroBayesCal.surrogate_modelling.bal_functions import BayesianInference, SequentialDesign
+from src.hydroBayesCal.surrogate_modelling.gpe_skl import *
+from src.hydroBayesCal.surrogate_modelling.gpe_gpytorch import *
+from src.hydroBayesCal.surrogate_modelling.inputs import Input
+from src.hydroBayesCal.surrogate_modelling.exp_design_ import ExpDesign
 
 # from src.plots.plots_convergence import *
 # from src.plots.plots_1d_2d import *
 # from src.plots.plots_validation import *
 
-from src.hyBayesCal.utils.log import *
+from src.hydroBayesCal.utils.log import *
 
 warnings.filterwarnings("ignore")
 #matplotlib.use("Qt5Agg")
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     #  INPUT DATA
     # paths ..........................................................................
     # Folder where to save results. a folder called auto-saved-results will be automatically created to store all code outputs.
-    results_path = Path('/auto-saved-results/', user_inputs['results_folder_path']) # Folder where to save results
+    results_path_folder = Path(user_inputs['results_folder_path'])/ 'auto-saved-results' # Folder where to save results
 
     # surrogate data .................................................................
     parallelize = False  # to parallelize surrogate training, BAL

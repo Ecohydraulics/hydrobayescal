@@ -7,7 +7,7 @@ Author: Andres Heredia M.Sc.
 """
 # import own scripts
 import pdb
-from src.hyBayesCal.telemac.control_telemac import TelemacModel
+from telemac.control_telemac import TelemacModel
 
 
 class HydroSimulations:
@@ -15,6 +15,7 @@ class HydroSimulations:
             self,
             user_inputs,
             bal_mode=True,
+            n_max_tp=int()
     ):
 
 
@@ -32,6 +33,7 @@ class HydroSimulations:
 
         self.user_inputs = user_inputs
         self.bal_mode = bal_mode
+        self.n_max_tp=n_max_tp
 
     def tm_simulations(
             self,
@@ -52,9 +54,10 @@ class HydroSimulations:
             n_processors=self.user_inputs['n_cpus'],
             dict_output_name=self.user_inputs['dict_output_name'],
             results_file_name_base=self.user_inputs['results_file_name_base'],
-            init_runs=self.user_inputs['init_runs']
+            init_runs=self.user_inputs['init_runs'],
+
         )
-        control_tm.run_multiple_simulations(collocation_points, bal_new_set_parameters, bal_iteration, bal_mode=self.bal_mode)
+        control_tm.run_multiple_simulations(collocation_points, bal_new_set_parameters, bal_iteration,  bal_mode=self.bal_mode,n_max_tp=self.n_max_tp)
         model_results = control_tm.output_processing(dict_output_name=self.user_inputs['dict_output_name'])
 
         return model_results

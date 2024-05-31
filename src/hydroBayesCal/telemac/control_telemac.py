@@ -7,6 +7,7 @@ Author: Andres Heredia MSc.
 """
 import io, stat,shutil
 import subprocess
+from typing import TextIO
 
 from scipy import spatial
 import numpy as np
@@ -127,14 +128,18 @@ class TelemacModel(FullComplexityModel):
 
         self.case_loaded = False
 
+        self.original_tbl_lines=[]
+        self.friction_file_path_temp=''
+        self.friction_file_path=''
 
-    def cas_creation(self,collocation_point_values,calibration_parameters,friction_zones):
+
+    def cas_creation(self,collocation_point_values,calibration_parameters,friction_zones,n_max_tp,bal_mode):
         """
         Modifies the .cas steering file for each of the Telemac runs according to the values of the collocation points and the
         calibration parameters.
 
         Until now it is possible to modify only
-        the calibration parameters that were indicated in the user_inputs.py.
+        the calibration parameters that were indicated in the user_settings.py.
         However, the idea would be also to modify the roughness file of Telemac .tbl
         according to the roughness zones in the .brf. file (To be implemented).
         Parameters
@@ -150,7 +155,9 @@ class TelemacModel(FullComplexityModel):
         None
 
         """
+
         self.tm_results_filename = self.results_file_name_base + '_' + str(self.num_run) + '.slf'
+        final_run=False
         calibration_parameters.append('RESULTS FILE')
         collocation_point_values.append(self.tm_results_filename)
         print('Results file name for this simulation:' + self.tm_results_filename)
@@ -160,10 +167,14 @@ class TelemacModel(FullComplexityModel):
                 self.rewrite_steering_file(param, cas_string, steering_module="telemac")
             else:
                 if self.num_run==1:
-                    initial_run=True
+                    first_run=True
                 else:
-                    initial_run=False
-                self.tbl_creator(val,friction_zones,self.fr_tbl,initial_run)
+                    first_run=False
+                    if self.num_run==n_max_tp:
+                        final_run=True
+                    elif not bal_mode and self.num_run == self.init_runs:
+                        final_run = True
+                self.tbl_creator(val,friction_zones,self.fr_tbl,first_run,final_run)
                 #pdb.set_trace()
     #@staticmethod
     def create_cas_string(
@@ -453,7 +464,8 @@ class TelemacModel(FullComplexityModel):
             bal_new_set_parameters=None,
             bal_iteration=int(),
             bal_mode=True,
-            friction_zones=None
+            friction_zones=None,
+            n_max_tp=None
 
     ):
         """
@@ -480,6 +492,7 @@ class TelemacModel(FullComplexityModel):
         ----------
             None
         """
+        friction_zones=self.friction_zones
         calibration_parameters = self.calibration_parameters
         if bal_mode:
             if collocation_points is not None:
@@ -495,7 +508,7 @@ class TelemacModel(FullComplexityModel):
                 for i in range(self.init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list=collocation_points[i].tolist()
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.friction_zones)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, friction_zones,n_max_tp,bal_mode)
                     self.run_single_simulation()
             else:
                 self.bal_iteration = bal_iteration
@@ -503,10 +516,17 @@ class TelemacModel(FullComplexityModel):
                 if bal_new_set_parameters is not None:
                     collocation_point_sim_list= bal_new_set_parameters.tolist()[0]
                     update_collocation_pts_file(self.res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.friction_zones)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, friction_zones, n_max_tp,bal_mode)
                     self.run_single_simulation()
                 else:
                     raise ValueError("BAL_new_set_parameters is None. Please provide valid parameters.")
+            if friction_zones and self.num_run==n_max_tp:
+                with open(self.friction_file_path, 'w') as file:
+                    file.writelines(self.original_tbl_lines)
+                if os.path.exists(self.friction_file_path_temp):
+                    os.remove(self.friction_file_path_temp)
+                else:
+                    print(f"Temporary file {self.friction_file_path_temp} does not exist or it was deleted.")
         else:
             if collocation_points is not None:
                 array_list = collocation_points.tolist()
@@ -521,9 +541,15 @@ class TelemacModel(FullComplexityModel):
                 for i in range(self.init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list=collocation_points[i].tolist()
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters, friction_zones)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, friction_zones,n_max_tp,bal_mode)
                     self.run_single_simulation()
-
+                if friction_zones:
+                    with open(self.friction_file_path, 'w') as file:
+                        file.writelines(self.original_tbl_lines)
+                    if os.path.exists(self.friction_file_path_temp):
+                        os.remove(self.friction_file_path_temp)
+                    else:
+                        print(f"Temporary file {self.friction_file_path_temp} does not exist or it was deleted.")
                 exit()
 
 
@@ -808,11 +834,16 @@ class TelemacModel(FullComplexityModel):
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
-    def tbl_creator(self,factor, friction_zones,friction_file_path,initial_run=True):
+    def tbl_creator(self,
+                    factor,
+                    friction_zones,
+                    friction_file_path,
+                    first_run=True,
+                    final_run = False):
         friction_file_path = friction_file_path
         #pdb.set_trace()
-        print(initial_run)
-        if initial_run:
+        print(first_run)
+        if first_run:
             with open(friction_file_path, 'r') as file:
                 file_lines = file.readlines()
         else:
@@ -846,13 +877,23 @@ class TelemacModel(FullComplexityModel):
                 original_lines.append(line)
 
         # Write the updated content to a new file
-        if initial_run:
+        if first_run:
             base_path, extension = friction_file_path.rsplit('.', 1)
             friction_file_path_temp = f"{base_path}_temp.{extension}"
             with open(friction_file_path_temp, 'w') as file:
                 file.writelines(original_lines)
-        with open(friction_file_path, 'w') as file:
-            file.writelines(updated_lines)
+            with open(friction_file_path, 'w') as file:
+                file.writelines(updated_lines)
+        else:
+            with open(friction_file_path, 'w') as file:
+                file.writelines(updated_lines)
+
+        if final_run:
+            self.original_tbl_lines=original_lines
+            self.friction_file_path=friction_file_path
+            self.friction_file_path_temp=friction_file_path_temp
+
+
 
 
     # def __call__(self, *args, **kwargs):
@@ -881,7 +922,7 @@ class TelemacModel(FullComplexityModel):
     #     in a .csv file called initial-run-parameters.csv. From the second run on, this .csv file is read and the code extracts the next calibration parameter combinations.
     #     After the .cas file has been modified, it is loaded for the model simulation.
     #
-    #     # ----------- Until now it is possible to modify only the calibration parameters that were indicated in the user_inputs.py
+    #     # ----------- Until now it is possible to modify only the calibration parameters that were indicated in the user_settings.py
     #     # ----------- However, the idea would be also to modify the roughness file of Telemac .tbl according to the roughness zones in the .brf. file (To be implemented)
     #
     #     Returns

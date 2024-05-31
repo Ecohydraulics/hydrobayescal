@@ -44,7 +44,7 @@ calib_pts_file_path= '/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/B
 n_cpus= 16
 
 # ======Initial full-complexity model runs (init_runs) (Initial training points for surrogate model)=========
-init_runs=15
+init_runs=4
 
 # ======Calibration parameters=========
 # Note: The calibration parameters MUST coincide with the way they are written in the .cas file
@@ -124,7 +124,7 @@ parameter_sampling_method = 'latin_hypercube'
 # ======Maximum number of training points (At the end of the calibration process)=========
 # n_max_tp > init_runs
 
-n_max_tp = 30
+n_max_tp = 8
 # ======Prior samples (parameter combinations) from the selected ranges for surrogate model evaluation=========
 n_samples=10000
 

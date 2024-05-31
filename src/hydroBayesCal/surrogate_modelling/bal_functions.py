@@ -8,7 +8,7 @@ import math
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from src.hyBayesCal.surrogate_modelling.exploration import Exploration
+from surrogate_modelling.exploration import Exploration
 
 
 class BayesianInference:
