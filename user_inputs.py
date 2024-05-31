@@ -44,22 +44,27 @@ calib_pts_file_path= '/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/B
 n_cpus= 16
 
 # ======Initial full-complexity model runs (init_runs) (Initial training points for surrogate model)=========
-init_runs=4
+init_runs=15
 
 # ======Calibration parameters=========
 # Note: The calibration parameters MUST coincide with the way they are written in the .cas file
 calib_parameter_1='ROUGHNESS COEFFICIENT OF BOUNDARIES'
-calib_parameter_2='INITIAL ELEVATION'
-calib_parameter_3=''
+calib_parameter_2='FRICTION DATA FILE'
+calib_parameter_3='INITIAL ELEVATION'
 calib_parameter_4=''
 
+#Friction file
+friction_file = 'roughness.tbl'
+
+#Friction zones in .tbl file
+friction_zones = ['99999100','99999010','99999025','99999500','99999001','99999300','99999150']
 
 # ======Range of values for calibration exploration =========
 # According to the prior knowledge of the calibration parameters, assign a RANGE [min. value , max. value]
 # for calibration purposes
 param_range_1=[0.009,0.8]
-param_range_2=[304,320]
-param_range_3=''
+param_range_2=[-0.5,0.5]
+param_range_3=[309,318]
 param_range_4=''
 
 
@@ -80,19 +85,19 @@ parameter_ranges_list=[value for value in [param_range_1, param_range_2, param_r
 #*** SCALAR VELOCITY: Scalar velocity               [M/S]
 
 ## Calibration quantity 1(calib_target1)
-calib_quantity_1='SCALAR VELOCITY'
+calib_quantity_1 = 'SCALAR VELOCITY'
 ## Calibration quantity 2(calib_target2)
-calib_quantity_2=''
+calib_quantity_2 = ''
 ## Calibration quantity 3(calib_target3)
-calib_quantity_3=''
+calib_quantity_3 = ''
 ## Calibration quantity 4(calib_target4)
-calib_quantity_4=''
+calib_quantity_4 = ''
 
 ## Creation of LISTS containing the calibration quantities
 calib_quantity_list = [quant for quant in [calib_quantity_1, calib_quantity_2, calib_quantity_3, calib_quantity_4] if quant != '']
 
 # =============Desired name of the external.json file containing the model outputs of the calibration quantities =============
-dict_output_name='model_output_dict'
+dict_output_name = 'model_output_dict'
 
 #============= Desired name of the RESULTS FILE to be iteratively changed in the .cas file =============
 results_file_name_base = 'R_donau'
@@ -119,13 +124,13 @@ parameter_sampling_method = 'latin_hypercube'
 # ======Maximum number of training points (At the end of the calibration process)=========
 # n_max_tp > init_runs
 
-n_max_tp =6
+n_max_tp = 30
 # ======Prior samples (parameter combinations) from the selected ranges for surrogate model evaluation=========
 n_samples=10000
 
 # ======Samples (parameter combinations) for exploration during the Bayesian Active Learning=========
 
-n_samples_exploration_BAL=2000
+n_samples_exploration_BAL=4000
 
 # ======GPE library=========
 # Choose between these two GPE libraries:
@@ -138,6 +143,8 @@ bal_mode=True
 # Store the variables in a dictionary user_inputs
 user_inputs = {
     'cas_file_name': cas_file_name,
+    'friction_file': friction_file,
+    'friction_zones':friction_zones,
     'Telemac_solver': Telemac_solver,
     'cas_file_simulation_path': cas_file_simulation_path,
     'results_folder_path': results_folder_path,

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as _pd
 import csv
 import json
-
+import pdb
 
 try:
     from telapy.api.t2d import Telemac2d
@@ -46,6 +46,8 @@ class TelemacModel(FullComplexityModel):
             model_dir="",
             res_dir="",
             control_file="tm.cas",
+            friction_file ="friction.tbl",
+            friction_zones=None,
             calibration_parameters=None,
             calibration_pts_file_path=None,
             calibration_quantities=None,
@@ -97,6 +99,8 @@ class TelemacModel(FullComplexityModel):
         self.calibration_quantities=calibration_quantities
         self.calibration_pts_df=_pd.read_csv(calibration_pts_file_path)
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
+        self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, friction_file)
+        self.friction_zones = friction_zones
         self.dict_output_name=dict_output_name
         self.results_file_name_base=results_file_name_base
         self.gaia_steering_file=gaia_steering_file
@@ -124,7 +128,7 @@ class TelemacModel(FullComplexityModel):
         self.case_loaded = False
 
 
-    def cas_creation(self,collocation_point_values,calibration_parameters):
+    def cas_creation(self,collocation_point_values,calibration_parameters,friction_zones):
         """
         Modifies the .cas steering file for each of the Telemac runs according to the values of the collocation points and the
         calibration parameters.
@@ -151,9 +155,16 @@ class TelemacModel(FullComplexityModel):
         collocation_point_values.append(self.tm_results_filename)
         print('Results file name for this simulation:' + self.tm_results_filename)
         for param, val in zip(calibration_parameters, collocation_point_values):
-            cas_string = self.create_cas_string(param, val)
-            self.rewrite_steering_file(param, cas_string, steering_module="telemac")
-
+            if param != "FRICTION DATA FILE":
+                cas_string = self.create_cas_string(param, val)
+                self.rewrite_steering_file(param, cas_string, steering_module="telemac")
+            else:
+                if self.num_run==1:
+                    initial_run=True
+                else:
+                    initial_run=False
+                self.tbl_creator(val,friction_zones,self.fr_tbl,initial_run)
+                #pdb.set_trace()
     #@staticmethod
     def create_cas_string(
             self,
@@ -441,7 +452,9 @@ class TelemacModel(FullComplexityModel):
             collocation_points=None,
             bal_new_set_parameters=None,
             bal_iteration=int(),
-            bal_mode=True
+            bal_mode=True,
+            friction_zones=None
+
     ):
         """
         Runs multiple times Telemac2d or Telemac3d simulations with a set of collocation points and
@@ -461,6 +474,8 @@ class TelemacModel(FullComplexityModel):
         bal_mode: Boolean
             Default True when the code accounts for surrogate construction and BAL phase. False when
             only iterative runs are required.
+        friction_zones: List
+            Names of the friction zones in the .tbl file
         Returns
         ----------
             None
@@ -480,7 +495,7 @@ class TelemacModel(FullComplexityModel):
                 for i in range(self.init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list=collocation_points[i].tolist()
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.friction_zones)
                     self.run_single_simulation()
             else:
                 self.bal_iteration = bal_iteration
@@ -488,7 +503,7 @@ class TelemacModel(FullComplexityModel):
                 if bal_new_set_parameters is not None:
                     collocation_point_sim_list= bal_new_set_parameters.tolist()[0]
                     update_collocation_pts_file(self.res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.friction_zones)
                     self.run_single_simulation()
                 else:
                     raise ValueError("BAL_new_set_parameters is None. Please provide valid parameters.")
@@ -506,7 +521,7 @@ class TelemacModel(FullComplexityModel):
                 for i in range(self.init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list=collocation_points[i].tolist()
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, friction_zones)
                     self.run_single_simulation()
 
                 exit()
@@ -793,6 +808,51 @@ class TelemacModel(FullComplexityModel):
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
+    def tbl_creator(self,factor, friction_zones,friction_file_path,initial_run=True):
+        friction_file_path = friction_file_path
+        #pdb.set_trace()
+        print(initial_run)
+        if initial_run:
+            with open(friction_file_path, 'r') as file:
+                file_lines = file.readlines()
+        else:
+            base_path, extension = friction_file_path.rsplit('.', 1)
+            friction_file_path_temp = f"{base_path}_temp.{extension}"
+            with open(friction_file_path_temp, 'r') as file:
+                file_lines = file.readlines()
+
+        updated_lines= []
+        original_lines= []
+        for line in file_lines:
+            parts = list(filter(None, line.split()))
+            if line.startswith('*'):
+                updated_lines.append(line)
+                original_lines.append(line)
+                continue
+            # Check if the first column value is in the list of valid strings
+            if parts[0] in friction_zones:
+                original_lines.append(line)
+                if len(parts) > 2 and parts[2] != 'NULL':
+                    try:
+                        # Multiply the third column value by the factor
+                        parts[2] = str(float(parts[2]) * (factor + 1))
+                    except ValueError:
+                        # In case the value is not a float, skip the line
+                        pass
+                updated_zone = '\t'.join(parts)
+                updated_lines.append(updated_zone + '\n')
+            else:
+                updated_lines.append(line)
+                original_lines.append(line)
+
+        # Write the updated content to a new file
+        if initial_run:
+            base_path, extension = friction_file_path.rsplit('.', 1)
+            friction_file_path_temp = f"{base_path}_temp.{extension}"
+            with open(friction_file_path_temp, 'w') as file:
+                file.writelines(original_lines)
+        with open(friction_file_path, 'w') as file:
+            file.writelines(updated_lines)
 
 
     # def __call__(self, *args, **kwargs):

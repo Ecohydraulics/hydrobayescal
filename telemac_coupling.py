@@ -43,6 +43,8 @@ class HydroSimulations:
             model_dir=self.user_inputs['cas_file_simulation_path'],
             res_dir=self.user_inputs['results_folder_path'],
             control_file=self.user_inputs['cas_file_name'],
+            friction_file=self.user_inputs['friction_file'],
+            friction_zones=self.user_inputs['friction_zones'],
             calibration_parameters=self.user_inputs['calib_parameter_list'],
             calibration_pts_file_path=self.user_inputs['calib_pts_file_path'],
             calibration_quantities=self.user_inputs['calib_quantity_list'],

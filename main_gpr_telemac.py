@@ -1,5 +1,5 @@
 """
-Code that trains a Gaussian Process Emulator (GPE) for any full complex model (i.e., hydrodynamnic models).
+Code that trains a Gaussian Process Emulator (GPE) for any full complex model (i.e., hydrodynamic models).
 Possible to couple with any other open source hydrodynamic software.
 Can use normal training (once) or sequential training (BAL, SF, Sobol)
 """
@@ -26,7 +26,6 @@ from telemac_coupling import HydroSimulations
 from src.hyBayesCal.surrogate_modelling.bal_functions import BayesianInference, SequentialDesign
 from src.hyBayesCal.surrogate_modelling.gpe_skl import *
 from src.hyBayesCal.surrogate_modelling.gpe_gpytorch import *
-# from src.surrogate_modelling.apce import *
 from src.hyBayesCal.surrogate_modelling.inputs import Input
 from src.hyBayesCal.surrogate_modelling.exp_design_ import ExpDesign
 
@@ -50,9 +49,9 @@ if __name__ == "__main__":
     # np_collocation_points = np.load(path_np_collocation_points)
 
     #  INPUT DATA
-
     # paths ..........................................................................
-    results_path = Path(user_inputs['results_folder_path'])  # Folder where to save results
+    # Folder where to save results. a folder called auto-saved-results will be automatically created to store all code outputs.
+    results_path = Path('/auto-saved-results/', user_inputs['results_folder_path']) # Folder where to save results
 
     # surrogate data .................................................................
     parallelize = False  # to parallelize surrogate training, BAL
@@ -62,33 +61,30 @@ if __name__ == "__main__":
     # Importing measurement quantities and measurement errors at calibration points.............................
     calibration_pts_df = _pd.read_csv(user_inputs['calib_pts_file_path'])
 
-    # Importing measured values of the calibration quantity at the calibration points.
+    # Importing measured values of the calibration quantity at the calibration points as a 2D numpy array shape [1 , No.calibration points].
     np_observations = calibration_pts_df.iloc[:, 3].to_numpy().reshape(1, -1)
 
-    # Importing errors at calibration points
+    # Importing errors at calibration points as a numpy arra shape [No. calibration points,]
     np_error = calibration_pts_df.iloc[:, 4].to_numpy()
 
     # number of output locations (i.e., calibration points) / Surrogates to train. (One surrogate per calibration point)
     n_loc = np_observations.size
     input_data_path = None
 
-    ndim = len(user_inputs['calib_parameter_list'])  # number of calibration parameters
-    output_names = user_inputs['calib_quantity_list']  # Name for the different calibration quantities. Model outputs
+    # number of calibration parameters
+    ndim = len(user_inputs['calib_parameter_list'])
 
-    obs = np_observations  # observation values, for each loc np.array[1 x No. Observations]
-    error_pp = np_error  # np.array [No. observations x 1]
+    # Name for the different calibration quantities. Model outputs
+    output_names = user_inputs['calib_quantity_list']
 
-    # # Reference data:
-    # """Normally the reference data would be read from a file and imported here"""
-    #
-    # # =====================================================
-    # # =============   EXPERIMENT DESIGN  ================
-    # # =====================================================
-    #
+    # Redefining observations and errors variables for surrogate model construction and BAL
+    obs = np_observations
+    error_pp = np_error
+
+    # EXPERIMENT DESIGN
+
     # # Probabilistic model input: ....................................................
-    # # Define the uncertain parameters with their mean and standard deviation
     Inputs = Input()
-    #
     # # One "Marginal" for each parameter.
     for i in range(ndim):
         Inputs.add_marginals()  # Create marginal for parameter "i"
@@ -108,74 +104,48 @@ if __name__ == "__main__":
                            n_max_tp=user_inputs['n_max_tp'],  # max number of tp to use
                            training_method='sequential',  # normal (train only once) or sequential (Active Learning)
                            util_func='dkl',  # criteria for bal (dkl, bme, ie, dkl_bme) or SF (default: global_mc)
-                           eval_step=1,  # every how many iterations to evaluate the surrogate
+                           eval_step=2,  # every how many iterations to evaluate the surrogate
                            secondary_meta_model=False  # only gpr is available
                            )
 
     exp_design.setup_ED_()
 
     # setup surrogate model data:
+    # sets gpy (GpyTorch) or skl(Scikitlearn) as libraries for GPE.
     if exp_design.main_meta_model == 'gpr':
-        exp_design.setup_gpe(library=gp_library  # set gpy or skl as libraries
+        exp_design.setup_gpe(library=gp_library
                              )
 
     # COLLOCATION POINTS
-    #
-    #     # Collocation points ...................................................
-    #     # This part is specific to the problem: here you add the functions to create input sets and evaluate the model/read
-    #     # already-run model runs.
+    # This parts generates the initial collocation points for GPE based on the number of init_runs, calibration parameters ranges
+    # and sampling method.
     collocation_points = exp_design.generate_samples(n_samples=exp_design.n_init_tp,
                                                         sampling_method=exp_design.sampling_method)
 
-    # ===============================================
-    # ============= COMPUTATIONAL MODEL: ============
-    # ===============================================
+    # RUN FULL COMPLEXITY MODEL: ============
 
     #     """NOTE: The collocation points and model results should be in numpy-array form, and in the order needed by
     #     the gpe_skl.py or gpe_gpytorh.py classes"""
+    # shape model_results: [No. runs x No. calibration points]
+    # shape collocation_points: [No. runs x No. calibration parameters]
 
-    complex_model = HydroSimulations(user_inputs,user_inputs['bal_mode'])
-    model_results = complex_model.run(collocation_points=collocation_points, bal_iteration=0,
-                                      bal_new_set_parameters=None,)
-
-    collocation_points = collocation_points
-    model_evaluations = model_results
+    full_complexity_model = HydroSimulations(user_inputs, user_inputs['bal_mode'])
+    model_evaluations = full_complexity_model.run(collocation_points=collocation_points, bal_iteration=0,
+                                              bal_new_set_parameters=None, )
 
     print(
         f"<<< Will run ({exp_design.n_iter + 1}) GP training iterations and ({exp_design.n_evals}) GP evaluations. >>> ")
-
-    #
-    # =====================================================
-    # =============   Validation points  ================
-    # =====================================================
 
     # Reference data .......................................................
     prior = exp_design.generate_samples(user_inputs['n_samples'])
 
     prior_logpdf = np.log(exp_design.JDist.pdf(prior.T)).reshape(-1)
-    # ref_scores = BayesianInference(model_predictions=ref_output,
-    #                                observations=obs,
-    #                                error=error_pp ** 2,
-    #                                sampling_method='rejection_sampling',
-    #                                prior=prior,
-    #                                prior_log_pdf=prior_logpdf)
-    #
-    # ref_scores.estimate_bme()
-    #
-    #     # Validation_data .....................................................
-    valid_samples = exp_design.generate_samples(n_samples=100)
-    #     model_valid_output = nonlinear_model(params=valid_samples, loc=pt_loc)
-    #
-    #     exp_design.val_x = valid_samples
-    #     exp_design.val_y = model_valid_output
-    #
-    #     # --------------------------------------------------------------------------------------------------------------- #
-    #
-    #     # =====================================================
-    #     # =============   INITIALIZATION  ================
-    #     # =====================================================
+
+
+    # INITIALIZATION GPE AND RESULTS FOLDERS
+
     #     """This part can be ommited, if the files can be saved directly in the results_path folder"""
-    #     # Create folder for specific case ....................................................................
+    #     # Creates folder for specific case ....................................................................
     results_folder = results_path / f'surrogate_{user_inputs["results_file_name_base"]}_ndim_{ndim}_nout_{n_loc}'
     if not results_folder.exists():
         logger.info(f'Creating folder {results_folder}')
@@ -200,10 +170,9 @@ if __name__ == "__main__":
         'util_func': np.empty(exp_design.n_iter, dtype=object)
     }
 
-    eval_dict = {}
-
     #     # ========================================================================================================= #
-    exploration_set = exp_design.generate_samples(user_inputs["n_samples_exploration_bal"])  # for BAL
+    # Set up the exploration samples for Bayesian Active Learning
+    exploration_set = exp_design.generate_samples(user_inputs["n_samples_exploration_bal"])
 
     # SURROGATE MODEL TRAINING
     # --------------------------------
@@ -211,15 +180,21 @@ if __name__ == "__main__":
     # --------------------------------
 
     print('Starting surrogate training with initial collocation points')
-    for it in range(0, exp_design.n_iter + 1):  # Train the GPE a maximum of "iteration_limit" times
+    print (collocation_points)
+
+    # Train the GPE a maximum of "iteration_limit" times
+    for it in range(0, exp_design.n_iter + 1):
 
         # 1. Train surrogate
         if exp_design.gpr_lib == 'skl':
             # 1.1. Set up the kernel
+
             # kernel = 1 * RBF(length_scale=exp_design.kernel_data['length_scale'],
             #                  length_scale_bounds=exp_design.kernel_data['bounds'])
 
             # Setting up initial length scales and length scales bounds for Radial Basis Function (RBF) kernel
+            # Length scale: Assumed to be the midpoint of the minimum and maximum range for each of the calibration parameters.
+            # Length scale bounds: Assumed to be the range for each calibration parameter.
             if it == 0:
                 length_scales = []
                 for param_range in user_inputs['parameter_ranges_list']:
@@ -230,7 +205,6 @@ if __name__ == "__main__":
             kernel = 1 * RBF(length_scale=length_scales, length_scale_bounds=length_scales_bounds)
 
             # 1.2. Setup a GPR: initialize the general SKL class
-            #print(np.shape(collocation_points))
             sm = SklTraining(collocation_points=collocation_points, model_evaluations=model_evaluations,
                              noise=True,
                              kernel=kernel,
@@ -255,7 +229,7 @@ if __name__ == "__main__":
                              optimizer="adam",
                              verbose=False)
 
-        # Train the GPR
+        # Trains the GPR
         if it == exp_design.n_iter:
             logger.info(f'------------ Training final model with the last training point: {new_tp}     -------------------')
         elif it > 0:
@@ -265,31 +239,14 @@ if __name__ == "__main__":
 
         # 2. Validate GPR
         if it % exp_design.eval_step == 0:
-            # Evaluate surrogates
-            # valid_sm = sm.predict_(input_sets=exp_design.val_x, get_conf_int=True)
-            # #
-            # # # Get validation criteria
-            # rmse_sm, run_valid = validation_error(true_y=exp_design.val_y, sim_y=valid_sm,
-            #                                       n_per_type=n_loc, output_names=output_names)
-            #
-            # # Save the results to a dictionary
-            # eval_dict = save_valid_criteria(new_dict=run_valid, old_dict=eval_dict,
-            #                                 n_tp=collocation_points.shape[0])
-
-            # Save GP after evaluation ...................
             save_name = results_folder / f'gpr_{exp_design.gpr_lib}_TP{collocation_points.shape[0]:02d}_{exp_design.exploit_method}.pickle'
             sm.Exp_Design = exp_design
-            pickle.dump(sm, open(save_name, "wb"))
-
-            # Save eval_criteria dictionaries .........................
-            # save_name = results_folder / f'Validation_{exp_design.gpr_lib}_{exp_design.exploit_method}.pickle'
-            # pickle.dump(eval_dict, open(save_name, "wb"))
-        #
+            with open(save_name, "wb") as file:
+                pickle.dump(sm, file)
 
         # 3. Compute Bayesian scores in parameter space ----------------------------------------------------------
+        # Surrogate outputs for prior samples
         surrogate_output = sm.predict_(input_sets=prior, get_conf_int=True)
-        #print(np.ndim(obs))
-        #print(np.ndim(total_error))
         total_error = error_pp  #(error_pp ** 2)
         #print(np.ndim(total_error))
         bi_gpe = BayesianInference(model_predictions=surrogate_output['output'], observations=obs, error=total_error,
@@ -300,7 +257,7 @@ if __name__ == "__main__":
         bayesian_dict['ELPD'][it], bayesian_dict['IE'][it] = bi_gpe.ELPD, bi_gpe.IE
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
 
-        #         # 4. Sequential Design --------------------------------------------------------------------------------------
+        # 4. Sequential Design --------------------------------------------------------------------------------------
         if it < exp_design.n_iter:
             logger.info(f'Selecting {exp_design.training_step} additional TP using {exp_design.exploit_method}')
             SD = SequentialDesign(exp_design=exp_design, sm_object=sm, obs=obs, errors=total_error,
@@ -309,25 +266,23 @@ if __name__ == "__main__":
             #new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
             SD.gaussian_assumption = True
             new_tp, util_fun = SD.run_sequential_design(prior_samples=exploration_set)
-            #pdb.set_trace()
-            print(new_tp)
+            print(f"The new collocation point after rejection sampling is {new_tp}")
+
             bayesian_dict[f'{exp_design.exploit_method}_{exp_design.util_func}'][it] = SD.selected_criteria[0]
             bayesian_dict['util_func'][it] = util_fun
 
             # Evaluate model in new TP: This is specific to each problem --------
             bal_iteration = it + 1
-            model_results = complex_model.run(collocation_points=None, bal_iteration=bal_iteration,
-                                              bal_new_set_parameters=new_tp)
+            model_evaluations = full_complexity_model.run(collocation_points=None, bal_iteration=bal_iteration,
+                                                      bal_new_set_parameters=new_tp)
 
             #new_output = nonlinear_model(params=new_tp, loc=pt_loc)
             #-------------------------------------------------------
             # Update collocation points:
             if exp_design.exploit_method == 'sobol':
                 collocation_points = new_tp
-                model_evaluations = model_results
             else:
                 collocation_points = np.vstack((collocation_points, new_tp))
-                model_evaluations = model_results
 
             # collocation_points = np_collocation_points
             # model_evaluations = np_model_results
