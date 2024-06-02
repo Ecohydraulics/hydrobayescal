@@ -38,14 +38,13 @@ results_folder_path='/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/'
 # Header:         Point  |    X       |	     Y	     |       MEASUREMENT 1	     |   ERROR 1
 # Content:          P1   |  71122.89  |	  9514.50    |     	    2.409	         |   0.0254
 
-calib_pts_file_path= '/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/Bal-data/calibration-pts_H.csv'
+calib_pts_file_path= '/home/IWS/hidalgo/Documents/hydrobayescal/examples/donau/calibration-pts_H.csv'
 
 # =====================Number of CPUs for Telemac Simulations==========================
 n_cpus= 16
 
 # ======Initial full-complexity model runs (init_runs) (Initial training points for surrogate model)=========
-init_runs=4
-
+init_runs=3
 # ======Calibration parameters=========
 # Note: The calibration parameters MUST coincide with the way they are written in the .cas file
 calib_parameter_1='ROUGHNESS COEFFICIENT OF BOUNDARIES'
@@ -124,7 +123,7 @@ parameter_sampling_method = 'latin_hypercube'
 # ======Maximum number of training points (At the end of the calibration process)=========
 # n_max_tp > init_runs
 
-n_max_tp = 8
+n_max_tp = 5
 # ======Prior samples (parameter combinations) from the selected ranges for surrogate model evaluation=========
 n_samples=10000
 
@@ -135,7 +134,7 @@ n_samples_exploration_BAL=4000
 # ======GPE library=========
 # Choose between these two GPE libraries:
 # gpy: GPyTorch or skl: Scikit-Learn
-gp_library = 'gpy'
+gp_library = 'skl'
 
 #
 bal_mode=True

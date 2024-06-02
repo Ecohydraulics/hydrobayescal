@@ -51,7 +51,7 @@ if __name__ == "__main__":
     #  INPUT DATA
     # paths ..........................................................................
     # Folder where to save results. a folder called auto-saved-results will be automatically created to store all code outputs.
-    results_path_folder = Path(user_inputs['results_folder_path'])/ 'auto-saved-results' # Folder where to save results
+    results_path = Path(user_inputs['results_folder_path'])/ 'auto-saved-results' # Folder where to save results
 
     # surrogate data .................................................................
     parallelize = False  # to parallelize surrogate training, BAL
@@ -196,13 +196,27 @@ if __name__ == "__main__":
             # Length scale: Assumed to be the midpoint of the minimum and maximum range for each of the calibration parameters.
             # Length scale bounds: Assumed to be the range for each calibration parameter.
             if it == 0:
+                length_scales_bounds = []
                 length_scales = []
+                # Calculate length scales and bounds
                 for param_range in user_inputs['parameter_ranges_list']:
-                    length_scale = sum(param_range) / len(param_range)
+                    # Ensure the calculated length scale is positive
+                    length_scale = max(sum(param_range) / len(param_range),
+                                       1e-5)  # Prevent negative or zero length scales
                     length_scales.append(length_scale)
-                length_scales_bounds = [tuple(param_range) for param_range in user_inputs['parameter_ranges_list']]
 
+                    # Ensure bounds are positive and finite
+                    lower_bound, upper_bound = max(param_range[0], 1e-5), max(param_range[1], 1e-5)
+                    length_scales_bounds.append((lower_bound, upper_bound))
+            pdb.set_trace()
+            print(length_scales)
+            print(length_scales_bounds)
+                # Create the RBF kernel with specified length scales and bounds
             kernel = 1 * RBF(length_scale=length_scales, length_scale_bounds=length_scales_bounds)
+            pdb.set_trace()
+
+            print(kernel)
+            #kernel = 1 * RBF(length_scale=length_scales, length_scale_bounds=length_scales_bounds)
 
             # 1.2. Setup a GPR: initialize the general SKL class
             sm = SklTraining(collocation_points=collocation_points, model_evaluations=model_evaluations,
