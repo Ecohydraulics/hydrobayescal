@@ -4,7 +4,7 @@ Plots for 1D or 2D surrogates, where we can visually plot the results.
 
 import math
 
-from src.plots.plots_config import *
+from src.hydroBayesCal.plots.plots_config import *
 
 
 def plot_1d_gpe_bal(gpr_x, gpr_y, conf_int_lower, conf_int_upper, bal_x, bal_y, tp_x, tp_y, it, true_y, true_x=None,

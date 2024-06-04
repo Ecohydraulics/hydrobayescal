@@ -4,7 +4,7 @@ import numpy as _np
 import pandas as _pd
 import csv
 
-from config_logging import logger, logger_warn, logger_error
+from config_logging import *
 from model_structure.config_physics import *
 
 

@@ -11,29 +11,33 @@ import warnings
 import pandas as _pd
 import pdb
 
-par_path = Path.cwd().parent.parent  # Main directory
-sys.path.append(str(par_path))
-sys.path.append(str(par_path / 'src'))
-
-sys.path.append(str(par_path / 'src/hyBayesCal/surrogate_modelling'))
-sys.path.append(str(par_path / 'src/hyBayesCal/utils'))
+# Base directory
+base_dir = Path(__file__).resolve().parent
+print("Base directory:", base_dir)
+# Relative paths to the base directory
+src_path = base_dir / 'src'
+hydroBayesCal_path = src_path / 'hydroBayesCal'
+# Add paths to sys.path
+sys.path.append(str(src_path))
+sys.path.append(str(hydroBayesCal_path))
 
 #from src.hyBayesCal.plots.plots_1d_2d import *
 
+# Importing own scripts
 from user_settings import user_inputs
-from src.hydroBayesCal.hydro_simulations import HydroSimulations
-
-from src.hydroBayesCal.surrogate_modelling.bal_functions import BayesianInference, SequentialDesign
-from src.hydroBayesCal.surrogate_modelling.gpe_skl import *
-from src.hydroBayesCal.surrogate_modelling.gpe_gpytorch import *
-from src.hydroBayesCal.surrogate_modelling.inputs import Input
-from src.hydroBayesCal.surrogate_modelling.exp_design_ import ExpDesign
+from hydro_simulations import HydroSimulations
+from surrogate_modelling.bal_functions import BayesianInference, SequentialDesign
+from surrogate_modelling.gpe_skl import *
+from surrogate_modelling.gpe_gpytorch import *
+from surrogate_modelling.inputs import Input
+from surrogate_modelling.exp_design_ import ExpDesign
+from config_logging import *
 
 # from src.plots.plots_convergence import *
 # from src.plots.plots_1d_2d import *
 # from src.plots.plots_validation import *
 
-from src.hydroBayesCal.utils.log import *
+
 
 warnings.filterwarnings("ignore")
 #matplotlib.use("Qt5Agg")
@@ -208,9 +212,9 @@ if __name__ == "__main__":
                     # Ensure bounds are positive and finite
                     lower_bound, upper_bound = max(param_range[0], 1e-5), max(param_range[1], 1e-5)
                     length_scales_bounds.append((lower_bound, upper_bound))
-            pdb.set_trace()
-            print(length_scales)
-            print(length_scales_bounds)
+            # pdb.set_trace()
+            # print(length_scales)
+            # print(length_scales_bounds)
                 # Create the RBF kernel with specified length scales and bounds
             kernel = 1 * RBF(length_scale=length_scales, length_scale_bounds=length_scales_bounds)
             pdb.set_trace()
