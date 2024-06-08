@@ -4,7 +4,8 @@
 Python Package for Bayesian Calibration of Hydrodynamic models 'HydroBayesCal'
 =====
 
-This **Python3 package** uses Bayesian active learning (**BAL**) to wrap around Gaussian process emulators (**GPE**) for constructing a surrogate (metamodel) of complex, deterministic numerical models. To enable parameter adjustments at all levels, the code requires fully open source modeling software. This is why we decided to taylor the code for running it with `TELEMAC <http://www.opentelemac.org/>`_.
+This **Python3 package** uses Bayesian active learning (**BAL**) to wrap around Gaussian process emulators (**GPE**) for constructing a surrogate (metamodel) of complex, deterministic numerical models. To enable parameter adjustments at all levels,
+the code requires fully open source modeling software. This is why we decided to taylor the code for running it with `TELEMAC <http://www.opentelemac.org/>`_.
 
 The surrogate model is created using Gaussian Process Regression and evaluated using Bayesian model evidence and/or relative entropy. The code implements the methods proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
 
@@ -24,14 +25,13 @@ This documentation is also as available as `style-adapted PDF <https://hybayesca
 
 Purpose and description
 ============================
-The package aims to make significant development and contribution on creating a tool for automated Bayesian Calibration for numerical models using open source softwares for hydrodyamic simulation such as
+The package aims to make significant development and contribution on creating a tool for automated Bayesian Calibration for hydrodynamic models using open source software such as
 Telemac and/or OpenFoam. Stochastic calibration techniques require a huge number of full complexity model realizations to perform statistical analysis.
 However, this is unfeasible when a single realization may require several hours or even days. To make this possible, surrogate models (reduced models) are constructed as
 a first step with only a few number of model realizations or so called initial collocation points which are strategically selected using advanced parameter sampling methods.
 
 The program employs Bayesian Active Learning, or BAL, to iteratively add new training points (parameter combinations) that yielded the highest value of relative entropy, hence increasing the model's
 accuracy in the parameter space regions that are most crucial for Bayesian inference.
-
 
 Prerequisites Software
 ======================
@@ -50,24 +50,28 @@ PYTHON
 
 *Time requirement: 10 min.*
 
-To get the code running, we strongly recommend creating a new conda or virtual environment as described in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_ with Python 3.10. ``HyBayesCal`` potentially also works with earlier Python3 versions, but it was developed and tested with v3.10.
+To get the code running, we strongly recommend creating a new conda or virtual environment as described in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and
+at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_ with Python 3.10. ``HydroBayesCal`` potentially also works with earlier Python3 versions,
+but it was developed and tested with v3.10.
 
 Windows user will have the best experience with Anaconda/conda env and Linux users with virtualenv.
 
 .. admonition:: New to Python?
 
-    Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_, and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
+    Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_,
+and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
 
 
 TELEMAC
 ------
-Telemac-Mascaret or typically known as only Telemac is Telemac is a robust and versatile integrated modeling tool designed
-for simulating free-surface flows, with a wide range of applications in both river and maritime hydraulics.
+Telemac-Mascaret or typically known as only Telemac is a robust and versatile integrated modeling tool designed
+for simulating free-surface flows with a wide range of applications in both river and maritime hydraulics.
 It encompasses several modules, including Telemac 2D and Telemac 3D, each tailored to specific simulation needs.
 
 Telemac 2D is the two-dimensional hydrodynamic simulation module that solves the Saint-Venant equations using either the
 finite-element or finite-volume method. On the other hand, Telemac 3D is the three-dimensional hydrodynamic simulation module
-that solves the Navier-Stokes equations.
+that solves the Navier-Stokes equations. In the next step, you will find a step-by-step explanation on how to install Telemac in
+your system.
 
 Install TELEMAC
 +++++++++++++++
@@ -76,7 +80,7 @@ Install TELEMAC
 The calibration routines are tied to the open-source numerical modeling software TELEMAC. The developers provide installation instructions
 at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_, and we also provide a detailed installation guide
 at `https://hydro-informatics.com/get-started/install-telemac.html <https://hydro-informatics.com/get-started/install-telemac.html>`_ that
-is tweaked for HydroBayesCal. We recommend to install TELEMAC with ``pysource.gfortranHPC.sh``.
+is tweaked for HydroBayesCal. We recommend to install TELEMAC with ``pysource.gfortranHPC.sh``or with your preferred pysource file.
 
 NSTALL HydroBayesCal
 ------------------
@@ -101,44 +105,28 @@ It is also possible to install manually by cloning HydroBayesCal from GitHub rep
 With the ``HydroBayesCal`` installed you are now ready to use it for running a stochastic optimization of your TELEMAC model.
 The `usage section <usage>` provides detailed explanations for running the optimization.
 
-VIRTUAL ENVIRONMENT ON LINUX
-============================
+Create Virtual environment in Linux
+===================================
+The package needs access to system-wide libraries in Linux. The environment is called ``HBCenv``.
+You can create your own virtual environment by following these steps:
 
+Open the folder called *HydroBayesCal* and open a terminal in this directory.
 
-Requirements \& Installation
-============================
-
-
-This section guides through setting up Python for working with HydroBayesCal and the Telemac system.
-Additionally the following libraries are required to be installed in a Python environment called HBenv.
-
-Overview of the package components
-============================
-
-The package is well divided in 2 different components, one that treats the full complex model runs with user-defined mdel inputs and the second that treats the
-surrogate model construction and the BAL for model calibration purposes.
-
-
-
-The package is recommended to be installed in a linux Operating System.  It gives us the flexibility for configuring the environment and optimizing settings for Telemac simulations while providing a powerful command-line interface, which is well-suited for running batch simulations and automating tasks which improves the productivity of the code when managing large data sets.
-The creation of a virtual machine with the following characteristics is required:
-
-Virtualenv on Linux
-+++++++++++++++++++
-
-To create a virtual environment called ``HBCenv`` that has access to system-wide libraries on Linux, open Terminal and enter (create a new folder called *HyBayesCal* in the directory where you opened Terminal):
-
+Enter this command:
 .. code-block::
 
    python3 -m venv HBCenv
 
-Next, activate the environment, `download requirements.txt <https://github.com/sschwindt/hybayescal/raw/main/requirements.txt>`_ and, ``cd`` into the directory where you downloaded ``requirements.txt`` to install the requirements:
+Next, activate the environment, `download requirements.txt <https://github.com/Ecohydraulics/hydrobayescal/requirements.txt>`_ and, ``cd`` into the directory where you downloaded ``requirements.txt`` to install the requirements:
 
 .. code-block::
 
     source HBCenv/bin/activate
     cd <TO/REQUIREMENTStxt-DOWNLOAD/FOLDER/>
     pip install -r requirements.txt
+
+
+
 
 
 macOS
@@ -204,6 +192,15 @@ The simultaneous activation of the *HyBayesCal* environment and TELEMAC environm
    Read more at `jetbrains.com/help <https://www.jetbrains.com/help/pycharm/run-debug-configuration-shell-script.html>`_.
 
    If this option does not work, find the *Terminal* box in PyCharm, run ``source activateHBCtelemac.sh`` and execute your TELEMAC files from the PyCharm Terminal (e.g., ``python use_case_tm2d.py``. Either way, to run a Bayesian calibration, better directly use the system Terminal, not an IDE (computation load).
+
+Overview of the package components
+============================
+
+The package has two well defined parts. The first part is the one that performs the hydrodynamic simulations with any open-source hydrodynamic software and the second is the one
+builds up the initial surrogate model with Gaussian Process Regression and performs Bayesian Active Learning in light of measured data with the purpose of improving the initial surrogate by
+adding new collocation points to the initial one.
+
+You will find a detailed explanation of each module functionality in the following documentation.
 
 
 Other Software

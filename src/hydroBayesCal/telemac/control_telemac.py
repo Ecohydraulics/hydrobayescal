@@ -66,34 +66,90 @@ class TelemacModel():#FullComplexityModel
     ):
         """
         Constructor for the TelemacModel Class. Instantiating can take some seconds, so try to
-        be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops)
+        be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops).
+
+        Parameters
+        ----------
+        model_dir : str
+            Directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software directory.
+        res_dir : str
+            Directory (path) of the folder where a subfolder called "auto-saved-results" will be created to store all the results files.
+        control_file : str
+            Name of the steering file to be used (should end on ".cas"); do not include the directory.
+        friction_file : str
+            Name of the friction file to be used .tbl ; do not include the directory.
+        calibration_parameters : list
+            Telemac model parameters considered for model calibration (up to 4 possible).
+        calibration_pts_file_path : str
+            Complete path of the .csv file containing the description, coordinates (x, y) of the measurement points
+            and the measured values of the selected calibration quantities at those points.
+        calibration_quantities : list
+            Model outputs (quantities) to be extracted from Telemac .slf output files for calibration purposes (up to 4 possible).
+        tm_xd : str
+            Either 'Telemac2d' or 'Telemac3d'.
+        n_processors : int
+            Number of processors to use (>1 corresponds to parallelization); default is None (use .cas definition).
+        gaia_steering_file : str
+            Name of a Gaia steering file.
+        init_runs : int
+            Number of initial runs for initial surrogate construction.
+        dict_output_name : str
+            Name of the external .json file containing the model outputs of the calibration quantities for all model runs (initial surrogate phase + BAL phase).
+        results_file_name_base : str
+            Name of the results file to be iteratively changed in the .cas file.
+        stdout : int
+            Standard output (default=6 [console]; if 666 => file 'fort.666').
+        python_shebang : str
+            Header line for Python files the code writes for parallel processing (default="#!/usr/bin/env python3\n").
+        args : tuple
+            Additional positional arguments.
+        kwargs : dict
+            Additional keyword arguments.
 
         Attributes
-        ____________
-
-        :param str model_dir: Directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software
-        :param str res_dir: Directory (path) of the folder where a subfolder called "auto-saved-results" will be created to store all the results files.
-        :param str control_file: Name of the steering file to be used (should end on ".cas"); do not include directory.
-        :param list calibration_parameters: List of Telemac model parameters considered for model calibration. (up to 4 possible)
-        :param str calibration_pts_file_path: Complete path of the .csv file containing the description, coordinates x,y of the measurement points
-                                            and the measured values of the selected calibration quantity/(ies) at those points.
-        :param list calibration_quantities: Model outputs (quantities) to be extracted from Telemac .slf output files
-                                            for calibration purposes. (up to 4 possible)
-        :param str tm_xd: Either 'Telemac2d' or 'Telemac3d'
-        :param int n_processors: number of processors to use (>1 corresponds to parallelization); default is None (use cas definition)
-        :param str gaia_steering_file: Name of a gaia steering file (optional)
-        :param int init_runs: Number of initial runs for initial_surrogate construction.
-        :param str dict_output_name : Name of the external.json file containing the model outputs of the calibration quantities for ALL model runs (initial_surrogate_phase + BAL_phase)
-        :param str results_file_name_base: Name of the RESULTS FILE to be iteratively changed in the .cas file
-
-
-        :param int stdout: standard output (default=6 [console];  if 666 => file 'fort.666')
-        :param str python_shebang: header line for python files the code writes for parallel processing
-                                        (default="#!/usr/bin/env python3\n" for telling Debian-Linux to run with python)
-        :param args:
-        :param kwargs:
+        ----------
+        model_dir : str
+            Directory of the Telemac model, where .cas file is located.
+        res_dir : str
+            Directory to store the results. A subfolder called "auto-saved-results" will be created.
+        calibration_parameters : list
+            Calibration parameters.
+        init_runs : int
+            Number of initial runs for initial surrogate construction.
+        calibration_quantities : list
+            Calibration quantities (model outputs) for model calibration.
+        calibration_pts_df : pandas.DataFrame
+            DataFrame containing the calibration points and measurements.
+        tm_cas : str
+            Full path to the Telemac steering file .cas.
+        fr_tbl : str
+            Full path to the friction file .tbl.
+        dict_output_name : str
+            Name of the external .json file where model outputs are going to be saved.
+        results_file_name_base : str
+            Base name for the results file .slf.
+        gaia_steering_file : str or None
+            Name of the Gaia steering file if provided; otherwise, None.
+        nproc : int
+            Number of processors to use for parallelization during Telemac runs.
+        comm : MPI.Comm
+            MPI communicator for parallel processing.
+        results : None
+            Placeholder for results loaded through `self.load_results()`.
+        shebang : str
+            Shebang line for Python scripts.
+        tm_xd : str
+            Either 'Telemac2d' or 'Telemac3d'.
+        tm_xd_dict : dict
+            Dictionary mapping 'Telemac2d' and 'Telemac3d' to their respective script names.
+        stdout : int
+            Standard output setting.
+        bal_iteration : int
+            Bayesian Active Learning iteration number.
+        num_run : int
+            Simulation number. Iteratively changing according the collocation points.
+S
         """
-        #FullComplexityModel.__init__(self, model_dir=model_dir,res_dir=res_dir)
         self.model_dir=model_dir
         self.res_dir=res_dir
         self.calibration_parameters=calibration_parameters
@@ -124,31 +180,27 @@ class TelemacModel():#FullComplexityModel
         # Initializes the simulation number
         self.num_run=int()
         # Initializes the file where the output data from simulations will be stored
-        self.output_data=None
+        #self.output_data=None
 
-        self.case_loaded = False
+        #self.case_loaded = False
 
     def cas_creation(self,collocation_point_values,calibration_parameters):
         """
         Modifies the .cas steering file for each of the Telemac runs according to the values of the collocation points and the
-        calibration parameters.
+        calibration parameters. If a "FRICTION DATA FILE" is provided for Telemac simulations, it is possible to consider any zone
+        as a calibration parameter. The parameters must start with the prefix "zone" and the number of the friction zone. The .tbl will be
+        modified for this purpose. This method is called every time it is required that the .cas or .tbl are modified.
 
-        Until now it is possible to modify only
-        the calibration parameters that were indicated in the user_settings.py.
-        However, the idea would be also to modify the roughness file of Telemac .tbl
-        according to the roughness zones in the .brf. file (To be implemented).
         Parameters
-        __________
-
-        collocation_point_values: list
-            Values of each of the calibration parameters
-        calibration_parameters: list
+        ----------
+        collocation_point_values : list
+            Values for each of the calibration parameters.
+        calibration_parameters : list
             Names of the calibration parameters.
 
         Returns
         -------
         None
-
         """
 
         self.tm_results_filename = self.results_file_name_base + '_' + str(self.num_run) + '.slf'
@@ -454,38 +506,38 @@ class TelemacModel():#FullComplexityModel
             bal_mode=True,
     ):
         """
-        Runs multiple times Telemac2d or Telemac3d simulations with a set of collocation points and
-        new set of calibration parameters when bal_mode is chosen.
-        The number of processors to use is defined by self.nproc in user_inputs
+        Runs multiple Telemac2d or Telemac3d simulations with a set of collocation points and a new set of
+        calibration parameters when BAL mode is chosen. The number of processors to use is defined by self.nproc in user_inputs.
 
         Parameters
         ----------
-        collocation_points: array
-            Numpy array shape [No. init_runs x No. calibration parameters] which contains the initial
-            collocation points (parameter combinations) for iterative Telemac runs. Default None, it
-            fills with values for the initial surrogate model phase. It remains None during the BAL phase.
-        bal_new_set_parameters: array
-            2D array shape [1 x No. parameters] set of new values after each BAL iteration.
-        bal_iteration: int
-            Number of BAL iteration
-        bal_mode: Boolean
-            Default True when the code accounts for surrogate construction and BAL phase. False when
+        collocation_points : array
+            Numpy array of shape [No. init_runs x No. calibration parameters] which contains the initial
+            collocation points (parameter combinations) for iterative Telemac runs. Default is None, and it
+            is filled with values for the initial surrogate model phase. It remains None during the BAL phase.
+        bal_new_set_parameters : array
+            2D array of shape [1 x No. parameters] containing the new set of values after each BAL iteration.
+        bal_iteration : int
+            The number of the BAL iteration. Default is 0.
+        bal_mode : bool
+            Default is True when the code accounts for surrogate construction and BAL phase. False when
             only iterative runs are required.
-        friction_zones: List
-            Names of the friction zones in the .tbl file
+
         Returns
-        ----------
-            None
+        -------
+        None
         """
         calibration_parameters = self.calibration_parameters
+        logger.info(
+            "* running {}\n -- patience (Telemac simulations can take time) -- check CPU acitivity...")
+        start_time = datetime.now()
         if bal_mode:
+            # This part of the code runs the initial runs for initial surrogate.
             if collocation_points is not None:
                 array_list = collocation_points.tolist()
-
-                # Open a CSV file and write the header and array data
                 with open(self.res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
-                    writer.writerow(calibration_parameters)  # Write the header
+                    writer.writerow(calibration_parameters)
                     writer.writerows(array_list)  # Write the array data
                 np.save(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
 
@@ -495,6 +547,8 @@ class TelemacModel():#FullComplexityModel
                     logger.info(f" Running  full complexity model # {self.num_run}  with collocation point : {collocation_point_sim_list} ")
                     self.cas_creation(collocation_point_sim_list, calibration_parameters)
                     self.run_single_simulation()
+                    logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
+            # This part of the code runs BAL
             else:
                 self.bal_iteration = bal_iteration
                 self.num_run = self.bal_iteration+self.init_runs
@@ -504,42 +558,27 @@ class TelemacModel():#FullComplexityModel
                     update_collocation_pts_file(self.res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
                     self.cas_creation(collocation_point_sim_list, calibration_parameters)
                     self.run_single_simulation()
+                    logger.info("TELEMAC simulations time after Bayesian Active Learning: " + str(datetime.now() - start_time))
                 else:
                     logger.error("BAL_new_set_parameters is None. Please provide valid parameters.")
                     raise ValueError("BAL_new_set_parameters is None. Please provide valid parameters.")
-            # if friction_zones and self.num_run==n_max_tp:
-            #     with open(self.friction_file_path, 'w') as file:
-            #         file.writelines(self.original_tbl_lines)
-            #     if os.path.exists(self.friction_file_path_temp):
-            #         os.remove(self.friction_file_path_temp)
-            #     else:
-            #         logger.error(f"Temporary file {self.friction_file_path_temp} does not exist or it was deleted.")
-            #         print(f"Temporary file {self.friction_file_path_temp} does not exist or it was deleted.")
+
+        # This part of the code only runs iterative runs without performing BAL
         else:
             if collocation_points is not None:
                 array_list = collocation_points.tolist()
-
-                # Open a CSV file and write the header and array data
                 with open(self.res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
-                    writer.writerow(calibration_parameters)  # Write the header
-                    writer.writerows(array_list)  # Write the array data
+                    writer.writerow(calibration_parameters)
+                    writer.writerows(array_list)
                 np.save(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
-
                 for i in range(self.init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list=collocation_points[i].tolist()
                     logger.info(f" Running  full complexity model # {self.num_run}  with collocation point : {collocation_point_sim_list} ")
                     self.cas_creation(collocation_point_sim_list, calibration_parameters)
                     self.run_single_simulation()
-                # if friction_zones:
-                #     with open(self.friction_file_path, 'w') as file:
-                #         file.writelines(self.original_tbl_lines)
-                #     if os.path.exists(self.friction_file_path_temp):
-                #         os.remove(self.friction_file_path_temp)
-                #     else:
-                #         logger.error(f"Temporary file {self.friction_file_path_temp} does not exist or it was deleted.")
-                #         print(f"Temporary file {self.friction_file_path_temp} does not exist or it was deleted.")
+                    logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
                 exit()
 
 
@@ -557,8 +596,6 @@ class TelemacModel():#FullComplexityModel
 
 
         """
-        logging.info("* running {}\n -- patience (Telemac simulations can take time) -- check CPU acitivity...".format(cmd))
-
         # do not use stdout=subprocess.PIPE because the simulation progress will not be shown otherwise
         process = subprocess.Popen(cmd, cwd=r""+self.model_dir, shell=True, env=os.environ)
         stdout, stderr = process.communicate()
@@ -580,9 +617,7 @@ class TelemacModel():#FullComplexityModel
             Contains the model outputs as a 2D Numpy array with shape [No. runs x No. calibration points]
 
         """
-        # output_data= self.extract_data_point(self.tm_results_filename, self.calibration_pts_df,
-        #                                           self.dict_output_name)
-        #self.update_model_controls()
+
         output_data_path=os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{dict_output_name}.json")
         with open(output_data_path, "r") as file:
             output_data = json.load(file)
@@ -603,7 +638,10 @@ class TelemacModel():#FullComplexityModel
 
         return model_results
 
-    def extract_data_point(self, input_slf_file, calibration_pts_df, output_name):
+    def extract_data_point(self,
+                           input_slf_file,
+                           calibration_pts_df,
+                           output_name):
         """
         Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
         in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from
@@ -638,11 +676,11 @@ class TelemacModel():#FullComplexityModel
         global differentiated_dict
         input_file = os.path.join(self.model_dir, input_slf_file)
         self.json_path = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}.json")
-        self.json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}_detailed.json")#f"{json_name}_{self.num_run}.json"
+        self.json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}_detailed.json")#
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
-        print('Extracting values from results file ' + str(self.tm_results_filename) + '\n')
-        print('Extracting calibration quantities ' + str(self.calibration_quantities)+ '\n')
+        logger.info('Extracting values from results file ' + str(self.tm_results_filename) + '\n')
+        logger.info('Extracting calibration quantities ' + str(self.calibration_quantities)+ '\n')
 
 
         for key,h in zip(keys,range(len(calibration_pts_df))):
@@ -654,7 +692,7 @@ class TelemacModel():#FullComplexityModel
             slf.readHeader()
             slf.readTimes()
 
-            # get times of the selafin file, and the variable names
+            # gets times of the selafin file, and the variable names
             #times = slf.getTimes()
             variables = slf.getVarNames()
             units = slf.getVarUnits()
@@ -665,7 +703,6 @@ class TelemacModel():#FullComplexityModel
             for i in range(NVAR):
                 variables[i] = ' '.join(variables[i].split())
                 units[i] = ' '.join(units[i].split())
-            # print(variables)
 
             common_indices = []
 
@@ -675,7 +712,7 @@ class TelemacModel():#FullComplexityModel
                 index = variables.index(value)
                 # Add the index to the common_indices list
                 common_indices.append(index)
-            # print(common_indices)
+
             # gets some of the mesh properties from the *.slf file
             NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
 
@@ -708,7 +745,6 @@ class TelemacModel():#FullComplexityModel
             for i in range(1, NPLAN, 1):
                 idx_all[i] = idx_all[i - 1] + (NPOIN / NPLAN)
 
-            ########################################################################
             # extract results for every plane (if there are multiple planes that is)
             for p in range(NPLAN):
                 slf.readVariablesAtNode(idx_all[p])
@@ -718,13 +754,13 @@ class TelemacModel():#FullComplexityModel
                 results = slf.getVarValuesAtNode()
 
                 # Extracts the results at the last time step for ALL model variables.
+                # If the extraction of the calibration variable is requiered at a different time step,
+                # change the code at this point
                 #-------------------------------------------------------------------
                 results_calibration = results[-1]
                 #-------------------------------------------------------------------
-                #print(results)
-                #print(results_calibration)
 
-                # Initialize an empty list to store values (calibration qunatities) for every key (point description) for the
+                # Initializes an empty list to store values (calibration qunatities) for every key (point description) for the
                 # current simulation
                 modeled_values_dict[key] = []
                 # Iterate over the common indices
@@ -733,8 +769,6 @@ class TelemacModel():#FullComplexityModel
                     value = results_calibration[index]
                     # Append the value to the list for the current key
                     modeled_values_dict[key].append(value)
-            # print(modeled_values_dict)
-
 
             # New dictionary that stores the values of the calibration quantities for each calibration point. Extra alternative for the
             # Above-mentioned dictionary.
@@ -750,9 +784,6 @@ class TelemacModel():#FullComplexityModel
                     differentiated_values[title] = value
                 # Add the differentiated values for the current key to the new dictionary
                 differentiated_dict[key] = differentiated_values
-
-            # print(differentiated_dict)
-
 
         if self.num_run == 1:
             try:
@@ -780,7 +811,6 @@ class TelemacModel():#FullComplexityModel
 
         else:
         # Save the updated JSON file
-            #pdb.set_trace()
             with open(self.json_path, "w") as file:
                 for key in modeled_values_dict:
                     # Convert the existing list into a nested list with a single element
@@ -813,7 +843,6 @@ class TelemacModel():#FullComplexityModel
                     # Convert the existing list into a nested list with a single element
                     differentiated_dict[key] = differentiated_dict[key]
                 json.dump(differentiated_dict, file,indent=4)
-
         try:
             print(self.tm_results_filename)
             print(self.res_dir)
@@ -828,6 +857,24 @@ class TelemacModel():#FullComplexityModel
                     zone_identifier,
                     val,
                     friction_file_path):
+        """
+         Modifies the FRICTION DATA FILE (.tbl)  for Telemac simulations based on the specified zone
+         and value. This method is used to update the friction values in the table for different zones
+         as part of the calibration process.
+
+         Parameters
+         ----------
+         zone_identifier : int
+             Identifier for the friction zone to be updated in the friction table.
+         val : float
+             The new friction value to be set for the specified zone.
+         friction_file_path : str
+             The file path to the existing friction file (.tbl) that will be modified.
+
+         Returns
+         -------
+         None
+         """
 
         with open(friction_file_path, 'r') as file:
             file_lines = file.readlines()
@@ -840,10 +887,8 @@ class TelemacModel():#FullComplexityModel
             if line_list[0] == zone_identifier:
                 if len(line_list) > 2 and line_list[2] != 'NULL':
                     try:
-                        # Multiply the third column value by the factor
                         line_list[2] = str(val)
                     except ValueError:
-                        # In case the value is not a float, skip the line
                         pass
                 updated_zone_line = '\t'.join(line_list)
                 updated_lines.append(updated_zone_line + '\n')

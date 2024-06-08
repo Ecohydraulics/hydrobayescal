@@ -19,24 +19,50 @@ class FullComplexityModel:
             res_dir="",
             calibration_parameters=None,
             control_file="control.file",
+            init_runs=int(),
             *args,
             **kwargs
     ):
         """
-        Constructor for the FullComplexityModel Class. Instantiating can take some seconds, so try to
-        be efficient in creating objects of this class (i.e., avoid re-creating a new FullComplexityModel in long loops)
+          Constructor for the FullComplexityModel Class. Instantiating can take some seconds, so try to
+          be efficient in creating objects of this class (i.e., avoid re-creating a new FullComplexityModel in long loops).
 
-        :param str model_dir: directory (path) of the model files (should NOT end on "/" or "\\") - not the software dir
-        :param list calibration_parameters: computationally optional, but in the framework of Bayesian calibration,
-                    this argument must be provided
-        :param str control_file: name of the model control file to be used (e.g., Telemac: cas file); do not include directory
-        :param args:
-        :param kwargs:
-        """
+          Parameters
+          ----------
+          model_dir : str
+              Directory (path) of the model files (should NOT end on "/" or "\\") - not the software directory.
+          res_dir : str
+              Directory of the folder where a subfolder called "auto-saved-results" will be created to store all the results files.
+          calibration_parameters : list, optional
+              Computationally optional, but in the framework of Bayesian calibration, this argument must be provided.
+          control_file : str
+              Name of the model control file to be used (e.g., Telemac: cas file); do not include the directory. Default is "control.file".
+          init_runs : int, optional
+              Initial runs of the full complexity model. Default is `int()`.
+
+
+          Attributes
+          ----------
+          model_dir : str
+              Full complexity model directory.
+          control_file : str
+              Name of the file that controls the full complexity model simulation (to be called from a terminal).
+          collocation_file : str
+              Name of the file for collocation points (model parameters combinations.).
+          res_dir : str
+            Directory of the folder where a subfolder called "auto-saved-results" will be created to store all the results files.
+          init_runs : int
+              Initial runs of the full complexity model.
+          calibration_parameters : list
+              Calibration parameters if provided; otherwise, False.
+          supervisor_dir : str
+              Directory of the code that is controlling the full complexity model.
+          """
         self.model_dir = model_dir
         self.control_file = control_file
         self.collocation_file = "calibration-par-combinations.csv"
         self.res_dir = res_dir
+        self.init_runs=init_runs
         if not _os.path.exists(res_dir + _os.sep + "auto-saved-results"):
             _os.makedirs(res_dir + _os.sep + "auto-saved-results")
 

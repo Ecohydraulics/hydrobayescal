@@ -5,7 +5,7 @@ import pandas as _pd
 import csv
 
 from config_logging import *
-from model_structure.config_physics import *
+#from model_structure.config_physics import *
 
 
 def append_new_line(file_name, text_to_append):
