@@ -32,7 +32,7 @@
 /
 BOUNDARY CONDITIONS FILE                     : geo-donau.cli
 GEOMETRY FILE                                : geo-donau.slf
-RESULTS FILE = R_donau_20.slf
+RESULTS FILE = R_donau_7.slf
 CHECKING THE MESH = YES
 PREVIOUS COMPUTATION FILE                    : donau-restart.slf
 COMPUTATION CONTINUED                       : YES
@@ -64,7 +64,7 @@ MAXIMUM NUMBER OF BOUNDARIES                : 50
 /----------------------------------------------------------------------
 /
 INITIAL CONDITIONS                          :'CONSTANT ELEVATION'
-INITIAL ELEVATION = 309.84651526327275
+INITIAL ELEVATION = 309.0763934312506
 /
 /----------------------------------------------------------------------
 /                       NUMERICAL OPTIONS

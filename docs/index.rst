@@ -1,14 +1,16 @@
-.. Stochastic surrogate documentation parent file.
+.. Introduction.
 
 
 Python Package for Bayesian Calibration of Hydrodynamic models 'HydroBayesCal'
 =====
 
-This **Python3 package** uses Bayesian active learning (**BAL**) to wrap around Gaussian process emulators (**GPE**) for constructing a surrogate (metamodel) of complex, deterministic numerical models. To enable parameter adjustments at all levels,
-the code requires fully open source modeling software. This is why we decided to taylor the code for running it with `TELEMAC <http://www.opentelemac.org/>`_.
+What is HydroBayesCal?
+========================
 
-The surrogate model is created using Gaussian Process Regression and evaluated using Bayesian model evidence and/or relative entropy. The code implements the methods proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
-
+**HydroBayesCal**  is a  **Python3 package** that is used for optimization and calibration of hydrodynamic models using a Bayesian Active Learning approach.
+The package trains Gaussian Process Emulator (**GPE**) for constructing a surrogate model (i.e.,metamodel) of any numerical model so called full complexity model and evaluates
+the metamodel using Bayesian model evidence and/or relative entropy proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
+To enable parameter updates at every level, the code requires modeling software that is completely open source. Currently, it can only be used in conjunction with Telemac.
 
 This documentation is also as available as `style-adapted PDF <https://hybayescal.readthedocs.io/_/downloads/en/latest/pdf/>`_.
 
@@ -24,7 +26,7 @@ This documentation is also as available as `style-adapted PDF <https://hybayesca
 .. _requirements:
 
 Purpose and description
-============================
+========================
 The package aims to make significant development and contribution on creating a tool for automated Bayesian Calibration for hydrodynamic models using open source software such as
 Telemac and/or OpenFoam. Stochastic calibration techniques require a huge number of full complexity model realizations to perform statistical analysis.
 However, this is unfeasible when a single realization may require several hours or even days. To make this possible, surrogate models (reduced models) are constructed as
@@ -45,7 +47,7 @@ To start, this section guides through setting up Python and the virtual environm
 and the Telemac system.
 
 
-PYTHON
+Python
 ------
 
 *Time requirement: 10 min.*
@@ -62,7 +64,7 @@ Windows user will have the best experience with Anaconda/conda env and Linux use
 and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
 
 
-TELEMAC
+Telemac
 ------
 Telemac-Mascaret or typically known as only Telemac is a robust and versatile integrated modeling tool designed
 for simulating free-surface flows with a wide range of applications in both river and maritime hydraulics.
@@ -82,7 +84,7 @@ at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_
 at `https://hydro-informatics.com/get-started/install-telemac.html <https://hydro-informatics.com/get-started/install-telemac.html>`_ that
 is tweaked for HydroBayesCal. We recommend to install TELEMAC with ``pysource.gfortranHPC.sh``or with your preferred pysource file.
 
-NSTALL HydroBayesCal
+Install HydroBayesCal
 ------------------
 *Time requirement: <5 min.*
 To install HydroBayesCal via pip from PyPI
@@ -125,10 +127,6 @@ Next, activate the environment, `download requirements.txt <https://github.com/E
     cd <TO/REQUIREMENTStxt-DOWNLOAD/FOLDER/>
     pip install -r requirements.txt
 
-
-
-
-
 macOS
 +++++
 
@@ -141,7 +139,7 @@ On macOS, potentially both conda env and virtualenv work, but we could not test 
 Load HBCenv with TELEMAC
 ++++++++++++++++++++++++
 
-The simultaneous activation of the *HyBayesCal* environment and TELEMAC environment variables requires some tweaking, which can be achieved by source-ing our environment activation templates
+The simultaneous activation of the *HydroBayesCal* environment and TELEMAC environment variables requires some tweaking, which can be achieved by source-ing our environment activation templates
 
 
 .. tabs::
@@ -154,14 +152,6 @@ The simultaneous activation of the *HyBayesCal* environment and TELEMAC environm
       * In line 5, adapt ``HBCenv_DIR`` to where you created ``HBCenv``.
       * Save and close *activateHBCtelemac.sh*
 
-      **Regular load action**: To load the combined ``HBCenv`` and TELEMAC environments, open Terminal, ``cd`` to where you saved *activateHBCtelemac.sh*, and enter:
-
-      .. code-block::
-
-         source activateHBCtelemac.sh
-
-      If both environments are load without errors, you are good to go for running the codes.
-
    .. tab:: Windows
 
       .. warning::
@@ -172,10 +162,6 @@ The simultaneous activation of the *HyBayesCal* environment and TELEMAC environm
       * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
       * In line 5, adapt ``HBCenv_name`` if you did not use the name ``HBCenv`` for your conda environment.
       * Save and close *activateHBCtelemac.bat*
-
-      **Regular load action**: Double-click on *activateHBCtelemac.bat*.
-
-      If both environments are load without errors, you are good to go for running the codes.
 
 .. tip::
 

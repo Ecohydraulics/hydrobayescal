@@ -9,17 +9,42 @@ The workflow describes the usage of Bayesian model evidence and relative entropy
 Step 0: Wet your TELEMAC Model
 ------------------------------
 
-Before the surrogate-assisted calibration can run, it needs an initial model run. The first model run should start with `dry conditions (read more at hydro-informatics.com) <https://hydro-informatics.com/numerics/telemac2d-steady.html>`_ and be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hydro-informatics.com/numerics/telemac2d-unsteady.html#hotstart-initial-conditions>`_ for the surrogate-assisted calibration.
+Before the surrogate-assisted calibration can run, it needs an initial model run. The initial model need to be fully functional with all the required simulation files.
+The first model run should start with `dry conditions (read more at hydro-informatics.com) <https://hydro-informatics.com/numerics/telemac2d-steady.html>`_ and be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hydro-informatics.com/numerics/telemac2d-unsteady.html#hotstart-initial-conditions>`_ for the surrogate-assisted calibration.
 
 .. note:: Why hotstart the model for the surrogate-assisted calibration?
 
     Instead of applying an initial water depth that covers the entire model domain (or other initial condition types), a numerical model of a fluvial ecosystem typically starts dry to avoid filling disconnected terrain depressions with water. However, wet initial conditions converge considerably faster if those approximately correspond to the target conditions. Thus, to speed up the surrogate-assisted calibration, preferably do one dry model initialization and then switch to fast converging hotstart (wet initial) conditions.
 
-Step 1: Initialize Information Range
-------------------------------------
+Step 1: Initialize environments and model parameters
+---------------------------------------------------
 
-The initialization consists of building void (zero-value) matrices for Bayesian model evidence (BME) and relative entropy (RE) scores with the size of the user-defined limit of calibration iterations (default is ``it_limit = 15``).
-In addition, void matrices for the active learning sampling are instantiated based on user definitions (default is ``al_samples = 1000``).
+Firstly, the initialization of all input parameters must be done through the ``user_settings.py`` Python script. The file is divided in two parts, the full complexity model global parameters
+and the Bayesian Active Learning **(BAL)** global parameters. Each of the parameters has a purpose in the code running so be sure to follow the instructions properly.
+On the other hand, the package environment **HBCenv** needs to be activated so you can use it. In the previous section, the steps on how to set up the environments' so you can use them in your
+server were explained. To activate the Python and Telemac environments please follow these steps:
+
+.. tabs::
+
+   .. tab:: Linux
+
+      **One-time actions**:
+
+      `Download activateHBCtelemac.sh <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.sh>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
+
+      * In line 3, adapt ``TELEMAC_CONFIG_DIR`` to where your TELEMAC installation's config lives.
+      * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
+      * In line 5, adapt ``HBCenv_DIR`` to where you created ``HBCenv``.
+      * Save and close *activateHBCtelemac.sh*.
+
+      **Regular load action**: To load the combined ``HBCenv`` and TELEMAC environments, open Terminal, ``cd`` to where you saved *activateHBCtelemac.sh*, and enter:
+
+      .. code-block:: bash
+
+         source activateHBCtelemac.sh
+
+      If both environments are loaded without errors, you are good to go for running the codes.
+
 
 Step 2: Read Collocation Points
 -------------------------------
