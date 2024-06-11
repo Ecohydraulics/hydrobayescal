@@ -115,53 +115,36 @@ You can create your own virtual environment by following these steps:
 Open the folder called *HydroBayesCal* and open a terminal in this directory.
 
 Enter this command:
-.. code-block::
+.. code::
 
    python3 -m venv HBCenv
 
-Next, activate the environment, `download requirements.txt <https://github.com/Ecohydraulics/hydrobayescal/requirements.txt>`_ and, ``cd`` into the directory where you downloaded ``requirements.txt`` to install the requirements:
+Next, activate the environment, `download requirements.txt <https://github.com/Ecohydraulics/hydrobayescal/requirements.txt>`_ and, ``cd`` into the
+directory where you downloaded ``requirements.txt`` to install the requirements:
 
-.. code-block::
+.. code::
 
     source HBCenv/bin/activate
     cd <TO/REQUIREMENTStxt-DOWNLOAD/FOLDER/>
     pip install -r requirements.txt
 
-macOS
-+++++
-
-On macOS, potentially both conda env and virtualenv work, but we could not test ``HyBayesCal`` on macOS. Thus, we recommend to follow the instructions for `installing Anaconda on macOS <https://docs.anaconda.com/anaconda/install/mac-os/>`_ and create a new conda environment as above-described in the *Conda on Windows* section.
-
-
-
-
-
 Load HBCenv with TELEMAC
-++++++++++++++++++++++++
+========================
 
-The simultaneous activation of the *HydroBayesCal* environment and TELEMAC environment variables requires some tweaking, which can be achieved by source-ing our environment activation templates
+The simultaneous activation of the *HydroBayesCal* environment and TELEMAC environment variables requires some tweaking,
+which can be achieved by source-ing our environment activation templates. To activate the environment specifically for your system,
+you need to modify the activateHBCtelemac.sh file. Follow these steps:
 
 
 .. tabs::
 
    .. tab:: Linux
 
-      **One-time actions**: `Download activateHBCtelemac.sh <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.sh>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
+      **One-time actions**: `Download activateHBCtelemac.sh <https://github.com/Ecohydraulics/hydrobayescal/main/env-scripts/activateHBCtelemac.sh>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
       * In line 3, adapt ``TELEMAC_CONFIG_DIR`` to where your TELEMAC installation's config lives.
       * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
       * In line 5, adapt ``HBCenv_DIR`` to where you created ``HBCenv``.
       * Save and close *activateHBCtelemac.sh*
-
-   .. tab:: Windows
-
-      .. warning::
-         The Windows implementation has not yet been tested and is fully experimental. It does most likely not work currently and should be used with uttermost caution. Feedback welcome.
-
-      **One-time actions**: `Download activateHBCtelemac.bat <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.bat>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
-      * In line 3, adapt ``TELEMAC_CONFIG_DIR`` to where your TELEMAC installation's config lives.
-      * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
-      * In line 5, adapt ``HBCenv_name`` if you did not use the name ``HBCenv`` for your conda environment.
-      * Save and close *activateHBCtelemac.bat*
 
 .. tip::
 
@@ -180,7 +163,7 @@ The simultaneous activation of the *HydroBayesCal* environment and TELEMAC envir
    If this option does not work, find the *Terminal* box in PyCharm, run ``source activateHBCtelemac.sh`` and execute your TELEMAC files from the PyCharm Terminal (e.g., ``python use_case_tm2d.py``. Either way, to run a Bayesian calibration, better directly use the system Terminal, not an IDE (computation load).
 
 Overview of the package components
-============================
+==================================
 
 The package has two well defined parts. The first part is the one that performs the hydrodynamic simulations with any open-source hydrodynamic software and the second is the one
 builds up the initial surrogate model with Gaussian Process Regression and performs Bayesian Active Learning in light of measured data with the purpose of improving the initial surrogate by

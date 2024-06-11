@@ -21,29 +21,77 @@ Step 1: Initialize environments and model parameters
 
 Firstly, the initialization of all input parameters must be done through the ``user_settings.py`` Python script. The file is divided in two parts, the full complexity model global parameters
 and the Bayesian Active Learning **(BAL)** global parameters. Each of the parameters has a purpose in the code running so be sure to follow the instructions properly.
+
+------------------------
+Global Full Complexity Model Parameters
+------------------------
+
+    * **control_file_name**
+    * **Telemac_solver**
+    * **results_folder_path**
+    * **calib_pts_file_path**
+    * **n_cpus**
+    * **init_runs**
+    * **friction_file**
+    * **dict_output_name**
+    * **results_file_name_base**
+
+    *Calibration parameters*
+
+    * calib_parameter_1
+    * calib_parameter_2
+    * calib_parameter_3
+    * calib_parameter_4
+
+    *Calibration ranges*
+
+    * param_range_1
+    * param_range_2
+    * param_range_3
+    * param_range_4
+
+    *Calibration quantities*
+
+    * calib_quantity_1
+    * calib_quantity_2
+    * calib_quantity_3
+    * calib_quantity_4
+
+* **dict_output_name**
+
+* **results_file_name_base**
+
 On the other hand, the package environment **HBCenv** needs to be activated so you can use it. In the previous section, the steps on how to set up the environments' so you can use them in your
 server were explained. To activate the Python and Telemac environments please follow these steps:
 
-.. tabs::
+.. note:: Linux
 
-   .. tab:: Linux
+   **One-time actions**:
 
-      **One-time actions**:
+   Download `activateHBCtelemac.sh <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.sh>`_ and open it in a text editor to modify the following lines:
 
-      `Download activateHBCtelemac.sh <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.sh>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
+   * In line 3, set ``TELEMAC_CONFIG_DIR`` to the location of your TELEMAC installation's config directory.
+   * In line 4, set ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC configuration file.
+   * In line 5, set ``HBCenv_DIR`` to the directory where you created ``HBCenv``.
+   * Save and close the file after making these changes.
 
-      * In line 3, adapt ``TELEMAC_CONFIG_DIR`` to where your TELEMAC installation's config lives.
-      * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
-      * In line 5, adapt ``HBCenv_DIR`` to where you created ``HBCenv``.
-      * Save and close *activateHBCtelemac.sh*.
+   **Regular load action**: To load the combined ``HBCenv`` and TELEMAC environments, open a terminal, navigate to the directory where you saved `activateHBCtelemac.sh`, and enter:
 
-      **Regular load action**: To load the combined ``HBCenv`` and TELEMAC environments, open Terminal, ``cd`` to where you saved *activateHBCtelemac.sh*, and enter:
+   .. code:: bash
 
-      .. code-block:: bash
+      source activateHBCtelemac.sh
 
-         source activateHBCtelemac.sh
+   If the activation was successful, a message will show up:
 
-      If both environments are loaded without errors, you are good to go for running the codes.
+   .. code:: bash
+
+      > Loading HBCenv...
+      **Success**
+      > Loading TELEMAC config...
+      **Success**
+
+
+If both environments are loaded without errors, you are good to go for running the codes.
 
 
 Step 2: Read Collocation Points
