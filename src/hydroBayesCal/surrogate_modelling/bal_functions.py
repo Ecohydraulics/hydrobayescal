@@ -73,8 +73,8 @@ class BayesianInference:
         - Needs a larger MC sampling to obtain a posterior, when the output dimension is large.
 
     ToDo: Add posterior MCMC sampling methods
-    """
 
+    """
     def __init__(self, model_predictions, observations, error, prior=None, prior_log_pdf=None, model_error=None,
                  sampling_method='rejection_sampling'):
 
@@ -373,43 +373,53 @@ class BAL:
     """
 
     def __init__(self, gpe_mean, gpe_std, mc_bal, d_bal,
-                 observations, observation_error, bal_strategy="RE"):
+                 observations, observation_error, sm_object, exp_design, bal_strategy="RE"):
+        """
 
+        Parameters
+        ----------
+        exp_design
+        """
         self.mean = gpe_mean
         self.std = gpe_std
         self.mc_bal = mc_bal
         self.d_size_bal = d_bal
-
+        self.ExpDesign=exp_design
         self.obs = observations
         self.obs_error = observation_error
         self.al_strategy = bal_strategy
 
         self.bal_samples = None
         self.al_unique_index = None
+        self.SM = sm_object
         self.BME_bal = np.zeros(self.d_size_bal)
         self.ELPD_bal = np.zeros(self.d_size_bal)
         self.RE_bal = np.zeros(self.d_size_bal)
 
-    def select_indexes(self, prior_samples, collocation_points, i):
-        """
-        Function selects the parameter sets (from 'prior_samples') to explore in BAL
-        :param prior_samples: np.array(MC_size, N.parameters), all parameter sets which have already been evaluated in
-        the trained GPE
-        :param collocation_points: np.array(number of TP used already, N.parameters), array with TP used to train the
-        GPE, and should therefore not be explored
-        :param i: int, number of TP that have already been selected using BAL (to avoid resampling them and assuring
-        'd_size_bal' parameters explored
-        :return: None
+    def select_indexes(self, prior_samples, collocation_points):
         """
 
+        Args:
+            prior_samples: array [mc_size, n_params]
+                Pre-defined samples from the parameter space, out of which the sample sets should be extracted.
+            collocation_points: [tp_size, n_params]
+                array with training points which were already used to train the surrogate model, and should therefore
+                not be re-explored.
+
+        Returns: array[self.mc_size,]
+            With indexes of the new candidate parameter sets, to be read from the prior_samples array
+
+        """
+        n_tp = collocation_points.shape[0]
         # a) get index of elements that have already been used
-        aux1 = np.where((prior_samples[:self.d_size_bal + i, :] == collocation_points[:, None]).all(-1))[1]
+        aux1_ = np.where((prior_samples[:self.d_size_bal + n_tp, :] == collocation_points[:, None]).all(-1))[1]
         # b) give each element in the prior a True if it has not been used before
-        aux2 = np.invert(np.in1d(np.arange(prior_samples[:self.d_size_bal + i, :].shape[0]), aux1))
+        aux2_ = np.invert(np.in1d(np.arange(prior_samples[:self.d_size_bal + n_tp, :].shape[0]), aux1_))
         # c) Select the first d_size_bal elements in prior_sample that have not been used before
-        self.al_unique_index = np.arange(prior_samples[:self.d_size_bal + i, :].shape[0])[aux2]
+        al_unique_index = np.arange(prior_samples[:self.d_size_bal + n_tp, :].shape[0])[aux2_]
+        self.al_unique_index = al_unique_index[:self.d_size_bal]
 
-        self.bal_samples = prior_samples[self.al_unique_index]
+        return self.al_unique_index
 
     def explore_posterior(self):
         """
@@ -438,6 +448,7 @@ class BAL:
         :return: float (BME or RE value chosen as best criteria), int (index where the best criteria value is located
         in the prior_samples array)
         """
+
         if self.al_strategy == "BME":
             al_value = np.amax(self.BME_bal)
             al_value_index = np.argmax(self.BME_bal)
@@ -466,7 +477,37 @@ class BAL:
         #                                                     the TP selected  by BAL
         return al_value, prior_index
 
+    def run_bal(self, prior_samples=None):
 
+        exp_design = self.ExpDesign
+        explore_method = exp_design.explore_method
+        exploit_method = exp_design.exploit_method
+        util_fun = exp_design.util_func
+
+        # Sample the candidate parameter sets, to evaluate in the surrogate model and use for sequential design -->
+        # to select the new training point
+        if prior_samples is not None:
+            candidate_idx = self.select_indexes(prior_samples=prior_samples,
+                                                collocation_points=self.SM.training_points)
+            all_candidates = prior_samples[candidate_idx, :]
+            # Update number of mc_samples:
+            score_exploration = np.zeros(self.mc_bal)
+        else:
+            explore = Exploration(n_candidate=self.mc_bal,
+                                  old_tp=self.SM.training_points,
+                                  exp_design=exp_design,
+                                  mc_criterion='mc-intersite-proj'  # mc-intersite-proj-th, mc-intersite-proj
+                                  )
+
+            all_candidates, score_exploration = explore.get_exploration_samples()
+
+        self.explore_score = score_exploration
+        self.bal_samples = all_candidates
+        self.explore_posterior()
+        al_value, prior_index=self.bal_select_tp()
+        new_tp=prior_samples[self.al_unique_index[prior_index]:self.al_unique_index[prior_index]+1, :]
+
+        return new_tp,util_fun
 class SequentialDesign:
     """
     Class runs the optimal design of experiments (sequential design) to select the new training points, to add to the
@@ -535,10 +576,10 @@ class SequentialDesign:
         self.check_inputs()
 
     def check_inputs(self):
-        if self.observations.ndim != 1:
+        if self.observations.ndim != 1 and self.gaussian_assumption:
             self.observations = self.observations.reshape(-1)
             print(f'The observations input was changed to a 1D vector with size {self.observations.shape}')
-        if self.m_error.ndim != 1:
+        if self.m_error.ndim != 1 and self.gaussian_assumption:
             self.m_error = self.m_error.reshape(-1)
             print(f'The error input was changed to a 1D vector with size {self.m_error.shape}')
 

@@ -20,7 +20,7 @@ try:
     from telapy.tools.driven_utils import mpirun_cmd
     from data_manip.extraction.telemac_file import TelemacFile
 except ImportError as e:
-    print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HyBayesCal.telemac" % e)
+    print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
     exit()
 
 # attention relative import usage according to docs/codedocs.rst
@@ -554,6 +554,11 @@ S
                 self.num_run = self.bal_iteration+self.init_runs
                 if bal_new_set_parameters is not None:
                     collocation_point_sim_list= bal_new_set_parameters.tolist()[0]
+                    collocation_points = np.load(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'))
+                    #bal_new_set_parameters=np.array(collocation_point_sim_list)
+                    #bal_new_set_parameters = bal_new_set_parameters.reshape(1, -1)
+                    updated_collocation_points_npy = np.vstack((collocation_points, bal_new_set_parameters))
+                    np.save(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), updated_collocation_points_npy)
                     logger.info(f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {collocation_point_sim_list} ")
                     update_collocation_pts_file(self.res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
                     self.cas_creation(collocation_point_sim_list, calibration_parameters)
