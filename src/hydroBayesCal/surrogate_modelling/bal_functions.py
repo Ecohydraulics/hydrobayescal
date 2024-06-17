@@ -547,7 +547,10 @@ class SequentialDesign:
                  parallel=True, n_jobs=-2,
                  errors=None,
                  do_tradeoff=False,
-                 gaussian_assumption=False):
+                 gaussian_assumption=False,
+                 mc_samples =  1000 ,
+                 mc_exploration=10000,
+                 ):
 
         self.ExpDesign = exp_design
         self.SM = sm_object
@@ -570,8 +573,8 @@ class SequentialDesign:
         self.total_score = None          # Total score, either weighted sum of both norm score
         self.selected_criteria = None    # value(s) of selected TP(s) utility function
 
-        self.mc_samples = 1000  # Number of parameter sets to sample and explore
-        self.mc_exploration = 10_000   # number of output sets to sample during posterior exploration
+        self.mc_samples =  mc_samples# Number of parameter sets to sample and explore
+        self.mc_exploration = mc_exploration   # number of output sets to sample during posterior exploration
 
         self.check_inputs()
 

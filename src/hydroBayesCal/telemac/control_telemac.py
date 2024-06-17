@@ -36,7 +36,6 @@ except ImportError as e:
 
 # get package scripts
 
-from model_structure.control_full_complexity import FullComplexityModel
 #from doepy.doe_control import DesignOfExperiment
 
 setup_logging()
@@ -56,11 +55,11 @@ class TelemacModel():#FullComplexityModel
             tm_xd="",
             n_processors=None,
             gaia_steering_file=None,
-            init_runs=None,
             dict_output_name="",
-            results_file_name_base="",
+            results_filename_base="",
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
+            init_runs=None,
             *args,
             **kwargs
     ):
@@ -153,13 +152,13 @@ S
         self.model_dir=model_dir
         self.res_dir=res_dir
         self.calibration_parameters=calibration_parameters
-        self.init_runs=int(init_runs)
+        self.init_runs=init_runs
         self.calibration_quantities=calibration_quantities
-        self.calibration_pts_df=_pd.read_csv(calibration_pts_file_path)
+        self.calibration_pts_file_path=calibration_pts_file_path
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
         self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, friction_file)
         self.dict_output_name=dict_output_name
-        self.results_file_name_base=results_file_name_base
+        self.results_file_name_base=results_filename_base
         self.gaia_steering_file=gaia_steering_file
         self.nproc = n_processors
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
@@ -173,18 +172,24 @@ S
             "Telemac2d": "telemac2d.py ",
             "Telemac3d": "telemac3d.py ",
         }
-
         self.stdout = stdout
         # Initializes the BAL iteration number
         self.bal_iteration = int()
         # Initializes the simulation number
         self.num_run=int()
         # Initializes the file where the output data from simulations will be stored
+        self.tm_results_filename = ''
+
+        self.calibration_pts_df=_pd.read_csv(calibration_pts_file_path)
         #self.output_data=None
 
         #self.case_loaded = False
 
-    def cas_creation(self,collocation_point_values,calibration_parameters):
+    def cas_creation(self,
+                     collocation_point_values,
+                     calibration_parameters,
+                     tm_results_filename,
+                     friction_file_path):
         """
         Modifies the .cas steering file for each of the Telemac runs according to the values of the collocation points and the
         calibration parameters. If a "FRICTION DATA FILE" is provided for Telemac simulations, it is possible to consider any zone
@@ -197,26 +202,31 @@ S
             Values for each of the calibration parameters.
         calibration_parameters : list
             Names of the calibration parameters.
+        tm_results_filename : str
+            Name of the results file for the Telemac simulation.
+        friction_file_path : str
+            Path to the friction file .tbl.
 
         Returns
         -------
         None
         """
 
-        self.tm_results_filename = self.results_file_name_base + '_' + str(self.num_run) + '.slf'
-        calibration_parameters.append('RESULTS FILE')
-        collocation_point_values.append(self.tm_results_filename)
-        logger.info('Results file name for this simulation:' + self.tm_results_filename)
-        for param, val in zip(calibration_parameters, collocation_point_values):
-            if param.lower().startswith("zone"):
-                zone_identifier = param[4:]
-                self.tbl_creator(zone_identifier, val,friction_file_path = self.fr_tbl)
-            else:
-                cas_string = self.create_cas_string(param, val)
-                self.rewrite_steering_file(param, cas_string, steering_module="telemac")
+        params_with_results = calibration_parameters + ['RESULTS FILE']
+        values_with_results = collocation_point_values + [tm_results_filename]
+        logger.info(f'Results file name for this simulation: {tm_results_filename}')
 
-                #pdb.set_trace()
-    #@staticmethod
+        try:
+            for param, value in zip(params_with_results, values_with_results):
+                if param.lower().startswith("zone"):
+                    zone_identifier = param[4:]
+                    self.tbl_creator(zone_identifier, value, friction_file_path)
+                else:
+                    cas_string = self.create_cas_string(param, value)
+                    self.rewrite_steering_file(param, cas_string, steering_module="telemac")
+        except Exception as e:
+            logger.error(f'Error occurred during CAS creation: {e}')
+            raise    #@staticmethod
     def create_cas_string(
             self,
             param_name,
@@ -497,7 +507,13 @@ S
         # if load_results:
         #     self.load_results()
         if load_results:
-            self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name)
+            self.extract_data_point(self.tm_results_filename,
+                                    self.calibration_pts_df,
+                                    self.dict_output_name,
+                                    self.calibration_quantities,
+                                    self.num_run,
+                                    self.model_dir,
+                                    self.res_dir)
     def run_multiple_simulations(
             self,
             collocation_points=None,
@@ -528,6 +544,11 @@ S
         None
         """
         calibration_parameters = self.calibration_parameters
+        res_dir=self.res_dir
+        fr_tbl=self.fr_tbl
+        init_runs=self.init_runs
+        results_file_name_base=self.results_file_name_base
+
         logger.info(
             "* running {}\n -- patience (Telemac simulations can take time) -- check CPU acitivity...")
         start_time = datetime.now()
@@ -535,33 +556,36 @@ S
             # This part of the code runs the initial runs for initial surrogate.
             if collocation_points is not None:
                 array_list = collocation_points.tolist()
-                with open(self.res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
+                with open(res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
                     writer.writerow(calibration_parameters)
                     writer.writerows(array_list)  # Write the array data
-                np.save(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
+                np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
 
-                for i in range(self.init_runs):
+                for i in range(init_runs):
                     self.num_run = i + 1
+                    self.tm_results_filename = results_file_name_base + '_' + str(self.num_run) + '.slf'
                     collocation_point_sim_list=collocation_points[i].tolist()
                     logger.info(f" Running  full complexity model # {self.num_run}  with collocation point : {collocation_point_sim_list} ")
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters,self.tm_results_filename,fr_tbl)
                     self.run_single_simulation()
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
             # This part of the code runs BAL
             else:
                 self.bal_iteration = bal_iteration
-                self.num_run = self.bal_iteration+self.init_runs
+                self.num_run = bal_iteration+init_runs
+                self.tm_results_filename = results_file_name_base + '_' + str(self.num_run) + '.slf'
                 if bal_new_set_parameters is not None:
                     collocation_point_sim_list= bal_new_set_parameters.tolist()[0]
-                    collocation_points = np.load(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'))
+                    collocation_points = np.load(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'))
                     #bal_new_set_parameters=np.array(collocation_point_sim_list)
                     #bal_new_set_parameters = bal_new_set_parameters.reshape(1, -1)
                     updated_collocation_points_npy = np.vstack((collocation_points, bal_new_set_parameters))
-                    np.save(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), updated_collocation_points_npy)
+                    np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), updated_collocation_points_npy)
                     logger.info(f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {collocation_point_sim_list} ")
-                    update_collocation_pts_file(self.res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    update_collocation_pts_file(res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.tm_results_filename,
+                                      fr_tbl)
                     self.run_single_simulation()
                     logger.info("TELEMAC simulations time after Bayesian Active Learning: " + str(datetime.now() - start_time))
                 else:
@@ -572,16 +596,18 @@ S
         else:
             if collocation_points is not None:
                 array_list = collocation_points.tolist()
-                with open(self.res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
+                with open(res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
                     writer.writerow(calibration_parameters)
                     writer.writerows(array_list)
-                np.save(os.path.join( self.res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
-                for i in range(self.init_runs):
+                np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
+                for i in range(init_runs):
                     self.num_run = i + 1
+                    self.tm_results_filename = results_file_name_base + '_' + str(self.num_run) + '.slf'
                     collocation_point_sim_list=collocation_points[i].tolist()
                     logger.info(f" Running  full complexity model # {self.num_run}  with collocation point : {collocation_point_sim_list} ")
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters)
+                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.tm_results_filename,
+                                      fr_tbl)
                     self.run_single_simulation()
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
                 exit()
@@ -607,14 +633,9 @@ S
         del stderr
         return stdout, process.returncode
 
-    def output_processing(self,dict_output_name):
+    def output_processing(self):
         """
         Process the data to be extracted from the .slf files.
-
-        Parameters
-        ----------
-        dict_output_name: String
-            Name of the json file that contains the dictionary with the model outputs.
 
         Returns
         ----------
@@ -623,7 +644,7 @@ S
 
         """
 
-        output_data_path=os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{dict_output_name}.json")
+        output_data_path=os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{self.dict_output_name}.json")
         with open(output_data_path, "r") as file:
             output_data = json.load(file)
 
@@ -646,7 +667,11 @@ S
     def extract_data_point(self,
                            input_slf_file,
                            calibration_pts_df,
-                           output_name):
+                           output_name,
+                           extraction_quantity,
+                           simulation_number,
+                           model_directory,
+                           results_folder_directory):
         """
         Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
         in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from
@@ -675,17 +700,15 @@ S
 
         """
 
-        # If the input parameter of the function is a .csv file.
-        #calibration_pts_df=_pd.read_csv(calibration_pts_df)
-
         global differentiated_dict
-        input_file = os.path.join(self.model_dir, input_slf_file)
-        self.json_path = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}.json")
-        self.json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}_detailed.json")#
+        calibration_quantities= extraction_quantity
+        input_file = os.path.join(model_directory, input_slf_file)
+        json_path = os.path.join(results_folder_directory + os.sep + "auto-saved-results", f"{output_name}.json")
+        json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}_detailed.json")#
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
-        logger.info('Extracting values from results file ' + str(self.tm_results_filename) + '\n')
-        logger.info('Extracting calibration quantities ' + str(self.calibration_quantities)+ '\n')
+        logger.info('Extracting values from results file ' + str(input_slf_file) + '\n')
+        logger.info('Extracting calibration quantities ' + str(calibration_quantities)+ '\n')
 
 
         for key,h in zip(keys,range(len(calibration_pts_df))):
@@ -712,7 +735,7 @@ S
             common_indices = []
 
             # Iterate over the secondary list
-            for value in self.calibration_quantities:
+            for value in calibration_quantities:
                 # Find the index of the value in the original list
                 index = variables.index(value)
                 # Add the index to the common_indices list
@@ -784,48 +807,48 @@ S
                 # Create a dictionary to store the differentiated values for the current key
                 differentiated_values = {}
                 # Iterate over the titles and corresponding values
-                for title, value in zip(self.calibration_quantities, values):
+                for title, value in zip(calibration_quantities, values):
                     # Add the title and corresponding value to the dictionary
                     differentiated_values[title] = value
                 # Add the differentiated values for the current key to the new dictionary
                 differentiated_dict[key] = differentiated_values
 
-        if self.num_run == 1:
+        if simulation_number == 1:
             try:
                 # Removes the output_file.json when starting a new run of the code
-                os.remove(self.json_path)
+                os.remove(json_path)
                 try:
-                    os.remove(self.json_path_detailed)
+                    os.remove(json_path_detailed)
                 except FileNotFoundError:
                     print("No detailed result file found. Creating a new file.")
             except FileNotFoundError:
                 print("No nested result file found. Creating a new file.")
 
-        if os.path.exists(self.json_path):
+        if os.path.exists(json_path):
             # File exists, so open it for writing
             #pdb.set_trace()
-            with open(self.json_path, "r") as file:
+            with open(json_path, "r") as file:
                 output_data = json.load(file)
                 for key, value in modeled_values_dict.items():
                      if key in output_data:
                         output_data[key].append(value)
                      else:
                         output_data[key] = [value]
-                with open(self.json_path, 'w') as file:
+                with open(json_path, 'w') as file:
                     json.dump(output_data, file, indent=4)
 
         else:
         # Save the updated JSON file
-            with open(self.json_path, "w") as file:
+            with open(json_path, "w") as file:
                 for key in modeled_values_dict:
                     # Convert the existing list into a nested list with a single element
                     modeled_values_dict[key] = [modeled_values_dict[key]]
                 json.dump(modeled_values_dict, file,indent=4)
 
-        if os.path.exists(self.json_path_detailed):
+        if os.path.exists(json_path_detailed):
             # File exists, so open it for writing
             #pdb.set_trace()
-            with open(self.json_path_detailed, "r") as file:
+            with open(json_path_detailed, "r") as file:
                 output_data_detailed = json.load(file)
                 for key, new_values in differentiated_dict.items():
                     if key in output_data_detailed:
@@ -839,22 +862,20 @@ S
                         # If the key does not exist, create a new list containing the new values
                         output_data_detailed[key] = [new_values]
 
-                with open(self.json_path_detailed, 'w') as file:
+                with open(json_path_detailed, 'w') as file:
                     json.dump(output_data_detailed, file, indent=4)
         else:
         # Save the updated JSON file
-            with open(self.json_path_detailed, "w") as file:
+            with open(json_path_detailed, "w") as file:
                 for key in differentiated_dict:
                     # Convert the existing list into a nested list with a single element
                     differentiated_dict[key] = differentiated_dict[key]
                 json.dump(differentiated_dict, file,indent=4)
         try:
-            print(self.tm_results_filename)
-            print(self.res_dir)
-            if os.path.exists(os.path.join(self.res_dir + os.sep + "auto-saved-results",self.tm_results_filename)):
+            if os.path.exists(os.path.join(results_folder_directory + os.sep + "auto-saved-results",input_slf_file)):
                 # Remove the existing destination file
-                os.remove(os.path.join(self.res_dir + os.sep + "auto-saved-results",self.tm_results_filename))
-            shutil.move(os.path.join(self.model_dir,self.tm_results_filename),self.res_dir + os.sep + "auto-saved-results")
+                os.remove(os.path.join(results_folder_directory + os.sep + "auto-saved-results",input_slf_file))
+            shutil.move(os.path.join(model_directory,input_slf_file),self.res_dir + os.sep + "auto-saved-results")
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 

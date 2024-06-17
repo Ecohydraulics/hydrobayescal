@@ -1,24 +1,36 @@
 .. Stochastic surrogate workflow.
 
 
-Surrogate Workflow
-==================
+Full-complexity - Surrogate Calibration Workflow
+================================================
 
-The workflow describes the usage of Bayesian model evidence and relative entropy in combination with a Gaussian Process Emulator proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
+The workflow describes the use of Bayesian Model Evidence (BME) and Relative Entropy (RE) in conjunction with a Gaussian Process Emulator,
+as proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_, to iteratively improve the accuracy of a surrogate model applied
+for the calibration of full-complexity hydrodynamic models.
+
+The following steps outline the process for performing a GPE surrogate-assisted calibration of any hydrodynamic model using open-source
+hydrodynamic software. Currently, model calibration is supported only with Telemac.
 
 Step 0: Wet your TELEMAC Model
 ------------------------------
 
-Before the surrogate-assisted calibration can run, it needs an initial model run. The initial model need to be fully functional with all the required simulation files.
-The first model run should start with `dry conditions (read more at hydro-informatics.com) <https://hydro-informatics.com/numerics/telemac2d-steady.html>`_ and be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hydro-informatics.com/numerics/telemac2d-unsteady.html#hotstart-initial-conditions>`_ for the surrogate-assisted calibration.
+Before the surrogate-assisted calibration can run, it needs an initial model run. The initial model needs to be fully functional with all the required simulation files.
+The first model run should start with `dry conditions (read more at hydro-informatics.com) <https://hydro-informatics.com/numerics/telemac2d-steady.html>`_ and
+be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hydro-informatics.com/numerics/telemac2d-unsteady.html#hotstart-initial-conditions>`_ for the surrogate-assisted calibration.
 
-.. note:: Why hotstart the model for the surrogate-assisted calibration?
+.. note:: **Why hotstart the model for the surrogate-assisted calibration?**
 
-    Instead of applying an initial water depth that covers the entire model domain (or other initial condition types), a numerical model of a fluvial ecosystem typically starts dry to avoid filling disconnected terrain depressions with water. However, wet initial conditions converge considerably faster if those approximately correspond to the target conditions. Thus, to speed up the surrogate-assisted calibration, preferably do one dry model initialization and then switch to fast converging hotstart (wet initial) conditions.
+    A hotstart simulation involves re-using the output file (.slf) of a previous simulation that began under dry conditions as a file containing the new initial conditions.
+    In a typical numerical model of a fluvial ecosystem, it is common to start with dry conditions to prevent filling disconnected terrain depressions with water. However, applying wet initial
+    conditions that approximately correspond to the target conditions can significantly speed up convergence.
+    To expedite surrogate-assisted calibration, it is recommended to perform one dry model initialization initially. Afterward, switch to fast-converging hotstart (wet initial) conditions.
 
-Step 1: Initialize environments and model parameters
----------------------------------------------------
 
+Step 1: Assign user inpuit parameters
+-------------------------------
+
+As it was mentioned before the calibration process involves to well defined parts in the code. Both processes depend on the user defined input parameters, which are essential
+to run the code properly.
 Firstly, the initialization of all input parameters must be done through the ``user_settings.py`` Python script. The file is divided in two parts, the full complexity model global parameters
 and the Bayesian Active Learning **(BAL)** global parameters. Each of the parameters has a purpose in the code running so be sure to follow the instructions properly.
 
@@ -26,13 +38,41 @@ and the Bayesian Active Learning **(BAL)** global parameters. Each of the parame
 Global Full Complexity Model Parameters
 ------------------------
 
-    * **control_file_name**
-    * **Telemac_solver**
-    * **results_folder_path**
-    * **calib_pts_file_path**
-    * **n_cpus**
-    * **init_runs**
-    * **friction_file**
+* **control_file_name**: Name of the TELEMAC steering file (.cas)
+
+* **telemac_solver**: TELEMAC solver.
+
+  Two options are possible:
+
+  * 1 = Telemac 2D
+  * 2 = Telemac 3D
+
+* **model_simulation_path**: Folder path where all the necessary Telemac simulation files (.cas ; .cli ; .tbl ; .slf) are located
+
+* **results_folder_path**: Folder path where all simulation outputs will be stored. Inside this folder a subfolder called ``auto-saved-results`` will be created with the following files:
+
+  * .slf (For all simulations)
+  * collocation_points.csv
+  * collocation_points.npy
+  * model_results.npy
+  * surrogate.pickle (One for each surrogate evaluation)
+
+* **calib_pts_file_path**: Complete folder path where the ``calibration_points.csv`` file is located. ``calibration_points.csv`` is the file which holds the information of measured data for calibration purposes. The .csv file MUST be structured as follows:
+
+.. table:: Measurement Data
+
+   ======================= ================== ================== ====================== ===============
+   Point                   X                  Y                  MEASUREMENT 1           ERROR 1
+   ======================= ================== ================== ====================== ===============
+   [Point data row 1]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
+   [Point data row 2]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
+   [Point data row 3]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
+   ======================= ================== ================== ====================== ===============
+* **n_cpus**: Number of CPUs for Telemac Simulations
+
+* **init_runs**: Initial full-complexity model runs (init_runs) (Initial training points for surrogate model)
+
+* **friction_file**
     * **dict_output_name**
     * **results_file_name_base**
 
@@ -61,37 +101,7 @@ Global Full Complexity Model Parameters
 
 * **results_file_name_base**
 
-On the other hand, the package environment **HBCenv** needs to be activated so you can use it. In the previous section, the steps on how to set up the environments' so you can use them in your
-server were explained. To activate the Python and Telemac environments please follow these steps:
 
-.. note:: Linux
-
-   **One-time actions**:
-
-   Download `activateHBCtelemac.sh <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.sh>`_ and open it in a text editor to modify the following lines:
-
-   * In line 3, set ``TELEMAC_CONFIG_DIR`` to the location of your TELEMAC installation's config directory.
-   * In line 4, set ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC configuration file.
-   * In line 5, set ``HBCenv_DIR`` to the directory where you created ``HBCenv``.
-   * Save and close the file after making these changes.
-
-   **Regular load action**: To load the combined ``HBCenv`` and TELEMAC environments, open a terminal, navigate to the directory where you saved `activateHBCtelemac.sh`, and enter:
-
-   .. code:: bash
-
-      source activateHBCtelemac.sh
-
-   If the activation was successful, a message will show up:
-
-   .. code:: bash
-
-      > Loading HBCenv...
-      **Success**
-      > Loading TELEMAC config...
-      **Success**
-
-
-If both environments are loaded without errors, you are good to go for running the codes.
 
 
 Step 2: Read Collocation Points

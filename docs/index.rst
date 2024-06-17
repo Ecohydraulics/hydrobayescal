@@ -132,78 +132,56 @@ Load HBCenv with TELEMAC
 ========================
 
 The simultaneous activation of the *HydroBayesCal* environment and TELEMAC environment variables requires some tweaking,
-which can be achieved by source-ing our environment activation templates. To activate the environment specifically for your system,
-you need to modify the activateHBCtelemac.sh file. Follow these steps:
+which can be achieved by source-ing the environment activation templates. To activate the environment specifically for your system,
+you need to modify the ``activateHBCtelemac.sh`` file.
+The steps to activate the Python and Telemac environments for your system are the following:
+
+.. note:: Linux
+
+   **One-time actions**:
+
+   Download `activateHBCtelemac.sh <https://github.com/sschwindt/hybayescal/raw/main/env-scripts/activateHBCtelemac.sh>`_ and open it in a text editor to modify the following lines:
+
+   * In line 3, set **``TELEMAC_CONFIG_DIR``** to the location of your TELEMAC installation's config directory.
+   * In line 4, set **``TELEMAC_CONFIG_NAME``** to the name of your TELEMAC configuration file.
+   * In line 5, set **``HBCenv_DIR``** to the directory where you created ``HBCenv``.
+   * Save and close the file after making these changes.
+
+   **Regular load action**:
+
+   To load the combined ``HBCenv`` and TELEMAC environments, open a terminal, navigate to the directory
+   where you saved ``activateHBCtelemac.sh``, and enter:
+
+   .. code:: bash
+
+      source activateHBCtelemac.sh
+
+   If the activation was successful, a message will show up:
+
+   .. code:: bash
+
+      > Loading HBCenv...
+      **Success**
+      > Loading TELEMAC config...
+      **Success**
 
 
-.. tabs::
-
-   .. tab:: Linux
-
-      **One-time actions**: `Download activateHBCtelemac.sh <https://github.com/Ecohydraulics/hydrobayescal/main/env-scripts/activateHBCtelemac.sh>`_ and right-click on *activateHBCtelemac.sh* to open it in a text editor for adapting:
-      * In line 3, adapt ``TELEMAC_CONFIG_DIR`` to where your TELEMAC installation's config lives.
-      * In line 4, adapt ``TELEMAC_CONFIG_NAME`` to the name of your TELEMAC bash file.
-      * In line 5, adapt ``HBCenv_DIR`` to where you created ``HBCenv``.
-      * Save and close *activateHBCtelemac.sh*
-
-.. tip::
-
-   The bash environment can also be used with your IDE. For instance, in PyCharm:
-   
-   * Find the *Run* top menu > *Edit Configurations...* tool. 
-   * Select *Shell script*, enter ``HBCtelemac`` in the *Name* field, and find the ``activateHBCtelemac.sh`` script in the field *Script path*.
-   * On Linux, make sure the *Interpreter path* is ``/bin/bash``, and click *OK*.
-   * Activate the main Python script that you want to use for running *HyBayesCal*, and find the *Run/Debug Configurations* next to the green *Run* arrow (typically in top-right corner of the PyCharm window).
-   * In the *Run/Debug Configurations* window, look for the *Before launch* box (scroll down), click on **+** (*Add*) > *Run another configuration*, and select the above-created *HBCtelemac* configuration.
-   * Check the *Emulate Terminal in output console* box.
-   * Click *OK* and run your Python application with the *HBCtelemac* configuration.
-
-   Read more at `jetbrains.com/help <https://www.jetbrains.com/help/pycharm/run-debug-configuration-shell-script.html>`_.
-
-   If this option does not work, find the *Terminal* box in PyCharm, run ``source activateHBCtelemac.sh`` and execute your TELEMAC files from the PyCharm Terminal (e.g., ``python use_case_tm2d.py``. Either way, to run a Bayesian calibration, better directly use the system Terminal, not an IDE (computation load).
+If both environments are loaded without errors, you are good to go for running the codes.
 
 Overview of the package components
 ==================================
 
-The package has two well defined parts. The first part is the one that performs the hydrodynamic simulations with any open-source hydrodynamic software and the second is the one
-builds up the initial surrogate model with Gaussian Process Regression and performs Bayesian Active Learning in light of measured data with the purpose of improving the initial surrogate by
-adding new collocation points to the initial one.
+The package consists of two well-defined parts:
 
-You will find a detailed explanation of each module functionality in the following documentation.
+1. **Hydrodynamic Simulations**:
+   This part performs hydrodynamic simulations using any open-source hydrodynamic software.
 
+2. **Surrogate Model and Bayesian Active Learning**:
+   This part builds the initial surrogate model using Gaussian Process Regression and performs Bayesian Active Learning. The goal is to improve the initial surrogate by adding new collocation points.
 
-Other Software
---------------
+All user input parameters are assigned in the ``user_input.py`` file.
 
-Editing the input.xlsx workbook requires an office program, such as LibreOffice or ONLYOFFICE DesktopEditors (for non-commercial use only). Fore more details, read our `office applications instructions <https://hydro-informatics.com/get-started/others.html#lo>`_.
-
-We recommend working with GMSH for generating a computational mesh for the numerical model. Get GMSH at `https://gmsh.info <https://gmsh.info/>`_ and `QGIS <https://qgis.org>`_.
-
-.. toctree::
-    :hidden:
-    :maxdepth: 2
-
-    Stochastic surrogate <self>
-
-.. toctree::
-    :hidden:
-
-    Workflow <background>
-
-.. toctree::
-    :hidden:
-
-    Usage with TELEMAC <usage-telemac>
-
-.. toctree::
-    :hidden:
-
-    Developer Docs <codedocs>
-
-.. toctree::
-    :hidden:
-
-    License <license>
+You will find a detailed explanation of each module's functionality in the following documentation.
 
 
 .. _hydro-informatics.com: https://hydro-informatics.com

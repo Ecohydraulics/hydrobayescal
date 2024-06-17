@@ -29,13 +29,6 @@ logger_info = logging.getLogger("HydroBayesCal")
 class HydroSimulations(FullComplexityModel):
     def __init__(
             self,
-            model_dir="",
-            res_dir="",
-            control_file="",
-            calibration_parameters=None,
-            bal_mode=True,
-            n_max_tp=int(),
-            init_runs=int(),
             user_inputs=None,
     ):
         """
@@ -73,53 +66,51 @@ class HydroSimulations(FullComplexityModel):
             Initial runs of the full complexity model.
         """
 
-        FullComplexityModel.__init__(self, model_dir=model_dir,
-                                     res_dir=res_dir,
-                                     calibration_parameters=calibration_parameters,
-                                     control_file=control_file,
-                                     init_runs=init_runs)
+        FullComplexityModel.__init__(self, model_dir=user_inputs['model_simulation_path'],
+                                     res_dir=user_inputs['results_folder_path'],
+                                     calibration_parameters=user_inputs['calibration_parameters'],
+                                     control_file=user_inputs['control_file_name'],
+                                     init_runs=user_inputs['init_runs'])
         self.user_inputs = user_inputs
-        self.bal_mode = bal_mode
-        self.n_max_tp=n_max_tp
-        self.init_runs=init_runs
-
-
+        self.model_evaluations = None
     def tm_simulations(
             self,
             collocation_points=None,
             bal_iteration=int(),
             bal_new_set_parameters=None,
+            bal_mode=None
             ):
         control_tm = TelemacModel(
-            model_dir=self.model_dir,
-            res_dir=self.res_dir,
-            control_file=self.control_file,
+            model_dir=self.user_inputs['model_simulation_path'],
+            res_dir=self.user_inputs['results_folder_path'],
+            control_file=self.user_inputs['control_file_name'],
             friction_file=self.user_inputs['friction_file'],
-            calibration_parameters=self.calibration_parameters,
+            calibration_parameters=self.user_inputs['calibration_parameters'],
             calibration_pts_file_path=self.user_inputs['calib_pts_file_path'],
-            calibration_quantities=self.user_inputs['calib_quantity_list'],
+            calibration_quantities=self.user_inputs['calibration_quantities'],
             tm_xd=self.user_inputs['Telemac_solver'],
             n_processors=self.user_inputs['n_cpus'],
             dict_output_name=self.user_inputs['dict_output_name'],
-            results_file_name_base=self.user_inputs['results_file_name_base'],
-            init_runs=self.init_runs,
+            results_filename_base=self.user_inputs['results_filename_base'],
+            init_runs=self.user_inputs['init_runs'],
 
         )
-        control_tm.run_multiple_simulations(collocation_points, bal_new_set_parameters, bal_iteration,
-                                            bal_mode=self.bal_mode)
-        model_results = control_tm.output_processing(dict_output_name=self.user_inputs['dict_output_name'])
 
-        return model_results
+        control_tm.run_multiple_simulations(collocation_points, bal_new_set_parameters, bal_iteration,
+                                            bal_mode)
+        self.model_evaluations = control_tm.output_processing( )
+
+        return self.model_evaluations
 
     def of_simulations(self):
         pass
 
-    def run(self, collocation_points, bal_iteration, bal_new_set_parameters):
+    def run(self, collocation_points, bal_iteration, bal_new_set_parameters,bal_mode):
         if collocation_points is not None:
             logger_info.info("Running full complexity models with initial collocation points:")
-            return self.tm_simulations(collocation_points=collocation_points, bal_iteration=bal_iteration)
+            return self.tm_simulations(collocation_points=collocation_points, bal_iteration=bal_iteration,bal_mode=bal_mode)
         elif bal_new_set_parameters is not None:
-            return self.tm_simulations(bal_iteration=bal_iteration, bal_new_set_parameters=bal_new_set_parameters)
+            return self.tm_simulations(bal_iteration=bal_iteration, bal_new_set_parameters=bal_new_set_parameters,bal_mode=bal_mode)
         else:
             raise ValueError("Error: At least one of 'collocation_points' or 'bal_new_set_parameters' must be provided.")
 
