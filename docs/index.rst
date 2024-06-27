@@ -81,7 +81,7 @@ Install TELEMAC
 
 The calibration routines are tied to the open-source numerical modeling software TELEMAC. The developers provide installation instructions
 at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_, and we also provide a detailed installation guide
-at `https://hydro-informatics.com/get-started/install-telemac.html <https://hydro-informatics.com/get-started/install-telemac.html>`_ that
+at `https://hydro-informatics.com <https://hydro-informatics.com/get-started/install-telemac.html>`_ that
 is tweaked for HydroBayesCal. We recommend to install TELEMAC with ``pysource.gfortranHPC.sh``or with your preferred pysource file.
 
 Install HydroBayesCal

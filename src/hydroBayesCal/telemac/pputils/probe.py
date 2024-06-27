@@ -43,7 +43,7 @@ from ppmodules.selafin_io_pp import *
 #   sys.exit()
 
 # I/O
-input_file = 'rmesh-friction.slf'   # input *.slf file
+input_file = 'R_ering2m3_1.slf'   # input *.slf file
 print('#################################')
 print("The input file being probed: " + input_file)
 #

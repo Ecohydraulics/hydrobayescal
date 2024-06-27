@@ -33,7 +33,7 @@ class HydroSimulations(FullComplexityModel):
     ):
         """
         Constructor for the HydroSimulations Class. Wraps functions for running Telemac and OpenFoam
-        in the context of Bayesian Calibration using Gaussian Process Emulation (GPE).
+        in the context of Bayesian Calibration using Gaussian Process Emulator (GPE).
 
         Parameters
         ----------
@@ -113,35 +113,6 @@ class HydroSimulations(FullComplexityModel):
             return self.tm_simulations(bal_iteration=bal_iteration, bal_new_set_parameters=bal_new_set_parameters,bal_mode=bal_mode)
         else:
             raise ValueError("Error: At least one of 'collocation_points' or 'bal_new_set_parameters' must be provided.")
-
-    # @staticmethod
-    # def activate_env (environment):
-    #     script_directory = env_script_path
-    #     os.chdir(script_directory)
-    #     commands = {
-    #         'telemac': "source activateHBCtelemac.sh",
-    #         'openfoam': "source activateHBCopenfoam.sh"
-    #     }
-    #     if environment not in commands:
-    #         print(f"Error: Invalid environment '{environment}'. Valid options are 'telemac' and 'openfoam'.")
-    #         return
-    #
-    #     command = commands[environment]
-    #
-    #     # Run the command for Telemac environment activation
-    #     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    #     stdout, stderr = process.communicate()
-    #
-    #     # Print the output or error
-    #     if process.returncode == 0:
-    #         if environment == 'telemac':
-    #             print("TELEMAC Environment activated:")
-    #         elif environment == 'openfoam':
-    #             print("OpenFOAM Environment activated:")
-    #         print(stdout.decode())
-    #     else:
-    #         print("Error executing command:")
-    #         print(stderr.decode())
 
 if __name__ == "__main__":
     full_complexity_simulation = HydroSimulations()

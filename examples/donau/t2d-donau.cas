@@ -32,7 +32,7 @@
 /
 BOUNDARY CONDITIONS FILE                     : geo-donau.cli
 GEOMETRY FILE                                : geo-donau.slf
-RESULTS FILE = R_donau_5.slf
+RESULTS FILE = R_donau_18.slf
 CHECKING THE MESH = YES
 PREVIOUS COMPUTATION FILE                    : donau-restart.slf
 COMPUTATION CONTINUED                       : YES

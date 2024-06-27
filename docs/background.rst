@@ -68,17 +68,29 @@ Global Full Complexity Model Parameters
    [Point data row 2]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
    [Point data row 3]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
    ======================= ================== ================== ====================== ===============
-* **n_cpus**: Number of CPUs for Telemac Simulations
+* **n_cpus**: Number of CPUs for Telemac Simulations.
 
-* **init_runs**: Initial full-complexity model runs (init_runs) (Initial training points for surrogate model)
+* **init_runs**: Number of initial full-complexity model runs. The initial simulations will run with the initial training points for surrogate model construction.
 
-* **friction_file**
-    * **dict_output_name**
-    * **results_file_name_base**
+* **friction_file**: Friction file .tbl that contains the information of friction zones for the Telemac simulation. This name MUST be indicated in the Telemac .cas file with the keyword **FRICTION DATA FILE**.
 
-    *Calibration parameters*
+* **dict_output_name**: Desired name of the external file .json file containing the model outputs of the calibration quantities
 
-    * calib_parameter_1
+* **results_filename_base**: Desired name of the results.slf ile to be iteratively created after each simulation. Add the name WITHOUT the extension .slf (i.e., "telemac_rfile"). The results file (.slf) will be stored inside the *auto-saved-results* folder, inside the *results* folder.
+
+* **Calibration parameters**: Assign calibration parameters. They must be assigned as *strings*. Please consider these recommendations before assigning the calibration parameters.
+
+    * Notes:
+        * MAXIMUM number of calibration parameters = 4.
+        * The calibration parameters MUST coincide with the Telemac KEYWORD in the .cas file. You can find more details in the Telemac User Manuals `http://wiki.opentelemac.org/doku.php#principal_documentation <https://wiki.opentelemac.org/doku.php#principal_documentation>`_
+             Example: calib_parameter_1 = "LAW OF FRICTION ON LATERAL BOUNDARIES"
+                      calib_parameter_2 = "INITIAL ELEVATION"
+        * If you want to calibrate different values of roughness coefficients in roughness zones, the roughness zones description MUST be indicated in the .tbl file.
+        * The .tbl file name MUST be indicated in the friction file input.
+        * The calibration zone MUST contain the word zone,ZONE or Zone as a prefix in the calib_parameter field.
+             Example: calib_parameter_1='zone99999100'   , if the zone description is: 99999100
+
+* calib_parameter_1
     * calib_parameter_2
     * calib_parameter_3
     * calib_parameter_4

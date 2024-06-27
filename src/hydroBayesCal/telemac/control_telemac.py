@@ -14,14 +14,14 @@ import csv
 import json
 import pdb
 
-try:
-    from telapy.api.t2d import Telemac2d
-    from telapy.api.t3d import Telemac3d
-    from telapy.tools.driven_utils import mpirun_cmd
-    from data_manip.extraction.telemac_file import TelemacFile
-except ImportError as e:
-    print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
-    exit()
+# try:
+#     from telapy.api.t2d import Telemac2d
+#     from telapy.api.t3d import Telemac3d
+#     from telapy.tools.driven_utils import mpirun_cmd
+#     from data_manip.extraction.telemac_file import TelemacFile
+# except ImportError as e:
+#     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
+#     exit()
 
 # attention relative import usage according to docs/codedocs.rst
 from config_telemac import * # provides os and sys
