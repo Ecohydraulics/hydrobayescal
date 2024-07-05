@@ -58,7 +58,7 @@ class HydroSimulations(FullComplexityModel):
         ----------
         user_inputs : dict
             User input parameters.
-        bal_mode : bool
+        complete_bal_mode : bool
             Mode for Bayesian Active Learning. Default: True
         n_max_tp : int
             Total number of model simulations, including Bayesian Active Learning iterations.
@@ -78,7 +78,7 @@ class HydroSimulations(FullComplexityModel):
             collocation_points=None,
             bal_iteration=int(),
             bal_new_set_parameters=None,
-            bal_mode=None
+            complete_bal_mode=None
             ):
         control_tm = TelemacModel(
             model_dir=self.user_inputs['model_simulation_path'],
@@ -97,20 +97,22 @@ class HydroSimulations(FullComplexityModel):
         )
 
         control_tm.run_multiple_simulations(collocation_points, bal_new_set_parameters, bal_iteration,
-                                            bal_mode)
-        self.model_evaluations = control_tm.output_processing( )
+                                           complete_bal_mode)
+        self.model_evaluations = control_tm.output_processing(complete_bal_mode)
 
         return self.model_evaluations
 
     def of_simulations(self):
         pass
 
-    def run(self, collocation_points, bal_iteration, bal_new_set_parameters,bal_mode):
+    def run(self, collocation_points, bal_iteration, bal_new_set_parameters,complete_bal_mode):
         if collocation_points is not None:
             logger_info.info("Running full complexity models with initial collocation points:")
-            return self.tm_simulations(collocation_points=collocation_points, bal_iteration=bal_iteration,bal_mode=bal_mode)
+            return self.tm_simulations(collocation_points=collocation_points, bal_iteration=bal_iteration,
+                                       complete_bal_mode=complete_bal_mode)
         elif bal_new_set_parameters is not None:
-            return self.tm_simulations(bal_iteration=bal_iteration, bal_new_set_parameters=bal_new_set_parameters,bal_mode=bal_mode)
+            return self.tm_simulations(bal_iteration=bal_iteration, bal_new_set_parameters=bal_new_set_parameters,
+                                       complete_bal_mode=complete_bal_mode)
         else:
             raise ValueError("Error: At least one of 'collocation_points' or 'bal_new_set_parameters' must be provided.")
 

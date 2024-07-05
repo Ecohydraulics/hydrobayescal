@@ -14,14 +14,14 @@ import csv
 import json
 import pdb
 
-# try:
-#     from telapy.api.t2d import Telemac2d
-#     from telapy.api.t3d import Telemac3d
-#     from telapy.tools.driven_utils import mpirun_cmd
-#     from data_manip.extraction.telemac_file import TelemacFile
-# except ImportError as e:
-#     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
-#     exit()
+try:
+    from telapy.api.t2d import Telemac2d
+    from telapy.api.t3d import Telemac3d
+    from telapy.tools.driven_utils import mpirun_cmd
+    from data_manip.extraction.telemac_file import TelemacFile
+except ImportError as e:
+    print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
+    exit()
 
 # attention relative import usage according to docs/codedocs.rst
 from config_telemac import * # provides os and sys
@@ -519,7 +519,7 @@ S
             collocation_points=None,
             bal_new_set_parameters=None,
             bal_iteration=int(),
-            bal_mode=True,
+            complete_bal_mode=True,
     ):
         """
         Runs multiple Telemac2d or Telemac3d simulations with a set of collocation points and a new set of
@@ -535,9 +535,9 @@ S
             2D array of shape [1 x No. parameters] containing the new set of values after each BAL iteration.
         bal_iteration : int
             The number of the BAL iteration. Default is 0.
-        bal_mode : bool
-            Default is True when the code accounts for surrogate construction and BAL phase. False when
-            only iterative runs are required.
+        complete_bal_mode : bool
+            Default is True when the code accounts for initial runs, surrogate construction and BAL phase. False when
+            only initial runs are required.
 
         Returns
         -------
@@ -552,7 +552,7 @@ S
         logger.info(
             "* running {}\n -- patience (Telemac simulations can take time) -- check CPU acitivity...")
         start_time = datetime.now()
-        if bal_mode:
+        if complete_bal_mode:
             # This part of the code runs the initial runs for initial surrogate.
             if collocation_points is not None:
                 array_list = collocation_points.tolist()
@@ -610,8 +610,6 @@ S
                                       fr_tbl)
                     self.run_single_simulation()
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
-                exit()
-
 
     def call_tm_shell(self, cmd):
         """
@@ -633,7 +631,7 @@ S
         del stderr
         return stdout, process.returncode
 
-    def output_processing(self):
+    def output_processing(self,complete_bal_mode = True):
         """
         Process the data to be extracted from the .slf files.
 
@@ -647,13 +645,13 @@ S
         output_data_path=os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{self.dict_output_name}.json")
         with open(output_data_path, "r") as file:
             output_data = json.load(file)
-
+        n_calibration_quantities = len(self.calibration_quantities)
         n_calibration_pts = len(self.calibration_pts_df.iloc[:, 0])
         n_total_runs = self.init_runs+self.bal_iteration
 
 
         # Initialize a 2D NumPy array with zeros
-        model_results = np.zeros((n_total_runs, n_calibration_pts))
+        model_results = np.zeros((n_calibration_quantities * n_total_runs, n_calibration_pts))
 
         # Populate the array with the values from the dictionary
         for i, key in enumerate(output_data.keys()):
@@ -661,7 +659,8 @@ S
             model_results[:len(values), i] = np.array(values).flatten()
 
         np.save(os.path.join(self.res_dir + os.sep + "auto-saved-results", 'model_results.npy'), model_results)
-
+        if not complete_bal_mode:
+            exit()
         return model_results
 
     def extract_data_point(self,

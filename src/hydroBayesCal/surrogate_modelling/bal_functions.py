@@ -95,6 +95,7 @@ class BayesianInference:
         self.post_likelihood = None
         self.posterior = None
         self.posterior_output = None
+        self.post_logpdf = None 
 
         self.BME = None
         self.ELPD = None
