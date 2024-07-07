@@ -81,7 +81,7 @@ Global Full Complexity Model Parameters
 * **Calibration parameters**: Assign calibration parameters. They must be assigned as *strings*. Please consider these recommendations before assigning the calibration parameters.
 
     * Notes:
-        * MAXIMUM number of calibration parameters = 4.
+        * MAXIMUM number of calibration parameters = 5.
         * The calibration parameters MUST coincide with the Telemac KEYWORD in the .cas file. You can find more details in the Telemac User Manuals `http://wiki.opentelemac.org/doku.php#principal_documentation <https://wiki.opentelemac.org/doku.php#principal_documentation>`_
              Example: calib_parameter_1 = "LAW OF FRICTION ON LATERAL BOUNDARIES"
                       calib_parameter_2 = "INITIAL ELEVATION"
@@ -90,24 +90,27 @@ Global Full Complexity Model Parameters
         * The calibration zone MUST contain the word zone,ZONE or Zone as a prefix in the calib_parameter field.
              Example: calib_parameter_1='zone99999100'   , if the zone description is: 99999100
 
-* calib_parameter_1
+    * calib_parameter_1
     * calib_parameter_2
     * calib_parameter_3
     * calib_parameter_4
+    * calib_parameter_5
 
-    *Calibration ranges*
+* **Calibration ranges**: Assign calibration ranges of the parameters. They must be assigned as *strings*.
 
     * param_range_1
     * param_range_2
     * param_range_3
     * param_range_4
+    * param_range_5
 
-    *Calibration quantities*
+* **Calibration quantities**: Assign calibration quantities (i.e., extraction of model outputs). They must be assigned as *strings* and according to the *KEYWORD* in Telemac.
 
     * calib_quantity_1
     * calib_quantity_2
     * calib_quantity_3
     * calib_quantity_4
+    * calib_quantity_5
 
 * **dict_output_name**
 

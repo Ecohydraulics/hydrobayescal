@@ -39,10 +39,10 @@ def plot_posterior(posterior_vector, parameter_names, prior):
     label_fontsize = 14
     tick_fontsize = 12
     legend_fontsize = 8
-    bins = 40
+    bins = 30
 
     # Determine y limits
-    y_max = 0
+    y_max = np.zeros(parameter_num)
 
     # Calculate y_max by plotting without displaying
     if posterior_vector.ndim == 1:
@@ -51,7 +51,10 @@ def plot_posterior(posterior_vector, parameter_names, prior):
     else:
         for i in range(parameter_num):
             counts_posterior, _ = np.histogram(posterior_vector[:, i], bins=bins, density=True)
-            y_max = max(y_max, np.max(counts_posterior))
+            y_max[i] = np.max(counts_posterior)
+
+    # Find the overall maximum y value for consistent plotting
+    y_max_plot_posterior = np.max(y_max)
 
     # Plot prior distributions
     for i in range(parameter_num):
@@ -70,22 +73,30 @@ def plot_posterior(posterior_vector, parameter_names, prior):
     for i in range(parameter_num):
         ax = axes[1, i]
         ax.hist(posterior_vector[:, i], bins=bins, density=True, alpha=0.5, color=colors[1], label='Posterior')
-        mean_posterior = np.mean(posterior_vector[:, i])
-        ax.axvline(mean_posterior, color='black', linestyle='dashed', linewidth=1, label='Mean')
+
+        # Gaussian fit
+        mean_posterior, std_posterior = norm.fit(posterior_vector[:, i])
+        x = np.linspace(np.min(posterior_vector[:, i]), np.max(posterior_vector[:, i]), 100)
+        p = norm.pdf(x, mean_posterior, std_posterior)
+        ax.plot(x, p, 'b--', linewidth=2,
+                label=f'Gaussian fit\n$\mu={mean_posterior:.4f}$\n$\sigma={std_posterior:.4f}$')
+
+        # Add mean line
+        ax.axvline(mean_posterior, color='blue', linestyle='dashed', linewidth=1, label='Mean')
+
         ax.set_title(f'Posterior: {parameter_names[i]}', fontsize=title_fontsize)
         ax.set_xlabel(parameter_names[i], fontsize=label_fontsize)
         ax.set_ylabel('Density', fontsize=label_fontsize)
         ax.legend(fontsize=legend_fontsize)
         ax.grid(True)
         ax.tick_params(direction='in', labelsize=tick_fontsize)
-        ax.set_ylim(0, 250)
+        ax.set_ylim(0, y_max[i])
 
     # Adjust layout
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)  # Add more space between rows
-
-    plt.show()
-
+    plt.savefig('last_posterior.png')
+    plt.close()
     #plt.savefig('posterior_distributions.eps', format='eps')
     # Print the posterior probabilities
     # for i, prob in enumerate(posterior_vector):
@@ -140,10 +151,10 @@ def plot_posterior_updates(posterior_arrays, parameter_names, prior):
             x = np.linspace(x_limits[col][0], x_limits[col][1], 1000)
             ax.plot(x, kde(x), color='blue', linestyle='-', linewidth=1.5, label='KDE')
 
-            # Normal Fit
-            mu, std = norm.fit(posterior_vector[:, col])
-            p = norm.pdf(x, mu, std)
-            ax.plot(x, p, color='red', linestyle='--', linewidth=1.5, label='Normal Fit')
+            # # Normal Fit
+            # mu, std = norm.fit(posterior_vector[:, col])
+            # p = norm.pdf(x, mu, std)
+            # ax.plot(x, p, color='red', linestyle='--', linewidth=1.5, label='Normal Fit')
 
             ax.set_xlabel(parameter_names[col], fontsize=label_fontsize)
             ax.set_ylabel('Density', fontsize=label_fontsize)
@@ -153,7 +164,7 @@ def plot_posterior_updates(posterior_arrays, parameter_names, prior):
             ax.set_ylim(0, y_max[col])
             ax.set_xlim(x_limits[col])
 
-        fig.suptitle(f'Posterior Evaluation: {row + 1}', fontsize=title_fontsize, y=1.02 - (row * 0.1))
+        #fig.suptitle(f'Posterior Evaluation: {row + 1}', fontsize=title_fontsize, y=1.02 - (row * 0.1))
     # Adjust layout
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4, wspace=0.2)  # Add more space between rows and columns
@@ -175,7 +186,7 @@ def plot_bme_re(bayesian_dict, num_bal_iterations):
     axes[0].set_title('Bayesian Model Evidence (BME)', fontsize=16)
     axes[0].set_xlabel('Iteration', fontsize=14)
     axes[0].set_ylabel('BME', fontsize=14)
-    axes[0].grid(True, linestyle='--', linewidth=1)
+    axes[0].grid(True, linestyle='--', linewidth=0.5)
     axes[0].legend()
 
     # Add a dashed tendency line for BME
@@ -187,15 +198,16 @@ def plot_bme_re(bayesian_dict, num_bal_iterations):
     # Set x-axis limits for BME plot to start from the very beginning
     axes[0].set_xlim(iterations[0], iterations[-1])
 
-    # Set x-axis major locator to show ticks every 1 unit
-    axes[0].xaxis.set_major_locator(plt.MultipleLocator(1))
+    # Set x-axis major locator to show ticks every 5 units
+    axes[0].xaxis.set_major_locator(plt.MaxNLocator(integer=True, prune='both'))
+    axes[0].xaxis.set_major_locator(plt.MultipleLocator(5))
 
     # Plot RE
     axes[1].plot(iterations, re_values, marker='x', markersize=10, color='dimgray', linestyle='-', linewidth=1.5, label='RE')
     axes[1].set_title('Relative Entropy (RE)', fontsize=16)
     axes[1].set_xlabel('Iteration', fontsize=14)
     axes[1].set_ylabel('RE', fontsize=14)
-    axes[1].grid(True, linestyle='--', linewidth=1)
+    axes[1].grid(True, linestyle='--', linewidth=0.5)
     axes[1].legend()
 
     # Add a dashed tendency line for RE
@@ -207,8 +219,9 @@ def plot_bme_re(bayesian_dict, num_bal_iterations):
     # Set x-axis limits for RE plot to start from the very beginning
     axes[1].set_xlim(iterations[0], iterations[-1])
 
-    # Set x-axis major locator to show ticks every 1 unit
-    axes[1].xaxis.set_major_locator(plt.MultipleLocator(1))
+    # Set x-axis major locator to show ticks every 5 units
+    axes[1].xaxis.set_major_locator(plt.MaxNLocator(integer=True, prune='both'))
+    axes[1].xaxis.set_major_locator(plt.MultipleLocator(5))
 
     # Adjust layout
     plt.tight_layout()
@@ -259,8 +272,8 @@ def plot_combined_bal(collocation_points, n_init_tp, bayesian_dict, save_name=No
     ie_ind = np.where(bayesian_dict['util_func'] == 'global_mc')
     ax.scatter(selected_tp[ie_ind, 0], selected_tp[ie_ind, 1], label='MC', c='red', s=200, alpha=0.5)
 
-    ax.set_xlabel('$\omega_1$')
-    ax.set_ylabel('$\omega_2$')
+    ax.set_xlabel('K_Zone 8')
+    ax.set_ylabel('$K_Zone 9$')
 
     fig.legend(loc='lower center', ncol=5)
     plt.subplots_adjust(top=0.95, bottom=0.15, wspace=0.25, hspace=0.55)

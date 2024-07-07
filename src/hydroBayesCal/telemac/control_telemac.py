@@ -645,22 +645,34 @@ S
         output_data_path=os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{self.dict_output_name}.json")
         with open(output_data_path, "r") as file:
             output_data = json.load(file)
-        n_calibration_quantities = len(self.calibration_quantities)
+
         n_calibration_pts = len(self.calibration_pts_df.iloc[:, 0])
         n_total_runs = self.init_runs+self.bal_iteration
 
+        # Number of quantities per location
+        first_key = next(iter(output_data))
+        num_quantities = len(output_data[first_key][0])
 
         # Initialize a 2D NumPy array with zeros
-        model_results = np.zeros((n_calibration_quantities * n_total_runs, n_calibration_pts))
+        model_results = np.zeros((num_quantities * n_total_runs, n_calibration_pts))
+
+        # # Populate the array with the values from the dictionary
+        # for i, key in enumerate(output_data.keys()):
+        #     values = output_data[key]
+        #     model_results[:len(values), i] = np.array(values).flatten()
 
         # Populate the array with the values from the dictionary
         for i, key in enumerate(output_data.keys()):
             values = output_data[key]
-            model_results[:len(values), i] = np.array(values).flatten()
+            for j, value_set in enumerate(values):
+                for k in range(num_quantities):
+                    model_results[k * n_total_runs + j, i] = value_set[k]
 
         np.save(os.path.join(self.res_dir + os.sep + "auto-saved-results", 'model_results.npy'), model_results)
+
         if not complete_bal_mode:
             exit()
+
         return model_results
 
     def extract_data_point(self,
