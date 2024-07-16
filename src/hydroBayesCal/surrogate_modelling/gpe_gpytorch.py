@@ -1,5 +1,8 @@
 """
-GPyTorch library for GP training
+This module inherits from the PyTorch library for training a Gaussian Process Emulator (GPE). MORE SPECIFIC DESCRIPTIONS
+ TO BE ADDED (SEB: something like 5-6 lines about what you import and how and why you supersede it).
+
+Author: Andres HEREDIA (2024)
 """
 import numpy as np
 import sys
@@ -25,12 +28,16 @@ class MyExactGPyModel(gpytorch.models.ExactGP):
 
     Parameters:
         :param train_x: <np.array[n_tp, n_p]> with parameter sets used to train GPR
-        :param train_y: <np.array[n_tp, n_obs]> with forward model outputs used to trian GPR
+        :param train_y: <np.array[n_tp, n_obs]> with forward model outputs used to train GPR
         :param kernel: <kernel instance> with kernel used in GPR
         :param likelihood <likelihood instance> to train noise in GPR
     """
 
-    def __init__(self, train_x, train_y, kernel, likelihood):
+    def __init__(
+            self, train_x,
+            train_y, kernel,
+            likelihood
+    ):
         super(MyExactGPyModel, self).__init__(train_inputs=train_x, train_targets=train_y, likelihood=likelihood)
         # self.mean_module = gpytorch.means.ConstantMean()
         self.mean_module = gpytorch.means.ZeroMean()
@@ -91,12 +98,24 @@ class GPyTraining:
     TODO: For GPyTorch, check the GPU settings (if needed) and other gpytorch.settings to predict values.
     """
 
-    def __init__(self, collocation_points, model_evaluations, kernel, training_iter, likelihood,
-                 y_normalization=True, tp_normalization=False, optimizer="adam", lr=0.5,
-                 loss='exact', n_restarts=1, weight_decay=0,
-                 gradient_free_start=False,
-                 verbose=True,
-                 parallelize=False):
+    def __init__(
+            self,
+            collocation_points,
+            model_evaluations,
+            kernel,
+            training_iter,
+            likelihood,
+            y_normalization=True,
+            tp_normalization=False,
+            optimizer="adam",
+            lr=0.5,
+            loss='exact',
+            n_restarts=1,
+            weight_decay=0,
+            gradient_free_start=False,
+            verbose=True,
+            parallelize=False
+    ):
 
         # Basic attributed
         self.training_points = collocation_points
@@ -118,7 +137,6 @@ class GPyTraining:
         self.weight_decay = weight_decay
 
         # self.likelihood = likelihood
-
         self.parallel = parallelize
 
         self.verbose = verbose
@@ -241,11 +259,11 @@ class GPyTraining:
 
         for i in range(self.n_restarts):
 
-            # 1.Initialize kernel and likelihood:
+            # Initialize kernel and likelihood:
             kernel_ = copy.deepcopy(kernel)
             likelihood_ = copy.deepcopy(likelihood)
 
-            # 2.Initialize instance of GPyTorch GPR:
+            # Initialize instance of GPyTorch GPR:
             gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_)
 
             # Start training
@@ -270,9 +288,11 @@ class GPyTraining:
                 mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood_, gp)
 
             # Change learning rate:
-            scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-                                                        step_size=5,
-                                                        gamma=0.5)
+            scheduler = torch.optim.lr_scheduler.StepLR(
+                optimizer,
+                step_size=5,
+                gamma=0.5
+            )
 
             if i == 0 and self.gradient_free_start:
                 def negative_log_likelihood(params):
@@ -426,6 +446,13 @@ class GPyTraining:
     #     return return_out_dic
 
     def predict_(self, input_sets, get_conf_int=False):
+        """
+        DESCRIPTION TO BE COMPLETED
+
+        :param input_sets:
+        :param get_conf_int:
+        :return:
+        """
 
         prior_x = self.convert_to_tensor(input_sets)
 
@@ -495,12 +522,14 @@ def validation_error(true_y, sim_y, output_names, n_per_type):
     ToDo: Like in BayesValidRox, estimate surrogate predictions here, by giving a surrogate object as input (maybe)
     ToDo: add as part of MyGeneralGPR class, and the outputs are a dictionary, with output type as a key.
     """
-    criteria_dict = {'rmse': dict(),
-                     'mse': dict(),
-                     'nse': dict(),
-                     'r2': dict(),
-                     'mean_error': dict(),
-                     'std_error': dict()}
+    criteria_dict = {
+        'rmse': dict(),
+         'mse': dict(),
+         'nse': dict(),
+         'r2': dict(),
+         'mean_error': dict(),
+         'std_error': dict()
+    }
 
     # criteria_dict = {'rmse': dict(),
     #                  'valid_error': dict(),
@@ -518,30 +547,45 @@ def validation_error(true_y, sim_y, output_names, n_per_type):
         sm_out = sim_y
 
     # RMSE for each output location: not a dictionary (yet). [n_obs, ]
-    rmse = sklearn.metrics.mean_squared_error(y_true=true_y, y_pred=sm_out, multioutput='raw_values',
-                                              squared=False)
+    rmse = sklearn.metrics.mean_squared_error(
+        y_true=true_y,
+        y_pred=sm_out,
+        multioutput='raw_values',
+        squared=False
+    )
 
     c = 0
     for i, key in enumerate(output_names):
         # RMSE
-        criteria_dict['rmse'][key] = sklearn.metrics.mean_squared_error(y_true=true_y[:, c:c + n_per_type],
-                                                                        y_pred=sm_out[:, c:c + n_per_type],
-                                                                        multioutput='raw_values', squared=False)
-        # # NSE
-        criteria_dict['nse'][key] = sklearn.metrics.r2_score(y_true=true_y[:, c:c+n_per_type],
-                                                             y_pred=sm_out[:, c:c+n_per_type],
-                                                             multioutput='raw_values')
+        criteria_dict['rmse'][key] = sklearn.metrics.mean_squared_error(
+            y_true=true_y[:, c:c + n_per_type],
+            y_pred=sm_out[:, c:c + n_per_type],
+            multioutput='raw_values',
+            squared=False
+        )
+        # NSE
+        criteria_dict['nse'][key] = sklearn.metrics.r2_score(
+            y_true=true_y[:, c:c+n_per_type],
+            y_pred=sm_out[:, c:c+n_per_type],
+            multioutput='raw_values'
+        )
         # # Validation error:
         # criteria_dict['valid_error'][key] = criteria_dict['rmse'][key] ** 2 / np.var(true_y[:, c:c+n_per_type],
         #                                                                              ddof=1, axis=0)
 
         # NSE
-        criteria_dict['nse'][key] = sklearn.metrics.r2_score(y_true=true_y[:, c:c + n_per_type],
-                                                             y_pred=sm_out[:, c:c + n_per_type],
-                                                             multioutput='raw_values')
-        criteria_dict['mse'][key] = sklearn.metrics.mean_squared_error(y_true=true_y[:, c:c + n_per_type],
-                                                                       y_pred=sm_out[:, c:c + n_per_type],
-                                                                       multioutput='raw_values', squared=True)
+        criteria_dict['nse'][key] = sklearn.metrics.r2_score(
+            y_true=true_y[:, c:c + n_per_type],
+            y_pred=sm_out[:, c:c + n_per_type],
+            multioutput='raw_values'
+        )
+        criteria_dict['mse'][key] = sklearn.metrics.mean_squared_error(
+            y_true=true_y[:, c:c + n_per_type],
+            y_pred=sm_out[:, c:c + n_per_type],
+            multioutput='raw_values',
+            squared=True
+        )
+
         # Mean errors
         criteria_dict['mean_error'][key] = np.abs(
             np.mean(true_y[:, c:c + n_per_type], axis=0) - np.mean(sm_out[:, c:c + n_per_type], axis=0)) / np.mean(
@@ -602,12 +646,42 @@ def save_valid_criteria(new_dict, old_dict, n_tp):
                     old_dict[key][out_type] = np.vstack((old_dict[key][out_type], new_dict[key][out_type]))
 
     return old_dict
+
+
 class MultiGPyTraining:
-    def __init__(self, collocation_points, model_evaluations, kernel, training_iter, likelihood,
-                 optimizer="adam", lr=0.5,
-                 n_restarts=1,
-                 parallelize=False, number_quantities=2,
-                 noise_constraint=GreaterThan(1e-6)):
+    """
+    DESCRIPTION TO BE ADDED
+    """
+    def __init__(
+            self,
+            collocation_points,
+            model_evaluations,
+            kernel,
+            training_iter,
+            likelihood,
+            optimizer="adam",
+            lr=0.5,
+            n_restarts=1,
+            parallelize=False,
+            number_quantities=2,
+            noise_constraint=GreaterThan(1e-6)
+    ):
+        """
+        PARAMETER DESCRIPTIONS TO BE ADDED
+
+        :param collocation_points:
+        :param model_evaluations:
+        :param kernel:
+        :param training_iter:
+        :param likelihood:
+        :param optimizer:
+        :param lr:
+        :param n_restarts:
+        :param parallelize:
+        :param number_quantities:
+        :param noise_constraint:
+        """
+
         # Basic attributes
         self.training_points = collocation_points
         self.model_evaluations = model_evaluations
@@ -629,6 +703,11 @@ class MultiGPyTraining:
         self.parallel = parallelize
 
     def train(self):
+        """
+        DESCRIPTION TO BE ADDED
+
+        :return:
+        """
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
         rows_per_task = Y.shape[0] // self.number_quantities
@@ -663,6 +742,12 @@ class MultiGPyTraining:
             self.gp_list.append(model)
 
     def predict_(self, input_sets):
+        """
+        DESCRIPTION TO BE ADDED
+
+        :param input_sets:
+        :return:
+        """
         input_sets = torch.tensor(input_sets, dtype=torch.float32)
         surrogate_outputs = {'output': [], 'std': []}
         means = []
@@ -685,7 +770,23 @@ class MultiGPyTraining:
 
 
 class MultitaskGPModel(ExactGP):
-    def __init__(self, train_x, train_y, likelihood, kernel):
+    """
+    DESCRIPTION TO BE ADDED
+    """
+    def __init__(
+            self,
+            train_x,
+            train_y,
+            likelihood,
+            kernel
+    ):
+        """
+        PARAMETER DESCRIPTIONS TO BE ADDED
+        :param train_x:
+        :param train_y:
+        :param likelihood:
+        :param kernel:
+        """
         super(MultitaskGPModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = MultitaskMean(ConstantMean(), num_tasks=2)
         self.covar_module = MultitaskKernel(
@@ -697,8 +798,12 @@ class MultitaskGPModel(ExactGP):
         )
 
     def forward(self, x):
+        """
+        DESCRIPTION TO BE ADDED
+
+        :param x:
+        :return:
+        """
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
-
-        # Options for GPR library:
