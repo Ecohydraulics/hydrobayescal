@@ -8,6 +8,7 @@ Author: Andres Heredia M.Sc.
 #Import libraries
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import subprocess
 import os
 import pdb
@@ -108,9 +109,10 @@ class HydroSimulations(FullComplexityModel):
     def of_simulations(self):
         pass
 
-    def get_observations_and_errors(self,calib_pts_file_path, num_quantities):
-
+    def get_observations_and_errors(self, calib_pts_file_path, num_quantities):
+        # Read the calibration points data from the CSV file
         calibration_pts_df = pd.read_csv(calib_pts_file_path)
+
         # Calculate the column indices for observations dynamically (starting from the 3rd column)
         observation_indices = [2 * i + 3 for i in range(num_quantities)]
 
@@ -118,13 +120,16 @@ class HydroSimulations(FullComplexityModel):
         error_indices = [2 * i + 4 for i in range(num_quantities)]
 
         # Select the observation columns and convert them to a NumPy array
-        if num_quantities==1:
+        if num_quantities == 1:
             self.observations = calibration_pts_df.iloc[:, observation_indices].to_numpy().reshape(1, -1)
             self.measurement_errors = calibration_pts_df.iloc[:, error_indices].to_numpy().flatten()
         else:
             self.observations = calibration_pts_df.iloc[:, observation_indices].to_numpy().transpose()
-            # Select the error columns and convert them to a NumPy array
-            self.measurement_errors = calibration_pts_df.iloc[:, error_indices].to_numpy()
+                # Select the error columns and convert them to a NumPy array
+            error_columns = [calibration_pts_df.iloc[:, idx].to_numpy() for idx in error_indices]
+
+            # Stack error columns horizontally
+            self.measurement_errors = np.hstack([col.reshape(-1, 1) for col in error_columns])
 
         return self.observations, self.measurement_errors
 

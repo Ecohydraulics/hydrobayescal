@@ -287,11 +287,9 @@ class SklTraining(MyGeneralGPR):
             if self.tp_norm:
                 input_scaled = self.gp_list[i]['normalizer'].transform(input_sets)
 
-                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict(input_scaled,
-                                                                                                return_std=True)
+                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict_(input_scaled)
             else:
-                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict(input_sets,
-                                                                                                return_std=True)
+                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict_(input_sets)
             if get_conf_int:
                 lower_ci[:, i] = surrogate_prediction[:, i] - (1.96 * surrogate_std[:, i])
                 upper_ci[:, i] = surrogate_prediction[:, i] + (1.96 * surrogate_std[:, i])

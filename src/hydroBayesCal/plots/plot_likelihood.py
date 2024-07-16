@@ -3,6 +3,9 @@ import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde,norm,linregress
+from mpl_toolkits.mplot3d import Axes3D
+from scipy.interpolate import griddata
+from scipy.ndimage import gaussian_filter
 
 parameter_names = ['Parameter 1', 'Parameter 2', 'Parameter 3', 'Parameter 4']
 # Generate a random prior following a uniform distribution
@@ -28,75 +31,37 @@ for it in range(10):
 
 # Function to calculate likelihood for each parameter set
 
-def plot_posterior(posterior_vector, parameter_names, prior):
-    colors = ['darkgray', 'dimgray']
-    parameter_num = len(parameter_names)
-
-    fig, axes = plt.subplots(2, parameter_num, figsize=(15, 10))
-
-    # Font sizes
-    title_fontsize = 16
-    label_fontsize = 14
-    tick_fontsize = 12
-    legend_fontsize = 8
+def plot_posterior(posterior_vector, parameter_name):
+    colors = ['dimgray']
     bins = 30
 
-    # Determine y limits
-    y_max = np.zeros(parameter_num)
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Calculate y_max by plotting without displaying
-    if posterior_vector.ndim == 1:
-        counts_posterior, _ = np.histogram(posterior_vector, bins=bins, density=True)
-        y_max = np.max(counts_posterior)
-    else:
-        for i in range(parameter_num):
-            counts_posterior, _ = np.histogram(posterior_vector[:, i], bins=bins, density=True)
-            y_max[i] = np.max(counts_posterior)
+    # Plot posterior distribution
+    counts, bins, patches = ax.hist(posterior_vector, bins=bins, density=True, alpha=0.5, color=colors[0], edgecolor='black')
 
-    # Find the overall maximum y value for consistent plotting
-    y_max_plot_posterior = np.max(y_max)
+    # Add mean line
+    mean_posterior = np.mean(posterior_vector)
+    ax.axvline(mean_posterior, color='blue', linestyle='dashed', linewidth=1, label='Mean')
 
-    # Plot prior distributions
-    for i in range(parameter_num):
-        ax = axes[0, i]
-        ax.hist(prior[:, i], bins=bins, density=True, alpha=0.5, color=colors[0], label='Prior')
-        mean_prior = np.mean(prior[:, i])
-        ax.axvline(mean_prior, color='black', linestyle='dashed', linewidth=1, label='Mean')
-        ax.set_title(f'Prior: {parameter_names[i]}', fontsize=title_fontsize)
-        ax.set_xlabel(parameter_names[i], fontsize=label_fontsize)
-        ax.set_ylabel('Density', fontsize=label_fontsize)
-        ax.legend(fontsize=legend_fontsize)
-        ax.grid(True)
-        ax.tick_params(direction='in', labelsize=tick_fontsize)
+    # Set labels and title
+    ax.set_xlabel(parameter_name, fontsize=14)
+    ax.set_ylabel('Density', fontsize=14)
+    ax.legend(fontsize=12)
+    ax.grid(True)
+    ax.tick_params(direction='in', labelsize=12)
 
-    # Plot posterior distributions
-    for i in range(parameter_num):
-        ax = axes[1, i]
-        ax.hist(posterior_vector[:, i], bins=bins, density=True, alpha=0.5, color=colors[1], label='Posterior')
+    # Ensure histogram starts from the vertical axis without a white space
+    ax.set_xlim(left=bins[0])
 
-        # Gaussian fit
-        mean_posterior, std_posterior = norm.fit(posterior_vector[:, i])
-        x = np.linspace(np.min(posterior_vector[:, i]), np.max(posterior_vector[:, i]), 100)
-        p = norm.pdf(x, mean_posterior, std_posterior)
-        ax.plot(x, p, 'b--', linewidth=2,
-                label=f'Gaussian fit\n$\mu={mean_posterior:.4f}$\n$\sigma={std_posterior:.4f}$')
-
-        # Add mean line
-        ax.axvline(mean_posterior, color='blue', linestyle='dashed', linewidth=1, label='Mean')
-
-        ax.set_title(f'Posterior: {parameter_names[i]}', fontsize=title_fontsize)
-        ax.set_xlabel(parameter_names[i], fontsize=label_fontsize)
-        ax.set_ylabel('Density', fontsize=label_fontsize)
-        ax.legend(fontsize=legend_fontsize)
-        ax.grid(True)
-        ax.tick_params(direction='in', labelsize=tick_fontsize)
-        ax.set_ylim(0, y_max[i])
-
-    # Adjust layout
     plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)  # Add more space between rows
-    plt.savefig('last_posterior.png')
-    plt.close()
+    plt.show()
+
+#     # Adjust layout
+#     plt.tight_layout()
+#     plt.subplots_adjust(hspace=0.4)  # Add more space between rows
+#     plt.savefig('last_posterior.png')
+#     plt.close()
     #plt.savefig('posterior_distributions.eps', format='eps')
     # Print the posterior probabilities
     # for i, prob in enumerate(posterior_vector):
@@ -108,22 +73,23 @@ def plot_posterior(posterior_vector, parameter_names, prior):
 
 
 
-def plot_posterior_updates(posterior_arrays, parameter_names, prior):
-    colors = ['darkgray', 'dimgray']  # Red for prior, green for posterior
+
+
+def plot_posterior_updates(posterior_arrays, parameter_names, prior, iterations_to_plot=None):
+    colors = ['darkgray', 'darkgray']
     parameter_num = len(parameter_names)
 
     # Ensure posterior_arrays is a list of 2D arrays and combine them correctly
     posterior_vectors = [np.array(p) for p in posterior_arrays]
     num_updates = len(posterior_vectors)
 
-    # Create the subplots with the correct number of rows and columns
-    fig, axes = plt.subplots(num_updates, parameter_num, figsize=(15, (6 * num_updates) + 1))
-
     # Font sizes
     title_fontsize = 16
     label_fontsize = 14
     tick_fontsize = 12
     legend_fontsize = 8
+    bins_prior = 40
+    bins_posterior = 40
 
     # Calculate fixed x_limits for each parameter from the prior data
     x_limits = np.zeros((parameter_num, 2))
@@ -131,47 +97,46 @@ def plot_posterior_updates(posterior_arrays, parameter_names, prior):
         x_limits[i] = (prior[:, i].min(), prior[:, i].max())
 
     # Calculate y_max for each parameter separately
-    y_max = np.zeros(parameter_num)
+    y_max_prior = np.zeros(parameter_num)
+    y_max_posterior = np.zeros(parameter_num)
     for i in range(parameter_num):
+        counts_prior, _ = np.histogram(prior[:, i], bins=bins_prior, density=True)
+        y_max_prior[i] = max(counts_prior)
         for row in range(num_updates):
-            counts_posterior, _ = np.histogram(posterior_vectors[row][:, i], bins=30, density=True)
-            y_max[i] = max(y_max[i], max(counts_posterior))
+            counts_posterior, _ = np.histogram(posterior_vectors[row][:, i], bins=bins_posterior, density=True)
+            y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior))
 
-    # Plot each update
-    for row in range(num_updates):
+    # Plot prior distributions
+    for i in range(parameter_num):
+        plt.figure(figsize=(4, 8))
+        plt.hist(prior[:, i], bins=bins_prior, density=True, alpha=0.5, color=colors[0], label='Prior', edgecolor='black')
+        plt.xlabel('', fontsize=label_fontsize)  # Remove x-axis label
+        plt.ylabel('Density', fontsize=label_fontsize)
+        plt.legend(fontsize=legend_fontsize)
+        plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)  # Lighter and dashed grid
+        plt.tick_params(direction='in', labelsize=tick_fontsize)
+        plt.ylim(0, y_max_prior[i])
+        plt.xlim(x_limits[i])
+        plt.tight_layout()
+        plt.savefig(f'prior_distribution_param_{i + 1}.png')
+        plt.close()
+
+    # Plot each selected update
+    for plot_index, iteration_idx in enumerate(iterations_to_plot):
         for col in range(parameter_num):
-            ax = axes[row, col]
-            posterior_vector = posterior_vectors[row]  # Get the posterior vector for this update
-            counts_posterior, bins_posterior, _ = ax.hist(posterior_vector[:, col], bins=30, density=True, alpha=0.5, color=colors[1], label='Posterior')
-            mean_posterior = np.mean(posterior_vector[:, col])
-            ax.axvline(mean_posterior, color='black', linestyle='dashed', linewidth=1, label='Mean')
-
-            # KDE line
-            kde = gaussian_kde(posterior_vector[:, col])
-            x = np.linspace(x_limits[col][0], x_limits[col][1], 1000)
-            ax.plot(x, kde(x), color='blue', linestyle='-', linewidth=1.5, label='KDE')
-
-            # # Normal Fit
-            # mu, std = norm.fit(posterior_vector[:, col])
-            # p = norm.pdf(x, mu, std)
-            # ax.plot(x, p, color='red', linestyle='--', linewidth=1.5, label='Normal Fit')
-
-            ax.set_xlabel(parameter_names[col], fontsize=label_fontsize)
-            ax.set_ylabel('Density', fontsize=label_fontsize)
-            ax.legend(fontsize=legend_fontsize)
-            ax.grid(True)
-            ax.tick_params(direction='in', labelsize=tick_fontsize)
-            ax.set_ylim(0, y_max[col])
-            ax.set_xlim(x_limits[col])
-
-        #fig.suptitle(f'Posterior Evaluation: {row + 1}', fontsize=title_fontsize, y=1.02 - (row * 0.1))
-    # Adjust layout
-    plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4, wspace=0.2)  # Add more space between rows and columns
-    plt.savefig('combined_posterior_distributions.png')
-    plt.close()
-
-
+            plt.figure(figsize=(4, 8))
+            posterior_vector = posterior_vectors[iteration_idx]  # Get the posterior vector for this iteration
+            plt.hist(posterior_vector[:, col], bins=bins_posterior, density=True, alpha=0.5, color=colors[1], label='Posterior', edgecolor='black')
+            plt.xlabel('', fontsize=label_fontsize)  # Remove x-axis label
+            plt.ylabel('Density', fontsize=label_fontsize)
+            plt.legend(fontsize=legend_fontsize)
+            plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)  # Lighter and dashed grid
+            plt.tick_params(direction='in', labelsize=tick_fontsize)
+            plt.ylim(0, y_max_posterior[col])
+            plt.xlim(x_limits[col])
+            plt.tight_layout()
+            plt.savefig(f'posterior_distribution_param_{col + 1}_iteration_{iteration_idx + 1}.png')
+            plt.close()
 def plot_bme_re(bayesian_dict, num_bal_iterations):
     # Extract BME and RE for plotting
     iterations = list(range(num_bal_iterations))
@@ -284,3 +249,181 @@ def plot_combined_bal(collocation_points, n_init_tp, bayesian_dict, save_name=No
 # plot_posterior(posterior_vector, parameter_names, prior)
 # plot_posterior_updates(posterior_vectors, parameter_names, prior)
 #plot_bme_re(bayesian_dict, 10)
+
+
+
+def plot_bme_surface(num_iterations):
+    # Generate sample data for illustration
+    np.random.seed(0)
+    x = np.linspace(0.1, 10, 20)  # Positive limits: 0.1 to 10
+    y = np.linspace(0.1, 5, 20)   # Positive limits: 0.1 to 5
+    X, Y = np.meshgrid(x, y)
+
+    fig = plt.figure(figsize=(10, 8))  # Adjusted figure size to minimize blank space
+
+    # 3D Plot
+    ax1 = fig.add_subplot(111, projection='3d')
+
+    # Iterate through the number of iterations
+    for i in range(num_iterations):
+        # Simulated Bayesian Model Evidence as a function of X and Y
+        Z = simulate_bme(X, Y, iteration=i)
+
+        # Apply Gaussian smoothing to Z
+        Z_smooth = gaussian_filter(Z, sigma=1.0)
+
+        # Plot 3D surface for each iteration
+        surf = ax1.plot_surface(X, Y, Z_smooth, cmap='viridis', alpha=0.6)
+
+    ax1.set_xlabel(r'$\omega_1$', fontsize=18)
+    ax1.set_ylabel(r'$\omega_2$', fontsize=18)
+    ax1.set_zlabel('BME', fontsize=18)
+    ax1.set_zticklabels([])  # Remove Z-axis labels
+
+    # Zoom in by adjusting the view limits
+    ax1.set_xlim(0, 10)
+    ax1.set_ylim(0, 5)
+    ax1.set_zlim(-2, 2)
+
+    ax1.view_init(elev=30, azim=225)  # Adjust view angle
+
+    # Add colorbar for the surface plot
+    fig.colorbar(surf, ax=ax1, shrink=0.5, aspect=5)
+
+    plt.tight_layout()
+    plt.show()
+
+def simulate_bme(X, Y, iteration):
+    # Simulated function for Bayesian Model Evidence (BME)
+    Z = np.cos(np.sqrt(X ** 2 + Y ** 2)) * np.exp(-0.1 * (X ** 2 + Y ** 2)) + 0.5 * np.sin(X) + 0.5 * np.sin(Y) + 0.2 * np.random.randn(*X.shape) * (iteration + 1)
+    return Z
+
+# Example usage
+#plot_bme_surface(num_iterations=6)
+
+
+def plot_bme_surface_3d(num_iterations):
+    # Generate sample data for illustration
+    np.random.seed(0)
+    x = np.linspace(0.1, 10, 20)  # Positive limits: 0.1 to 10
+    y = np.linspace(0.1, 5, 20)   # Positive limits: 0.1 to 5
+    X, Y = np.meshgrid(x, y)
+
+    fig = plt.figure(figsize=(16, 8))
+
+    # 3D Plot
+    ax1 = fig.add_subplot(121, projection='3d')
+    ax2 = fig.add_subplot(122, aspect='equal')  # Set aspect to 'equal' for a square plot
+
+    scatter_plotted = False  # Flag to ensure scatter plot legend is added only once
+
+    # Lists to store coordinates of high and low BME regions
+    high_bme_coords = []
+    low_bme_coords = []
+
+    # Iterate through the number of iterations
+    for i in range(num_iterations):
+        # Simulated Bayesian Model Evidence as a function of X and Y
+        Z = simulate_bme(X, Y, iteration=i)
+
+        # Apply Gaussian smoothing to Z
+        Z_smooth = gaussian_filter(Z, sigma=1.0)
+
+        # Find regions with higher BME
+        threshold_high = np.percentile(Z_smooth, 95)  # Define threshold for high BME regions
+        threshold_low = np.percentile(Z_smooth, 5)    # Define threshold for low BME regions
+        high_bme_indices = np.argwhere(Z_smooth > threshold_high)
+        low_bme_indices = np.argwhere(Z_smooth < threshold_low)
+
+        # Plot 3D surface for each iteration
+        surf = ax1.plot_surface(X, Y, Z_smooth, cmap='viridis', alpha=0.6)
+
+        # Store coordinates of high and low BME regions for plain view plot
+        high_bme_coords.extend(list(zip(X[high_bme_indices[:, 0], high_bme_indices[:, 1]],
+                                        Y[high_bme_indices[:, 0], high_bme_indices[:, 1]])))
+        low_bme_coords.extend(list(zip(X[low_bme_indices[:, 0], low_bme_indices[:, 1]],
+                                       Y[low_bme_indices[:, 0], low_bme_indices[:, 1]])))
+
+    ax1.set_title('Bayesian Model Evidence (BME)', fontsize=20)
+    ax1.set_xlabel(r'$\omega_1$', fontsize=18)
+    ax1.set_ylabel(r'$\omega_2$', fontsize=18)
+    ax1.set_zlabel('BME', fontsize=18)
+    ax1.set_zticklabels([])  # Remove Z-axis labels
+
+    # Zoom in by adjusting the view limits
+    ax1.set_xlim(0, 10)
+    ax1.set_ylim(0, 5)
+    ax1.set_zlim(-2, 2)
+
+    ax1.view_init(elev=30, azim=225)  # Adjust view angle
+
+    # Add colorbar for the surface plot
+    fig.colorbar(surf, ax=ax1, shrink=0.5, aspect=5)
+
+    # Create a plain view grid
+    grid_size = 100
+    x_plain = np.linspace(0.1, 10, grid_size)
+    y_plain = np.linspace(0.1, 5, grid_size)
+    X_plain, Y_plain = np.meshgrid(x_plain, y_plain)
+
+    # Compute BME values for the plain view grid
+    Z_plain = simulate_bme(X_plain, Y_plain, iteration=0)  # Use iteration=0 or any preferred iteration for plotting
+
+    # Plot the plain view surface
+    ax2.contourf(X_plain, Y_plain, Z_plain, cmap='viridis', alpha=0.8)
+
+    # Plot scatter points for high BME regions in red
+    if high_bme_coords:  # Check if there are high BME points to plot
+        ax2.scatter(*zip(*high_bme_coords), color='red', s=10, label='High BME Regions')
+
+    # Plot scatter points for low BME regions in blue
+    if low_bme_coords:  # Check if there are low BME points to plot
+        ax2.scatter(*zip(*low_bme_coords), color='blue', s=10, label='Low BME Regions')
+
+    ax2.set_title('Plain View of BME Regions', fontsize=20)
+    ax2.set_xlabel(r'$\omega_1$', fontsize=18)
+    ax2.set_ylabel(r'$\omega_2$', fontsize=18)
+    ax2.legend(fontsize=12)
+
+    plt.tight_layout()
+    plt.show()
+
+# def simulate_bme(X, Y, iteration):
+#     # Simulated function for Bayesian Model Evidence (BME)
+#     Z = np.cos(np.sqrt(X ** 2 + Y ** 2)) * np.exp(-0.1 * (X ** 2 + Y ** 2)) + 0.5 * np.sin(X) + 0.5 * np.sin(Y) + 0.2 * np.random.randn(*X.shape) * (iteration + 1)
+#     return Z
+
+# Example usage
+#plot_bme_surface_3d(num_iterations=6)
+
+# def plot_posterior(posterior_vector, parameter_name):
+#     colors = ['dimgray']
+#     bins = 30
+#
+#     fig, ax = plt.subplots(figsize=(8, 6))
+#
+#     # Plot posterior distribution
+#     ax.hist(posterior_vector, bins=bins, density=True, alpha=0.5, color=colors[0], edgecolor='black')
+#
+#     # Add mean line
+#     mean_posterior = np.mean(posterior_vector)
+#     ax.axvline(mean_posterior, color='blue', linestyle='dashed', linewidth=1, label='Mean')
+#
+#     # Set labels and title
+#     ax.set_xlabel(parameter_name, fontsize=14)
+#     ax.set_ylabel('Density', fontsize=14)
+#     ax.legend(fontsize=12)
+#     ax.grid(True)
+#     ax.tick_params(direction='in', labelsize=12)
+#
+#     # Ensure histogram starts from the vertical axis
+#     ax.set_xlim(left=posterior_vector.min(), right=posterior_vector.max())
+#
+#     plt.tight_layout()
+#     plt.savefig('posterior_single_parameter.png')
+#     plt.show()
+
+# Example usage
+# np.random.seed(0)
+# posterior_example = np.random.uniform(0.04, 0.08, 900)
+# plot_posterior(posterior_example, r'$\omega_1$')

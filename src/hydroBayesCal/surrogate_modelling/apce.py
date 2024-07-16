@@ -848,10 +848,10 @@ class aPCE:
                                             basis_indices=obj['Multi-Index'])
             # Predict for input_samples
             try:
-                sm_predictions[:, Idx], sm_std[:, Idx] = obj['clf_poly'].predict(psi_predict, return_std=True)
+                sm_predictions[:, Idx], sm_std[:, Idx] = obj['clf_poly'].predict_(psi_predict)
             except:
                 try:
-                    sm_predictions[:, Idx] = obj['clf_poly'].predict(psi_predict)
+                    sm_predictions[:, Idx] = obj['clf_poly'].predict_(psi_predict)
                 except:
                     print('An exception occurred, prediction is estimated manually')
                     sm_predictions[:, Idx] = np.dot(psi_predict, obj['coeffs'])

@@ -9,6 +9,11 @@ import copy
 from joblib import Parallel, delayed
 import torch
 import gpytorch
+from gpytorch.models import ExactGP
+from gpytorch.constraints import GreaterThan
+from gpytorch.likelihoods import MultitaskGaussianLikelihood
+from gpytorch.means import MultitaskMean, ConstantMean
+from gpytorch.kernels import MultitaskKernel, RBFKernel, LinearKernel, ScaleKernel, ProductKernel, AdditiveKernel, MaternKernel, PeriodicKernel
 from scipy.optimize import dual_annealing, differential_evolution
 
 
@@ -597,3 +602,103 @@ def save_valid_criteria(new_dict, old_dict, n_tp):
                     old_dict[key][out_type] = np.vstack((old_dict[key][out_type], new_dict[key][out_type]))
 
     return old_dict
+class MultiGPyTraining:
+    def __init__(self, collocation_points, model_evaluations, kernel, training_iter, likelihood,
+                 optimizer="adam", lr=0.5,
+                 n_restarts=1,
+                 parallelize=False, number_quantities=2,
+                 noise_constraint=GreaterThan(1e-6)):
+        # Basic attributes
+        self.training_points = collocation_points
+        self.model_evaluations = model_evaluations
+        self.number_quantities = number_quantities
+        self.n_obs = self.model_evaluations.shape[1]
+        self.n_params = collocation_points.shape[1]
+        self.gp_list = []
+
+        # Initialize likelihood and other hyperparameters
+        self.likelihood = likelihood
+        self.kernel = kernel
+        self.optimizer_ = optimizer
+        self.training_iter = training_iter
+        self.n_restarts = n_restarts
+        self.lr = lr
+        self.parallel = parallelize
+        self.noise_contraint = noise_constraint
+
+        self.parallel = parallelize
+
+    def train(self):
+        X = torch.tensor(self.training_points, dtype=torch.float32)
+        Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
+        rows_per_task = Y.shape[0] // self.number_quantities
+        for loc in range(Y.shape[1]):
+            Y_loc = torch.cat([Y[i * rows_per_task:(i + 1) * rows_per_task, loc].reshape(rows_per_task, 1)
+                               for i in range(self.number_quantities)], dim=1)
+
+            model = MultitaskGPModel(X, Y_loc, self.likelihood, self.kernel)
+
+            # Training mode
+            model.train()
+            self.likelihood.train()
+
+            # Set the optimizer
+            if self.optimizer_ == "adam":
+                optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+            else:
+                raise ValueError(f"Optimizer '{self.optimizer_}' not supported.")
+
+            # Set the MLL objective
+            mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
+
+            # Training loop
+            for _ in range(self.training_iter):
+                optimizer.zero_grad()
+                output = model(X)
+                loss = -mll(output, Y_loc)
+                loss.backward()
+                optimizer.step()
+
+            # Store trained model in the list
+            self.gp_list.append(model)
+
+    def predict_(self, input_sets):
+        input_sets = torch.tensor(input_sets, dtype=torch.float32)
+        surrogate_outputs = {'output': [], 'std': []}
+        means = []
+        stds = []
+
+        for model in self.gp_list:
+            model.eval()  # Set the model to evaluation mode
+            self.likelihood.eval()  # Set the likelihood to evaluation mode
+            with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                predictions = model(input_sets)
+                means.append(predictions.mean.numpy())
+                stds.append(predictions.stddev.numpy())
+
+        # Convert lists to numpy arrays and reshape for easy manipulation
+        means = np.concatenate(means, axis=1).reshape(input_sets.shape[0], -1)
+        stds = np.concatenate(stds, axis=1).reshape(input_sets.shape[0], -1)
+
+        surrogate_outputs = {'output': means, 'std': stds}
+        return surrogate_outputs
+
+
+class MultitaskGPModel(ExactGP):
+    def __init__(self, train_x, train_y, likelihood, kernel):
+        super(MultitaskGPModel, self).__init__(train_x, train_y, likelihood)
+        self.mean_module = MultitaskMean(ConstantMean(), num_tasks=2)
+        self.covar_module = MultitaskKernel(
+            AdditiveKernel(
+                ProductKernel(kernel[0], kernel[1]),  # Assuming kernel is a tuple of two components
+                ScaleKernel(kernel[0])
+            ),
+            num_tasks=2, rank=1
+        )
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
+
+        # Options for GPR library:
