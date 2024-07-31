@@ -1,13 +1,13 @@
 """
-This module inherits from the PyTorch library for training a Gaussian Process Emulator (GPE). MORE SPECIFIC DESCRIPTIONS
- TO BE ADDED (SEB: something like 5-6 lines about what you import and how and why you supersede it).
-
+This module inherits from the PyTorch library for training a Gaussian Process Emulator (GPE).
+The module supersede the ExactGP base class from GPyTorch and extend the functionality by customizing the mean function,likelihoods and kernel (covariance function)
+The MultitaskGPModel class also extends the ExactGP base class to handle multitask (multiple outputs) learning scenarios. It is designed to model multiple related tasks simultaneously
+especially if they have similarities by sharing information across them using a common GP framework. (https://docs.gpytorch.ai/en/stable/examples/03_Multitask_Exact_GPs/Multitask_GP_Regression.html).
 Author: Andres HEREDIA (2024)
 """
 import numpy as np
 import sys
 import sklearn
-import scipy
 import copy
 from joblib import Parallel, delayed
 import torch
@@ -364,87 +364,6 @@ class GPyTraining:
 
         return return_out_dic
 
-    # def _fit_lbfgs(self, train_x, model_y, kernel, likelihood):
-    #     """
-    #     Function trains the GPR for a given training location using an external 'lbfgs' optimizer
-    #     Source: (https://github.com/hjmshi/PyTorch-LBFGS)
-    #     Args:
-    #         train_x: tensor [n_tp, n_param]
-    #             with input parameter sets to use in training
-    #         model_y: array [n_tp, ]
-    #             with simulator outputs, corresponding to train_x, to use in training
-    #
-    #     Returns: dict
-    #         with trained gp object, trained likelihood object, hyperparameters
-    #         and y_normalization parameters (if needed)
-    #
-    #     """
-    #
-    #     # 0. Normalize, if needed, and transform model_evaluations at loc "i" to a tensor
-    #     if self.y_norm:
-    #         train_y = self.normalize_tp(model_y)
-    #     else:
-    #         train_y = self.convert_to_tensor(model_y)
-    #
-    #     # 1.Initialize kernel and likelihood:
-    #     kernel_ = copy.deepcopy(kernel)
-    #     likelihood_ = copy.deepcopy(likelihood)
-    #
-    #     # 2.Initialize instance of GPyTorch GPR:
-    #     gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_)
-    #
-    #     # Start training
-    #     gp.train()
-    #     likelihood_.train()
-    #
-    #     def closure():
-    #         # a. Zero gradients from previous iteration
-    #         optimizer.zero_grad()
-    #         # b. Output from model
-    #         output = gp(train_x)
-    #         loss = -mll(output, train_y)
-    #         return loss
-    #
-    #     # 4.1 Optimize parameters:
-    #
-    #     # Setup Optimizer
-    #     optimizer = FullBatchLBFGS(gp.parameters(), debug=False, lr=0.01)
-    #
-    #     # Loss for GPs - log likelihood
-    #     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood_, gp)
-    #
-    #     loss = closure()
-    #     loss.backward()
-    #
-    #     # Perform step and update curvature:
-    #     for j in range(self.training_iter):
-    #         # perform step and update curvature
-    #         options = {'closure': closure, 'current_loss': loss, 'max_ls': 30}  # , 'inplace': False}
-    #         loss, _, lr, _, F_eval, G_eval, _, _ = optimizer.step(options)
-    #
-    #         with torch.no_grad():
-    #             if self.verbose:
-    #                 ls = gp.covar_module.base_kernel.lengthscale.numpy()[0, :]
-    #                 print(f'Iteration {j + 1}/{self.training_iter}  -  Loss: {loss.item()}  -  LR: {lr}',
-    #                       f'  -  Func.Evals: {F_eval}  -  grad.Evals: {G_eval}  -  Lengthscales: [{ls}]',
-    #                       f'  -  Noise: {gp.likelihood.noise.item()}')
-    #
-    #     with torch.no_grad():
-    #         return_out_dic = dict()
-    #         return_out_dic['gp'] = gp
-    #         return_out_dic['likelihood'] = likelihood_
-    #
-    #         return_out_dic['c_hp'] = gp.covar_module.outputscale.item()
-    #         return_out_dic['cl_hp'] = gp.covar_module.base_kernel.lengthscale.numpy()[0, :]
-    #         try:
-    #             return_out_dic['noise_hp'] = gp.likelihood.noise.item()
-    #         except:
-    #             return_out_dic['noise_hp'] = gp.likelihood.noise.numpy()
-    #         if self.y_norm:
-    #             return_out_dic['y_norm'] = [np.mean(model_y), np.std(model_y)]
-    #
-    #     return return_out_dic
-
     def predict_(self, input_sets, get_conf_int=False):
         """
         DESCRIPTION TO BE COMPLETED
@@ -650,7 +569,9 @@ def save_valid_criteria(new_dict, old_dict, n_tp):
 
 class MultiGPyTraining:
     """
-    DESCRIPTION TO BE ADDED
+    Class to train multiple Gaussian Process models using given collocation points and model evaluations. It uses
+    the MultiGPyTraining class for multitask regression using GPyTorch.
+    Multitask GP Regression: https://docs.gpytorch.ai/en/stable/examples/03_Multitask_Exact_GPs/Multitask_GP_Regression.html
     """
     def __init__(
             self,
@@ -667,19 +588,44 @@ class MultiGPyTraining:
             noise_constraint=GreaterThan(1e-6)
     ):
         """
-        PARAMETER DESCRIPTIONS TO BE ADDED
+        Parameters
+        ----------
+        :param collocation_points: numpy.ndarray
+            A numpy array of shape (t_p, n_parameters (parameter combination)).
 
-        :param collocation_points:
-        :param model_evaluations:
-        :param kernel:
-        :param training_iter:
-        :param likelihood:
-        :param optimizer:
-        :param lr:
+        :param model_evaluations: numpy.ndarray
+            A numpy array of shape (2*t_p, n_loc) representing the model evaluations for the 2 tasks (quantities)
+            at different locations for each of the parameter sets. The first t_p rows correspond to the evaluations of
+            the first quantity, and the next t_p rows correspond to the evaluations of the second quantity.
+
+        :param kernel: tuple(gpytorch.kernels.Kernel, gpytorch.kernels.Kernel)
+            A tuple of kernels to use for the Gaussian Process models. Each kernel corresponds to a different task.
+
+        :param training_iter:  int
+            The number of training iterations.
+
+       :param likelihood: gpytorch.likelihoods.MultitaskGaussianLikelihood
+            The multitask likelihood function to use in the Gaussian Process.
+
+        :param optimizer: str, optional
+            The optimizer to use for training. Default is "adam".
+
+        :param lr: float, optional
+            The learning rate for the optimizer. Default is 0.5.
+
         :param n_restarts:
-        :param parallelize:
-        :param number_quantities:
-        :param noise_constraint:
+            The number of restarts for the optimizer. Default is 1.
+        :type n_restarts: int, optional
+
+        :param parallelize: bool, optional
+            Whether to parallelize the training process. Default is False.
+
+        :param number_quantities: int, optional
+            The number of quantities to be predicted. Default is 2.
+
+        :param noise_constraint: gpytorch.constraints.Constraint, optional
+            The constraint on the noise parameter. Default is `GreaterThan(1e-6)`.
+
         """
 
         # Basic attributes
@@ -704,33 +650,39 @@ class MultiGPyTraining:
 
     def train(self):
         """
-        DESCRIPTION TO BE ADDED
+        Train multitask Gaussian Process models using the provided collocation points and model evaluations.Initializes and
+        trains a separate GP model for each location in the model evaluations array. After training, the models are stored
+        in the `gp_list` attribute.
 
-        :return:
+        :return: None
         """
+        #     1. Convert the collocation points and model evaluations to PyTorch tensors.
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
         rows_per_task = Y.shape[0] // self.number_quantities
+
+        #     2. Iterate over each location in the model evaluations.
         for loc in range(Y.shape[1]):
             Y_loc = torch.cat([Y[i * rows_per_task:(i + 1) * rows_per_task, loc].reshape(rows_per_task, 1)
                                for i in range(self.number_quantities)], dim=1)
 
+            # 2.1. Initialize the multitask GP model for the current location
             model = MultitaskGPModel(X, Y_loc, self.likelihood, self.kernel)
 
-            # Training mode
+            # 2.2 Set the model and likelihood to training mode
             model.train()
             self.likelihood.train()
 
-            # Set the optimizer
+            # 2.3 Set the optimizer
             if self.optimizer_ == "adam":
                 optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
             else:
                 raise ValueError(f"Optimizer '{self.optimizer_}' not supported.")
 
-            # Set the MLL objective
+            # 2.4 Set the MLL objective
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
 
-            # Training loop
+            # 2.5 Training loop
             for _ in range(self.training_iter):
                 optimizer.zero_grad()
                 output = model(X)
@@ -738,15 +690,27 @@ class MultiGPyTraining:
                 loss.backward()
                 optimizer.step()
 
-            # Store trained model in the list
+            # 2.6 Store trained model in the list
             self.gp_list.append(model)
 
     def predict_(self, input_sets):
         """
-        DESCRIPTION TO BE ADDED
+        Predict the outputs and their standard deviations for given input sets using the trained Gaussian Process models.
+        This method takes input sets, passes them through each of the trained GP models, and returns the mean and
+        standard deviation of the predictions for each task and location. The predictions for each task are concatenated and
+        returned as a dictionary.
 
-        :param input_sets:
-        :return:
+        :param input_sets: numpy.ndarray
+            Input sets (parameter combinations) for which predictions are made. The shape should be (n_samples, n_params).
+
+    :return: dict
+        Dictionary with two keys:
+        - 'output': A numpy array of shape (n_samples, n_tasks * n_loc) containing the predicted means for each
+          task and location. Here, `n_tasks` is the number of tasks (quantities) and `n_loc` is the number of
+          locations. The array is structured such that each row contains the predictions for all tasks and locations.
+        - 'std': A numpy array of shape (n_samples, n_tasks * n_loc) containing the predicted standard deviations
+          for each task and location. Similarly, each row contains the standard deviations for all tasks and
+          locations.
         """
         input_sets = torch.tensor(input_sets, dtype=torch.float32)
         surrogate_outputs = {'output': [], 'std': []}
@@ -763,15 +727,21 @@ class MultiGPyTraining:
 
         # Convert lists to numpy arrays and reshape for easy manipulation
         means = np.concatenate(means, axis=1).reshape(input_sets.shape[0], -1)
+        means_1task = means[:, ::2]
+        means_2task = means[:, 1::2]
+        means = np.hstack((means_1task, means_2task))
         stds = np.concatenate(stds, axis=1).reshape(input_sets.shape[0], -1)
-
+        stds_1task = stds[:, ::2]
+        std_2task = stds[:, 1::2]
+        stds = np.hstack((stds_1task, std_2task))
         surrogate_outputs = {'output': means, 'std': stds}
         return surrogate_outputs
 
 
 class MultitaskGPModel(ExactGP):
     """
-    DESCRIPTION TO BE ADDED
+    Gaussian Process model for multitask regression using the GPyTorch library. This model handles multiple tasks (or quantities) simultaneously by using a multitask kernel and multitask mean
+    function.
     """
     def __init__(
             self,
@@ -781,11 +751,20 @@ class MultitaskGPModel(ExactGP):
             kernel
     ):
         """
-        PARAMETER DESCRIPTIONS TO BE ADDED
-        :param train_x:
-        :param train_y:
-        :param likelihood:
-        :param kernel:
+        :param train_x: torch.Tensor
+            The input training data. A tensor of shape (n_samples, n_params) where `n_samples` is the number of samples and
+            `n_params` is the number of input model parameters.
+
+        :param train_y: torch.Tensor
+            The output training data. A tensor of shape (n_samples, n_tasks) where `n_samples` is the number of samples and
+            `n_tasks` is the number of tasks or quantities. The output is typically organized so that each column corresponds
+            to a different task.
+
+        :param likelihood: gpytorch.likelihoods.MultitaskGaussianLikelihood
+            A multitask likelihood function used with the GP model.
+
+        :param kernel: tuple(gpytorch.kernels.Kernel, gpytorch.kernels.Kernel)
+            A tuple of kernel components to be used in the GP model. The tuple should contain two kernel components.
         """
         super(MultitaskGPModel, self).__init__(train_x, train_y, likelihood)
         self.mean_module = MultitaskMean(ConstantMean(), num_tasks=2)
@@ -799,10 +778,11 @@ class MultitaskGPModel(ExactGP):
 
     def forward(self, x):
         """
-        DESCRIPTION TO BE ADDED
+         Computes the mean and covariance of the Gaussian Process given the input data `x`.
 
-        :param x:
-        :return:
+        :param x: torch.Tensor
+            A tensor containing the training data for the model.
+        :return: gpytorch.distributions.MultitaskMultivariateNormal
         """
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)

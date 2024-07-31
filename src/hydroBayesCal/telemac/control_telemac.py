@@ -21,7 +21,7 @@ try:
     from data_manip.extraction.telemac_file import TelemacFile
 except ImportError as e:
     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
-    exit()
+    #exit()
 
 # attention relative import usage according to docs/codedocs.rst
 from config_telemac import * # provides os and sys
@@ -48,7 +48,7 @@ class TelemacModel():#FullComplexityModel
             model_dir="",
             res_dir="",
             control_file="tm.cas",
-            friction_file ="friction.tbl",
+            friction_file ="",
             calibration_parameters=None,
             calibration_pts_file_path=None,
             calibration_quantities=None,
@@ -226,7 +226,7 @@ S
                     self.rewrite_steering_file(param, cas_string, steering_module="telemac")
         except Exception as e:
             logger.error(f'Error occurred during CAS creation: {e}')
-            raise    #@staticmethod
+            raise
     def create_cas_string(
             self,
             param_name,
@@ -555,13 +555,21 @@ S
         if complete_bal_mode:
             # This part of the code runs the initial runs for initial surrogate.
             if collocation_points is not None:
+                # Convert collocation_points to a numpy array if it is not already
+                if not isinstance(collocation_points, np.ndarray):
+                    collocation_points = np.array(collocation_points)
+
+                # Ensure collocation_points is a 2D array
+                if collocation_points.ndim == 1:
+                    collocation_points = collocation_points[:, np.newaxis]
+
+                # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
                 with open(res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
                     writer.writerow(calibration_parameters)
                     writer.writerows(array_list)  # Write the array data
                 np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
-
                 for i in range(init_runs):
                     self.num_run = i + 1
                     self.tm_results_filename = results_file_name_base + '_' + str(self.num_run) + '.slf'
@@ -595,6 +603,15 @@ S
         # This part of the code only runs iterative runs without performing BAL
         else:
             if collocation_points is not None:
+                # Convert collocation_points to a numpy array if it is not already
+                if not isinstance(collocation_points, np.ndarray):
+                    collocation_points = np.array(collocation_points)
+
+                # Ensure collocation_points is a 2D array
+                if collocation_points.ndim == 1:
+                    collocation_points = collocation_points[:, np.newaxis]
+
+                # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
                 with open(res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
@@ -655,11 +672,6 @@ S
 
         # Initialize a 2D NumPy array with zeros
         model_results = np.zeros((num_quantities * n_total_runs, n_calibration_pts))
-
-        # # Populate the array with the values from the dictionary
-        # for i, key in enumerate(output_data.keys()):
-        #     values = output_data[key]
-        #     model_results[:len(values), i] = np.array(values).flatten()
 
         # Populate the array with the values from the dictionary
         for i, key in enumerate(output_data.keys()):

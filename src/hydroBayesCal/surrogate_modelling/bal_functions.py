@@ -8,11 +8,10 @@ import math
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from bayesvalidrox import BayesInference
 from surrogate_modelling.exploration import Exploration
 
 
-class HyBayesInference(BayesInference):
+class BayesianInference:
     """
     parameters:
         model_predictions: np.array [MC_size, No.Observations],
@@ -78,7 +77,6 @@ class HyBayesInference(BayesInference):
     """
     def __init__(self, model_predictions, observations, error, prior=None, prior_log_pdf=None, model_error=None,
                  sampling_method='rejection_sampling'):
-        BayesInference.__init__(self)
 
         self.use_log = True
         self.observations = observations
@@ -745,41 +743,41 @@ class SequentialDesign:
         #     logPriorLikelihoods += rv.logpdf(y_mc[key])                  # get prior probability
         #     std_mc[key] = np.zeros((self.mc_exploration, y_mean[key].shape[0]))
 
-        if observations.shape[0]>1:
-            # Reshape the means and stdvs to separate the data for each location
-
-            y_mean = y_mean.reshape(n_obs_locations, n_obs_quantities)  # Reshape to n_obs_locations x n_obs_quantities
-            y_std = y_std.reshape(n_obs_locations, n_obs_quantities)  # Reshape to 2x2
-            # Store the samples for each location
-            y_mc = np.zeros((self.mc_exploration, n_obs_locations*n_obs_quantities))  # Shape will be (realizations, 4)
-            logPriorLikelihoods = np.zeros((n_obs_locations, self.mc_exploration))
-
-            # Loop through each location
-            for i in range(n_obs_locations):
-                # Construct the mean vector for the current location
-                mean = y_mean[i]
-
-                # Construct the covariance matrix for the current location (diagonal matrix)
-                cov = np.diag(y_std[i] ** 2)
-
-                # Create the multivariate normal distribution object
-                rv = stats.multivariate_normal(mean=mean, cov=cov)
-
-                # Sample from the distribution
-                y_mc_location = rv.rvs(size=self.mc_exploration)
-
-                # Store the samples in the appropriate columns
-                y_mc[:, i * n_obs_quantities:(i + 1) * n_obs_quantities] = y_mc_location
-
-                # Compute logpdf for the samples corresponding to the current location
-                logPriorLikelihoods[i] = rv.logpdf(y_mc_location)
-            logPriorLikelihoods = logPriorLikelihoods.T
-
-        else:
-            cov = np.diag(y_std ** 2)
-            rv = stats.multivariate_normal(mean=y_mean, cov=cov)  # stats object with y_mean, y_var
-            y_mc = rv.rvs(size=self.mc_exploration)                 # sample from posterior space
-            logPriorLikelihoods = rv.logpdf(y_mc)                   # get prior probability
+        # if observations.shape[0]>1:
+        #     # Reshape the means and stdvs to separate the data for each location
+        #
+        #     y_mean = y_mean.reshape(n_obs_locations, n_obs_quantities)  # Reshape to n_obs_locations x n_obs_quantities
+        #     y_std = y_std.reshape(n_obs_locations, n_obs_quantities)  # Reshape to 2x2
+        #     # Store the samples for each location
+        #     y_mc = np.zeros((self.mc_exploration, n_obs_locations*n_obs_quantities))  # Shape will be (realizations, 4)
+        #     logPriorLikelihoods = np.zeros((n_obs_locations, self.mc_exploration))
+        #
+        #     # Loop through each location
+        #     for i in range(n_obs_locations):
+        #         # Construct the mean vector for the current location
+        #         mean = y_mean[i]
+        #
+        #         # Construct the covariance matrix for the current location (diagonal matrix)
+        #         cov = np.diag(y_std[i] ** 2)
+        #
+        #         # Create the multivariate normal distribution object
+        #         rv = stats.multivariate_normal(mean=mean, cov=cov)
+        #
+        #         # Sample from the distribution
+        #         y_mc_location = rv.rvs(size=self.mc_exploration)
+        #
+        #         # Store the samples in the appropriate columns
+        #         y_mc[:, i * n_obs_quantities:(i + 1) * n_obs_quantities] = y_mc_location
+        #
+        #         # Compute logpdf for the samples corresponding to the current location
+        #         logPriorLikelihoods[i] = rv.logpdf(y_mc_location)
+        #     logPriorLikelihoods = logPriorLikelihoods.T
+        #
+        # else:
+        cov = np.diag(y_std ** 2)
+        rv = stats.multivariate_normal(mean=y_mean, cov=cov)  # stats object with y_mean, y_var
+        y_mc = rv.rvs(size=self.mc_exploration)                 # sample from posterior space
+        logPriorLikelihoods = rv.logpdf(y_mc)                   # get prior probability
 
         bi_bal = BayesianInference(model_predictions=y_mc, observations=observations, error=error,
                                    prior_log_pdf=logPriorLikelihoods,                    # Needed to estimate IE

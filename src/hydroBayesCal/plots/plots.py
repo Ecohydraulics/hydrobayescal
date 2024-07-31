@@ -6,6 +6,7 @@ from scipy.stats import gaussian_kde,norm,linregress
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from scipy.ndimage import gaussian_filter
+from pathlib import Path
 
 parameter_names = ['Parameter 1', 'Parameter 2', 'Parameter 3', 'Parameter 4']
 # Generate a random prior following a uniform distribution
@@ -72,72 +73,100 @@ def plot_posterior(posterior_vector, parameter_name):
     # print(f"The best parameter set is set {best_index + 1} with posterior probability {posterior_vector[best_index]:.4f}")
 
 
+def plot_posterior_updates(posterior_arrays, parameter_names, prior, iterations_to_plot=None,
+                           save_folder='auto-saved-results'):
+    """
+    Plots the prior distributions and posterior updates for given parameters.
 
+    Args:
+        posterior_arrays: list of np.array
+            List of 2D arrays with posterior samples for each update.
+        parameter_names: list of str
+            List of parameter names corresponding to the columns of the arrays.
+        prior: np.array
+            2D array with prior samples.
+        iterations_to_plot: list of int or None
+            List of iteration indices to plot. If None, only prior distributions are plotted.
+        save_folder: str or Path
+            Directory to save the plots.
+    """
+    # Convert save_folder to Path if it's a string
+    if isinstance(save_folder, str):
+        save_folder = Path(save_folder)
 
+    # Ensure save_folder exists
+    save_folder.mkdir(parents=True, exist_ok=True)
 
-def plot_posterior_updates(posterior_arrays, parameter_names, prior, iterations_to_plot=None):
     colors = ['darkgray', 'darkgray']
     parameter_num = len(parameter_names)
 
-    # Ensure posterior_arrays is a list of 2D arrays and combine them correctly
-    posterior_vectors = [np.array(p) for p in posterior_arrays]
-    num_updates = len(posterior_vectors)
-
-    # Font sizes
-    title_fontsize = 16
-    label_fontsize = 14
-    tick_fontsize = 12
-    legend_fontsize = 8
-    bins_prior = 40
-    bins_posterior = 40
-
-    # Calculate fixed x_limits for each parameter from the prior data
+    # Calculate x_limits for each parameter from the prior data
     x_limits = np.zeros((parameter_num, 2))
     for i in range(parameter_num):
         x_limits[i] = (prior[:, i].min(), prior[:, i].max())
 
-    # Calculate y_max for each parameter separately
+    # Calculate y_max for each parameter
     y_max_prior = np.zeros(parameter_num)
     y_max_posterior = np.zeros(parameter_num)
     for i in range(parameter_num):
-        counts_prior, _ = np.histogram(prior[:, i], bins=bins_prior, density=True)
+        counts_prior, _ = np.histogram(prior[:, i], bins=40, density=True)
         y_max_prior[i] = max(counts_prior)
-        for row in range(num_updates):
-            counts_posterior, _ = np.histogram(posterior_vectors[row][:, i], bins=bins_posterior, density=True)
-            y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior))
+        for row in range(len(posterior_arrays)):
+            if posterior_arrays[row] is not None:  # Check if the current array is not None
+                counts_posterior, _ = np.histogram(posterior_arrays[row][:, i], bins=40, density=True)
+                y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior))
 
     # Plot prior distributions
     for i in range(parameter_num):
         plt.figure(figsize=(4, 8))
-        plt.hist(prior[:, i], bins=bins_prior, density=True, alpha=0.5, color=colors[0], label='Prior', edgecolor='black')
-        plt.xlabel('', fontsize=label_fontsize)  # Remove x-axis label
-        plt.ylabel('Density', fontsize=label_fontsize)
-        plt.legend(fontsize=legend_fontsize)
-        plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)  # Lighter and dashed grid
-        plt.tick_params(direction='in', labelsize=tick_fontsize)
+        plt.hist(prior[:, i], bins=40, density=True, alpha=0.5, color=colors[0], label='Prior', edgecolor='black')
+        plt.xlabel(parameter_names[i], fontsize=14)
+        plt.ylabel('Density', fontsize=14)
+        plt.legend(fontsize=8)
+        plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+        plt.tick_params(direction='in', labelsize=12)
         plt.ylim(0, y_max_prior[i])
         plt.xlim(x_limits[i])
         plt.tight_layout()
-        plt.savefig(f'prior_distribution_param_{i + 1}.png')
+        plt.savefig(save_folder / f'prior_distribution_param_{i + 1}.png')
         plt.close()
 
     # Plot each selected update
-    for plot_index, iteration_idx in enumerate(iterations_to_plot):
-        for col in range(parameter_num):
-            plt.figure(figsize=(4, 8))
-            posterior_vector = posterior_vectors[iteration_idx]  # Get the posterior vector for this iteration
-            plt.hist(posterior_vector[:, col], bins=bins_posterior, density=True, alpha=0.5, color=colors[1], label='Posterior', edgecolor='black')
-            plt.xlabel('', fontsize=label_fontsize)  # Remove x-axis label
-            plt.ylabel('Density', fontsize=label_fontsize)
-            plt.legend(fontsize=legend_fontsize)
-            plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)  # Lighter and dashed grid
-            plt.tick_params(direction='in', labelsize=tick_fontsize)
-            plt.ylim(0, y_max_posterior[col])
-            plt.xlim(x_limits[col])
-            plt.tight_layout()
-            plt.savefig(f'posterior_distribution_param_{col + 1}_iteration_{iteration_idx + 1}.png')
-            plt.close()
-def plot_bme_re(bayesian_dict, num_bal_iterations):
+    if iterations_to_plot is not None:
+        for plot_index, iteration_idx in enumerate(iterations_to_plot):
+            for col in range(parameter_num):
+                plt.figure(figsize=(4, 8))
+                posterior_vector = posterior_arrays[iteration_idx]
+                plt.hist(posterior_vector[:, col], bins=40, density=True, alpha=0.5, color=colors[1], label='Posterior',
+                         edgecolor='black')
+                plt.xlabel(parameter_names[col], fontsize=14)
+                plt.ylabel('Density', fontsize=14)
+                plt.legend(fontsize=8)
+                plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+                plt.tick_params(direction='in', labelsize=12)
+                plt.ylim(0, y_max_posterior[col])
+                plt.xlim(x_limits[col])
+                plt.tight_layout()
+                plt.savefig(save_folder / f'posterior_distribution_param_{col + 1}_iteration_{iteration_idx + 1}.png')
+                plt.close()
+
+
+def plot_bme_re(bayesian_dict, num_bal_iterations, save_folder='auto-saved-results'):
+    """
+    Plots BME and RE values over iterations.
+
+    Args:
+        bayesian_dict: dict
+            Dictionary containing 'BME' and 'RE' values for each iteration.
+        num_bal_iterations: int
+            Number of iterations for which to plot data.
+        save_folder: str or Path
+            Directory to save the plot. If provided as a string, it will be converted to a Path object.
+    """
+    # Convert save_folder to Path if it's a string
+    if isinstance(save_folder, str):
+        save_folder = Path(save_folder)
+
     # Extract BME and RE for plotting
     iterations = list(range(num_bal_iterations))
     bme_values = [bayesian_dict['BME'][it] for it in iterations]
@@ -147,7 +176,8 @@ def plot_bme_re(bayesian_dict, num_bal_iterations):
     fig, axes = plt.subplots(1, 2, figsize=(15, 5))
 
     # Plot BME
-    axes[0].plot(iterations, bme_values, marker='+', markersize=10, color='darkslategray', linestyle='-', linewidth=1.5, label='BME')
+    axes[0].plot(iterations, bme_values, marker='+', markersize=10, color='darkslategray', linestyle='-', linewidth=1.5,
+                 label='BME')
     axes[0].set_title('Bayesian Model Evidence (BME)', fontsize=16)
     axes[0].set_xlabel('Iteration', fontsize=14)
     axes[0].set_ylabel('BME', fontsize=14)
@@ -160,15 +190,13 @@ def plot_bme_re(bayesian_dict, num_bal_iterations):
     axes[0].plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=1.5, label='Trend Line')
     axes[0].legend()
 
-    # Set x-axis limits for BME plot to start from the very beginning
+    # Set x-axis limits for BME plot
     axes[0].set_xlim(iterations[0], iterations[-1])
-
-    # Set x-axis major locator to show ticks every 5 units
-    axes[0].xaxis.set_major_locator(plt.MaxNLocator(integer=True, prune='both'))
     axes[0].xaxis.set_major_locator(plt.MultipleLocator(5))
 
     # Plot RE
-    axes[1].plot(iterations, re_values, marker='x', markersize=10, color='dimgray', linestyle='-', linewidth=1.5, label='RE')
+    axes[1].plot(iterations, re_values, marker='x', markersize=10, color='dimgray', linestyle='-', linewidth=1.5,
+                 label='RE')
     axes[1].set_title('Relative Entropy (RE)', fontsize=16)
     axes[1].set_xlabel('Iteration', fontsize=14)
     axes[1].set_ylabel('RE', fontsize=14)
@@ -181,44 +209,39 @@ def plot_bme_re(bayesian_dict, num_bal_iterations):
     axes[1].plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=1.5, label='Trend Line')
     axes[1].legend()
 
-    # Set x-axis limits for RE plot to start from the very beginning
+    # Set x-axis limits for RE plot
     axes[1].set_xlim(iterations[0], iterations[-1])
-
-    # Set x-axis major locator to show ticks every 5 units
-    axes[1].xaxis.set_major_locator(plt.MaxNLocator(integer=True, prune='both'))
     axes[1].xaxis.set_major_locator(plt.MultipleLocator(5))
 
     # Adjust layout
     plt.tight_layout()
-    plt.savefig('RE_BME_plots.png')
-    plt.close()
 
-def plot_combined_bal(collocation_points, n_init_tp, bayesian_dict, save_name=None):
+    # Ensure the directory exists
+    save_folder.mkdir(parents=True, exist_ok=True)
+
+    # Save the figure
+    plt.savefig(save_folder / 'RE_BME_plots.png')
+    plt.close()
+def plot_combined_bal(collocation_points, n_init_tp, bayesian_dict, save_folder=None):
     """
-    Plots the initial training point and which points were selected using DKL and which ones using BME, when the
-    combined utility function is chosen.
+    Plots the initial training points and points selected using different utility functions.
     Args:
         collocation_points: np.array[n_tp, n_param]
             Array with all collocation points, in order in which they were selected.
         n_init_tp: int
-            Number of TP selected initially
+            Number of initial training points selected.
         bayesian_dict: dictionary
-            With keys 'util_function', which details which utility function was used in each iteration.
-        save_name: Path file
-            File name with which to save results. Default is None, so no file is saved.
-
-    Returns:
-
+            With keys 'util_func', detailing which utility function was used in each iteration.
+        save_folder: Path or None
+            Directory where to save the plot. If None, the plot is not saved.
     """
-
     if collocation_points.shape[1] == 1:
         collocation_points = np.hstack((collocation_points, collocation_points))
 
     fig, ax = plt.subplots()
 
-    # initial TP:
-    ax.scatter(collocation_points[0:n_init_tp, 0], collocation_points[0:n_init_tp, 1], label='InitialTP', c='black',
-               s=100)
+    # Initial TP:
+    ax.scatter(collocation_points[0:n_init_tp, 0], collocation_points[0:n_init_tp, 1], label='Initial TP', c='black', s=100)
     selected_tp = collocation_points[n_init_tp:, :]
 
     # Get indexes for 'dkl'
@@ -231,67 +254,24 @@ def plot_combined_bal(collocation_points, n_init_tp, bayesian_dict, save_name=No
 
     # Get indexes for 'ie'
     ie_ind = np.where(bayesian_dict['util_func'] == 'ie')
-    ax.scatter(selected_tp[ie_ind, 0], selected_tp[ie_ind, 1], label='BME', c='green', s=200, alpha=0.5)
+    ax.scatter(selected_tp[ie_ind, 0], selected_tp[ie_ind, 1], label='IE', c='green', s=200, alpha=0.5)
 
     # Global MC
-    ie_ind = np.where(bayesian_dict['util_func'] == 'global_mc')
-    ax.scatter(selected_tp[ie_ind, 0], selected_tp[ie_ind, 1], label='MC', c='red', s=200, alpha=0.5)
+    mc_ind = np.where(bayesian_dict['util_func'] == 'global_mc')
+    ax.scatter(selected_tp[mc_ind, 0], selected_tp[mc_ind, 1], label='MC', c='red', s=200, alpha=0.5)
 
     ax.set_xlabel('K_Zone 8')
     ax.set_ylabel('$K_Zone 9$')
 
     fig.legend(loc='lower center', ncol=5)
     plt.subplots_adjust(top=0.95, bottom=0.15, wspace=0.25, hspace=0.55)
-    if save_name is not None:
-        plt.savefig(save_name)
-    #plt.show(block=False)
 
-# plot_posterior(posterior_vector, parameter_names, prior)
-# plot_posterior_updates(posterior_vectors, parameter_names, prior)
-#plot_bme_re(bayesian_dict, 10)
-
-
-
-def plot_bme_surface(num_iterations):
-    # Generate sample data for illustration
-    np.random.seed(0)
-    x = np.linspace(0.1, 10, 20)  # Positive limits: 0.1 to 10
-    y = np.linspace(0.1, 5, 20)   # Positive limits: 0.1 to 5
-    X, Y = np.meshgrid(x, y)
-
-    fig = plt.figure(figsize=(10, 8))  # Adjusted figure size to minimize blank space
-
-    # 3D Plot
-    ax1 = fig.add_subplot(111, projection='3d')
-
-    # Iterate through the number of iterations
-    for i in range(num_iterations):
-        # Simulated Bayesian Model Evidence as a function of X and Y
-        Z = simulate_bme(X, Y, iteration=i)
-
-        # Apply Gaussian smoothing to Z
-        Z_smooth = gaussian_filter(Z, sigma=1.0)
-
-        # Plot 3D surface for each iteration
-        surf = ax1.plot_surface(X, Y, Z_smooth, cmap='viridis', alpha=0.6)
-
-    ax1.set_xlabel(r'$\omega_1$', fontsize=18)
-    ax1.set_ylabel(r'$\omega_2$', fontsize=18)
-    ax1.set_zlabel('BME', fontsize=18)
-    ax1.set_zticklabels([])  # Remove Z-axis labels
-
-    # Zoom in by adjusting the view limits
-    ax1.set_xlim(0, 10)
-    ax1.set_ylim(0, 5)
-    ax1.set_zlim(-2, 2)
-
-    ax1.view_init(elev=30, azim=225)  # Adjust view angle
-
-    # Add colorbar for the surface plot
-    fig.colorbar(surf, ax=ax1, shrink=0.5, aspect=5)
-
-    plt.tight_layout()
-    plt.show()
+    # Save the figure
+    if save_folder:
+        save_folder = Path(save_folder)  # Ensure save_folder is a Path object
+        save_folder.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
+        plt.savefig(save_folder / 'collocation_points.png')  # Save with .png extension
+    plt.close()
 
 def simulate_bme(X, Y, iteration):
     # Simulated function for Bayesian Model Evidence (BME)
