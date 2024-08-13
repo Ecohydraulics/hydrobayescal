@@ -147,7 +147,6 @@ class TelemacModel():#FullComplexityModel
             Bayesian Active Learning iteration number.
         num_run : int
             Simulation number. Iteratively changing according the collocation points.
-S
         """
         self.model_dir=model_dir
         self.res_dir=res_dir
@@ -609,7 +608,12 @@ S
 
                 # Ensure collocation_points is a 2D array
                 if collocation_points.ndim == 1:
-                    collocation_points = collocation_points[:, np.newaxis]
+                    if collocation_points.size == 1:
+                        # If there's only one element, convert it to a column vector
+                        collocation_points = collocation_points[:, np.newaxis]
+                    else:
+                        # If there are multiple elements, reshape it to a horizontal 2D array
+                        collocation_points = collocation_points.reshape(1, -1)
 
                 # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
@@ -947,428 +951,155 @@ S
         with open(friction_file_path, 'w') as file:
             file.writelines(updated_lines)
 
+    @staticmethod
+    def check_tm_inputs(user_inputs):
+        # Helper function to check if a path exists and print success message
+        def path_exists(path, path_name):
+            if os.path.exists(path):
+                print(f"{path_name} exists: {path}")
+            else:
+                raise ValueError(f"{path_name} does not exist: {path}")
+            if not isinstance(path, str):
+                raise TypeError(f"{path_name} should be a string")
 
-    # def tbl_creator(self,
-    #                 factor,
-    #                 friction_zones,
-    #                 friction_file_path,
-    #                 first_run=True,
-    #                 final_run = False):
-    #     friction_file_path = friction_file_path
-    #     #pdb.set_trace()
-    #     print(first_run)
-    #     if first_run:
-    #         with open(friction_file_path, 'r') as file:
-    #             file_lines = file.readlines()
-    #     else:
-    #         base_path, extension = friction_file_path.rsplit('.', 1)
-    #         friction_file_path_temp = f"{base_path}_temp.{extension}"
-    #         with open(friction_file_path_temp, 'r') as file:
-    #             file_lines = file.readlines()
-    #
-    #     updated_lines= []
-    #     original_lines= []
-    #     for line in file_lines:
-    #         parts = list(filter(None, line.split()))
-    #         if line.startswith('*'):
-    #             updated_lines.append(line)
-    #             original_lines.append(line)
-    #             continue
-    #         # Check if the first column value is in the list of valid strings
-    #         if parts[0] in friction_zones:
-    #             original_lines.append(line)
-    #             if len(parts) > 2 and parts[2] != 'NULL':
-    #                 try:
-    #                     # Multiply the third column value by the factor
-    #                     parts[2] = str(float(parts[2]) * (factor + 1))
-    #                 except ValueError:
-    #                     # In case the value is not a float, skip the line
-    #                     pass
-    #             updated_zone = '\t'.join(parts)
-    #             updated_lines.append(updated_zone + '\n')
-    #         else:
-    #             updated_lines.append(line)
-    #             original_lines.append(line)
-    #
-    #     # Write the updated content to a new file
-    #     if first_run:
-    #         base_path, extension = friction_file_path.rsplit('.', 1)
-    #         friction_file_path_temp = f"{base_path}_temp.{extension}"
-    #         with open(friction_file_path_temp, 'w') as file:
-    #             file.writelines(original_lines)
-    #         with open(friction_file_path, 'w') as file:
-    #             file.writelines(updated_lines)
-    #     else:
-    #         with open(friction_file_path, 'w') as file:
-    #             file.writelines(updated_lines)
-    #
-    #     if final_run:
-    #         self.original_tbl_lines=original_lines
-    #         self.friction_file_path=friction_file_path
-    #         self.friction_file_path_temp=friction_file_path_temp
-    #
+        # Extract values from dictionary
+        control_file = user_inputs['control_file_name']
+        friction_file = user_inputs['friction_file']
+        telemac_solver = user_inputs['Telemac_solver']
+        model_simulation_path = user_inputs['model_simulation_path']
+        results_folder_path = user_inputs['results_folder_path']
+        calib_pts_csv_file = user_inputs['calib_pts_file_path']
+        n_cpus = user_inputs['n_cpus']
+        init_runs = user_inputs['init_runs']
+        calibration_parameters = user_inputs['calibration_parameters']
+        param_values = user_inputs['param_values']
+        calibration_quantities = user_inputs['calibration_quantities']
+        dict_output_name = user_inputs['dict_output_name']
+        results_filename_base = user_inputs['results_filename_base']
+        parameter_sampling_method = user_inputs['parameter_sampling_method']
+        n_max_tp = user_inputs['n_max_tp']
+        n_samples = user_inputs['n_samples']
+        mc_samples = user_inputs['mc_samples']
+        mc_exploration = user_inputs['mc_exploration']
+        eval_steps = user_inputs['eval_steps']
 
+        # Check model_simulation_path
+        path_exists(model_simulation_path, "model_simulation_path")
 
+        # Check control_file
+        if os.path.exists(os.path.join(model_simulation_path, control_file)):
+            print(f"Control file exists: {control_file}")
+        else:
+            raise ValueError(f"Control file does not exist: {control_file}")
+        if not isinstance(os.path.join(model_simulation_path, control_file), str):
+            raise TypeError("control_file should be a string")
 
-    # def __call__(self, *args, **kwargs):
-    #     """
-    #     Call method forwards to self.run_simulation()
-    #
-    #     :param args:
-    #     :param kwargs:
-    #     :return:
-    #     """
-    #     # for i in range(self.init_runs):
-    #     #     self.num_run = i + 1
-    #     #     collocation_points=self.cas_creation_doe()
-    #     #     self.run_single_simulation()
-    #
-    #     collocation_points=self.run_multiple_simulations()
-    #     model_results,observations,error=self.output_processing()
-    #
-    #     return model_results,collocation_points,observations,error
+        # Check telemac_solver
+        if not isinstance(telemac_solver, str):
+            raise TypeError("Telemac_solver should be a string")
+        if telemac_solver not in ["1", "2"]:
+            raise ValueError("Telemac_solver should be '1' (Telemac 2D) or '2' (Telemac 3D)")
 
+        # Check results_folder_path
+        path_exists(results_folder_path, "results_folder_path")
 
-    # def cas_creation_doe(self):
-    #     """
-    #     Modifies the .cas steering file for each of the initial Telemac runs according to the parameter sampling
-    #     method based on DoE (Design of Experiments). For the very first run, the calibration values are created and stored as data frame and saved
-    #     in a .csv file called initial-run-parameters.csv. From the second run on, this .csv file is read and the code extracts the next calibration parameter combinations.
-    #     After the .cas file has been modified, it is loaded for the model simulation.
-    #
-    #     # ----------- Until now it is possible to modify only the calibration parameters that were indicated in the user_settings.py
-    #     # ----------- However, the idea would be also to modify the roughness file of Telemac .tbl according to the roughness zones in the .brf. file (To be implemented)
-    #
-    #     Returns
-    #     -------
-    #     None
-    #
-    #     """
-    #     global np_doe_collocation_points, df_doe_collocation_points
-    #     self.tm_results_filename = self.results_file_name_base + '_' + str(self.num_run) + '.slf'
-    #     if self.num_run == 1:
-    #         df_doe_collocation_points,self.calibration_values_list= self.parameter_sampling(
-    #             self.calibration_parameters, self.calibration_values_ranges, self.parameter_sampling_method,
-    #             self.init_runs)
-    #         print(df_doe_collocation_points)
-    #         print(
-    #             "The calibration values for the selected number of full complexity runs are: \n " + df_doe_collocation_points.to_string())
-    #         np_doe_collocation_points = df_doe_collocation_points.values
-    #         np.save(os.path.join(self.res_dir, 'colocation_points.npy'), np_doe_collocation_points)
-    #
-    #     elif self.num_run<=self.n_max_tp:
-    #         df_doe_collocation_points = _pd.read_csv(self.model_dir + "/initial-runs-parameters.csv", sep=',',
-    #                                                  index_col=0)
-    #         print(
-    #             "The calibration values for the selected number of full complexity runs are: \n " + df_doe_collocation_points.to_string())
-    #         # Iterate over each row and extract calibration values as a list
-    #         self.parameter_values_dict = {}
-    #         for index, row in df_doe_collocation_points.iterrows():
-    #             self.parameter_values_dict[index] = row.values.tolist()
-    #         self.calibration_values_list = df_doe_collocation_points.loc['PC' + str(self.num_run)].tolist()
-    #
-    #         ## In this point I need to add code that reads the new added parameter combination after Bayesian Rejection sampling?? has been done to initia_run_parameters.csv.
-    #         ## This new set of parameters are assigned to self.calibration_values_list which is needed to modify the .cas file.
-    #         ## This step has to be added for Bayesian calibration.
-    #
-    #         if self.gaia_steering_file:
-    #             print("* received gaia steering file: " + self.gaia_steering_file)
-    #             self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
-    #             self.gaia_results_file = "{}{}{}".format(self.res_dir, os.sep,
-    #                                                      str("resIDX-" + self.gaia_steering_file.strip(".cas") + ".slf"))
-    #         else:
-    #             self.gaia_cas = None
-    #             self.gaia_results_file = None
-    #
-    #     self.calibration_parameters.append('RESULTS FILE')
-    #     self.calibration_values_list.append(self.tm_results_filename)
-    #     print('Results file name for this simulation:' + self.tm_results_filename)
-    #     np_doe_collocation_points = df_doe_collocation_points.values
-    #     np.save(os.path.join(self.res_dir, 'colocation_points.npy'), np_doe_collocation_points)
-    #
-    #     # These are the lines of code that modify the .cas file depending on the calibration_parameters[list] and calibration_values_list
-    #     # The self.calibration_values_list is a list that contains the values for each calibration parameters contained in self.calibration_parameters.
-    #     # From this point we can create a new set of parameters to modify the .cas file for learning the surrogate model.
-    #
-    #     for param, val in zip(self.calibration_parameters, self.calibration_values_list):
-    #         cas_string = self.create_cas_string(param, val)
-    #         self.rewrite_steering_file(param, cas_string, steering_module="telemac")
-    #
-    #     return np_doe_collocation_points
+        # Check calib_pts_csv_file
+        path_exists(calib_pts_csv_file, "calib_pts_csv_file")
+        if not calib_pts_csv_file.endswith('.csv'):
+            raise ValueError("calib_pts_csv_file should be a CSV file")
 
+        # Check n_cpus
+        if not isinstance(n_cpus, int):
+            raise TypeError("CPUs should be an integer")
 
-    # def parameter_sampling(self,calibration_parameters,calibration_values_ranges,parameter_sampling_method,total_number_of_samples):
-    #     """
-    #     Creates (equally separated or ramdom) values for the selected calibration parameters.
-    #     Creates values for 'n' rows corresponding to the number of initial runs and 'p' columns corresponding to the number of calibration parameters
-    #
-    #     Parameters
-    #     ----------
-    #         calibration_parameters: string
-    #             Names of the selected calibration parameters
-    #         calibration_values_ranges: list
-    #             Ranges of selection for each of the calibration parameters
-    #         parameter_sampling_method: string
-    #             DoE sampling 1) 'MIN - equal interval - MAX' or 2) 'MIN - random - MAX' or 3) Latin Hypercube Sampling
-    #
-    #     Returns
-    #     ----------
-    #         df_doe_calibration_values: Dataframe
-    #             Dataframe containing the values for each of the initial runs (rows) and calibration parameters (columns).
-    #         calibration_values_list: List
-    #             PC parameter combination values for the PCth run.
-    #
-    #     """
-    #     global sampling_method
-    #     try:
-    #         if parameter_sampling_method=='1':
-    #             sampling_method ='MIN - equal interval - MAX'
-    #         elif parameter_sampling_method=='2':
-    #             sampling_method ='MIN - random - MAX'
-    #         elif parameter_sampling_method == '3':
-    #             sampling_method = 'lhs'#
-    #     except subprocess.CalledProcessError as e:
-    #         print(f"nor sampling method selected for calibration parameters: {e}")
-    #     #pdb.set_trace()
-    #     calib_par_value_dict = {}
-    #     for param, range_ in zip(calibration_parameters, calibration_values_ranges):
-    #         calib_par_value_dict[param] = {'bounds': range_} #'name': param,
-    #
-    #     print(calib_par_value_dict)
-    #     # currently only equal or random sampling enabled through doepy.doe.control
-    #     # this will be IMPROVED in a future release to full DoE methods (see doepy.scripts)
-    #     self.doe.generate_multi_parameter_space(
-    #         parameter_dict=calib_par_value_dict,
-    #         method=sampling_method,
-    #         total_number_of_samples=total_number_of_samples
-    #     )
-    #
-    #     self.doe.df_parameter_spaces.to_csv(self.model_dir + "/initial-runs-parameters.csv")
-    #     df_doe_calibration_values=self.doe.df_parameter_spaces
-    #     calibration_values_list=self.doe.df_parameter_spaces.loc['PC'+str(self.num_run)].tolist()
-    #     return df_doe_calibration_values,calibration_values_list
+        # Check init_runs
+        if not isinstance(init_runs, int):
+            raise TypeError("init_runs should be an integer")
 
-    # def load_results(self):
-    #     """
-    #     Load simulation results stored in TelemacModel.tm_results_filename
-    #
-    #     Cannot work if case.init_default_state() was applied before.
-    #
-    #     Parameters
-    #     ----------
-    #         None
-    #
-    #     Returns
-    #     ----------
-    #         int: 0 corresponds to success.
-    #         int: -1 points to an error.
-    #     """
-    #     print("* opening results file: " + self.tm_results_filename)
-    #     if not os.path.isfile(self.tm_results_filename):
-    #         self.get_results_filename()
-    #     print("* retrieving boundary file: " + self.tm_results_filename)
-    #     boundary_file = os.path.join(self.model_dir, self.case.get("MODEL.BCFILE"))
-    #     print("* loading results with boundary file " + boundary_file)
-    #     try:
-    #         os.chdir(self.model_dir)  # make sure to work in the model dir
-    #         self.results = TelemacFile(self.tm_results_filename, bnd_file=boundary_file)
-    #     except Exception as error:
-    #         print("ERROR: could not load results. Did you use TelemacModel.load_case(reset_state=True)?\n" + str(error))
-    #         return -1
-    #
-    #     # to see more case variables that can be self.case.get()-ed, type print(self.case.variables)
-    #     # examples to access liquid boundary equilibrium
-    #     try:
-    #         liq_bnd_info = self.results.get_liq_bnd_info()
-    #         print("Liquid BC info:\n" + str(liq_bnd_info))
-    #     except Exception as error:
-    #         print("WARNING: Could not load case liquid boundary info because of:\n   " + str(error))
-    #     return 0
+        # Check calibration_parameters and param_ranges
+        if not isinstance(calibration_parameters, list):
+            raise TypeError("calibration_parameters should be a list")
+        if not isinstance(param_values, list):
+            raise TypeError("param_ranges should be a list")
+        if len(calibration_parameters) != len(param_values):
+            raise ValueError("calibration_parameters and param_ranges must have the same length")
 
-    # def close_case(self):
-    #     """
-    #     Closes and deletes case.
-    #
-    #     Parameters
-    #     ----------
-    #         None
-    #
-    #     Returns
-    #     -------
-    #         None
-    #     """
-    #
-    #     if self.case_loaded:
-    #         try:
-    #             self.case.finalize()
-    #             print(self.case)
-    #             del self.case
-    #             print(self.case)
-    #         except Exception as error:
-    #             print("ERROR: could not close case:\n   " + str(error))
-    #     self.case_loaded = False
-    #
-    # def reload_case(self):
-    #     """
-    #     Iterative runs require first to close the current run.
-    #
-    #     Parameters
-    #     ----------
-    #
-    #
-    #     Returns
-    #     -------
-    #
-    #     """
-    #
-    #     # close and delete case
-    #     self.close_case()
-    #     # load with new specs
-    #     self.load_case()
+        for param in calibration_parameters:
+            if not isinstance(param, str):
+                raise TypeError("Each calibration parameter should be a string")
 
-    # def load_case(self, reset_state=True):
-    #     """
-    #     Load Telemac case file and check its consistency.
-    #
-    #     Parameters
-    #     ----------
-    #     reset_state (bool): use to activate case.init_state_default(); default is ``False``. Only set to ``True`` for
-    #         running Telemac through the Python API. Otherwise, results cannot be loaded.
-    #
-    #     Returns
-    #     -------
-    #
-    #     """
-    #
-    #     print("* switching to model directory (if needed, cd back to TelemacModel.supervisor_dir)")
-    #     os.chdir(self.model_dir)
-    #
-    #     print("* loading {} case...".format(str(self.tm_xd)))
-    #     if "telemac2d" in self.tm_xd.lower():
-    #         self.case = Telemac2d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
-    #     elif "telemac3d" in self.tm_xd.lower():
-    #         self.case = Telemac3d(self.tm_cas, lang=2, comm=self.comm, stdout=self.stdout)
-    #     else:
-    #         print("ERROR: only Telemac2d/3d available, not {}.".format(str(self.tm_xd)))
-    #         return -1
-    #     self.comm.Barrier()
-    #
-    #     print("* setting and initializing case...")
-    #     self.case.set_case()
-    #     self.comm.Barrier()
-    #
-    #     if reset_state:
-    #         #pdb.set_trace()
-    #         self.case.init_state_default()
-    #
-    #     self.case_loaded = True
-    #     print("* successfully activated TELEMAC case: " + str(self.tm_cas))
-    #     return 0
+        # If all checks pass, print success message
+        print("Calibration parameters and parameter ranges have been validated successfully.")
 
-    # def rename_selafin(self, old_name=".slf", new_name=".slf"):
-    #     """
-    #     Merged parallel computation meshes (gretel subroutine) does not add correct file endings.
-    #     This function adds the correct file ending to the file name.
-    #
-    #     Parameters
-    #     ----------
-    #         old_name: string
-    #             original file name
-    #         new_name: string
-    #             new file name
-    #     Returns
-    #     ----------
-    #         None
-    #
-    #     """
-    #
-    #     if os.path.exists(old_name):
-    #         os.rename(old_name, new_name)
-    #     else:
-    #         print("WARNING: SELAFIN file %s does not exist" % old_name)
+        # Check friction_file conditionally
+        if any(param.lower().startswith('zone') for param in calibration_parameters):
+            if isinstance(friction_file, str):
+                print(f"Friction file is a valid string: {friction_file}")
 
-    # def update_model_controls(self,**kwargs):#,
-    #         #new_parameter_values,
-    #         #simulation_id=0,
-    # #):
-    #
-    #     """
-    #     In TELEMAC language: update the steering file
-    #     Update the Telemac and Gaia steering files specifically for Bayesian calibration.
-    #
-    #     Parameters
-    #     ----------
-    #         new_parameter_values: dict
-    #                 Provides a new parameter value for every calibration parameter
-    #                 * keys correspond to Telemac or Gaia keywords in the steering file
-    #                 * values are either scalar or list-like numpy arrays
-    #         simulation_id: int
-    #                 Identifier for .cas updates
-    #     Returns
-    #     ----------
-    #         int: 0 corresponds to success.
-    #         int: -1 points to an error.
-    #
-    #     """
-    #
-    #     # move existing results to auto-saved-results sub-folder
-    #     try:
-    #         print(self.tm_results_filename)
-    #         print(self.res_dir)
-    #         if os.path.exists(os.path.join(self.res_dir,self.tm_results_filename)):
-    #             # Remove the existing destination file
-    #             os.remove(os.path.join(self.res_dir,self.tm_results_filename))
-    #         shutil.move(os.path.join(self.model_dir,self.tm_results_filename),self.res_dir)
-    #     except Exception as error:
-    #         print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
-    #     return -1
-    #
-    #     # update telemac calibration pars
-    #     # for par, has_more in lookahead(self.calibration_parameters["telemac"].keys()):
-    #     #     self.calibration_parameters["telemac"][par]["current value"] = new_parameter_values[par]
-    #     #     updated_string = self.create_cas_string(par, new_parameter_values[par])
-    #     #     self.rewrite_steering_file(par, updated_string, self.tm_cas)
-    #     #     if not has_more:
-    #     #         updated_string = "RESULTS FILE" + " = " + self.tm_results_filename.replace(".slf", f"{simulation_id:03d}" + ".slf")
-    #     #         self.rewrite_steering_file("RESULTS FILE", updated_string, self.tm_cas)
-    #     #
-    #     # # update gaia calibration pars - this intentionally does not iterate through self.calibration_parameters
-    #     # for par, has_more in lookahead(self.calibration_parameters["gaia"].keys()):
-    #     #     self.calibration_parameters["gaia"][par]["current value"] = new_parameter_values[par]
-    #     #     updated_string = self.create_cas_string(par, new_parameter_values[par])
-    #     #     self.rewrite_steering_file(par, updated_string, self.gaia_cas)
-    #     #     if not has_more:
-    #     #         updated_string = "RESULTS FILE" + " = " + self.gaia_results_file.replace(".slf", f"{simulation_id:03d}" + ".slf")
-    #     #         self.rewrite_steering_file("RESULTS FILE", updated_string, self.gaia_cas)
-    #
-    #     #return 0
+                # Check if the friction file exists
+                if os.path.exists(os.path.join(model_simulation_path, friction_file)):
+                    print(f"Friction file exists: {friction_file}")
+                else:
+                    raise ValueError(f"Friction file does not exist: {friction_file}")
+            else:
+                raise TypeError("friction_file should be a string")
 
-    # def get_results_filename(self):
-    #     """
-    #     Routine is called with the __init__ and carefully written so that it can be called
-    #     externally any time, too.
-    #
-    #     Retrieves the results file name from the .slf file when a case is loaded.
-    #
-    #     Parameters
-    #     ----------
-    #     None
-    #
-    #     Returns
-    #     -------
-    #     None
-    #
-    #     """
-    #
-    #     try:
-    #         #pdb.set_trace()
-    #
-    #         # The aim of the following 2-line code is to extract the RESULTFILE nem from the .cas file and assign it as the
-    #         # self.results_file_name_base, but it cannot be done since it needs a loaded case first.
-    #
-    #         self.tm_results_filename = self.case.get("MODEL.RESULTFILE")
-    #         # self.results_file_name_base=re.split(r'[._]', self.results_file_name_base)
-    #         # self.results_file_name_base=self.results_file_name_base[0]
-    #
-    #     except Exception as err:
-    #         print("ERROR: could not retrieve results filename. Is the case loaded?\n\nTraceback:\n{}".format(str(err)))
+        # Check calibration_quantities
+        if not isinstance(calibration_quantities, list):
+            raise TypeError("calibration_quantities should be a list of strings")
+        if len(calibration_quantities) > 2:
+            raise ValueError("calibration_quantities can have a maximum of 2 quantities")
+        for quantity in calibration_quantities:
+            if not isinstance(quantity, str):
+                raise TypeError("Each calibration quantity should be a string")
+        if calibration_quantities:
+            print(f"Calibration quantities are valid: {calibration_quantities}")
+
+        # Check dict_output_name
+        if not isinstance(dict_output_name, str):
+            raise TypeError("dict_output_name should be a string")
+        print(f"Dictionary output name is given as: {dict_output_name}.json")
+
+        # Check results_filename_base
+        if not isinstance(results_filename_base, str):
+            raise TypeError("results_filename_base should be a string")
+        print(f"Base Telemac results file name is gives as: {results_filename_base}")
+
+        # Check parameter_sampling_method
+        if not isinstance(parameter_sampling_method, str):
+            raise TypeError("parameter_sampling_method should be a string")
+        print(f"Parameter sampling method is selected as: {parameter_sampling_method}")
+
+        # Check n_max_tp
+        if not isinstance(n_max_tp, int):
+            raise TypeError("n_max_tp should be an integer")
+        if n_max_tp <= init_runs:
+            raise ValueError("n_max_tp must be greater than init_runs")
+        print(f"n_max_tp is valid: {n_max_tp}")
+
+        # Check n_samples
+        if not isinstance(n_samples, int):
+            raise TypeError("n_samples should be an integer")
+        print(f"n_samples is valid: {n_samples}")
+
+        # Check mc_samples
+        if not isinstance(mc_samples, int):
+            raise TypeError("mc_samples should be an integer")
+        if mc_samples > n_samples:
+            raise ValueError("mc_samples must be less than or equal to n_samples")
+        print(f"mc_samples is valid: {mc_samples}")
+
+        # Check mc_exploration
+        if not isinstance(mc_exploration, int):
+            raise TypeError("mc_exploration should be an integer")
+        if mc_exploration > mc_samples:
+            raise ValueError("mc_exploration must be less than or equal to mc_samples")
+        print(f"mc_exploration is valid: {mc_exploration}")
+
+        # Check eval_steps
+        if not isinstance(eval_steps, int):
+            raise TypeError("eval_steps should be an integer")
+        print(f"Surrogate evaluation steps is valid: {eval_steps}")
+
+        print("All inputs are valid")
+

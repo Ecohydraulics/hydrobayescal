@@ -66,16 +66,18 @@ class HydroSimulations(FullComplexityModel):
         init_runs : int
             Initial runs of the full complexity model.
         """
-
-        FullComplexityModel.__init__(self, model_dir=user_inputs['model_simulation_path'],
-                                     res_dir=user_inputs['results_folder_path'],
-                                     calibration_parameters=user_inputs['calibration_parameters'],
-                                     control_file=user_inputs['control_file_name'],
-                                     init_runs=user_inputs['init_runs'])
         self.user_inputs = user_inputs
+        self.check_inputs()
+        FullComplexityModel.__init__(self, model_dir=self.user_inputs['model_simulation_path'],
+                                     res_dir=self.user_inputs['results_folder_path'],
+                                     calibration_parameters=self.user_inputs['calibration_parameters'],
+                                     control_file=self.user_inputs['control_file_name'],
+                                     init_runs=self.user_inputs['init_runs'])
         self.model_evaluations = None
         self.observations = None
         self.measurement_errors = None
+    def check_inputs(self):
+        TelemacModel.check_tm_inputs(self.user_inputs)
     def tm_simulations(
             self,
             collocation_points=None,
@@ -135,6 +137,9 @@ class HydroSimulations(FullComplexityModel):
             if file_path.endswith('.npy'):
                 data = np.load(file_path, allow_pickle=True)
             elif file_path.endswith('.pkl'):
+                with open(file_path, 'rb') as file:
+                    data = pickle.load(file)
+            elif file_path.endswith('.pickle'):
                 with open(file_path, 'rb') as file:
                     data = pickle.load(file)
             else:

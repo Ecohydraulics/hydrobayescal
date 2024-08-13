@@ -98,7 +98,7 @@ class ExpDesign:
 
     def __init__(self, input_object, training_method='normal', sampling_method='random', main_meta_model='apce',
                  secondary_meta_model=None, exploit_method='BAL', explore_method='random',
-                 training_step=1,
+                 n_canddidate=1,
                  n_initial_tp=1, n_max_tp=None, pce_mc_size=50_000,
                  util_func=None,
                  eval_step=1):
@@ -109,7 +109,7 @@ class ExpDesign:
         self.secondary_model = secondary_meta_model
         self.sampling_method = sampling_method
         self.exploit_method = exploit_method
-        self.training_step = training_step
+        self.n_canddidate = n_canddidate
         self.util_func = util_func
 
         self.explore_method = explore_method
@@ -179,9 +179,9 @@ class ExpDesign:
         # Set number of training iterations - additional TP to sample (for BAL)
         if self.training_method == 'normal':
             self.n_max_tp = self.n_init_tp
-            self.training_step = 1
+            self.n_canddidate = 1
 
-        self.n_iter = int((self.n_max_tp - self.n_init_tp)/self.training_step)
+        self.n_iter = int((self.n_max_tp - self.n_init_tp)/self.n_canddidate)
 
         # Number of evaluations:
         if self.eval_step == 1 or self.exploit_method == 'sobol':

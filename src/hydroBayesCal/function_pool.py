@@ -189,4 +189,3 @@ def update_collocation_pts_file(file_path, new_collocation_point):
     with open(file_path, mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(new_line)
-

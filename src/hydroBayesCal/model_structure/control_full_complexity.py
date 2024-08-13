@@ -8,7 +8,6 @@ FullComplexityModel class.
 """
 
 import os as _os
-import numpy as _np
 from datetime import datetime
 
 
@@ -65,7 +64,8 @@ class FullComplexityModel:
         self.init_runs=init_runs
         if not _os.path.exists(res_dir + _os.sep + "auto-saved-results"):
             _os.makedirs(res_dir + _os.sep + "auto-saved-results")
-
+        if not _os.path.exists(res_dir + _os.sep + "auto-saved-results" + _os.sep + "plots"):
+            _os.makedirs(res_dir + _os.sep + "auto-saved-results" + _os.sep + "plots")
         self.calibration_parameters = False
         if calibration_parameters:
             self.set_calibration_parameters(calibration_parameters)
