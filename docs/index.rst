@@ -1,7 +1,7 @@
 .. Introduction.
 
 
-Python Package for Bayesian Calibration of Hydrodynamic models 'HydroBayesCal'
+About
 =====
 
 What is HydroBayesCal?
@@ -35,10 +35,10 @@ a first step with only a few number of model realizations or so called initial c
 The program employs Bayesian Active Learning, or BAL, to iteratively add new training points (parameter combinations) that yielded the highest value of relative entropy, hence increasing the model's
 accuracy in the parameter space regions that are most crucial for Bayesian inference.
 
-Prerequisites Software
-======================
-HydroBayesCal is a Python package, which inherently requires Python, and the installation of an open source numerical
-model such as Telemac or/and OpenFoam. Currently, only Telemac 2D/ 3D bindings are enabled. The package runs in Debian Linux platforms
+Prerequisites (requirements)
+===========================
+
+HydroBayesCal is a Python package, bound to the installation of numerical model. Currently, only Telemac 2D/ 3D bindings are enabled. The package runs in Debian Linux platforms
 including Ubuntu and its derivatives and Windows, however, it is recommended to be installed in a Linux Operating System because
 it gives the flexibility for configuring the virtual environment and optimizing settings for Telemac simulations while providing
 a powerful command-line interface, which is well-suited for running batch simulations and automating tasks.
@@ -49,8 +49,6 @@ and the Telemac system.
 
 Python
 ------
-
-*Time requirement: 10 min.*
 
 To get the code running, we strongly recommend creating a new conda or virtual environment as described in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and
 at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_ with Python 3.10. ``HydroBayesCal`` potentially also works with earlier Python3 versions,
@@ -63,6 +61,10 @@ Windows user will have the best experience with Anaconda/conda env and Linux use
     Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_,
 and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
 
+
+.. todo::
+
+    Add Library requirements through a link to 
 
 Telemac
 ------

@@ -3,9 +3,9 @@ import subprocess, os, logging
 import numpy as _np
 import pandas as _pd
 import csv
-
-from config_logging import *
-#from model_structure.config_physics import *
+from utils.config_logging import *
+# TODO: re-instate config_physics
+#from utils.config_physics import *
 
 
 def append_new_line(file_name, text_to_append):
@@ -155,6 +155,11 @@ def str2seq(list_like_string, separator=",", return_type="tuple"):
 
 
 def log_actions(func):
+    """
+    TODO: this is the logging wrapper!
+    :param func:
+    :return:
+    """
     def wrapper(*args, **kwargs):
         func(*args, **kwargs)
         for handler in logging.getLogger("HyBayesCal").handlers:
@@ -168,16 +173,18 @@ def log_actions(func):
             logging.getLogger("errors").removeHandler(handler)
         print("Check the logfiles: logfile.log, warnings.log, and errors.log.")
     return wrapper
-def update_collocation_pts_file(file_path, new_collocation_point):
+
+
+def update_collocation_pts_file(
+        file_path,
+        new_collocation_point
+):
     """
     Append a new row to a CSV file.
 
     :param file_path: Path to the CSV file.
     :param new_collocation_point: List of values to be added as a new row.
-    :param new_collocation_point_description: The number to be appended to the 'PC' description.
     """
-    # Create the PC description
-
     # Ensure new_set_parameters is a list
     if not isinstance(new_collocation_point, list):
         raise ValueError("new_set_parameters must be a list")

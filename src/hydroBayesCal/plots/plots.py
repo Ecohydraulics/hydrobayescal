@@ -1,3 +1,7 @@
+"""
+TODO: Add docstrings
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde,norm,linregress
@@ -8,12 +12,33 @@ from scipy.ndimage import gaussian_filter
 from pathlib import Path
 
 class BayesianPlotter:
-    def __init__(self, results_folder_path = '', results_folder='auto-saved-results',plots_subfolder = 'plots'):
+    def __init__(
+            self,
+            results_folder_path='',
+            results_folder='auto-saved-results',
+            plots_subfolder='plots'
+    ):
         """
+        TODO: complete docstrings
         Initialize the plotter with the directory to save plots.
+        :param results_folder_path:
+        :param results_folder:
+        :param plots_subfolder:
         """
+
         self.save_folder = Path(results_folder_path) / results_folder / plots_subfolder
-    def plot_posterior(self,posterior_vector, parameter_name):
+
+    def plot_posterior(
+            self,
+            posterior_vector,
+            parameter_name
+    ):
+        """
+        TODO: complete docstrings
+        :param posterior_vector:
+        :param parameter_name:
+        :return:
+        """
         colors = ['dimgray']
         bins = 30
 
@@ -39,8 +64,15 @@ class BayesianPlotter:
         plt.tight_layout()
         plt.show()
 
-    def plot_posterior_updates(self, posterior_arrays, parameter_names, prior, iterations_to_plot=None,
-                               bins=30, density=True):
+    def plot_posterior_updates(
+            self,
+            posterior_arrays,
+            parameter_names,
+            prior,
+            iterations_to_plot=None,
+            bins=30,
+            density=True
+    ):
         """
         Plots the prior distributions and posterior updates for given parameters.
 
@@ -130,7 +162,12 @@ class BayesianPlotter:
                         save_folder / f'posterior_distribution_param_{col + 1}_iteration_{iteration_idx + 1}.png')
                     plt.close()
 
-    def plot_bme_re(self, bayesian_dict, num_bal_iterations, plot_type='both'):
+    def plot_bme_re(
+            self,
+            bayesian_dict,
+            num_bal_iterations,
+            plot_type='both'
+    ):
         """
         Plots BME and/or RE values over iterations.
 
@@ -283,7 +320,13 @@ class BayesianPlotter:
             plt.savefig(save_folder / 'RE_plot.png')
 
         plt.close()
-    def plot_combined_bal(self, collocation_points, n_init_tp, bayesian_dict):
+
+    def plot_combined_bal(
+            self,
+            collocation_points,
+            n_init_tp,
+            bayesian_dict
+    ):
         """
         Plots the initial training points and points selected using different utility functions.
         Args:
@@ -339,8 +382,17 @@ class BayesianPlotter:
             plt.savefig(save_folder / 'collocation_points.png')  # Save with .png extension
         plt.close()
 
-    def plot_bme_3d(self, param_values, param_ranges, param_names, bme_values, param_indices=(0, 1),
-                    extra_param_index=4, grid_size=100, last_iterations=25):
+    def plot_bme_3d(
+            self,
+            param_values,
+            param_ranges,
+            param_names,
+            bme_values,
+            param_indices=(0, 1),
+            extra_param_index=4,
+            grid_size=100,
+            last_iterations=25
+    ):
         """
         Plots the BME scatter for the last specified iterations and adds a 2D contour plot to show high BME regions.
 
@@ -524,10 +576,18 @@ class BayesianPlotter:
             fig4.tight_layout()
             fig4.savefig(save_folder / '3d_scatter_plot_with_extra_param.png')  # Save with .png extension
 
-    def plot_bme_surface_3d(self, param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,last_iterations = 25):
+    def plot_bme_surface_3d(
+            self,
+            param_values,
+            param_ranges,
+            bme_values,
+            param_indices=(0, 1),
+            grid_size=100,
+            last_iterations=25,
+    ):
         """
         Plots the BME surface for the last specified iterations and adds a 2D contour plot to show high BME regions.
-
+        TODO: complete docstrings
         Args:
             param_values: np.array
                 2D array where each row corresponds to parameter values for each iteration.
@@ -539,6 +599,8 @@ class BayesianPlotter:
                 Indices of the two parameters to plot.
             grid_size: int
                 Size of the grid for the surface and contour plots.
+            last_iterations: int
+                TODO
         """
         num_iterations = len(bme_values) - 1  # -1 because bme_values has iterations + 1 values
         if num_iterations < last_iterations:

@@ -1,17 +1,25 @@
-from src.plots.plots_config import *
+from src.hydroBayesCal.plots.plots_config import *
 
-best_vals = {'rmse': 0,
-             'mse': None,
-             'nse': 1,
-             'r2': 1,
-             'mean_error': 0,
-             'std_error': 0,
-             'norm_error': 1,
-             'P95': 1
-             }
+best_vals = {
+    'rmse': 0,
+    'mse': None,
+    'nse': 1,
+    'r2': 1,
+    'mean_error': 0,
+    'std_error': 0,
+    'norm_error': 1,
+    'P95': 1
+}
 
 
-def plot_correlation(sm_out, valid_eval, output_names, label_list, n_loc_=1, fig_title=''):
+def plot_correlation(
+        sm_out,
+        valid_eval,
+        output_names,
+        label_list,
+        n_loc_=1,
+        fig_title=''
+):
     """Function plots the scatter plots for the outputs, comparing the validation output (x axis) and the
     surrogate outputs (y axis)
 
@@ -63,7 +71,13 @@ def plot_correlation(sm_out, valid_eval, output_names, label_list, n_loc_=1, fig
     plt.subplots_adjust(top=0.9, bottom=0.15, wspace=0.2, hspace=0.5)
 
 
-def plot_validation_loc(eval_dict_list, label_list, output_names, n_loc, criteria=None, fig_title=''):
+def plot_validation_loc(
+        eval_dict_list,
+        label_list, output_names,
+        n_loc,
+        criteria=None,
+        fig_title=''
+):
     """
     Plots the evaluation criteria for each output location, for different surrogate scenarios. Min 1 surrogate scenario
     evaluation criteria must be passed.

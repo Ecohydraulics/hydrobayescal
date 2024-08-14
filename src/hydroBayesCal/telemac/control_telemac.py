@@ -1,11 +1,12 @@
 
 # coding: utf-8
 """
-Functional core for controling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
+Functional core for controlling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
 
-Author: Andres Heredia MSc.
+Authors: Andres Heredia, Sebastian Schwindt
 """
-import io, stat,shutil
+import sys, os
+import io, stat, shutil
 import subprocess
 from scipy import spatial
 import numpy as np
@@ -13,6 +14,21 @@ import pandas as _pd
 import csv
 import json
 import pdb
+try:
+    from mpi4py import MPI
+except ImportError as e:
+    print(e)
+
+# import head scripts
+sys.path.insert(0, os.path.abspath('..'))
+from hysim import HydroSimulations
+from function_pool import *  # provides os, subprocess, logging
+from datetime import datetime
+# TODO: Do you still use the global parameters from conf_telemac?
+from config_telemac import *
+# TODO: is pputils still relevant?
+from pputils.ppmodules.selafin_io_pp import ppSELAFIN
+# from doepy.doe_control import DesignOfExperiment
 
 try:
     from telapy.api.t2d import Telemac2d
@@ -21,28 +37,13 @@ try:
     from data_manip.extraction.telemac_file import TelemacFile
 except ImportError as e:
     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
-    #exit()
 
-# attention relative import usage according to docs/codedocs.rst
-from config_telemac import * # provides os and sys
-from function_pool import *  # provides os, subprocess, logging
-from datetime import datetime
-from pputils.ppmodules.selafin_io_pp import ppSELAFIN
-try:
-    from mpi4py import MPI
-except ImportError as e:
-    logging.warning("Could not import mpi4py")
-    print(e)
-
-# get package scripts
-
-#from doepy.doe_control import DesignOfExperiment
 
 setup_logging()
 logger = logging.getLogger("HydroBayesCal")
 
-class TelemacModel():#FullComplexityModel
 
+class TelemacModel(HydroSimulations):
     def __init__(
             self,
             model_dir="",
@@ -107,6 +108,9 @@ class TelemacModel():#FullComplexityModel
 
         Attributes
         ----------
+
+        TODO: tidy up docstrings. this should only Telemac-specific attributes as the rest is explained with the superclass (HydroSimulations)
+
         model_dir : str
             Directory of the Telemac model, where .cas file is located.
         res_dir : str
@@ -148,18 +152,23 @@ class TelemacModel():#FullComplexityModel
         num_run : int
             Simulation number. Iteratively changing according the collocation points.
         """
-        self.model_dir=model_dir
-        self.res_dir=res_dir
-        self.calibration_parameters=calibration_parameters
-        self.init_runs=init_runs
-        self.calibration_quantities=calibration_quantities
-        self.calibration_pts_file_path=calibration_pts_file_path
+        # TODO: I started to separate parameters that every HydroSimulation inheritance should have
+        # TODO: from those that are specific to Telemac. Please continue and merge.
+        super().__init__(
+            model_dir=model_dir,
+            res_dir=res_dir,
+            calibration_parameters=calibration_parameters,
+            init_runs=init_runs,
+            calibration_quantities=calibration_quantities,
+            calibration_pts_file_path=calibration_pts_file_path,
+            dict_output_name=dict_output_name,
+            results_file_name_base=results_filename_base,
+            nproc=n_processors,
+        )
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
         self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, friction_file)
-        self.dict_output_name=dict_output_name
-        self.results_file_name_base=results_filename_base
-        self.gaia_steering_file=gaia_steering_file
-        self.nproc = n_processors
+        self.gaia_steering_file = gaia_steering_file
+
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
         self.results = None  # will hold results loaded through self.load_results()
         self.shebang = python_shebang
@@ -179,16 +188,17 @@ class TelemacModel():#FullComplexityModel
         # Initializes the file where the output data from simulations will be stored
         self.tm_results_filename = ''
 
-        self.calibration_pts_df=_pd.read_csv(calibration_pts_file_path)
+        self.calibration_pts_df = _pd.read_csv(calibration_pts_file_path)
         #self.output_data=None
-
         #self.case_loaded = False
 
-    def cas_creation(self,
-                     collocation_point_values,
-                     calibration_parameters,
-                     tm_results_filename,
-                     friction_file_path):
+    def cas_creation(
+            self,
+            collocation_point_values,
+            calibration_parameters,
+            tm_results_filename,
+            friction_file_path
+    ):
         """
         Modifies the .cas steering file for each of the Telemac runs according to the values of the collocation points and the
         calibration parameters. If a "FRICTION DATA FILE" is provided for Telemac simulations, it is possible to consider any zone
@@ -225,9 +235,10 @@ class TelemacModel():#FullComplexityModel
                     self.rewrite_steering_file(param, cas_string, steering_module="telemac")
         except Exception as e:
             logger.error(f'Error occurred during CAS creation: {e}')
-            raise
+            raise RuntimeError
+
+    @staticmethod
     def create_cas_string(
-            self,
             param_name,
             value
     ):
@@ -480,7 +491,7 @@ class TelemacModel():#FullComplexityModel
         ----------
         filename: string
             Optional name for a Python file that will be automatically created to control the simulation
-        load results: bool
+        load_results: bool
             Default value of True; if False: does not load results from the results.slf file
         Returns
         ----------
@@ -513,6 +524,7 @@ class TelemacModel():#FullComplexityModel
                                     self.num_run,
                                     self.model_dir,
                                     self.res_dir)
+
     def run_multiple_simulations(
             self,
             collocation_points=None,
@@ -523,6 +535,8 @@ class TelemacModel():#FullComplexityModel
         """
         Runs multiple Telemac2d or Telemac3d simulations with a set of collocation points and a new set of
         calibration parameters when BAL mode is chosen. The number of processors to use is defined by self.nproc in user_inputs.
+
+        TODO: Make sure this also runs outside the BAL context
 
         Parameters
         ----------
@@ -543,7 +557,7 @@ class TelemacModel():#FullComplexityModel
         None
         """
         calibration_parameters = self.calibration_parameters
-        res_dir=self.res_dir
+        res_dir =self.res_dir
         fr_tbl=self.fr_tbl
         init_runs=self.init_runs
         results_file_name_base=self.results_file_name_base
@@ -590,6 +604,7 @@ class TelemacModel():#FullComplexityModel
                     updated_collocation_points_npy = np.vstack((collocation_points, bal_new_set_parameters))
                     np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), updated_collocation_points_npy)
                     logger.info(f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {collocation_point_sim_list} ")
+                    # TODO: the following needs to be re-integrated
                     update_collocation_pts_file(res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
                     self.cas_creation(collocation_point_sim_list, calibration_parameters, self.tm_results_filename,
                                       fr_tbl)
@@ -652,7 +667,10 @@ class TelemacModel():#FullComplexityModel
         del stderr
         return stdout, process.returncode
 
-    def output_processing(self,complete_bal_mode = True):
+    def output_processing(
+            self,
+            complete_bal_mode=True
+    ):
         """
         Process the data to be extracted from the .slf files.
 
@@ -691,14 +709,16 @@ class TelemacModel():#FullComplexityModel
 
         return model_results
 
-    def extract_data_point(self,
-                           input_slf_file,
-                           calibration_pts_df,
-                           output_name,
-                           extraction_quantity,
-                           simulation_number,
-                           model_directory,
-                           results_folder_directory):
+    def extract_data_point(
+            self,
+            input_slf_file,
+            calibration_pts_df,
+            output_name,
+            extraction_quantity,
+            simulation_number,
+            model_directory,
+            results_folder_directory
+    ):
         """
         Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
         in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from
@@ -709,6 +729,7 @@ class TelemacModel():#FullComplexityModel
 
         Parameters
         ----------
+        TODO: multiple input arguments are missing here
         input_slf_file: string
             Name of the slf file containing the model outputs.
         calibration_pts_df: Dataframe
@@ -726,9 +747,10 @@ class TelemacModel():#FullComplexityModel
             Externally saves the model results as a dictionary in a json file.
 
         """
-
+        # TODO: (1) why is this global defined inside a class method?
+        # TODO: (2) this method needs refactoring. It is too long.
         global differentiated_dict
-        calibration_quantities= extraction_quantity
+        calibration_quantities = extraction_quantity
         input_file = os.path.join(model_directory, input_slf_file)
         json_path = os.path.join(results_folder_directory + os.sep + "auto-saved-results", f"{output_name}.json")
         json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}_detailed.json")#
@@ -737,8 +759,7 @@ class TelemacModel():#FullComplexityModel
         logger.info('Extracting values from results file ' + str(input_slf_file) + '\n')
         logger.info('Extracting calibration quantities ' + str(calibration_quantities)+ '\n')
 
-
-        for key,h in zip(keys,range(len(calibration_pts_df))):
+        for key, h in zip(keys,range(len(calibration_pts_df))):
             xu = calibration_pts_df.iloc[h,1]
             yu = calibration_pts_df.iloc[h,2]
 
@@ -906,10 +927,12 @@ class TelemacModel():#FullComplexityModel
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
-    def tbl_creator(self,
-                    zone_identifier,
-                    val,
-                    friction_file_path):
+    @staticmethod
+    def tbl_creator(
+            zone_identifier,
+            val,
+            friction_file_path
+        ):
         """
          Modifies the FRICTION DATA FILE (.tbl)  for Telemac simulations based on the specified zone
          and value. This method is used to update the friction values in the table for different zones

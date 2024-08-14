@@ -6,13 +6,29 @@ Can use normal training (once) or sequential training (BAL, SF, Sobol)
 Author: Andres Heredia Hidalgo MSc based on codes of bayesValidRox
 and Maria Fernanda Morales Oreamuno
 """
+import sys, os
 import time
 from pathlib import Path
 import sys
-import pickle
 import warnings
-import pdb
 
+# import own scripts
+sys.path.insert(0, os.path.abspath(''))
+from src.hydroBayesCal.telemac.control_telemac import TelemacModel
+from src.hydroBayesCal.bayesvalidrox.metamodel.bal_functions import BayesianInference, SequentialDesign,BAL
+from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_skl import *
+from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_gpytorch import *
+from src.hydroBayesCal.bayesvalidrox.metamodel.inputs import Input
+from src.hydroBayesCal.bayesvalidrox.metamodel.exp_design import ExpDesign
+from src.hydroBayesCal.utils.config_logging import *
+
+# TODO: handle the following line differently. this template should be able
+# TODO  to access this line
+from user_settings_ering_restart import user_inputs_tm
+# TODO: the following import has no target
+from src.hydroBayesCal.plots.plot_likelihood import plot_posterior,plot_posterior_updates,plot_bme_re,plot_combined_bal
+
+# TODO: Tidy up - here are many things that should go into a config file
 # Base directory
 base_dir = Path(__file__).resolve().parent
 print("Base directory:", base_dir)
@@ -25,17 +41,7 @@ sys.path.append(str(hydroBayesCal_path))
 
 #print("hydroBayesCal path added to sys.path:", hydroBayesCal_path)
 #from src.hyBayesCal.plots.plots_1d_2d import *
-
-# Importing own scripts
-from user_settings_ering_restart import user_inputs_tm
-from hydro_simulations import HydroSimulations
-from plots.plot_likelihood import plot_posterior,plot_posterior_updates,plot_bme_re,plot_combined_bal
-from surrogate_modelling.bal_functions import BayesianInference, SequentialDesign,BAL
-from surrogate_modelling.gpe_skl import *
-from surrogate_modelling.gpe_gpytorch import *
-from surrogate_modelling.inputs import Input
-from surrogate_modelling.exp_design_ import ExpDesign
-from config_logging import *
+#
 
 # from plots.plots_convergence import *
 #from plots.plots_1d_2d import *
@@ -50,7 +56,8 @@ logger = logging.getLogger("HydroBayesCal")
 
 
 if __name__ == "__main__":
-
+    # TODO: Why is this in a __main__ namespace? This should be refactored into functions and the function call
+    # TODO  sequence should self-explain the workflow.
     #ACTIVATING MODEL ENVIRONMENT
     #HydroSimulations.activate_env('telemac')
     #  INPUT DATA
@@ -112,19 +119,20 @@ if __name__ == "__main__":
 
     # # Experimental design: ....................................................................
 
-    exp_design = ExpDesign(input_object=Inputs,
-                           exploit_method='bal',  # bal, space_filling, sobol
-                           explore_method='random',  # method to sample from parameter set for active learning
-                           training_step=1,  # No. of training points to sample in each iteration
-                           sampling_method=user_inputs_tm['parameter_sampling_method'],  # how to sample the initial training points
-                           main_meta_model='gpr',  # main surrogate method: 'gpr' or 'apce'
-                           n_initial_tp=user_inputs_tm['init_runs'],  # Number of initial training points (min = n_trunc*2)
-                           n_max_tp=user_inputs_tm['n_max_tp'],  # max number of tp to use
-                           training_method='sequential',  # normal (train only once) or sequential (Active Learning)
-                           util_func='dkl',  # criteria for bal (dkl, bme, ie, dkl_bme) or SF (default: global_mc)
-                           eval_step=user_inputs_tm['eval_steps'],  # every how many iterations to evaluate the surrogate
-                           secondary_meta_model=False  # only gpr is available
-                           )
+    exp_design = ExpDesign(
+        input_object=Inputs,
+        exploit_method='bal',  # bal, space_filling, sobol
+        explore_method='random',  # method to sample from parameter set for active learning
+        training_step=1,  # No. of training points to sample in each iteration
+        sampling_method=user_inputs_tm['parameter_sampling_method'],  # how to sample the initial training points
+        main_meta_model='gpr',  # main surrogate method: 'gpr' or 'apce'
+        n_initial_tp=user_inputs_tm['init_runs'],  # Number of initial training points (min = n_trunc*2)
+        n_max_tp=user_inputs_tm['n_max_tp'],  # max number of tp to use
+        training_method='sequential',  # normal (train only once) or sequential (Active Learning)
+        util_func='dkl',  # criteria for bal (dkl, bme, ie, dkl_bme) or SF (default: global_mc)
+        eval_step=user_inputs_tm['eval_steps'],  # every how many iterations to evaluate the surrogate
+        secondary_meta_model=False,  # only gpr is available
+    )
 
     exp_design.setup_ED_()
 
@@ -145,7 +153,7 @@ if __name__ == "__main__":
     # and sampling method.
 
     # Creating an instance of HydroSimulations Class for Telemac simulations
-    full_complexity_model = HydroSimulations(user_inputs=user_inputs_tm)
+    full_complexity_model = TelemacModel(user_inputs=user_inputs_tm)
 
     # Extracting required parameters from user_inputs_tm
     calib_pts_file_path = user_inputs_tm.get('calib_pts_file_path')
