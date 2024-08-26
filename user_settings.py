@@ -39,6 +39,9 @@ model_simulation_path= '/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering
     # model_results.npy
     # surrogate_xxx_.pickle (One for each surrogate evaluation)
 
+
+# comment
+
 results_folder_path = '/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering_restart/'
 
 # 1.5.- Calibration points .csv file path (complete file path)------------------
