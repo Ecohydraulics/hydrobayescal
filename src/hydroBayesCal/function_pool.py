@@ -1,11 +1,18 @@
 """Function pool for usage at different package levels"""
-import subprocess, os, logging
+import subprocess, os, sys, logging
 import numpy as _np
 import pandas as _pd
 import csv
-from utils.config_logging import *
-# TODO: re-instate config_physics
-#from utils.config_physics import *
+import pickle
+import h5py
+import json
+import shutil
+
+sys.path.insert(0, os.path.abspath('..'))
+
+from src.hydroBayesCal.utils.config_logging import *
+# TODO: re-instate config_physics - Done
+from src.hydroBayesCal.utils.config_physics import *
 
 
 def append_new_line(file_name, text_to_append):
@@ -70,7 +77,8 @@ def calculate_settling_velocity(diameters):
         if d <= 0.0001:
             settling_velocity[i] = (s - 1) * GRAVITY * d ** 2 / (18 * KINEMATIC_VISCOSITY)
         elif 0.0001 < d < 0.001:
-            settling_velocity[i] = 10 * KINEMATIC_VISCOSITY / d * (_np.sqrt(1 + 0.01 * (s-1) * GRAVITY * d**3 / KINEMATIC_VISCOSITY**2) - 1)
+            settling_velocity[i] = 10 * KINEMATIC_VISCOSITY / d * (
+                        _np.sqrt(1 + 0.01 * (s - 1) * GRAVITY * d ** 3 / KINEMATIC_VISCOSITY ** 2) - 1)
         else:
             settling_velocity[i] = 1.1 * _np.sqrt((s - 1) * GRAVITY * d)
     return settling_velocity
@@ -160,6 +168,7 @@ def log_actions(func):
     :param func:
     :return:
     """
+
     def wrapper(*args, **kwargs):
         func(*args, **kwargs)
         for handler in logging.getLogger("HyBayesCal").handlers:
@@ -172,6 +181,7 @@ def log_actions(func):
             handler.close()
             logging.getLogger("errors").removeHandler(handler)
         print("Check the logfiles: logfile.log, warnings.log, and errors.log.")
+
     return wrapper
 
 
@@ -196,3 +206,172 @@ def update_collocation_pts_file(
     with open(file_path, mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(new_line)
+
+
+def save_data(file_path, data):
+    """
+    Save NumPy array data to a file based on the file extension in the file path.
+
+    :param file_path: Path to the file where data should be saved.
+    :param data: NumPy array data to be saved.
+    """
+    try:
+        # Determine file format based on file extension
+        file_extension = os.path.splitext(file_path)[1].lower()
+
+        if file_extension == '.npy':
+            _np.save(file_path, data)
+
+        elif file_extension in ['.pkl', '.pickle']:
+            with open(file_path, 'wb') as file:
+                pickle.dump(data, file)
+
+        elif file_extension == '.json':
+            # Convert NumPy array to list for JSON serialization
+            data_list = data.tolist()
+            with open(file_path, 'w') as file:
+                json.dump(data_list, file, indent=4)
+
+        elif file_extension == '.csv':
+            if isinstance(data, _np.ndarray):
+                _np.savetxt(file_path, data, delimiter=',', fmt='%.8f')
+            else:
+                raise ValueError("For CSV format, data should be a NumPy array.")
+
+        elif file_extension in ['.xlsx', '.xls']:
+            df = _pd.DataFrame(data)
+            df.to_excel(file_path, index=False)
+
+        elif file_extension in ['.h5', '.hdf5']:
+            with h5py.File(file_path, 'w') as file:
+                file.create_dataset('dataset', data=data)
+
+        else:
+            raise ValueError(
+                f"Unsupported file format: {file_extension}. Supported formats are 'npy', 'pickle', 'json', 'csv', 'excel', 'h5py'.")
+
+    except Exception as e:
+        print(f"An error occurred while saving the file: {e}")
+
+
+def save_np_data(data, path, name):
+    """
+    Save NumPy array data to a file based on the provided file name and extension.
+
+    :param data: NumPy array data to be saved.
+    :param path: Directory path where the file should be saved.
+    :param name: Name of the file including the extension (e.g., 'data.csv', 'data.json').
+    """
+    try:
+        # Determine the full file path
+        file_path = os.path.join(path, name)
+        # Extract the file extension from the name
+        file_extension = os.path.splitext(name)[1].lower()
+
+        if file_extension == '.npy':
+            _np.save(file_path, data)
+
+        elif file_extension in ['.pkl', '.pickle']:
+            with open(file_path, 'wb') as file:
+                pickle.dump(data, file)
+
+        elif file_extension == '.json':
+            # Convert NumPy array to list for JSON serialization
+            data_list = data.tolist()
+            with open(file_path, 'w') as file:
+                json.dump(data_list, file, indent=4)
+
+        elif file_extension == '.csv':
+            if isinstance(data, _np.ndarray):
+                _np.savetxt(file_path, data, delimiter=',', fmt='%.8f')
+            else:
+                raise ValueError("For CSV format, data should be a NumPy array.")
+
+        elif file_extension in ['.xlsx', '.xls']:
+            df = _pd.DataFrame(data)
+            df.to_excel(file_path, index=False)
+
+        elif file_extension in ['.h5', '.hdf5']:
+            with h5py.File(file_path, 'w') as file:
+                file.create_dataset('dataset', data=data)
+
+        else:
+            raise ValueError(
+                f"Unsupported file format: {file_extension}. Supported formats are 'npy', 'pickle', 'json', 'csv', 'excel', 'h5py'.")
+
+    except Exception as e:
+        print(f"An error occurred while saving the file: {e}")
+
+
+def rearrange_array(data):
+    """
+    Rearrange a NumPy array such that velocity and water depth data are interleaved by columns.
+
+    :param data: A NumPy array of shape (2n, m) where n is the number of velocity/water depth data points.
+    :return: A NumPy array with interleaved columns of velocity and water depth data.
+    """
+    # Determine the number of rows and columns
+    num_rows, num_columns = data.shape
+
+    # Ensure the number of rows is even
+    if num_rows % 2 != 0:
+        raise ValueError("The number of rows should be even, corresponding to velocity and water depth data.")
+
+    # Split the data into velocity and water depth parts
+    velocity_data = data[:num_rows // 2, :]
+    water_depth_data = data[num_rows // 2:, :]
+
+    # Initialize an empty array to store the rearranged data
+    rearranged_data = _np.empty((num_rows // 2, num_columns * 2))
+
+    # Interleave velocity and water depth data
+    for i in range(num_columns):
+        rearranged_data[:, 2 * i] = velocity_data[:, i]  # Velocity data
+        rearranged_data[:, 2 * i + 1] = water_depth_data[:, i]  # Water depth data
+
+    return rearranged_data
+
+
+
+
+#----------------------------------------------
+def update_json_file(json_path, modeled_values_dict, detailed_dict = False):
+    """
+    Updates the JSON file at `json_path` with data from `modeled_values_dict`.
+
+    If the file exists, it appends new values to the existing data.
+    If the file does not exist, it creates a new file with the initial data.
+
+    Parameters
+    ----------
+    json_path: str
+        The path to the JSON file to be updated or created.
+    modeled_values_dict: dict
+        A dictionary with data to be added or updated in the JSON file.
+    """
+
+    if os.path.exists(json_path):
+        # File exists, so open it for writing
+        with open(json_path, "r") as file:
+            output_data = json.load(file)
+            for key, value in modeled_values_dict.items():
+                if key in output_data:
+                    if detailed_dict:
+                        if isinstance(output_data[key], list):
+                            output_data[key].append(value)
+                        else:
+                            output_data[key] = [output_data[key], value]
+                    else:
+                        output_data[key].append(value)
+                else:
+                    output_data[key] = [value]
+            with open(json_path, 'w') as file:
+                json.dump(output_data, file, indent=4)
+
+    else:
+        # Save the updated JSON file
+        with open(json_path, "w") as file:
+            for key in modeled_values_dict:
+                # Convert the existing list into a nested list with a single element
+                modeled_values_dict[key] = [modeled_values_dict[key]]
+            json.dump(modeled_values_dict, file, indent=4)
