@@ -1,5 +1,5 @@
 """
-TODO: Add docstrings
+Code for plotting results in the context of Bayesian Calibration with GPE
 """
 
 import numpy as np
@@ -8,25 +8,30 @@ from scipy.stats import gaussian_kde,norm,linregress
 import matplotlib.ticker as ticker
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
-from scipy.ndimage import gaussian_filter
 from pathlib import Path
 
 class BayesianPlotter:
     def __init__(
             self,
             results_folder_path='',
-            results_folder='auto-saved-results',
             plots_subfolder='plots'
     ):
         """
-        TODO: complete docstrings
-        Initialize the plotter with the directory to save plots.
-        :param results_folder_path:
-        :param results_folder:
-        :param plots_subfolder:
-        """
+        Constructor of BayesianPlotter class, which is used to create and save various plots related to Bayesian calibration.
 
-        self.save_folder = Path(results_folder_path) / results_folder / plots_subfolder
+        Parameters
+        ----------
+        results_folder_path : str
+            Path to the folder where results (including plots) will be saved. Usually auto-saved-results
+        plots_subfolder : str, optional
+            Name of the subfolder within the results folder where plots will be saved. Default folder name is 'plots'.
+
+        Attributes
+        ----------
+        save_folder : pathlib.Path
+            A Path object representing the directory where plots will be saved.
+        """
+        self.save_folder = Path(results_folder_path) / plots_subfolder
 
     def plot_posterior(
             self,
@@ -34,11 +39,24 @@ class BayesianPlotter:
             parameter_name
     ):
         """
-        TODO: complete docstrings
-        :param posterior_vector:
-        :param parameter_name:
-        :return:
+        Plots the posterior distribution of a Bayesian parameter.
+
+        Parameters
+        ----------
+        posterior_vector : array
+            A vector containing samples from the posterior distribution of the selected parameter.
+        parameter_name : str
+            The name of the parameter whose posterior distribution is being plotted.
+            This will be used as the label for the x-axis.
+
+        Returns
+        -------
+        None
+            The function creates a plot of the posterior distribution and is saved
+            as a .png file in the /plots folder.
         """
+        save_folder = self.save_folder
+
         colors = ['dimgray']
         bins = 30
 
@@ -62,8 +80,8 @@ class BayesianPlotter:
         ax.set_xlim(left=bins[0])
 
         plt.tight_layout()
-        plt.show()
-
+        plt.savefig(save_folder / f'posterior_{parameter_name}.png')
+        plt.close()
     def plot_posterior_updates(
             self,
             posterior_arrays,
@@ -76,19 +94,25 @@ class BayesianPlotter:
         """
         Plots the prior distributions and posterior updates for given parameters.
 
-        Args:
-            posterior_arrays: list of np.array
+        Parameters
+        ----------
+            posterior_arrays: list of arrays
                 List of 2D arrays with posterior samples for each update.
             parameter_names: list of str
                 List of parameter names corresponding to the columns of the arrays.
-            prior: np.array
+            prior: array
                 2D array with prior samples.
             iterations_to_plot: list of int or None
                 List of iteration indices to plot. If None, only prior distributions are plotted.
             bins: int
-                Number of bins to use for the histograms.
+                Number of bins to use for the histograms. Default 30.
             density: bool
                 Whether to normalize the histograms to form a probability density.
+         Returns
+        -------
+            None
+                The function creates plots of the prior and posterior distribution functions  and are saved
+                as  .png files in the /plots folder.
         """
         save_folder = self.save_folder
 
@@ -171,13 +195,20 @@ class BayesianPlotter:
         """
         Plots BME and/or RE values over iterations.
 
-        Args:
+        Parameters
+        ----------
             bayesian_dict: dict
                 Dictionary containing 'BME' and 'RE' values for each iteration.
             num_bal_iterations: int
                 Number of iterations for which to plot data.
             plot_type: str
                 Type of plot to generate, can be 'BME', 'RE', or 'both'.
+
+        Returns
+        -------
+            None
+                The function creates plots of BME or RE values over iterations  and are saved
+                as  .png files in the /plots folder.
         """
         save_folder = self.save_folder
 
@@ -329,8 +360,10 @@ class BayesianPlotter:
     ):
         """
         Plots the initial training points and points selected using different utility functions.
-        Args:
-            collocation_points: np.array[n_tp, n_param]
+
+        Parameters
+        ----------
+            collocation_points: array [n_tp, n_param]
                 Array with all collocation points, in order in which they were selected.
             n_init_tp: int
                 Number of initial training points selected.
@@ -338,6 +371,12 @@ class BayesianPlotter:
                 With keys 'util_func', detailing which utility function was used in each iteration.
             save_folder: Path or None
                 Directory where to save the plot. If None, the plot is not saved.
+
+        Returns
+        -------
+            None
+                The function creates scattered plot of the collocation points differentiating them between initial collocation
+                points and BAL-selected are saved as  .png files in the /plots folder.
         """
         save_folder = self.save_folder
 
@@ -394,10 +433,12 @@ class BayesianPlotter:
             last_iterations=25
     ):
         """
-        Plots the BME scatter for the last specified iterations and adds a 2D contour plot to show high BME regions.
+        Plots the BME scatter for the last specified iterations, a 3d surface interpolated from the scatter BME values
+        and adds a 2D contour plot to show high BME regions for 2 selected parameters.
 
-        Args:
-            param_values: np.array
+        Parameters
+        ----------
+            param_values: array
                 2D array where each row corresponds to parameter values for each iteration.
             param_ranges: list of lists
                 List of [min, max] values for each parameter.
@@ -411,6 +452,11 @@ class BayesianPlotter:
                 Size of the grid for the surface and contour plots.
             last_iterations: int
                 Number of last iterations to consider for the plot.
+
+        Returns
+        -------
+            None
+                The function creates BME plots and are saved as  .png files in the /plots folder.
         """
         save_folder = self.save_folder
         if save_folder:
@@ -578,7 +624,7 @@ class BayesianPlotter:
 
     def plot_bme_surface_3d(
             self,
-            param_values,
+            collocation_points,
             param_ranges,
             bme_values,
             param_indices=(0, 1),
@@ -589,7 +635,7 @@ class BayesianPlotter:
         Plots the BME surface for the last specified iterations and adds a 2D contour plot to show high BME regions.
         TODO: complete docstrings
         Args:
-            param_values: np.array
+            collocation_points: np.array
                 2D array where each row corresponds to parameter values for each iteration.
             param_ranges: list of lists
                 List of [min, max] values for each parameter.
@@ -608,7 +654,7 @@ class BayesianPlotter:
 
         # Extract the last iterations + 1 BME values and corresponding parameters
         bme_values = bme_values[-(last_iterations + 1):]
-        param_values = param_values[-(last_iterations + 1):, :]
+        param_values = collocation_points[-(last_iterations + 1):, :]
 
         # Extract ranges for the selected parameters
         x_range = param_ranges[param_indices[0]]
@@ -670,7 +716,6 @@ class BayesianPlotter:
 
         plt.tight_layout()
         plt.show()
-
 
 # def plot_bme_concentration_last_iterations(param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,
 #                                            last_iterations=10, interval=1):
