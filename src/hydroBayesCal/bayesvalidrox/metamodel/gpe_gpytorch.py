@@ -659,12 +659,13 @@ class MultiGPyTraining:
         #     1. Convert the collocation points and model evaluations to PyTorch tensors.
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
-        rows_per_task = Y.shape[0] // self.number_quantities
+        # Number of locations should be half the number of columns since columns are interleaved
+        num_locations = Y.shape[1] // self.number_quantities
 
-        #     2. Iterate over each location in the model evaluations.
-        for loc in range(Y.shape[1]):
-            Y_loc = torch.cat([Y[i * rows_per_task:(i + 1) * rows_per_task, loc].reshape(rows_per_task, 1)
-                               for i in range(self.number_quantities)], dim=1)
+        # Iterate over each location in the model evaluations.
+        for loc in range(num_locations):
+            # Extract the columns corresponding to the current location
+            Y_loc = Y[:, [2 * loc, 2 * loc + 1]]
 
             # 2.1. Initialize the multitask GP model for the current location
             model = MultitaskGPModel(X, Y_loc, self.likelihood, self.kernel)
@@ -737,12 +738,12 @@ class MultiGPyTraining:
         surrogate_outputs = {'output': means, 'std': stds}
         return surrogate_outputs
 
-
 class MultitaskGPModel(ExactGP):
     """
     Gaussian Process model for multitask regression using the GPyTorch library. This model handles multiple tasks (or quantities) simultaneously by using a multitask kernel and multitask mean
     function.
     """
+
     def __init__(
             self,
             train_x,

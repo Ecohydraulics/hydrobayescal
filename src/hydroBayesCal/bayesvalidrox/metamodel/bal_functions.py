@@ -8,7 +8,7 @@ import math
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from surrogate_modelling.exploration import Exploration
+from src.hydroBayesCal.bayesvalidrox.metamodel.exploration import Exploration
 
 
 class BayesianInference:
