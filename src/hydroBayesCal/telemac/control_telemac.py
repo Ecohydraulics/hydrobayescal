@@ -1,11 +1,18 @@
+#
+# # coding: utf-8
+# """
+# Functional core for controlling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
+#
+# Authors: Andres Heredia, Sebastian Schwindt
+# """
 
-# coding: utf-8
-"""
-Functional core for controlling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
+# # TODO: Do you still use the global parameters from conf_telemac? -> this not anymore # Not anymore
+# # from config_telemac import *
+# # TODO: is pputils still relevant? # This is relevant to the code.
+# from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
-Authors: Andres Heredia, Sebastian Schwindt
-"""
-import sys, os
+import sys
+import os
 import io, stat, shutil
 import subprocess
 from scipy import spatial
@@ -14,21 +21,9 @@ import pandas as _pd
 import csv
 import json
 import pdb
-try:
-    from mpi4py import MPI
-except ImportError as e:
-    print(e)
 
-# import head scripts
-sys.path.insert(0, os.path.abspath('..'))
-from hysim import HydroSimulations
-from function_pool import *  # provides os, subprocess, logging
-from datetime import datetime
-# TODO: Do you still use the global parameters from conf_telemac?
-from config_telemac import *
-# TODO: is pputils still relevant?
-from pputils.ppmodules.selafin_io_pp import ppSELAFIN
-# from doepy.doe_control import DesignOfExperiment
+from src.hydroBayesCal.hysim import HydroSimulations
+from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
 
 try:
     from telapy.api.t2d import Telemac2d
@@ -38,29 +33,25 @@ try:
 except ImportError as e:
     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
 
+try:
+    from mpi4py import MPI
+except ImportError as e:
+    print(e)
 
-setup_logging()
-logger = logging.getLogger("HydroBayesCal")
+# from hydroBayesCal.function_pool import *  # provides os, subprocess, logging
+from datetime import datetime
+from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 
 class TelemacModel(HydroSimulations):
     def __init__(
             self,
-            model_dir="",
-            res_dir="",
-            control_file="tm.cas",
             friction_file ="",
-            calibration_parameters=None,
-            calibration_pts_file_path=None,
-            calibration_quantities=None,
             tm_xd="",
-            n_processors=None,
             gaia_steering_file=None,
-            dict_output_name="",
             results_filename_base="",
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
-            init_runs=None,
             *args,
             **kwargs
     ):
@@ -153,20 +144,17 @@ class TelemacModel(HydroSimulations):
             Simulation number. Iteratively changing according the collocation points.
         """
         # TODO: I started to separate parameters that every HydroSimulation inheritance should have
-        # TODO: from those that are specific to Telemac. Please continue and merge.
-        super().__init__(
-            model_dir=model_dir,
-            res_dir=res_dir,
-            calibration_parameters=calibration_parameters,
-            init_runs=init_runs,
-            calibration_quantities=calibration_quantities,
-            calibration_pts_file_path=calibration_pts_file_path,
-            dict_output_name=dict_output_name,
-            results_file_name_base=results_filename_base,
-            nproc=n_processors,
-        )
-        self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, control_file)
-        self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, friction_file)
+        # TODO: from those that are specific to Telemac. Please continue and merge. - done accordingly
+        super().__init__(*args, **kwargs)
+        # Initialize subclass-specific attributes
+        self.friction_file = friction_file
+        self.tm_xd = tm_xd
+        self.gaia_steering_file = gaia_steering_file
+        self.results_filename_base = results_filename_base
+        self.stdout = stdout
+        self.python_shebang = python_shebang
+        self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, self.control_file)
+        self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, self.friction_file)
         self.gaia_steering_file = gaia_steering_file
 
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
@@ -188,16 +176,15 @@ class TelemacModel(HydroSimulations):
         # Initializes the file where the output data from simulations will be stored
         self.tm_results_filename = ''
 
-        self.calibration_pts_df = _pd.read_csv(calibration_pts_file_path)
         #self.output_data=None
         #self.case_loaded = False
 
-    def cas_creation(
+    def update_model_controls(
             self,
             collocation_point_values,
             calibration_parameters,
-            tm_results_filename,
-            friction_file_path
+            auxiliary_file_path,
+            simulation_id = 0,
     ):
         """
         Modifies the .cas steering file for each of the Telemac runs according to the values of the collocation points and the
@@ -213,18 +200,18 @@ class TelemacModel(HydroSimulations):
             Names of the calibration parameters.
         tm_results_filename : str
             Name of the results file for the Telemac simulation.
-        friction_file_path : str
+        auxiliary_file_path : str
             Path to the friction file .tbl.
 
         Returns
         -------
         None
         """
-
+        self.tm_results_filename = self.results_filename_base + '_' + str(simulation_id) + '.slf'
         params_with_results = calibration_parameters + ['RESULTS FILE']
-        values_with_results = collocation_point_values + [tm_results_filename]
-        logger.info(f'Results file name for this simulation: {tm_results_filename}')
-
+        values_with_results = collocation_point_values + [self.tm_results_filename]
+        logger.info(f'Results file name for this simulation: {self.tm_results_filename}')
+        friction_file_path = auxiliary_file_path
         try:
             for param, value in zip(params_with_results, values_with_results):
                 if param.lower().startswith("zone"):
@@ -234,7 +221,7 @@ class TelemacModel(HydroSimulations):
                     cas_string = self.create_cas_string(param, value)
                     self.rewrite_steering_file(param, cas_string, steering_module="telemac")
         except Exception as e:
-            logger.error(f'Error occurred during CAS creation: {e}')
+            logger_error.error(f'Error occurred during CAS creation: {e}')
             raise RuntimeError
 
     @staticmethod
@@ -265,7 +252,7 @@ class TelemacModel(HydroSimulations):
             try:
                 return param_name + " = " + "; ".join(map(str, value))
             except Exception as error:
-                print("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(error)))
+                logger_error.error("ERROR: could not generate cas-file string for {0} and value {1}:\n{2}".format(str(param_name), str(value), str(error)))
 
     def rewrite_steering_file(
             self,
@@ -305,7 +292,7 @@ class TelemacModel(HydroSimulations):
         if os.path.isfile(steering_file_name):
             cas_file = open(steering_file_name, "r")
         else:
-            print("ERROR: no such steering file:\n" + steering_file_name)
+            logger_error.error("ERROR: no such steering file:\n" + steering_file_name)
             return -1
         read_steering = cas_file.readlines()
 
@@ -523,7 +510,7 @@ class TelemacModel(HydroSimulations):
                                     self.calibration_quantities,
                                     self.num_run,
                                     self.model_dir,
-                                    self.res_dir)
+                                    self.asr_dir)
 
     def run_multiple_simulations(
             self,
@@ -560,7 +547,6 @@ class TelemacModel(HydroSimulations):
         res_dir =self.res_dir
         fr_tbl=self.fr_tbl
         init_runs=self.init_runs
-        results_file_name_base=self.results_file_name_base
 
         logger.info(
             "* running {}\n -- patience (Telemac simulations can take time) -- check CPU acitivity...")
@@ -582,33 +568,34 @@ class TelemacModel(HydroSimulations):
                     writer = csv.writer(file)
                     writer.writerow(calibration_parameters)
                     writer.writerows(array_list)  # Write the array data
-                np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
                 for i in range(init_runs):
                     self.num_run = i + 1
-                    self.tm_results_filename = results_file_name_base + '_' + str(self.num_run) + '.slf'
                     collocation_point_sim_list=collocation_points[i].tolist()
                     logger.info(f" Running  full complexity model # {self.num_run}  with collocation point : {collocation_point_sim_list} ")
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters,self.tm_results_filename,fr_tbl)
+                    self.update_model_controls(collocation_point_values=collocation_point_sim_list,
+                                               calibration_parameters=calibration_parameters,
+                                               auxiliary_file_path=fr_tbl,
+                                               simulation_id=self.num_run)
                     self.run_single_simulation()
+                    self.model_evaluations=self.output_processing(os.path.join(self.asr_dir,
+                                     f'{self.dict_output_name}.json'))
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
             # This part of the code runs BAL
             else:
                 self.bal_iteration = bal_iteration
                 self.num_run = bal_iteration+init_runs
-                self.tm_results_filename = results_file_name_base + '_' + str(self.num_run) + '.slf'
                 if bal_new_set_parameters is not None:
                     collocation_point_sim_list= bal_new_set_parameters.tolist()[0]
-                    collocation_points = np.load(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'))
-                    #bal_new_set_parameters=np.array(collocation_point_sim_list)
-                    #bal_new_set_parameters = bal_new_set_parameters.reshape(1, -1)
-                    updated_collocation_points_npy = np.vstack((collocation_points, bal_new_set_parameters))
-                    np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), updated_collocation_points_npy)
                     logger.info(f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {collocation_point_sim_list} ")
                     # TODO: the following needs to be re-integrated
                     update_collocation_pts_file(res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.tm_results_filename,
-                                      fr_tbl)
+                    self.update_model_controls(collocation_point_values=collocation_point_sim_list,
+                                               calibration_parameters=calibration_parameters,
+                                               auxiliary_file_path=fr_tbl,
+                                               simulation_id=self.num_run)
                     self.run_single_simulation()
+                    self.model_evaluations=self.output_processing(os.path.join(self.asr_dir,
+                                     f'{self.dict_output_name}.json'))
                     logger.info("TELEMAC simulations time after Bayesian Active Learning: " + str(datetime.now() - start_time))
                 else:
                     logger.error("BAL_new_set_parameters is None. Please provide valid parameters.")
@@ -636,17 +623,20 @@ class TelemacModel(HydroSimulations):
                     writer = csv.writer(file)
                     writer.writerow(calibration_parameters)
                     writer.writerows(array_list)
-                np.save(os.path.join(res_dir + os.sep + "auto-saved-results", 'colocation_points.npy'), collocation_points)
                 for i in range(init_runs):
                     self.num_run = i + 1
-                    self.tm_results_filename = results_file_name_base + '_' + str(self.num_run) + '.slf'
                     collocation_point_sim_list=collocation_points[i].tolist()
                     logger.info(f" Running  full complexity model # {self.num_run}  with collocation point : {collocation_point_sim_list} ")
-                    self.cas_creation(collocation_point_sim_list, calibration_parameters, self.tm_results_filename,
-                                      fr_tbl)
+                    self.update_model_controls(collocation_point_values=collocation_point_sim_list,
+                                               calibration_parameters=calibration_parameters,
+                                               auxiliary_file_path=fr_tbl,
+                                               simulation_id=self.num_run)
                     self.run_single_simulation()
+                    self.model_evaluations=self.output_processing(os.path.join(self.asr_dir,
+                                     f'{self.dict_output_name}.json'))
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
 
+        return self.model_evaluations
     def call_tm_shell(self, cmd):
         """
         Run Telemac in a Terminal in the model directory
@@ -662,14 +652,19 @@ class TelemacModel(HydroSimulations):
 
         """
         # do not use stdout=subprocess.PIPE because the simulation progress will not be shown otherwise
-        process = subprocess.Popen(cmd, cwd=r""+self.model_dir, shell=True, env=os.environ)
+
+        telemac_command = f"telemac2d.py {self.control_file} --ncsize={self.nproc}"
+        process = subprocess.Popen(telemac_command, cwd=r""+self.model_dir, shell=True, env=os.environ)
+
+        #process = subprocess.Popen(cmd, cwd=r""+self.model_dir, shell=True, env=os.environ)
         stdout, stderr = process.communicate()
         del stderr
         return stdout, process.returncode
 
     def output_processing(
             self,
-            complete_bal_mode=True
+            output_data_path = '',
+            #complete_bal_mode=True
     ):
         """
         Process the data to be extracted from the .slf files.
@@ -681,16 +676,14 @@ class TelemacModel(HydroSimulations):
 
         """
 
-        output_data_path=os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{self.dict_output_name}.json")
         with open(output_data_path, "r") as file:
             output_data = json.load(file)
 
-        n_calibration_pts = len(self.calibration_pts_df.iloc[:, 0])
+        n_calibration_pts = self.nloc
         n_total_runs = self.init_runs+self.bal_iteration
 
         # Number of quantities per location
-        first_key = next(iter(output_data))
-        num_quantities = len(output_data[first_key][0])
+        num_quantities = self.num_quantities
 
         # Initialize a 2D NumPy array with zeros
         model_results = np.zeros((num_quantities * n_total_runs, n_calibration_pts))
@@ -701,11 +694,33 @@ class TelemacModel(HydroSimulations):
             for j, value_set in enumerate(values):
                 for k in range(num_quantities):
                     model_results[k * n_total_runs + j, i] = value_set[k]
+        if self.num_quantities == 1:
+            headers = [f'{i + 1}' for i in range(n_calibration_pts)]
+            np.savetxt(
+                os.path.join(self.asr_dir,'model_results.csv'),
+                model_results,
+                delimiter=',',
+                fmt='%.8f',
+                header=','.join(headers),
+            )
+        else:
+            model_results=rearrange_array(model_results)
+            num_columns=model_results.shape[1]
+            headers = []
+            for i in range(1, num_columns//2 + 1):
+                headers.append(f'{i}_{self.calibration_quantities[0]}')
+                headers.append(f'{i}_{self.calibration_quantities[1]}')
+            np.savetxt(
+                os.path.join(self.asr_dir,'model_results.csv'),
+                model_results,
+                delimiter=',',
+                fmt='%.8f',
+                header=','.join(headers),
+            )
 
-        np.save(os.path.join(self.res_dir + os.sep + "auto-saved-results", 'model_results.npy'), model_results)
 
-        if not complete_bal_mode:
-            exit()
+        # if not complete_bal_mode:
+        #     exit()
 
         return model_results
 
@@ -723,41 +738,51 @@ class TelemacModel(HydroSimulations):
         Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
         in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from
         the closest node in the mesh to the x,y measurement coordinate.
-        Note that the function is called for EACH model run, and stores the model outputs sequentially in a dictionary
+        This method is typically called for each model run, storing outputs sequentially in 2 dictionaries
         saved in a .json file. That means if the surrogate model needs 'n' runs of the complex numerical model, this
         function is called 'n' times and the dictionary will store the model outputs for the 'n' simulations.
 
         Parameters
         ----------
-        TODO: multiple input arguments are missing here
-        input_slf_file: string
-            Name of the slf file containing the model outputs.
-        calibration_pts_df: Dataframe
-            Df with the name (description) of the calibration point , coordinates x, y and the measured value/error
-            of the calibration quantity.
-            P1 / X / Y / Measured Value /Measured error
-
-        output_name: string
-            Name of the .json file containing a dictionary with the model outputs (selected calibration quantities)
-            and calibration points' description.
+        input_slf_file : str
+            Name of the SELAFIN (.slf) file containing the model outputs.
+        calibration_pts_df : pd.DataFrame
+            DataFrame containing calibration points. It should include the point descriptions (e.g., "P1"),
+            x and y coordinates of the measurement points, and the measured value/error for the calibration quantities.
+            The expected columns are: 'Point Name', 'X', 'Y', 'Measured Value', 'Measured Error'.
+            If 2 calibration quantities are required the expected columns should be: 'Point Name', 'X', 'Y', 'Measured Value 1', 'Measured Error 1', 'Measured Value 2', 'Measured Error 2'.
+        output_name : str
+            Base name for the JSON file that will store the extracted model outputs. Two files are generated:
+            a standard results file (`<output_name>.json`) and a detailed results file (`<output_name>_detailed.json`).
+        extraction_quantity : list of str
+            List of variables (calibration quantities) to be extracted from the SELAFIN file. Please check before extraction the variable name from the .slf file.
+        simulation_number : int
+            The current simulation number. This is used to manage the output file, ensuring that data is appended
+            correctly across multiple simulations.
+        model_directory : str
+            Path to the directory containing the SELAFIN file.
+        results_folder_directory : str
+            Path to the directory where the output JSON files will be saved.
 
         Returns
-        ----------
+        -------
         None
-            Externally saves the model results as a dictionary in a json file.
+            The method saves the extracted model outputs to two JSON files in the specified results directory.
+            If this is the first simulation run, any existing JSON files with the same name will be deleted.
+            After each run, the extracted results are appended to the JSON files.The detailed results file stores
+            the calibration quantities as a nested dictionary with the variable name and the point description.
 
         """
-        # TODO: (1) why is this global defined inside a class method?
+        # TODO: (1) why is this global defined inside a class method? - not defined as global variable
         # TODO: (2) this method needs refactoring. It is too long.
-        global differentiated_dict
         calibration_quantities = extraction_quantity
         input_file = os.path.join(model_directory, input_slf_file)
-        json_path = os.path.join(results_folder_directory + os.sep + "auto-saved-results", f"{output_name}.json")
-        json_path_detailed = os.path.join(self.res_dir + os.sep + "auto-saved-results", f"{output_name}_detailed.json")#
+        json_path = os.path.join(results_folder_directory, f"{output_name}.json")
+        json_path_detailed = os.path.join(results_folder_directory, f"{output_name}_detailed.json")
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
-        logger.info('Extracting values from results file ' + str(input_slf_file) + '\n')
-        logger.info('Extracting calibration quantities ' + str(calibration_quantities)+ '\n')
+        logger.info(
+            f'Extracting {calibration_quantities} from results file {input_slf_file} \n')
 
         for key, h in zip(keys,range(len(calibration_pts_df))):
             xu = calibration_pts_df.iloc[h,1]
@@ -806,14 +831,9 @@ class TelemacModel(HydroSimulations):
 
             # find the index of the node the user is seeking
             d, idx = tree.query((xu, yu), k=1)
-
-            # print('Extracting values for simulation number '+ str(self.num_run)+ '\n')
-            # print('Extracted calibration quantities '+ str(self.calibration_quantities) + ' for real calibration point coordinate: ' + str(key) + ' ' +str(xu) + ' ' + str(yu) + '\n')
             # print('*** Extraction performed at the closest node to the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
-
             # now we need this index for all planes
             idx_all = np.zeros(NPLAN, dtype=np.int32)
-
             # the first plane
             idx_all[0] = idx
 
@@ -830,12 +850,11 @@ class TelemacModel(HydroSimulations):
                 results = slf.getVarValuesAtNode()
 
                 # Extracts the results at the last time step for ALL model variables.
-                # If the extraction of the calibration variable is requiered at a different time step,
+                # If the extraction of the calibration variable is required at a different time step,
                 # change the code at this point
                 #-------------------------------------------------------------------
                 results_calibration = results[-1]
                 #-------------------------------------------------------------------
-
                 # Initializes an empty list to store values (calibration qunatities) for every key (point description) for the
                 # current simulation
                 modeled_values_dict[key] = []
@@ -871,59 +890,15 @@ class TelemacModel(HydroSimulations):
                     print("No detailed result file found. Creating a new file.")
             except FileNotFoundError:
                 print("No nested result file found. Creating a new file.")
+        # Updating json files for every run
+        update_json_file(json_path = json_path,modeled_values_dict=modeled_values_dict)
+        update_json_file(json_path=json_path_detailed,modeled_values_dict=differentiated_dict,detailed_dict=True)
 
-        if os.path.exists(json_path):
-            # File exists, so open it for writing
-            #pdb.set_trace()
-            with open(json_path, "r") as file:
-                output_data = json.load(file)
-                for key, value in modeled_values_dict.items():
-                     if key in output_data:
-                        output_data[key].append(value)
-                     else:
-                        output_data[key] = [value]
-                with open(json_path, 'w') as file:
-                    json.dump(output_data, file, indent=4)
-
-        else:
-        # Save the updated JSON file
-            with open(json_path, "w") as file:
-                for key in modeled_values_dict:
-                    # Convert the existing list into a nested list with a single element
-                    modeled_values_dict[key] = [modeled_values_dict[key]]
-                json.dump(modeled_values_dict, file,indent=4)
-
-        if os.path.exists(json_path_detailed):
-            # File exists, so open it for writing
-            #pdb.set_trace()
-            with open(json_path_detailed, "r") as file:
-                output_data_detailed = json.load(file)
-                for key, new_values in differentiated_dict.items():
-                    if key in output_data_detailed:
-                        # If the key exists in original_data_detailed, convert the existing value to a list
-                        # and append the new values to that list
-                        if isinstance(output_data_detailed[key], list):
-                            output_data_detailed[key].append(new_values)
-                        else:
-                            output_data_detailed[key] = [output_data_detailed[key], new_values]
-                    else:
-                        # If the key does not exist, create a new list containing the new values
-                        output_data_detailed[key] = [new_values]
-
-                with open(json_path_detailed, 'w') as file:
-                    json.dump(output_data_detailed, file, indent=4)
-        else:
-        # Save the updated JSON file
-            with open(json_path_detailed, "w") as file:
-                for key in differentiated_dict:
-                    # Convert the existing list into a nested list with a single element
-                    differentiated_dict[key] = differentiated_dict[key]
-                json.dump(differentiated_dict, file,indent=4)
         try:
-            if os.path.exists(os.path.join(results_folder_directory + os.sep + "auto-saved-results",input_slf_file)):
+            if os.path.exists(os.path.join(results_folder_directory ,input_slf_file)):
                 # Remove the existing destination file
-                os.remove(os.path.join(results_folder_directory + os.sep + "auto-saved-results",input_slf_file))
-            shutil.move(os.path.join(model_directory,input_slf_file),self.res_dir + os.sep + "auto-saved-results")
+                os.remove(os.path.join(results_folder_directory,input_slf_file))
+            shutil.move(os.path.join(model_directory,input_slf_file),results_folder_directory)
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
@@ -1126,3 +1101,5 @@ class TelemacModel(HydroSimulations):
 
         print("All inputs are valid")
 
+    def __call__(self, *args, **kwargs):
+        self.run_simulation()
