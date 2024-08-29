@@ -9,7 +9,6 @@
 # # TODO: Do you still use the global parameters from conf_telemac? -> this not anymore # Not anymore
 # # from config_telemac import *
 # # TODO: is pputils still relevant? # This is relevant to the code.
-# from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 import sys
 import os
@@ -544,7 +543,7 @@ class TelemacModel(HydroSimulations):
         None
         """
         calibration_parameters = self.calibration_parameters
-        res_dir =self.res_dir
+        res_dir =self.asr_dir
         fr_tbl=self.fr_tbl
         init_runs=self.init_runs
 
@@ -564,7 +563,7 @@ class TelemacModel(HydroSimulations):
 
                 # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
-                with open(res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
+                with open(res_dir + os.sep + "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
                     writer.writerow(calibration_parameters)
                     writer.writerows(array_list)  # Write the array data
@@ -577,7 +576,7 @@ class TelemacModel(HydroSimulations):
                                                auxiliary_file_path=fr_tbl,
                                                simulation_id=self.num_run)
                     self.run_single_simulation()
-                    self.model_evaluations=self.output_processing(os.path.join(self.asr_dir,
+                    self.model_evaluations=self.output_processing(os.path.join(res_dir,
                                      f'{self.dict_output_name}.json'))
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
             # This part of the code runs BAL
@@ -588,13 +587,13 @@ class TelemacModel(HydroSimulations):
                     collocation_point_sim_list= bal_new_set_parameters.tolist()[0]
                     logger.info(f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {collocation_point_sim_list} ")
                     # TODO: the following needs to be re-integrated
-                    update_collocation_pts_file(res_dir + os.sep + "auto-saved-results" + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
+                    update_collocation_pts_file(res_dir + "/collocation_points.csv", new_collocation_point=collocation_point_sim_list)
                     self.update_model_controls(collocation_point_values=collocation_point_sim_list,
                                                calibration_parameters=calibration_parameters,
                                                auxiliary_file_path=fr_tbl,
                                                simulation_id=self.num_run)
                     self.run_single_simulation()
-                    self.model_evaluations=self.output_processing(os.path.join(self.asr_dir,
+                    self.model_evaluations=self.output_processing(os.path.join(res_dir,
                                      f'{self.dict_output_name}.json'))
                     logger.info("TELEMAC simulations time after Bayesian Active Learning: " + str(datetime.now() - start_time))
                 else:
@@ -619,7 +618,7 @@ class TelemacModel(HydroSimulations):
 
                 # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
-                with open(res_dir + os.sep + "auto-saved-results"+ "/collocation_points.csv", mode='w', newline='') as file:
+                with open(res_dir + "/collocation_points.csv", mode='w', newline='') as file:
                     writer = csv.writer(file)
                     writer.writerow(calibration_parameters)
                     writer.writerows(array_list)
@@ -632,7 +631,7 @@ class TelemacModel(HydroSimulations):
                                                auxiliary_file_path=fr_tbl,
                                                simulation_id=self.num_run)
                     self.run_single_simulation()
-                    self.model_evaluations=self.output_processing(os.path.join(self.asr_dir,
+                    self.model_evaluations=self.output_processing(os.path.join(res_dir,
                                      f'{self.dict_output_name}.json'))
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
 
@@ -652,8 +651,9 @@ class TelemacModel(HydroSimulations):
 
         """
         # do not use stdout=subprocess.PIPE because the simulation progress will not be shown otherwise
-
+        print(cmd)
         telemac_command = f"telemac2d.py {self.control_file} --ncsize={self.nproc}"
+        print(telemac_command)
         process = subprocess.Popen(telemac_command, cwd=r""+self.model_dir, shell=True, env=os.environ)
 
         #process = subprocess.Popen(cmd, cwd=r""+self.model_dir, shell=True, env=os.environ)

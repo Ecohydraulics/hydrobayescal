@@ -6,7 +6,6 @@ Author: Andres Heredia M.Sc.
 
 """
 import os
-from pathlib import Path
 import pandas as pd
 import pickle
 import numpy as np
@@ -19,9 +18,7 @@ from src.hydroBayesCal.function_pool import *
 
 # SETUP DIRECTORIES OR GLOBAL VARIABLES?
 # TODO: GLOBAL VARIABLES SHOULD BE DEFINED IN config.py
-base_dir = Path(__file__).resolve().parent.parent.parent
-print("Base directory:", base_dir)
-env_script_path = base_dir / 'env-scripts'
+
 
 # TODO: Logging should be implemented as a wrapper that only wraps the head functions/methods; I exemplarily added a
 #           logging wrapper to the run() method. For example, check the log_actions wrapper for process_adv_files in
@@ -87,7 +84,6 @@ class HydroSimulations:
         init_runs : int
             Initial runs of the full complexity model.
         """
-        #self.user_inputs = user_inputs
 
         # TODO: the following lines come from FullComplexityModel and require integration into your scheme
         self.model_dir = model_dir
@@ -104,7 +100,6 @@ class HydroSimulations:
         self.max_runs = max_runs
         self.complete_bal_mode = complete_bal_mode
         self.only_bal_mode = only_bal_mode
-        self.asr_dir = os.path.join(res_dir, "auto-saved-results")
         self.nloc = None
         self.ndim = None
         self.param_dic = None
@@ -119,6 +114,7 @@ class HydroSimulations:
         if calibration_pts_file_path:
             self.observations,self.measurement_errors,self.nloc,self.num_quantities,self.calibration_pts_df  = self.set_observations_and_errors(calibration_pts_file_path,calibration_quantities)
         #self.check_inputs()
+        self.asr_dir = os.path.join(res_dir, f"auto-saved-results-{self.num_quantities}-quantities")
         if not os.path.exists(self.asr_dir):
             os.makedirs(self.asr_dir)
         if not os.path.exists(os.path.join(self.asr_dir, "plots")):

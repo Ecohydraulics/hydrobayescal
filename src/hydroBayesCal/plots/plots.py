@@ -423,7 +423,7 @@ class BayesianPlotter:
 
     def plot_bme_3d(
             self,
-            param_values,
+            param_sets,
             param_ranges,
             param_names,
             bme_values,
@@ -469,7 +469,7 @@ class BayesianPlotter:
 
         # Extract the last iterations + 1 BME values and corresponding parameters
         bme_values = bme_values[-(last_iterations + 1):]
-        param_values = param_values[-(last_iterations + 1):, :]
+        param_values = param_sets[-(last_iterations + 1):, :]
 
         # Extract ranges for the selected parameters
         x_range = param_ranges[param_indices[0]]
