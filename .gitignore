@@ -6,6 +6,8 @@ __pycache__/
 # large data in example folders
 examples/donau/
 examples/ering-data/
+HBCenv/
+HBCenvpy3.8/
 
 # Do not ignore specific files or directories within examples/
 #!examples/ering_1quantity/

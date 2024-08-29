@@ -31,7 +31,7 @@ class HydroSimulations:
             self,
             control_file="control.file",
             model_dir="",
-            res_dir='',
+            res_dir="",
             calibration_pts_file_path=None,
             n_cpus=int(),
             init_runs=int(),

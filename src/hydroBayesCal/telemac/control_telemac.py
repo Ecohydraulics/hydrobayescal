@@ -636,6 +636,7 @@ class TelemacModel(HydroSimulations):
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
 
         return self.model_evaluations
+
     def call_tm_shell(self, cmd):
         """
         Run Telemac in a Terminal in the model directory
