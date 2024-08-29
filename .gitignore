@@ -8,15 +8,13 @@ examples/donau/
 examples/ering-data/
 HBCenv/
 HBCenvpy3.8/
-
-# Do not ignore specific files or directories within examples/
-#!examples/ering_1quantity/
-#!examples/ering_1quantity/bal_telemac.py
+examples/*.csv
 
 *.slf
 *.pickle
 *.pkl
 *.json
+*.csv
 
 
 # pycharm
