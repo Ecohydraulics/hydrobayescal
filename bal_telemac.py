@@ -95,9 +95,9 @@ def run_complex_model(complex_model,
                                                                 sampling_method=experiment_design.sampling_method)
         # # bal_mode = True : Activates Bayesian Active Learning after finishing the initial runs of the full complexity model
         # # bal_mode = False : Only runs the full complexity model the number of times indicated in init_runs
-        complex_model.run_bal_simulations(collocation_points=collocation_points,
-                                          bal_iteration=0,
-                                          bal_new_set_parameters=None,
+        complex_model.run_multiple_simulations(collocation_points=collocation_points,
+                                          # bal_iteration=0,
+                                          # bal_new_set_parameters=None,
                                           complete_bal_mode=complex_model.complete_bal_mode)
         model_outputs = complex_model.model_evaluations
     else:
@@ -346,7 +346,7 @@ def run_bal_model(collocation_points,
 
             if complex_model.complete_bal_mode or complex_model.only_bal_mode:
                 bal_iteration = it + 1
-                complex_model.run_bal_simulations(collocation_points=None,
+                complex_model.run_multiple_simulations(collocation_points=None,
                                                   bal_iteration=bal_iteration,
                                                   bal_new_set_parameters=new_tp,
                                                   complete_bal_mode=complex_model.complete_bal_mode)
