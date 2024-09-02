@@ -42,6 +42,9 @@ class HydroSimulations:
             max_runs=int(),
             complete_bal_mode=True,
             only_bal_mode=False,
+            check_inputs=True,
+            delete_complex_outputs=False,
+            validation=False,
             *args,
             **kwargs,
             # TODO: The doctrings list many parameters that are not included here, like model_dir (see the PyCharm warnings)
@@ -85,16 +88,17 @@ class HydroSimulations:
         """
 
         # TODO: the following lines come from FullComplexityModel and require integration into your scheme
-        self.check_inputs(model_dir=model_dir,
-                          res_dir=res_dir,
-                          control_file=control_file,
-                          init_runs=init_runs,
-                          nproc=n_cpus,
-                          max_runs=max_runs,
-                          calibration_parameters=calibration_parameters,
-                          param_values=param_values,
-                          calibration_quantities=calibration_quantities
-                          )
+        if check_inputs:
+            self.check_inputs(model_dir=model_dir,
+                              res_dir=res_dir,
+                              control_file=control_file,
+                              init_runs=init_runs,
+                              nproc=n_cpus,
+                              max_runs=max_runs,
+                              calibration_parameters=calibration_parameters,
+                              param_values=param_values,
+                              calibration_quantities=calibration_quantities
+                              )
         self.model_dir = model_dir
         self.res_dir = res_dir
         self.control_file = control_file
@@ -103,12 +107,17 @@ class HydroSimulations:
         self.param_values = param_values
         self.calibration_quantities = calibration_quantities
         self.calibration_parameters = calibration_parameters
-        self.dict_output_name = dict_output_name
         self.parameter_sampling_method = parameter_sampling_method
         self.init_runs = init_runs
         self.max_runs = max_runs
         self.complete_bal_mode = complete_bal_mode
         self.only_bal_mode = only_bal_mode
+        self.delete_complex_outputs=delete_complex_outputs
+        self.validation=validation
+        if self.validation:
+            self.dict_output_name = dict_output_name + "-validation"
+        else:
+            self.dict_output_name = dict_output_name
         self.nloc = None
         self.ndim = None
         self.param_dic = None
@@ -124,7 +133,8 @@ class HydroSimulations:
             self.observations, self.measurement_errors, self.nloc, self.num_quantities, self.calibration_pts_df = self.set_observations_and_errors(
                 calibration_pts_file_path, calibration_quantities)
 
-        self.asr_dir = os.path.join(res_dir, f"auto-saved-results-{self.num_quantities}-quantities")
+        self.asr_dir = os.path.join(res_dir,
+                                    f"auto-saved-results-{self.num_quantities}-quantities_{'_'.join(self.calibration_quantities)}")
         if not os.path.exists(self.asr_dir):
             os.makedirs(self.asr_dir)
         if not os.path.exists(os.path.join(self.asr_dir, "plots")):
@@ -400,24 +410,47 @@ class HydroSimulations:
         return observations, measurement_errors, n_loc, n_calib_quantities, calibration_pts_df
 
     @staticmethod
-    def read_data(file_path):
+    def read_data(results_folder, file_name):
         """
-        TODO: Add docstrings; no use pickle formats (i.e., no npy, pkl, nor pickle)
-        :param file_path:
-        :return:
+        Reads and extracts data from various file types based on the provided file name.
+
+        The function supports file types such as .csv, .json, .txt, .pkl, and .pickle.
+
+        Parameters
+        ----------
+        results_folder : str
+            The base directory where the results files are stored.
+        file_name : str
+            The name of the file, including its extension (e.g., 'data.csv', 'output.json').
+
+        Returns
+        -------
+        data : object
+            The extracted data, which can be a DataFrame, dictionary, list, or other object depending on the file type.
+            Returns None if the file type is unsupported or an error occurs while reading the file.
         """
+        file_path = os.path.join(results_folder, file_name)
+
         try:
-            if file_path.endswith('.npy'):
-                data = np.load(file_path, allow_pickle=True)
-            elif file_path.endswith('.pkl'):
-                with open(file_path, 'rb') as file:
-                    data = pickle.load(file)
-            elif file_path.endswith('.pickle'):
+            # Determine the file extension
+            file_extension = os.path.splitext(file_name)[1]
+
+            if file_extension == '.csv':
+                data = pd.read_csv(file_path).to_numpy()
+            elif file_extension == '.json':
+                with open(file_path, 'r') as file:
+                    data = json.load(file)
+            elif file_extension == '.txt':
+                with open(file_path, 'r') as file:
+                    data = file.readlines()
+            elif file_extension in ['.pkl', '.pickle']:
                 with open(file_path, 'rb') as file:
                     data = pickle.load(file)
             else:
-                raise ValueError("Unsupported file type. Only .npy and .pkl files are supported.")
+                raise ValueError(
+                    "Unsupported file type. Only .csv, .json, .txt, .pkl, and .pickle files are supported.")
             return data
+
         except Exception as e:
             print(f"An error occurred while reading the file: {e}")
             return None
@@ -463,6 +496,8 @@ class HydroSimulations:
     def output_processing(
             self,
             output_data="",
+            delete_complex_outputs=False,
+            validation=False
     ):
         """
         Extract data from a .JSON file containing model outputs to 2D array ready to use in Bayesian calibration and saves
@@ -474,6 +509,9 @@ class HydroSimulations:
             Path to the .json file containing the model outputs. The file should be structured
             such that its keys correspond to calibration points, and its values are lists of model
             output values for each run and quantity.
+        delete_complex_outputs: Boolean, Default: False
+            Delete complex model outtput files from the results folder (e.g. auto-saved-results).
+            Recommended when running several simulations of the full complexity model.
 
         Returns
         -------

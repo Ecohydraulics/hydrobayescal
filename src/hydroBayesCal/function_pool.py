@@ -6,6 +6,7 @@ import csv
 import pickle
 import h5py
 import json
+import glob
 import shutil
 
 sys.path.insert(0, os.path.abspath('..'))
@@ -375,3 +376,27 @@ def update_json_file(json_path, modeled_values_dict, detailed_dict = False):
                 # Convert the existing list into a nested list with a single element
                 modeled_values_dict[key] = [modeled_values_dict[key]]
             json.dump(modeled_values_dict, file, indent=4)
+
+def delete_slf(folder_path):
+    """
+    Deletes all files with the .slf extension in the specified folder.
+
+    Parameters
+    ----------
+    folder_path : str
+        The path to the folder where the .slf files will be deleted.
+
+    Returns
+    -------
+    None
+    """
+    # Get all files with .slf extension in the specified folder
+    slf_files = glob.glob(os.path.join(folder_path, '*.slf'))
+
+    # Delete each .slf file
+    for file_path in slf_files:
+        try:
+            os.remove(file_path)
+            print(f"Deleted: {file_path}")
+        except Exception as e:
+            print(f"Error deleting {file_path}: {e}")

@@ -4,11 +4,13 @@ Code for plotting results in the context of Bayesian Calibration with GPE
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde,norm,linregress
+from scipy.stats import gaussian_kde, norm, linregress
+from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.ticker as ticker
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from pathlib import Path
+
 
 class BayesianPlotter:
     def __init__(
@@ -63,7 +65,8 @@ class BayesianPlotter:
         fig, ax = plt.subplots(figsize=(10, 6))
 
         # Plot posterior distribution
-        counts, bins, patches = ax.hist(posterior_vector, bins=bins, density=True, alpha=0.5, color=colors[0], edgecolor='black')
+        counts, bins, patches = ax.hist(posterior_vector, bins=bins, density=True, alpha=0.5, color=colors[0],
+                                        edgecolor='black')
 
         # Add mean line
         mean_posterior = np.mean(posterior_vector)
@@ -82,6 +85,7 @@ class BayesianPlotter:
         plt.tight_layout()
         plt.savefig(save_folder / f'posterior_{parameter_name}.png')
         plt.close()
+
     def plot_posterior_updates(
             self,
             posterior_arrays,
@@ -389,7 +393,8 @@ class BayesianPlotter:
         fig, ax = plt.subplots()
 
         # Initial TP:
-        ax.scatter(collocation_points[0:n_init_tp, 0], collocation_points[0:n_init_tp, 1], label='Initial TP', c='black', s=100)
+        ax.scatter(collocation_points[0:n_init_tp, 0], collocation_points[0:n_init_tp, 1], label='Initial TP',
+                   c='black', s=100)
         selected_tp = collocation_points[n_init_tp:, :]
 
         # Get indexes for 'dkl'
@@ -717,6 +722,145 @@ class BayesianPlotter:
         plt.tight_layout()
         plt.show()
 
+    def plot_model_comparisons(self,observed_values, surrogate_outputs, complex_model_outputs):
+        """
+        Plots comparisons between model outputs and observed values in separate figures,
+        and includes statistical measurements in the plot legends.
+
+        Parameters
+        ----------
+        observed_values : numpy.ndarray
+            1D array of observed values.
+        model1_outputs : numpy.ndarray
+            1D array of outputs from the first model.
+        complex_model_outputs : numpy.ndarray
+            1D array of outputs from the second model.
+
+        Returns
+        -------
+        None
+        """
+        if not (len(observed_values) == len(surrogate_outputs) == len(complex_model_outputs)):
+            raise ValueError("All input arrays must have the same length.")
+
+        # Calculate statistical measurements
+        mse_model1 = mean_squared_error(observed_values, surrogate_outputs)
+        mse_model2 = mean_squared_error(observed_values, complex_model_outputs)
+        r2_model1 = r2_score(observed_values.flatten(), surrogate_outputs.flatten())
+        r2_model2 = r2_score(observed_values.flatten(), complex_model_outputs.flatten())
+        corr_model1_model2 = np.corrcoef(surrogate_outputs, complex_model_outputs)[0, 1]
+
+        # Find min and max values for the reference line
+        min_value = min(np.min(observed_values), np.min(surrogate_outputs), np.min(complex_model_outputs))
+        max_value = max(np.max(observed_values), np.max(surrogate_outputs), np.max(complex_model_outputs))
+
+        # Figure 1: Observed vs Model 1 Outputs
+        plt.figure(figsize=(8, 6))
+        plt.scatter(observed_values, surrogate_outputs, color='blue', label='Model 1 Outputs')
+        plt.plot([min_value, max_value], [min_value, max_value], 'r--', label='Observed vs Observed')
+        plt.xlabel('Observed Values')
+        plt.ylabel('Model 1 Outputs')
+        plt.title('Model 1 vs Observed Values')
+        plt.legend(title=f'MSE: {mse_model1:.4f}\nR²: {r2_model1:.4f}')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+        # Figure 2: Observed vs Model 2 Outputs
+        plt.figure(figsize=(8, 6))
+        plt.scatter(observed_values, complex_model_outputs, color='green', label='Model 2 Outputs')
+        plt.plot([min_value, max_value], [min_value, max_value], 'r--', label='Observed vs Observed')
+        plt.xlabel('Observed Values')
+        plt.ylabel('Model 2 Outputs')
+        plt.title('Model 2 vs Observed Values')
+        plt.legend(title=f'MSE: {mse_model2:.4f}\nR²: {r2_model2:.4f}')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+        # Figure 3: Model 1 vs Model 2 Outputs
+        plt.figure(figsize=(8, 6))
+        plt.scatter(surrogate_outputs, complex_model_outputs, color='purple', label='Model Outputs')
+        plt.plot([min_value, max_value], [min_value, max_value], 'r--', label='Model 1 = Model 2')
+        plt.xlabel('Model 1 Outputs')
+        plt.ylabel('Model 2 Outputs')
+        plt.title('Model 1 vs Model 2 Outputs')
+        plt.legend(title=f'Correlation: {corr_model1_model2:.4f}')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_model_outputs_vs_locations(self, observed_values, surrogate_outputs, complex_model_outputs, gpe_lower_ci,
+                                        gpe_upper_ci, measurement_error):
+        """
+        Plots the outputs (velocities) of two models versus locations in a single figure,
+        including observed data, a confidence interval from GPE analysis, and measurement error.
+
+        Parameters
+        ----------
+        self : object
+            The instance of the class, if using class-based method.
+        observed_values : numpy.ndarray
+            1D array of observed values.
+        surrogate_outputs : numpy.ndarray
+            1D array of outputs from the surrogate model.
+        complex_model_outputs : numpy.ndarray
+            1D array of outputs from the complex model.
+        gpe_lower_ci : numpy.ndarray
+            1D array of lower confidence intervals from GPE analysis.
+        gpe_upper_ci : numpy.ndarray
+            1D array of upper confidence intervals from GPE analysis.
+        measurement_error : numpy.ndarray
+            1D array of measurement errors (standard deviations) for each observed value.
+
+        Returns
+        -------
+        None
+        """
+        # Ensure all inputs are 1D arrays
+        observed_values = observed_values.flatten()
+        surrogate_outputs = surrogate_outputs.flatten()
+        complex_model_outputs = complex_model_outputs.flatten()
+        gpe_lower_ci = gpe_lower_ci.flatten()
+        gpe_upper_ci = gpe_upper_ci.flatten()
+        measurement_error = measurement_error.flatten()
+
+        if not (len(observed_values) == len(surrogate_outputs) == len(complex_model_outputs) == len(
+                gpe_lower_ci) == len(gpe_upper_ci) == len(measurement_error)):
+            raise ValueError("All input arrays must have the same length.")
+
+        locations = np.arange(1, len(observed_values) + 1)
+
+        # Calculate the measurement confidence interval (2 standard deviations at each location)
+        obs_lower_bound = observed_values - 2 * measurement_error
+        obs_upper_bound = observed_values + 2 * measurement_error
+
+        # Plot
+        plt.figure(figsize=(12, 8))
+
+        # Plot observed data with measurement error confidence interval
+        plt.plot(locations, observed_values, marker='o', color='black', label='Observed Data')
+        plt.fill_between(locations, obs_lower_bound, obs_upper_bound, color='red', alpha=0.2,
+                         label='Measurement Error (±2 SD)')
+
+        # Plot confidence interval from GPE analysis
+        plt.fill_between(locations, gpe_lower_ci, gpe_upper_ci, color='gray', alpha=0.3, hatch='/',
+                         label='GPE Confidence Interval')
+
+        # Plot model outputs
+        plt.plot(locations, surrogate_outputs, marker='o', color='blue', linestyle='--',
+                 label='Surrogate Model Outputs')
+        plt.plot(locations, complex_model_outputs, marker='s', color='green', linestyle='--',
+                 label='Complex Model Outputs')
+
+        # Add labels, title, and legend with smaller font size
+        plt.xlabel('Location')
+        plt.ylabel('Values')
+        plt.title('Model Outputs vs Locations with Observed Data, Measurement Error, and Confidence Intervals')
+        plt.legend(fontsize='small', loc='upper left')  # Set legend font size to small
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
 # def plot_bme_concentration_last_iterations(param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,
 #                                            last_iterations=10, interval=1):
 #     """
