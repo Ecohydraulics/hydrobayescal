@@ -34,6 +34,38 @@ class BayesianPlotter:
             A Path object representing the directory where plots will be saved.
         """
         self.save_folder = Path(results_folder_path) / plots_subfolder
+        plt.rcParams.update({
+            'text.usetex': True,
+            'font.family': 'serif',
+            'font.serif': ['Times'],
+            'axes.labelsize': 14,
+            'axes.titlesize': 16,
+            'xtick.labelsize': 12,
+            'ytick.labelsize': 12,
+            'legend.fontsize': 12,
+            'lines.linewidth': 1.5,
+            'lines.markersize': 8,
+            'axes.linewidth': 0.8
+        })
+
+    def _set_latex_format(self, ax):
+        """
+        Sets LaTeX formatting for the text in the plot.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes on which to set LaTeX formatting.
+        """
+        # Set LaTeX for the current plot (use LaTeX settings if not already applied globally)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=14, family='serif')
+        ax.set_ylabel(ax.get_ylabel(), fontsize=14, family='serif')
+        ax.legend(fontsize=12)
+        ax.tick_params(axis='both', which='both', direction='in', labelsize=12)
+        ax.spines['top'].set_linewidth(0.8)
+        ax.spines['right'].set_linewidth(0.8)
+        ax.spines['bottom'].set_linewidth(0.8)
+        ax.spines['left'].set_linewidth(0.8)
 
     def plot_posterior(
             self,
@@ -81,6 +113,7 @@ class BayesianPlotter:
 
         # Ensure histogram starts from the vertical axis without a white space
         ax.set_xlim(left=bins[0])
+        self._set_latex_format(ax)
 
         plt.tight_layout()
         plt.savefig(save_folder / f'posterior_{parameter_name}.png')
@@ -91,45 +124,51 @@ class BayesianPlotter:
             posterior_arrays,
             parameter_names,
             prior,
+            param_values=None,  # List of arrays with (min, max) values for each parameter
             iterations_to_plot=None,
             bins=30,
             density=True
     ):
         """
-        Plots the prior distributions and posterior updates for given parameters.
+        Plots the posterior distributions with the prior distribution shaded in light grey and additional auxiliary vertical grid lines.
 
         Parameters
         ----------
-            posterior_arrays: list of arrays
-                List of 2D arrays with posterior samples for each update.
-            parameter_names: list of str
-                List of parameter names corresponding to the columns of the arrays.
-            prior: array
-                2D array with prior samples.
-            iterations_to_plot: list of int or None
-                List of iteration indices to plot. If None, only prior distributions are plotted.
-            bins: int
-                Number of bins to use for the histograms. Default 30.
-            density: bool
-                Whether to normalize the histograms to form a probability density.
-         Returns
+        posterior_arrays: list of arrays
+            List of 2D arrays with posterior samples for each update.
+        parameter_names: list of str
+            List of parameter names corresponding to the columns of the arrays.
+        prior: array
+            2D array with prior samples.
+        param_values: list of arrays, optional
+            List of arrays where each array contains two values (min, max) for the x-axis limits of each parameter.
+            If None, the x-axis limits are computed from the prior data.
+        iterations_to_plot: list of int or None
+            List of iteration indices to plot. If None, only prior distributions are plotted.
+        bins: int
+            Number of bins to use for the histograms. Default 30.
+        density: bool
+            Whether to normalize the histograms to form a probability density.
+        Returns
         -------
-            None
-                The function creates plots of the prior and posterior distribution functions  and are saved
-                as  .png files in the /plots folder.
+        None
+            The function creates plots of the prior and posterior distribution functions and saves them as .png files in the /plots folder.
         """
         save_folder = self.save_folder
 
         # Ensure save_folder exists
         save_folder.mkdir(parents=True, exist_ok=True)
 
-        colors = ['darkgray', 'darkgray']
         parameter_num = len(parameter_names)
 
-        # Calculate x_limits for each parameter from the prior data
+        # Calculate x_limits for each parameter from the prior data or use provided limits
         x_limits = np.zeros((parameter_num, 2))
-        for i in range(parameter_num):
-            x_limits[i] = (prior[:, i].min(), prior[:, i].max())
+        if param_values is None:
+            for i in range(parameter_num):
+                x_limits[i] = (prior[:, i].min(), prior[:, i].max())
+        else:
+            for i in range(parameter_num):
+                x_limits[i] = param_values[i]  # Assuming param_values[i] is an array with [min, max]
 
         # Calculate y_max for each parameter
         y_max_prior = np.zeros(parameter_num)
@@ -142,52 +181,43 @@ class BayesianPlotter:
                     counts_posterior, _ = np.histogram(posterior_arrays[row][:, i], bins=bins, density=density)
                     y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior))
 
-        # Helper function to set grid and border style
-        def set_plot_style():
-            plt.grid(True, linestyle='--', color='lightgrey', alpha=0.7)
-            plt.tick_params(axis='both', which='both', direction='in', labelsize=12)
-            plt.gca().spines['top'].set_linewidth(0.8)
-            plt.gca().spines['right'].set_linewidth(0.8)
-            plt.gca().spines['bottom'].set_linewidth(0.8)
-            plt.gca().spines['left'].set_linewidth(0.8)
-
-        # Plot prior distributions
-        for i in range(parameter_num):
-            plt.figure(figsize=(4, 8))
-            plt.hist(prior[:, i], bins=bins, density=density, alpha=0.5, color=colors[0], label='Prior',
-                     edgecolor='black', linewidth=0.8)
-            mean_prior = np.mean(prior[:, i])
-            plt.axvline(mean_prior, color='blue', linestyle='dashed', linewidth=1, label='Mean')
-            plt.xlabel(parameter_names[i], fontsize=12)
-            plt.ylabel('Density', fontsize=12)
-            plt.legend(fontsize=8)
-            set_plot_style()
-            plt.ylim(0, y_max_prior[i])
-            plt.xlim(x_limits[i])
-            plt.tight_layout()
-            plt.savefig(save_folder / f'prior_distribution_param_{i + 1}.png')
-            plt.close()
-
-        # Plot each selected update
+        # Plot combined prior and posterior distributions
         if iterations_to_plot is not None:
             for plot_index, iteration_idx in enumerate(iterations_to_plot):
                 for col in range(parameter_num):
-                    plt.figure(figsize=(4, 8))
+                    plt.figure(figsize=(6, 8))
+
+                    # Plot the posterior as a histogram
                     posterior_vector = posterior_arrays[iteration_idx]
-                    plt.hist(posterior_vector[:, col], bins=bins, density=density, alpha=0.5, color=colors[1],
-                             label='Posterior',
-                             edgecolor='black', linewidth=0.8)
-                    mean_posterior = np.mean(posterior_vector[:, col])
-                    plt.axvline(mean_posterior, color='blue', linestyle='dashed', linewidth=1, label='Mean')
-                    plt.xlabel(parameter_names[col], fontsize=12)
-                    plt.ylabel('Density', fontsize=12)
-                    plt.legend(fontsize=8)
-                    set_plot_style()
-                    plt.ylim(0, y_max_posterior[col])
+                    plt.hist(posterior_vector[:, col], bins=bins, density=density, alpha=0.6, color='grey',
+                             label='Posterior', edgecolor='black', linewidth=0.8)
+
+                    # Plot the prior as a histogram with light color
+                    plt.hist(prior[:, col], bins=bins, density=density, alpha=0.3, color='lightgrey',
+                             label='Prior', edgecolor='black', linewidth=0.8)
+
+                    plt.xlabel(f'{parameter_names[col]}')
+                    plt.ylabel(r'Density')
+                    plt.legend()
+                    plt.grid(True, linestyle='--', color='lightgrey', alpha=0.7)
+                    plt.tick_params(axis='both', which='both', direction='in', labelsize=12)
+                    plt.gca().spines['top'].set_linewidth(0.8)
+                    plt.gca().spines['right'].set_linewidth(0.8)
+                    plt.gca().spines['bottom'].set_linewidth(0.8)
+                    plt.gca().spines['left'].set_linewidth(0.8)
+
+                    # Ensure only 4 labeled x-ticks
+                    x_tick_labels = np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3)
+                    plt.xticks(x_tick_labels)
+
+                    plt.ylim(0, max(y_max_prior[col], y_max_posterior[col]))
                     plt.xlim(x_limits[col])
+
                     plt.tight_layout()
+
+                    # Save the plot with parameter name and iteration index
                     plt.savefig(
-                        save_folder / f'posterior_distribution_param_{col + 1}_iteration_{iteration_idx + 1}.png')
+                        save_folder / f'combined_distribution_{parameter_names[col].replace(" ", "_")}_iteration_{iteration_idx + 1}.png')
                     plt.close()
 
     def plot_bme_re(
@@ -211,8 +241,8 @@ class BayesianPlotter:
         Returns
         -------
             None
-                The function creates plots of BME or RE values over iterations  and are saved
-                as  .png files in the /plots folder.
+                The function creates plots of BME or RE values over iterations and are saved
+                as .png files in the /plots folder.
         """
         save_folder = self.save_folder
 
@@ -229,10 +259,10 @@ class BayesianPlotter:
 
             # Plot BME
             axes[0].plot(iterations, bme_values, marker='+', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                         label='BME')
-            axes[0].set_title('Bayesian Model Evidence (BME)', fontsize=16, weight='normal')
-            axes[0].set_xlabel('Iteration', fontsize=14)
-            axes[0].set_ylabel('BME', fontsize=14)
+                         label=r'BME')
+            axes[0].set_title(r'Bayesian Model Evidence (BME)', fontsize=16, weight='normal')
+            axes[0].set_xlabel(r'Iteration', fontsize=14)
+            axes[0].set_ylabel(r'BME', fontsize=14)
             axes[0].grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
             axes[0].legend(fontsize=12, loc='upper left')
 
@@ -240,7 +270,7 @@ class BayesianPlotter:
             slope_bme, intercept_bme, _, _, _ = linregress(iterations, bme_values)
             trend_bme = [slope_bme * x + intercept_bme for x in iterations]
             axes[0].plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=0.8,
-                         label='Trend Line')
+                         label=r'Trend Line')
             axes[0].legend(fontsize=12, loc='upper left')
 
             # Set x-axis limits and tick parameters for BME plot
@@ -257,17 +287,17 @@ class BayesianPlotter:
 
             # Plot RE
             axes[1].plot(iterations, re_values, marker='x', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                         label='RE')
-            axes[1].set_title('Relative Entropy (RE)', fontsize=16, weight='normal')
-            axes[1].set_xlabel('Iteration', fontsize=14)
-            axes[1].set_ylabel('RE', fontsize=14)
+                         label=r'RE')
+            axes[1].set_title(r'Relative Entropy (RE)', fontsize=16, weight='normal')
+            axes[1].set_xlabel(r'Iteration', fontsize=14)
+            axes[1].set_ylabel(r'RE', fontsize=14)
             axes[1].grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
             axes[1].legend(fontsize=12, loc='upper left')
 
             # Add a dashed tendency line for RE
             slope_re, intercept_re, _, _, _ = linregress(iterations, re_values)
             trend_re = [slope_re * x + intercept_re for x in iterations]
-            axes[1].plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.8, label='Trend Line')
+            axes[1].plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.8, label=r'Trend Line')
             axes[1].legend(fontsize=12, loc='upper left')
 
             # Set x-axis limits and tick parameters for RE plot
@@ -291,17 +321,17 @@ class BayesianPlotter:
 
             # Plot BME
             plt.plot(iterations, bme_values, marker='+', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                     label='BME')
-            plt.title('Bayesian Model Evidence (BME)', fontsize=16, weight='normal')
-            plt.xlabel('Iteration', fontsize=14)
-            plt.ylabel('BME', fontsize=14)
+                     label=r'BME')
+            plt.title(r'Bayesian Model Evidence (BME)', fontsize=16, weight='normal')
+            plt.xlabel(r'Iteration', fontsize=14)
+            plt.ylabel(r'BME', fontsize=14)
             plt.grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
             plt.legend(fontsize=12, loc='upper left')
 
             # Add a dashed tendency line for BME
             slope_bme, intercept_bme, _, _, _ = linregress(iterations, bme_values)
             trend_bme = [slope_bme * x + intercept_bme for x in iterations]
-            plt.plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=0.8, label='Trend Line')
+            plt.plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=0.8, label=r'Trend Line')
             plt.legend(fontsize=12, loc='upper left')
 
             # Set x-axis limits and tick parameters for BME plot
@@ -325,17 +355,17 @@ class BayesianPlotter:
 
             # Plot RE
             plt.plot(iterations, re_values, marker='x', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                     label='RE')
-            plt.title('Relative Entropy (RE)', fontsize=16, weight='normal')
-            plt.xlabel('Iteration', fontsize=14)
-            plt.ylabel('RE', fontsize=14)
+                     label=r'RE')
+            plt.title(r'Relative Entropy (RE)', fontsize=16, weight='normal')
+            plt.xlabel(r'Iteration', fontsize=14)
+            plt.ylabel(r'RE', fontsize=14)
             plt.grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
             plt.legend(fontsize=12, loc='upper left')
 
             # Add a dashed tendency line for RE
             slope_re, intercept_re, _, _, _ = linregress(iterations, re_values)
             trend_re = [slope_re * x + intercept_re for x in iterations]
-            plt.plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.8, label='Trend Line')
+            plt.plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.8, label=r'Trend Line')
             plt.legend(fontsize=12, loc='upper left')
 
             # Set x-axis limits and tick parameters for RE plot
@@ -379,8 +409,8 @@ class BayesianPlotter:
         Returns
         -------
             None
-                The function creates scattered plot of the collocation points differentiating them between initial collocation
-                points and BAL-selected are saved as  .png files in the /plots folder.
+                The function creates a scattered plot of the collocation points differentiating them between initial collocation
+                points and BAL-selected points, saved as .png files in the /plots folder.
         """
         save_folder = self.save_folder
 
@@ -393,36 +423,37 @@ class BayesianPlotter:
         fig, ax = plt.subplots()
 
         # Initial TP:
-        ax.scatter(collocation_points[0:n_init_tp, 0], collocation_points[0:n_init_tp, 1], label='Initial TP',
+        ax.scatter(collocation_points[0:n_init_tp, 0], collocation_points[0:n_init_tp, 1], label=r'Initial TP',
                    c='black', s=100)
         selected_tp = collocation_points[n_init_tp:, :]
 
         # Get indexes for 'dkl'
         dkl_ind = np.where(bayesian_dict['util_func'] == 'dkl')
-        ax.scatter(selected_tp[dkl_ind, 0], selected_tp[dkl_ind, 1], label='DKL', c='gold', s=200, alpha=0.5)
+        ax.scatter(selected_tp[dkl_ind, 0], selected_tp[dkl_ind, 1], label=r'DKL', c='gold', s=200, alpha=0.5)
 
         # Get indexes for 'bme'
         bme_ind = np.where(bayesian_dict['util_func'] == 'bme')
-        ax.scatter(selected_tp[bme_ind, 0], selected_tp[bme_ind, 1], label='BME', c='blue', s=200, alpha=0.5)
+        ax.scatter(selected_tp[bme_ind, 0], selected_tp[bme_ind, 1], label=r'BME', c='blue', s=200, alpha=0.5)
 
         # Get indexes for 'ie'
         ie_ind = np.where(bayesian_dict['util_func'] == 'ie')
-        ax.scatter(selected_tp[ie_ind, 0], selected_tp[ie_ind, 1], label='IE', c='green', s=200, alpha=0.5)
+        ax.scatter(selected_tp[ie_ind, 0], selected_tp[ie_ind, 1], label=r'IE', c='green', s=200, alpha=0.5)
 
         # Global MC
         mc_ind = np.where(bayesian_dict['util_func'] == 'global_mc')
-        ax.scatter(selected_tp[mc_ind, 0], selected_tp[mc_ind, 1], label='MC', c='red', s=200, alpha=0.5)
+        ax.scatter(selected_tp[mc_ind, 0], selected_tp[mc_ind, 1], label=r'MC', c='red', s=200, alpha=0.5)
 
-        ax.set_xlabel('K_Zone 8')
-        ax.set_ylabel('$K_Zone 9$')
+        # LaTeX formatting for labels and legend
+        ax.set_xlabel(r'$K_{Zone \, 8}$', fontsize=14)
+        ax.set_ylabel(r'$K_{Zone \, 9}$', fontsize=14)
 
-        fig.legend(loc='lower center', ncol=5)
+        fig.legend(loc='lower center', ncol=5, fontsize=12)
+
+        # Adjust layout to make space for legend
         plt.subplots_adjust(top=0.95, bottom=0.15, wspace=0.25, hspace=0.55)
 
         # Save the figure
         if save_folder:
-            save_folder = Path(save_folder)  # Ensure save_folder is a Path object
-            save_folder.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
             plt.savefig(save_folder / 'collocation_points.png')  # Save with .png extension
         plt.close()
 
@@ -860,6 +891,65 @@ class BayesianPlotter:
         plt.legend(fontsize='small', loc='upper left')  # Set legend font size to small
         plt.grid(True)
         plt.tight_layout()
+        plt.show()
+
+    def plot_correlation(self,
+            sm_out,
+            valid_eval,
+            output_names,
+            label_list=None,  # Make label_list optional
+            n_loc_=1,
+            fig_title=''
+    ):
+        """Function plots the scatter plots for the outputs, comparing the validation output (x-axis) and the
+        surrogate outputs (y-axis).
+
+        Args:
+            sm_out (np.array): Surrogate outputs, of size [mc_size, n_obs].
+            valid_eval (np.array): Array [mc_size, n_obs], with the validation output.
+            output_names (list): Names of the different output types.
+            label_list (list, optional): Contains the R2 information to add to each subplot label.
+            n_loc_ (int, optional): Number of locations where each output name is read. Defaults to 1.
+            fig_title (str, optional): Title of the plot. Defaults to ''.
+        """
+        colormap = plt.cm.tab20
+        color_indices = np.linspace(0, 1, n_loc_)
+        colors_obs = [colormap(color_index) for color_index in color_indices]
+
+        # Create subplots
+        fig, axs = plt.subplots(1, len(output_names), figsize=(10, 5))
+
+        # Ensure axs is always iterable, even if there is only one subplot
+        if len(output_names) == 1:
+            axs = [axs]
+
+        c = 0
+        for o, ot in enumerate(output_names):
+            for i in range(n_loc_):
+                axs[o].scatter(valid_eval[:, i + c], sm_out[:, i + c], color=colors_obs[i], label=f'{i + 1}')
+
+            # Set plot limits and add the identity line
+            mn = np.min(np.hstack((valid_eval[:, c:n_loc_ + c], sm_out[:, c:n_loc_ + c])))
+            mx = np.max(np.hstack((valid_eval[:, c:n_loc_ + c], sm_out[:, c:n_loc_ + c])))
+            axs[o].plot([mn, mx], [mn, mx], color='black', linestyle='--')
+
+            # Set titles and labels
+            title = f'{ot}'
+            if label_list is not None:
+                title += f' - R2: {label_list[o]}'
+            axs[o].set_title(title, loc='left')
+            axs[o].set_xlabel('Full complexity model outputs')
+
+            if o == 0:
+                axs[o].set_ylabel('Simulator outputs')
+
+            c += n_loc_
+
+        # Set the overall title and legend
+        fig.suptitle(fig_title)
+        handles, labels = axs[0].get_legend_handles_labels()
+        fig.legend(handles=handles, labels=labels, loc="center right", ncol=1)
+        plt.subplots_adjust(top=0.9, bottom=0.15, wspace=0.2, hspace=0.5)
         plt.show()
 # def plot_bme_concentration_last_iterations(param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,
 #                                            last_iterations=10, interval=1):

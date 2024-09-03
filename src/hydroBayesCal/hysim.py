@@ -33,11 +33,11 @@ class HydroSimulations:
             res_dir="",
             calibration_pts_file_path=None,
             n_cpus=int(),
-            init_runs=int(),
+            init_runs=1,
             calibration_parameters=None,
             param_values=None,
             calibration_quantities=None,
-            dict_output_name='',
+            dict_output_name='output-dictionary',
             parameter_sampling_method='',
             max_runs=int(),
             complete_bal_mode=True,
@@ -47,44 +47,85 @@ class HydroSimulations:
             validation=False,
             *args,
             **kwargs,
-            # TODO: The doctrings list many parameters that are not included here, like model_dir (see the PyCharm warnings)
     ):
         """
-
-        Constructor of HydroSimulation class to manage and run any hydrodynamic simulation within the context of Bayesian Calibration
-        using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup, execution, and result
-        storage while managing calibration parameters and Bayesian Active Learning (BAL) iterations.
+        Constructor of the HydroSimulations class to manage and run hydrodynamic simulations within the context of
+        Bayesian Calibration using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup,
+        execution, and result storage while managing calibration parameters and Bayesian Active Learning (BAL) iterations.
 
         Parameters
         ----------
-        model_dir : str
-            Full complexity model directory.
-        res_dir : str
-            Directory of the folder where a subfolder called "auto-saved-results" will be created to store all the
-            results files.
         control_file : str
-            Name of the file that controls the full complexity model simulation (to be called from a terminal).
-        calibration_parameters : list, optional
-            Names of the considered calibration parameters (maximum 4 parameters).
-        bal_mode : bool, optional
-            Default is True. If True, runs Bayesian Active Learning; if False, only runs the initial collocation points.
-        n_max_tp : int, optional
-            Total number of model simulations, including Bayesian Active Learning iterations.
-        init_runs : int, optional
-            Initial runs of the full complexity model (initial surrogate model before Bayesian Active Learning).
-        user_inputs : dict, optional
-            User input parameters.
+            Name of the file that controls the full complexity model simulation (default is "control.file" as an example).
+        model_dir : str
+            Full complexity model directory where all simulation files are located.
+        res_dir : str
+            Directory where a subfolder called "auto-saved-results" will be created to store all the result files. The auto-saved-results folder
+            changes its name depending on the selected calibration quantities.
+        calibration_pts_file_path : str or optional
+            File path to the calibration points data file. Please check documentation for further details of the file format.
+        n_cpus : int
+            Number of CPUs to be used for parallel processing.
+        init_runs : int
+            Initial runs of the full complexity model (before Bayesian Active Learning).
+        calibration_parameters : list of str
+            Names of the considered calibration parameters.
+        param_values : list
+            Value ranges considered for parameter sampling.
+        calibration_quantities : list of str
+            Names of the quantities (model outputs) used for calibration. These quantities usually correspond to the measured values for calibration purposes.
+        dict_output_name : str
+            Base name for output dictionary files where the outputs are saved as .json files.
+        parameter_sampling_method : str
+            Parameter sampling method during the calibration process.
+        max_runs : int
+            Maximum number of model simulations, including Bayesian Active Learning iterations.
+        complete_bal_mode : bool, optional (Default: True)
+            If True: When after the initial runs a Bayesian Active Learning is performed (complete surrogate-assisted calibration process)
+                             This option MUST be selected if you choose to perform only BAL (only_bal_mode = True).
+            If False: If only the initial runs are required. The model outputs are stored as .json files
+        only_bal_mode : bool, optional (Default: False)
+            If False: This option executes either a complete surrogate-assisted calibration or only the initial runs (depending of what is indicated above.)
+            If True: When only the surrogate model construction and Bayesian Active Learning of preexisting model outputs
+                  at predefined collocation points is required. This can be run ONLY if a complete process (Complete_bal_mode_mode = True) has been performed.
+        check_inputs : bool, optional (Default: False)
+            If True, checks input files and parameters before running simulations.
+            If False, inputs are not checked.
+        delete_complex_outputs : bool, optional (Default: True)
+            If True, deletes complex model output files after processing to save disk space.
+            If False, output files from the complex models are saved in the auto-saved-results folder.
+        validation : bool, optional (Default: False)
+            If True, creates output files corresponding to validation process.
+        *args : tuple, optional
+            Additional positional arguments.
+        **kwargs : dict, optional
+            Additional keyword arguments.
 
         Attributes
         ----------
-        user_inputs : dict
-            User input parameters.
-        complete_bal_mode : bool
-            Mode for Bayesian Active Learning. Default: True
-        n_max_tp : int
-            Total number of model simulations, including Bayesian Active Learning iterations.
-        init_runs : int
-            Initial runs of the full complexity model.
+        asr_dir : str
+            Auto-saved-results directory.
+        nloc : int
+            Number of calibration points, where measured data have been taken.
+        ndim : int
+            Number of model parameters for calibration.
+        param_dic : dict
+            Dictionary that contains the calibration parameters and the parameter ranges (initialized as None).
+        num_quantities : int
+            Number of calibration quantities.
+        observations : darray
+            Observed values at each calibration point (initialized as None).
+        measurement_errors : array
+            Measurement errors at each calibration point (initialized as None).
+        calibration_pts_df : pandas.DataFrame
+            Calibration points data  (initialized as None).
+            Header:         Point  |    X       |	     Y	     |       MEASUREMENT 1	     |   ERROR 1 |       MEASUREMENT 2	     |   ERROR 2 |
+        model_evaluations: array
+            2D array containing the processed model outputs. The shape of the array is
+            [No. of quantities x No. of total runs, No. of calibration points], where 'No. of quantities'
+            is the number of calibration quantities being processed, and 'No. of total runs' is the sum
+            of initial runs and Bayesian active learning iterations. The array is also saved to a CSV file
+            in the specified directory.
         """
 
         # TODO: the following lines come from FullComplexityModel and require integration into your scheme
@@ -128,7 +169,6 @@ class HydroSimulations:
 
         if calibration_parameters:
             self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
-        self.supervisor_dir = os.getcwd()  # preserve directory of code that is controlling the full complexity model
         if calibration_pts_file_path:
             self.observations, self.measurement_errors, self.nloc, self.num_quantities, self.calibration_pts_df = self.set_observations_and_errors(
                 calibration_pts_file_path, calibration_quantities)
@@ -459,18 +499,34 @@ class HydroSimulations:
 
     def set_calibration_parameters(self, params, values):
         """
-        Create a dictionary from calibration parameters and their value ranges.
+        Create a dictionary from calibration parameters and their value ranges if both params and values exist.
+        If only one of them exists, compute the number of dimensions.
 
         :param params: List of parameter names.
         :param values: List of value ranges corresponding to the parameter names.
-        :return: Dictionary with parameter names as keys and value ranges as values.
+        :return: Dictionary with parameter names as keys and value ranges as values, and the number of dimensions.
+        :raises ValueError: If the number of parameters does not match the number of values when both are provided.
         """
-        if len(params) != len(values):
-            logger_error.error("Mismatch between the number of parameters (%d) and values (%d)", len(params),
-                               len(values))
-            raise ValueError("The number of parameters and values must be the same.")
-        param_dict = dict(zip(params, values))
-        ndim = len(params)
+        # Initialize default return values
+        param_dict = None
+        ndim = 0
+
+        # Check if both params and values exist
+        if params and values:
+            if len(params) != len(values):
+                logger_error.error("Mismatch between the number of parameters (%d) and values (%d)", len(params),
+                                   len(values))
+                raise ValueError("The number of parameters and values must be the same.")
+
+            # Create the dictionary
+            param_dict = dict(zip(params, values))
+            ndim = len(params)
+
+        # If only one of params or values exists, compute ndim
+        elif params or values:
+            ndim = len(params) if params else len(values)
+
+        # Return the dictionary and number of dimensions
         return param_dict, ndim
 
     def update_model_controls(

@@ -265,7 +265,7 @@ def run_bal_model(collocation_points,
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
                                          f'{experiment_design.exploit_method}_quantities{complex_model.num_quantities}.pkl')
-                sm.Exp_Design = experiment_design
+                sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(sm, file)
             else:
@@ -273,6 +273,7 @@ def run_bal_model(collocation_points,
                 save_name = os.path.join(gpe_results_folder,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
                                          f'{experiment_design.exploit_method}_quantities{complex_model.num_quantities}.pkl')
+                multi_sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(multi_sm, file)
 
@@ -387,7 +388,7 @@ if __name__ == "__main__":
         res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
         calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_VITESSE_WDEPTH_filtered.csv",
         n_cpus=4,
-        init_runs=3,
+        init_runs=25,
         calibration_parameters=["zone11",
                                 "zone9",
                                 "zone8",
@@ -404,12 +405,12 @@ if __name__ == "__main__":
                       [0.01, 0.03],
                       [0.15, 0.30],
                       [0.02, 0.10]],
-        calibration_quantities=["WATER DEPTH"],
+        calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
         # ,
         #                         "WATER DEPTH"],
-        dict_output_name="model-outputs-water_depth",
+        dict_output_name="model-outputs-SCALAR-VELOCITY_WATER-DEPTH",
         parameter_sampling_method="sobol",
-        max_runs=30,
+        max_runs=125,
         # TelemacModel class parameters
         friction_file="friction_ering.tbl",
         tm_xd="1",
@@ -435,12 +436,12 @@ if __name__ == "__main__":
                                                          experiment_design=exp_design,
                                                          eval_steps=1,
                                                          prior_samples=20000,
-                                                         mc_samples=6000,
+                                                         mc_samples=8000,
                                                          mc_exploration=1000,
                                                          gp_library="gpy")
     plotter = BayesianPlotter(results_folder_path=full_complexity_model.asr_dir)
     plotter.plot_bme_re(bayesian_dict=bal_dict,
-                        num_bal_iterations=15,
+                        num_bal_iterations=100,
                         plot_type='both')
     plotter.plot_combined_bal(collocation_points=updated_collocation_points,
                               n_init_tp=full_complexity_model.init_runs,
@@ -448,14 +449,14 @@ if __name__ == "__main__":
     plotter.plot_posterior_updates(posterior_arrays=bal_dict['posterior'],
                                    parameter_names=full_complexity_model.calibration_parameters,
                                    prior=bal_dict['prior'],
-                                   iterations_to_plot=[15])
+                                   iterations_to_plot=[100])
     plotter.plot_bme_3d(param_sets=updated_collocation_points,
                         param_ranges=full_complexity_model.param_values,
                         param_names=full_complexity_model.calibration_parameters,
                         bme_values=bal_dict['BME'],
                         param_indices=(1, 4),
                         grid_size=200,
-                        last_iterations=15
+                        last_iterations=20
                         )
 
     # # TODO: Why is this in a __main__ namespace? This should be refactored into functions and the function call - Refactored into functions
