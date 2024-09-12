@@ -12,7 +12,7 @@ import pickle
 import bayesvalidrox as bvr
 
 # Base directory of the project
-base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src_path = os.path.join(base_dir, 'src')
 hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
 sys.path.insert(0, base_dir)
@@ -72,6 +72,7 @@ def setup_experiment_design(
     # 6) chebyshev(FT) 7) grid(FT) 8)user
     exp_design.sampling_method = complex_model.parameter_sampling_method
     exp_design.n_new_samples = 1
+    #exp_design.X=
     exp_design.n_max_samples = complex_model.max_runs
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
@@ -96,9 +97,8 @@ def run_complex_model(complex_model,
         # # bal_mode = True : Activates Bayesian Active Learning after finishing the initial runs of the full complexity model
         # # bal_mode = False : Only runs the full complexity model the number of times indicated in init_runs
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
-                                          # bal_iteration=0,
-                                          # bal_new_set_parameters=None,
-                                          complete_bal_mode=complex_model.complete_bal_mode)
+                                          complete_bal_mode=complex_model.complete_bal_mode,
+                                               validation=complex_model.validation)
         model_outputs = complex_model.model_evaluations
     else:
         try:
@@ -248,8 +248,8 @@ def run_bal_model(collocation_points,
         elif it > 0:
             logger.info(f'------------ Training model with new training point: {new_tp}   -------------------')
         elif it == 0:
-            logger.info('Starting surrogate model training with the initial collocation points')
-            logger.info(collocation_points)
+            logger.info('Starting surrogate model training with the initial collocation points. Please check the .csv file if information required.')
+            #logger.info(collocation_points)
 
         if complex_model.num_quantities == 1:
             sm.train_()
@@ -265,14 +265,15 @@ def run_bal_model(collocation_points,
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
                                          f'{experiment_design.exploit_method}_quantities{complex_model.num_quantities}.pkl')
-                sm.Exp_Design = experiment_design
+                sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(sm, file)
             else:
                 # Construct the save_name path for multiple quantities
-                save_name = os.path.join(gpe_results_folder,
+                save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
                                          f'{experiment_design.exploit_method}_quantities{complex_model.num_quantities}.pkl')
+                multi_sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(multi_sm, file)
 
@@ -336,7 +337,7 @@ def run_bal_model(collocation_points,
                                   do_tradeoff=False,
                                   gaussian_assumption=False,
                                   mc_samples=mc_samples,
-                                  mc_exploration=mc_exploration)  #multiprocessing=parallelize
+                                  mc_exploration=mc_exploration)  # multiprocessing=parallelize
 
             new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
             logger.info(f"The new collocation point after rejection sampling is {new_tp} obtained with {util_fun}")
@@ -349,11 +350,12 @@ def run_bal_model(collocation_points,
                 complex_model.run_multiple_simulations(collocation_points=None,
                                                   bal_iteration=bal_iteration,
                                                   bal_new_set_parameters=new_tp,
-                                                  complete_bal_mode=complex_model.complete_bal_mode)
+                                                  complete_bal_mode=complex_model.complete_bal_mode,
+                                                  validation=complex_model.validation)
 
-                model_outputs=complex_model.model_evaluations
+                model_outputs = complex_model.model_evaluations
 
-            #-------------------------------------------------------
+            # -------------------------------------------------------
             # Update collocation points:
             if experiment_design.exploit_method == 'sobol':
                 collocation_points = new_tp
@@ -379,15 +381,14 @@ def run_bal_model(collocation_points,
 # def plots():
 #     pass
 if __name__ == "__main__":
-    # noinspection PyTypeChecker
     full_complexity_model = initialize_model(TelemacModel(
         # HydroSimulations class parameters
         control_file="tel_ering_restart0.5.cas",
-        model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering_1quantity/simulation_folder_telemac/",
-        res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering_1quantity/",
-        calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering_1quantity/measurements_VITESSE_WDEPTH_filtered.csv",
+        model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
+        res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
+        calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_VITESSE_WDEPTH_filtered.csv",
         n_cpus=4,
-        init_runs=3,
+        init_runs=20,
         calibration_parameters=["zone11",
                                 "zone9",
                                 "zone8",
@@ -397,20 +398,18 @@ if __name__ == "__main__":
                                 "zone5",
                                 "zone7"],
         param_values=[[0.01, 0.18],
+                      [0.004, 0.07],
                       [0.01, 0.18],
                       [0.01, 0.18],
-                      [0.01, 0.18],
-                      [0.01, 0.18],
+                      [0.004, 0.07],
                       [0.01, 0.03],
                       [0.15, 0.30],
                       [0.02, 0.10]],
-        calibration_quantities=["SCALAR VELOCITY"
-                                ,"WATER DEPTH"],
+        calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
         # ,
-        #                         "WATER DEPTH"],
-        dict_output_name="model-outputsS-tm",
+        dict_output_name="model-outputs-vel_wd",
         parameter_sampling_method="sobol",
-        max_runs=5,
+        max_runs=150,
         # TelemacModel class parameters
         friction_file="friction_ering.tbl",
         tm_xd="1",
@@ -420,6 +419,8 @@ if __name__ == "__main__":
         python_shebang="#!/usr/bin/env python3",
         complete_bal_mode=True,
         only_bal_mode=False,
+        delete_complex_outputs=True,
+        validation=False,
     ))
     exp_design = setup_experiment_design(complex_model=full_complexity_model,
                                          tp_selection_criteria='dkl'
@@ -433,29 +434,29 @@ if __name__ == "__main__":
                                                          complex_model=full_complexity_model,
                                                          experiment_design=exp_design,
                                                          eval_steps=1,
-                                                         prior_samples=2000,
-                                                         mc_samples=500,
-                                                         mc_exploration=100,
+                                                         prior_samples=25000,
+                                                         mc_samples=8000,
+                                                         mc_exploration=1000,
                                                          gp_library="gpy")
-    plotter = BayesianPlotter(results_folder_path=full_complexity_model.asr_dir)
-    plotter.plot_bme_re(bayesian_dict=bal_dict,
-                        num_bal_iterations=2,
-                        plot_type='both')
-    plotter.plot_combined_bal(collocation_points=updated_collocation_points,
-                              n_init_tp=full_complexity_model.init_runs,
-                              bayesian_dict=bal_dict)
-    plotter.plot_posterior_updates(posterior_arrays=bal_dict['posterior'],
-                                   parameter_names=full_complexity_model.calibration_parameters,
-                                   prior=bal_dict['prior'],
-                                   iterations_to_plot=[2])
-    plotter.plot_bme_3d(param_sets=updated_collocation_points,
-                        param_ranges=full_complexity_model.param_values,
-                        param_names=full_complexity_model.calibration_parameters,
-                        bme_values=bal_dict['BME'],
-                        param_indices=(1, 3),
-                        grid_size=200,
-                        last_iterations=2
-                        )
+    # plotter = BayesianPlotter(results_folder_path=full_complexity_model.asr_dir)
+    # plotter.plot_bme_re(bayesian_dict=bal_dict,
+    #                     num_bal_iterations=100,
+    #                     plot_type='both')
+    # plotter.plot_combined_bal(collocation_points=updated_collocation_points,
+    #                           n_init_tp=full_complexity_model.init_runs,
+    #                           bayesian_dict=bal_dict)
+    # plotter.plot_posterior_updates(posterior_arrays=bal_dict['posterior'],
+    #                                parameter_names=full_complexity_model.calibration_parameters,
+    #                                prior=bal_dict['prior'],
+    #                                iterations_to_plot=[100])
+    # plotter.plot_bme_3d(param_sets=updated_collocation_points,
+    #                     param_ranges=full_complexity_model.param_values,
+    #                     param_names=full_complexity_model.calibration_parameters,
+    #                     bme_values=bal_dict['BME'],
+    #                     param_indices=(1, 4),
+    #                     grid_size=200,
+    #                     last_iterations=20
+    #                     )
 
     # # TODO: Why is this in a __main__ namespace? This should be refactored into functions and the function call - Refactored into functions
     # # TODO  sequence should self-explain the workflow. - Done

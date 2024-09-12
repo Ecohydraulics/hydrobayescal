@@ -7,8 +7,6 @@ Author: Andres Heredia Hidalgo MSc
 """
 import sys
 import os
-import pdb
-import pickle
 import bayesvalidrox as bvr
 
 # Base directory of the project
@@ -27,7 +25,6 @@ from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_gpytorch import *
 # from src.hydroBayesCal.bayesvalidrox.surrogate_models.inputs import Input
 # from src.hydroBayesCal.bayesvalidrox.surrogate_models.exp_designs import ExpDesigns
 from src.hydroBayesCal.function_pool import *
-from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 
 # TODO: handle the following line differently. this template should be able
@@ -97,7 +94,7 @@ def run_complex_model(complex_model,
         # # bal_mode = True : Activates Bayesian Active Learning after finishing the initial runs of the full complexity model
         # # bal_mode = False : Only runs the full complexity model the number of times indicated in init_runs
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
-                                          complete_bal_mode=complex_model.complete_bal_mode,
+                                               complete_bal_mode=complex_model.complete_bal_mode,
                                                validation=complex_model.validation)
         model_outputs = complex_model.model_evaluations
     else:
@@ -105,8 +102,8 @@ def run_complex_model(complex_model,
             path_np_collocation_points = os.path.join(complex_model.asr_dir, 'collocation_points.csv')
             path_np_model_results = os.path.join(complex_model.asr_dir, 'model_results.csv')
             # Load the collocation points and model results if they exist
-            collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',',skiprows=1)
-            model_outputs = np.loadtxt(path_np_model_results, delimiter=',',skiprows=1)
+            collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
+            model_outputs = np.loadtxt(path_np_model_results, delimiter=',', skiprows=1)
 
         except FileNotFoundError:
             logger.info('Saved collocation points or model results as numpy arrays not found. '
@@ -248,7 +245,8 @@ def run_bal_model(collocation_points,
         elif it > 0:
             logger.info(f'------------ Training model with new training point: {new_tp}   -------------------')
         elif it == 0:
-            logger.info('Starting surrogate model training with the initial collocation points. Please check the .csv file if information required.')
+            logger.info(
+                'Starting surrogate model training with the initial collocation points. Please check the .csv file if information required.')
             #logger.info(collocation_points)
 
         if complex_model.num_quantities == 1:
@@ -270,7 +268,7 @@ def run_bal_model(collocation_points,
                     pickle.dump(sm, file)
             else:
                 # Construct the save_name path for multiple quantities
-                save_name = os.path.join(gpe_results_folder,
+                save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
                                          f'{experiment_design.exploit_method}_quantities{complex_model.num_quantities}.pkl')
                 multi_sm.exp_design = experiment_design
@@ -348,10 +346,10 @@ def run_bal_model(collocation_points,
             if complex_model.complete_bal_mode or complex_model.only_bal_mode:
                 bal_iteration = it + 1
                 complex_model.run_multiple_simulations(collocation_points=None,
-                                                  bal_iteration=bal_iteration,
-                                                  bal_new_set_parameters=new_tp,
-                                                  complete_bal_mode=complex_model.complete_bal_mode,
-                                                  validation=complex_model.validation)
+                                                       bal_iteration=bal_iteration,
+                                                       bal_new_set_parameters=new_tp,
+                                                       complete_bal_mode=complex_model.complete_bal_mode,
+                                                       validation=complex_model.validation)
 
                 model_outputs = complex_model.model_evaluations
 
@@ -378,51 +376,40 @@ def run_bal_model(collocation_points,
     return bayesian_dict, updated_collocation_points
 
 
-# def plots():
-#     pass
 if __name__ == "__main__":
-    full_complexity_model = initialize_model(TelemacModel(
-        # HydroSimulations class parameters
-        control_file="tel_ering_restart0.5.cas",
-        model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
-        res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
-        calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_VITESSE_WDEPTH_filtered.csv",
-        n_cpus=4,
-        init_runs=25,
-        calibration_parameters=["zone11",
-                                "zone9",
-                                "zone8",
-                                "zone10",
-                                "zone1",
-                                "zone4",
-                                "zone5",
-                                "zone7"],
-        param_values=[[0.01, 0.18],
-                      [0.01, 0.18],
-                      [0.01, 0.18],
-                      [0.01, 0.18],
-                      [0.01, 0.18],
-                      [0.01, 0.03],
-                      [0.15, 0.30],
-                      [0.02, 0.10]],
-        calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-        # ,
-        #                         "WATER DEPTH"],
-        dict_output_name="model-outputs-SCALAR-VELOCITY_WATER-DEPTH",
-        parameter_sampling_method="sobol",
-        max_runs=125,
-        # TelemacModel class parameters
-        friction_file="friction_ering.tbl",
-        tm_xd="1",
-        gaia_steering_file="",
-        results_filename_base="Results_ering2m3",
-        stdout=6,
-        python_shebang="#!/usr/bin/env python3",
-        complete_bal_mode=True,
-        only_bal_mode=False,
-        delete_complex_outputs=True,
-        validation=False,
-    ))
+    full_complexity_model = initialize_model(
+        TelemacModel(
+            # TelemacModel specific parameters
+            friction_file="friction_ering.tbl",
+            tm_xd="1",  # Either 'Telemac2d' or 'Telemac3d', or their corresponding indicator
+            gaia_steering_file="",
+            results_filename_base="Results_ering2m3",
+            stdout=6,
+            python_shebang="#!/usr/bin/env python3",
+
+            # HydroSimulations class parameters
+            control_file="tel_ering_restart0.5.cas",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
+            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_VITESSE_filtered.csv",
+            n_cpus=4,
+            init_runs=30,
+            calibration_parameters=["zone11", "zone9", "zone10", "zone1", "zone5", "zone7", "vg_zone7-par1",
+                                    "vg_zone7-par2", "vg_zone7-par3",
+                                    "ROUGHNESS COEFFICIENT OF BOUNDARIES","VELOCITY DIFFUSIVITY"],
+            param_values=[[0.01, 0.18], [0.002, 0.07], [0.01, 0.18], [0.002, 0.07], [0.15, 0.30], [0.02, 0.10], [0.7, 1.3],
+                          [5, 6],
+                          [0.3, 0.6], [0.013, 0.035], [0.000015,0.0015]],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+            dict_output_name="model-outputs-wd-veloc",
+            parameter_sampling_method="sobol",
+            max_runs=150,
+            complete_bal_mode=True,
+            only_bal_mode=False,
+            delete_complex_outputs=True,
+            validation=False
+        )
+    )
     exp_design = setup_experiment_design(complex_model=full_complexity_model,
                                          tp_selection_criteria='dkl'
                                          )
@@ -434,30 +421,11 @@ if __name__ == "__main__":
                                                          model_outputs=model_evaluations,
                                                          complex_model=full_complexity_model,
                                                          experiment_design=exp_design,
-                                                         eval_steps=1,
-                                                         prior_samples=20000,
-                                                         mc_samples=8000,
+                                                         eval_steps=10,
+                                                         prior_samples=25000,
+                                                         mc_samples=10000,
                                                          mc_exploration=1000,
                                                          gp_library="gpy")
-    plotter = BayesianPlotter(results_folder_path=full_complexity_model.asr_dir)
-    plotter.plot_bme_re(bayesian_dict=bal_dict,
-                        num_bal_iterations=100,
-                        plot_type='both')
-    plotter.plot_combined_bal(collocation_points=updated_collocation_points,
-                              n_init_tp=full_complexity_model.init_runs,
-                              bayesian_dict=bal_dict)
-    plotter.plot_posterior_updates(posterior_arrays=bal_dict['posterior'],
-                                   parameter_names=full_complexity_model.calibration_parameters,
-                                   prior=bal_dict['prior'],
-                                   iterations_to_plot=[100])
-    plotter.plot_bme_3d(param_sets=updated_collocation_points,
-                        param_ranges=full_complexity_model.param_values,
-                        param_names=full_complexity_model.calibration_parameters,
-                        bme_values=bal_dict['BME'],
-                        param_indices=(1, 4),
-                        grid_size=200,
-                        last_iterations=20
-                        )
 
     # # TODO: Why is this in a __main__ namespace? This should be refactored into functions and the function call - Refactored into functions
     # # TODO  sequence should self-explain the workflow. - Done

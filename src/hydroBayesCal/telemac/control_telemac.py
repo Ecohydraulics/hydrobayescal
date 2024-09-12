@@ -1,4 +1,3 @@
-#
 # # coding: utf-8
 # """
 # Functional core for controlling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
@@ -10,20 +9,12 @@
 # # from config_telemac import *
 # # TODO: is pputils still relevant? # This is relevant to the code.
 
-import sys
-import os
-import io, stat, shutil
-import subprocess
+
 from scipy import spatial
 import numpy as np
-import pandas as _pd
-import csv
-import json
-import pdb
-
-from src.hydroBayesCal.hysim import HydroSimulations
-from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
-
+from mpi4py import MPI
+from datetime import datetime
+from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 try:
     from telapy.api.t2d import Telemac2d
     from telapy.api.t3d import Telemac3d
@@ -31,16 +22,8 @@ try:
     from data_manip.extraction.telemac_file import TelemacFile
 except ImportError as e:
     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
-
-try:
-    from mpi4py import MPI
-except ImportError as e:
-    print(e)
-
-# from hydroBayesCal.function_pool import *  # provides os, subprocess, logging
-from datetime import datetime
-from pputils.ppmodules.selafin_io_pp import ppSELAFIN
-
+from src.hydroBayesCal.hysim import HydroSimulations
+from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
 
 class TelemacModel(HydroSimulations):
     def __init__(
@@ -55,109 +38,71 @@ class TelemacModel(HydroSimulations):
             **kwargs
     ):
         """
-        Constructor for the TelemacModel Class. Instantiating can take some seconds, so try to
-        be efficient in creating objects of this class (i.e., avoid re-creating a new TelemacModel in long loops).
+        Constructor for the TelemacModel Class. The class contains all necessary methods for Telemac simulations,extractions of simulation outputs and
+        iterative updating of the control files.
 
         Parameters
         ----------
-        model_dir : str
-            Directory (path) of the Telemac model (should NOT end on "/" or "\\") - not the software directory.
-        res_dir : str
-            Directory (path) of the folder where a subfolder called "auto-saved-results" will be created to store all the results files.
-        control_file : str
-            Name of the steering file to be used (should end on ".cas"); do not include the directory.
-        friction_file : str
-            Name of the friction file to be used .tbl ; do not include the directory.
-        calibration_parameters : list
-            Telemac model parameters considered for model calibration (up to 4 possible).
-        calibration_pts_file_path : str
-            Complete path of the .csv file containing the description, coordinates (x, y) of the measurement points
-            and the measured values of the selected calibration quantities at those points.
-        calibration_quantities : list
-            Model outputs (quantities) to be extracted from Telemac .slf output files for calibration purposes (up to 4 possible).
-        tm_xd : str
-            Either 'Telemac2d' or 'Telemac3d'.
-        n_processors : int
-            Number of processors to use (>1 corresponds to parallelization); default is None (use .cas definition).
-        gaia_steering_file : str
-            Name of a Gaia steering file.
-        init_runs : int
-            Number of initial runs for initial surrogate construction.
-        dict_output_name : str
-            Name of the external .json file containing the model outputs of the calibration quantities for all model runs (initial surrogate phase + BAL phase).
-        results_file_name_base : str
-            Name of the results file to be iteratively changed in the .cas file.
-        stdout : int
-            Standard output (default=6 [console]; if 666 => file 'fort.666').
-        python_shebang : str
-            Header line for Python files the code writes for parallel processing (default="#!/usr/bin/env python3\n").
-        args : tuple
+        friction_file : str, optional
+            Name of the friction file to be used in Telemac simulations (should end with ".tbl"); do not include the directory path.
+        tm_xd : str,
+            Specifies the dimension of the Telemac hydrodynamic solver, either 'Telemac2d' or 'Telemac3d'.
+        gaia_steering_file : str, optional
+            Name of the Gaia steering file; should be provided if required. Not implemented on this HydroBayesCal version.
+        results_filename_base : str, optional
+            Base name for the results file, which will be iteratively updated in the .cas file.
+        python_shebang : str, optional
+            Shebang line for Python scripts (default is "#!/usr/bin/env python3").
+        *args : tuple
             Additional positional arguments.
-        kwargs : dict
+        **kwargs : dict
             Additional keyword arguments.
 
         Attributes
         ----------
-
-        TODO: tidy up docstrings. this should only Telemac-specific attributes as the rest is explained with the superclass (HydroSimulations)
-
-        model_dir : str
-            Directory of the Telemac model, where .cas file is located.
-        res_dir : str
-            Directory to store the results. A subfolder called "auto-saved-results" will be created.
-        calibration_parameters : list
-            Calibration parameters.
-        init_runs : int
-            Number of initial runs for initial surrogate construction.
-        calibration_quantities : list
-            Calibration quantities (model outputs) for model calibration.
-        calibration_pts_df : pandas.DataFrame
-            DataFrame containing the calibration points and measurements.
-        tm_cas : str
-            Full path to the Telemac steering file .cas.
-        fr_tbl : str
-            Full path to the friction file .tbl.
-        dict_output_name : str
-            Name of the external .json file where model outputs are going to be saved.
-        results_file_name_base : str
-            Base name for the results file .slf.
+        friction_file : str
+            Name of the Telemac friction file .tbl.
+        tm_xd : str
+            Dimension of the Telemac simulation ('Telemac2d' or 'Telemac3d').
         gaia_steering_file : str or None
-            Name of the Gaia steering file if provided; otherwise, None.
-        nproc : int
-            Number of processors to use for parallelization during Telemac runs.
+            Gaia steering file name if provided; otherwise, None. Not implemented on this HydroBayesCal Version.
+        results_filename_base : str
+            Base name for the Telemac results file.
+        python_shebang : str
+            Shebang line for Python scripts.
+        tm_cas : str
+            Full path to the Telemac steering file (.cas).
+        fr_tbl : str
+            Full path to the friction file (.tbl).
         comm : MPI.Comm
             MPI communicator for parallel processing.
-        results : None
-            Placeholder for results loaded through `self.load_results()`.
         shebang : str
             Shebang line for Python scripts.
-        tm_xd : str
-            Either 'Telemac2d' or 'Telemac3d'.
         tm_xd_dict : dict
             Dictionary mapping 'Telemac2d' and 'Telemac3d' to their respective script names.
-        stdout : int
-            Standard output setting.
         bal_iteration : int
-            Bayesian Active Learning iteration number.
+            Bayesian Active Learning iteration number based on max_runs.
         num_run : int
-            Simulation number. Iteratively changing according the collocation points.
+            Simulation number; iteratively updated based on collocation points.
+        tm_results_filename : str
+            File path for storing output data from Telemac simulations.
+
+        Note
+        ----
+        The attributes specific to Telemac are listed above. For attributes inherited from the `HydroSimulations` class, please refer to its documentation.
         """
-        # TODO: I started to separate parameters that every HydroSimulation inheritance should have
-        # TODO: from those that are specific to Telemac. Please continue and merge. - done accordingly
+        # TODO: I started to separate parameters that every HydroSimulation inheritance should have - Done
+        # TODO: from those that are specific to Telemac. Please continue and merge. - done accordingly - Done
         super().__init__(*args, **kwargs)
         # Initialize subclass-specific attributes
         self.friction_file = friction_file
         self.tm_xd = tm_xd
         self.gaia_steering_file = gaia_steering_file
         self.results_filename_base = results_filename_base
-        self.stdout = stdout
         self.python_shebang = python_shebang
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, self.control_file)
         self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, self.friction_file)
-        self.gaia_steering_file = gaia_steering_file
-
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
-        self.results = None  # will hold results loaded through self.load_results()
         self.shebang = python_shebang
         if tm_xd == '1':
             self.tm_xd = 'Telemac2d'
@@ -175,14 +120,11 @@ class TelemacModel(HydroSimulations):
         # Initializes the file where the output data from simulations will be stored
         self.tm_results_filename = ''
 
-        #self.output_data=None
-        #self.case_loaded = False
-
     def update_model_controls(
             self,
             collocation_point_values,
             calibration_parameters,
-            auxiliary_file_path,
+            auxiliary_file_path=None,
             simulation_id=0,
     ):
         """
@@ -197,28 +139,37 @@ class TelemacModel(HydroSimulations):
             Values for each of the calibration parameters.
         calibration_parameters : list
             Names of the calibration parameters.
-        tm_results_filename : str
-            Name of the results file for the Telemac simulation.
         auxiliary_file_path : str
             Path to the friction file .tbl.
 
         Returns
         -------
         None
+            Modified control files for Telemac simulations.
         """
         self.tm_results_filename = self.results_filename_base + '_' + str(simulation_id) + '.slf'
         params_with_results = calibration_parameters + ['RESULTS FILE']
         values_with_results = collocation_point_values + [self.tm_results_filename]
         logger.info(f'Results file name for this simulation: {self.tm_results_filename}')
+
         friction_file_path = auxiliary_file_path
         try:
             for param, value in zip(params_with_results, values_with_results):
                 if param.lower().startswith("zone"):
                     zone_identifier = param[4:]
                     self.tbl_creator(zone_identifier, value, friction_file_path)
+                elif param.lower().startswith("vg_zone"):
+                    # Extract the zone identifier and vegetation parameter number
+                    parts = param.split("-")  # Assuming the format is like "vg_zoneXX_X"
+                    if len(parts) == 2:
+                        zone_identifier = parts[0][7:]  # Extracts the number after 'vg_zone'
+                        veg_param_value = parts[1][3:]  # Extracts the vegetation parameter number
+                        # Process the extracted values as needed
+                        self.tbl_creator(zone_identifier, value, friction_file_path,veg_param_number=veg_param_value,veg_indicator=True)
+
                 else:
                     cas_string = self.create_cas_string(param, value)
-                    self.rewrite_steering_file(param, cas_string, steering_module="telemac")
+                    self.rewrite_steering_file(param,cas_string, steering_module="telemac")
         except Exception as e:
             logger_error.error(f'Error occurred during CAS creation: {e}')
             raise RuntimeError
@@ -285,7 +236,7 @@ class TelemacModel(HydroSimulations):
         if "telemac" in steering_module:
             steering_file_name = self.tm_cas
         else:
-            steering_file_name = self.gaia_cas
+            steering_file_name = self.gaia_steering_file
 
         # save the variable of interest without unwanted spaces
         variable_interest = param_name.rstrip().lstrip()
@@ -340,7 +291,7 @@ class TelemacModel(HydroSimulations):
 
         Parameters
         ----------
-        filename : str, optional
+        control_file : str, optional
             Name for a Python file that will be automatically created to control the simulation.
             Default is "run_launcher.py".
         load_results : bool, optional
@@ -557,27 +508,31 @@ class TelemacModel(HydroSimulations):
             validation=False
     ):
         """
-        Extract data from a JSON file containing model outputs to 2D array ready to use in Bayesian calibration and saves
-        the results to a CSV file.
+        Processes model output data from a JSON file into a 2D array format for Bayesian calibration
+        and saves the results to a CSV file.
 
-        This method reads a JSON file specified by `output_data_path`, processes the model outputs,
-        and saves the results in a CSV file.
+        This method reads a JSON file specified by `output_data_path`, extracts and processes the model
+        outputs, and saves them in a CSV file format suitable for Bayesian calibration.
 
         Parameters
         ----------
         output_data_path : str
             Path to the JSON file containing the model outputs. The JSON file should be structured
-            such that its keys correspond to calibration points, and its values are lists of model
+            so that its keys correspond to calibration points and its values are lists of model
             output values for each run and quantity.
+        delete_slf_files : bool, optional
+            If True, deletes any unnecessary .slf files after processing. Default is False.
+        validation : bool, optional
+            If True, performs additional validation checks on the processed data. Default is False.
 
         Returns
         -------
         model_results : numpy.ndarray
             A 2D array containing the processed model outputs. The shape of the array is
-            [No. of quantities x No. of total runs, No. of calibration points], where 'No. of quantities'
-            is the number of calibration quantities being processed, and 'No. of total runs' is the sum
-            of initial runs and Bayesian active learning iterations. The array is also saved to a CSV file
-            in the specified directory.
+            [number of total runs, number of calibration points x number of quantities], where 'number of quantities'
+            represents the calibration quantities processed, and 'number of total runs' is the sum
+            of initial runs and Bayesian active learning iterations. The columns are intercalated to store the quantities outputs.
+            This array is also saved to a CSV file in the specified directory.
         """
 
         with open(output_data_path, "r") as file:
@@ -644,9 +599,6 @@ class TelemacModel(HydroSimulations):
         if delete_slf_files:
             delete_slf(self.asr_dir)
 
-        # if not complete_bal_mode:
-        #     exit()
-
         return model_results
 
     def extract_data_point(
@@ -706,6 +658,7 @@ class TelemacModel(HydroSimulations):
         json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
+        differentiated_dict = {}
         logger.info(
             f'Extracting {calibration_quantities} from results file {input_slf_file} \n')
 
@@ -792,7 +745,7 @@ class TelemacModel(HydroSimulations):
 
             # New dictionary that stores the values of the calibration quantities for each calibration point. Extra alternative for the
             # Above-mentioned dictionary.
-            differentiated_dict = {}
+            #differentiated_dict = {}
 
             # Iterate over the keys and values of the original dictionary
             for key, values in modeled_values_dict.items():
@@ -831,26 +784,36 @@ class TelemacModel(HydroSimulations):
     def tbl_creator(
             zone_identifier,
             val,
-            friction_file_path
+            friction_file_path,
+            veg_param_number=None,
+            veg_indicator=False,
     ):
         """
-         Modifies the FRICTION DATA FILE (.tbl)  for Telemac simulations based on the specified zone
-         and value. This method is used to update the friction values in the table for different zones
-         as part of the calibration process.
+        Modifies the FRICTION DATA FILE (.tbl) for Telemac simulations based on the specified zone,
+        value, and optional vegetation parameters. This method updates the friction values in the table
+        for different zones as part of the calibration process and also the friction parameters for a previous selected
+        vegetation friction rule.
 
-         Parameters
-         ----------
-         zone_identifier : int
-             Identifier for the friction zone to be updated in the friction table.
-         val : float
-             The new friction value to be set for the specified zone.
-         friction_file_path : str
-             The file path to the existing friction file (.tbl) that will be modified.
+        Parameters
+        ----------
+        zone_identifier : str
+            Identifier for the friction zone to be updated in the friction table.
+        val : str
+            The new friction value to be set for the specified zone.
+        friction_file_path : str
+            The file path to the existing friction file (.tbl) that will be modified.
+        veg_param_number : str, optional
+            The vegetation parameter number associated with the zone, if applicable.
+            Default is None, indicating no vegetation parameter is to be updated.
+        veg_indicator : bool, optional
+            Indicator whether vegetation parameters should be modified in the friction file.
+            Default is False, which means only friction values are updated.
 
-         Returns
-         -------
-         None
-         """
+        Returns
+        -------
+        None
+            The function updates the friction file in place and does not return any value.
+        """
 
         with open(friction_file_path, 'r') as file:
             file_lines = file.readlines()
@@ -861,11 +824,20 @@ class TelemacModel(HydroSimulations):
                 updated_lines.append(line)
                 continue
             if line_list[0] == zone_identifier:
-                if len(line_list) > 2 and line_list[2] != 'NULL':
-                    try:
-                        line_list[2] = str(val)
-                    except ValueError:
-                        pass
+                if veg_indicator==False:
+                    if len(line_list) > 2 and line_list[2] != 'NULL':
+                        try:
+                            line_list[2] = str(val)
+                        except ValueError:
+                            pass
+                else:
+                    param_column_index=4+int(veg_param_number)
+                    if len(line_list) > 2 and line_list[2] != 'NULL':
+                        try:
+                            line_list[param_column_index] = str(val)
+                        except ValueError:
+                            pass
+
                 updated_zone_line = '\t'.join(line_list)
                 updated_lines.append(updated_zone_line + '\n')
             else:
@@ -888,7 +860,7 @@ class TelemacModel(HydroSimulations):
         # Extract values from dictionary
         control_file = user_inputs['control_file_name']
         friction_file = user_inputs['friction_file']
-        telemac_solver = user_inputs['Telemac_solver']
+        tm_solver = user_inputs['Telemac_solver']
         model_simulation_path = user_inputs['model_simulation_path']
         results_folder_path = user_inputs['results_folder_path']
         calib_pts_csv_file = user_inputs['calib_pts_file_path']
@@ -918,9 +890,9 @@ class TelemacModel(HydroSimulations):
             raise TypeError("control_file should be a string")
 
         # Check telemac_solver
-        if not isinstance(telemac_solver, str):
+        if not isinstance(tm_solver, str):
             raise TypeError("Telemac_solver should be a string")
-        if telemac_solver not in ["1", "2"]:
+        if tm_solver not in ["1", "2"]:
             raise ValueError("Telemac_solver should be '1' (Telemac 2D) or '2' (Telemac 3D)")
 
         # Check results_folder_path
@@ -1027,4 +999,5 @@ class TelemacModel(HydroSimulations):
         print("All inputs are valid")
 
     def __call__(self, *args, **kwargs):
-        self.run_simulation()
+        self.run_single_simulation()
+

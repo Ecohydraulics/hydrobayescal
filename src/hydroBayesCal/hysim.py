@@ -28,7 +28,7 @@ from src.hydroBayesCal.function_pool import *
 class HydroSimulations:
     def __init__(
             self,
-            control_file="control.file",
+            control_file = "control.file",
             model_dir="",
             res_dir="",
             calibration_pts_file_path=None,
@@ -537,14 +537,30 @@ class HydroSimulations:
             simulation_id=0,
     ):
         """
-        TODO: Merge this method from FulComplexityModel with your workflow - Done
-        Update the model control files specifically for Bayesian calibration.
+        Updates the model control files for Bayesian calibration.Incorporates new parameter values, ensuring that the model runs
+        with the specified settings during Bayesian calibration.
 
-        :param dict new_parameter_values: provide a new parameter value for every calibration parameter
-                    * keys correspond to Telemac or Gaia keywords in the steering file
-                    * values are either scalar or list-like numpy arrays
-        :param int simulation_id: optionally set an identifier for a simulation (default is 0)
-        :return:
+        Parameters
+        ----------
+        collocation_point_values : array
+            Contains values for the calibration parameters. These values are used
+            to update the model control files.
+
+        calibration_parameters : list of str
+            Calibration parameter names that are to be updated in the model control files. Each
+            string in the list should correspond to a parameter used in the model.
+
+        auxiliary_file_path : str
+            Path to an auxiliary file that may be required for running the model controls (i.e., .tbl file in Telemac).
+
+        simulation_id : int, optional
+            An optional identifier for the simulation. The default is 0. This ID can be used to distinguish
+            different simulations or runs.
+
+        Returns
+        -------
+        None
+            This method does not return any value. It modifies the model control files.
         """
 
         pass
@@ -568,12 +584,15 @@ class HydroSimulations:
         delete_complex_outputs: Boolean, Default: False
             Delete complex model outtput files from the results folder (e.g. auto-saved-results).
             Recommended when running several simulations of the full complexity model.
+        validation: Boolean, Default: False
+            If True, new files for collocation points and model results are created. This is done to keep
+            the collocation points and model results obtained during the calibration process.
 
         Returns
         -------
         model_results : numpy.ndarray
             A 2D array containing the processed model outputs. The shape of the array is
-            [No. of quantities x No. of total runs, No. of calibration points], where 'No. of quantities'
+            [No. of total runs, No. of calibration points x No. of quantities], where 'No. of quantities'
             is the number of calibration quantities being processed, and 'No. of total runs' is the sum
             of initial runs and Bayesian active learning iterations. The array is also saved to a CSV file
             in the specified directory.
@@ -590,4 +609,4 @@ class HydroSimulations:
         :param kwargs:
         :return:
         """
-        self.run_simulation()
+        self.run_multiple_simulations()

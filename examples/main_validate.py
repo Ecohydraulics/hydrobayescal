@@ -17,9 +17,9 @@ full_complexity_model = TelemacModel(
     control_file="tel_ering_restart0.5.cas",
     model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_VITESSE_WDEPTH_filtered.csv",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_VITESSE_filtered.csv",
     n_cpus=4,
-    init_runs=3,
+    init_runs=10,
     calibration_parameters=["zone11",
                             "zone9",
                             "zone8",
@@ -36,7 +36,7 @@ full_complexity_model = TelemacModel(
     #               [0.01, 0.03],
     #               [0.15, 0.30],
     #               [0.02, 0.10]],
-    calibration_quantities=["WATER DEPTH"],
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     dict_output_name="model-outputs",
     # TelemacModel class parameters
     friction_file="friction_ering.tbl",
@@ -53,7 +53,7 @@ full_complexity_model = TelemacModel(
 
 results_folder_path = full_complexity_model.asr_dir
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
-sm = full_complexity_model.read_data(results_folder_path, "surrogate-gpe/bal_dkl/gpr_gpy_TP100_bal_quantities1.pkl")
+sm = full_complexity_model.read_data(results_folder_path, "surrogate-gpe/bal_dkl/gpr_gpy_TP02_bal_quantities2.pkl")
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 n_loc = full_complexity_model.nloc
@@ -61,20 +61,32 @@ n_quantities = full_complexity_model.num_quantities
 def get_validation_data():
 
     #IMPORT LAST TRAINED SURROGATE
-    sm = full_complexity_model.read_data(results_folder_path,"surrogate-gpe/bal_dkl/gpr_gpy_TP100_bal_quantities1.pkl")
+    #sm = full_complexity_model.read_data(results_folder_path,"surrogate-gpe/gpr_gpy_TP125_bal_quantities2.pkl")
     #GENERATE "N" RANDOM SAMPLES FOR MODEL PARAMETERS FROM EXP. DESIGN TO VALIDATE MY SURROGATE AND
     # I SAVE THEM AS NPARRAY VALIDATION SET
-    sm.Exp_Design.sampling_method = 'random'
-    sm.Exp_Design.generate_ED(n_samples=3,max_pce_deg=1)
-    validation_sets = sm.Exp_Design.X
+    sm.exp_design.sampling_method = 'random'
+    sm.exp_design.generate_ED(n_samples=10,max_pce_deg=1)
+    validation_sets = sm.exp_design.X
+    # validation_sets=full_complexity_model.read_data(results_folder_path,"collocation-points-validation.csv")
     # PREDICT OUTPUTS USING THE SURROGATE WITH THE VALIDATION SET
-    validation_sets_metamodel_output = sm.predict_(input_sets=validation_sets, get_conf_int=True)
+    validation_sets_metamodel_output = sm.predict_(input_sets=validation_sets)# , get_conf_int=True
     # RUN COMPLEX MODEL WITH THE SAME VALIDATION SET AND GET THE OUTPUTS
     full_complexity_model.run_multiple_simulations(collocation_points=validation_sets,
                               complete_bal_mode=False,validation=full_complexity_model.validation
                               )
-    validation_set_complexmodel_output = full_complexity_model.model_evaluations
+    # validation_set_complexmodel_output = full_complexity_model.output_processing(results_folder_path + "/model-outputs-validation.json"
+    #                                                                              ,False,False)
+    # num_simulations, num_columns = validation_set_complexmodel_output.shape
 
+    validation_set_complexmodel_output = full_complexity_model.model_evaluations
+    num_simulations, num_columns = validation_set_complexmodel_output.shape
+    # Separate the columns for each quantity
+    first_quantity_columns = validation_set_complexmodel_output[:, 0:num_columns:2]  # Take every second column starting from 0
+    second_quantity_columns = validation_set_complexmodel_output[:, 1:num_columns:2] # Take every second column starting from 1
+
+    validation_set_complexmodel_output = np.hstack((first_quantity_columns, second_quantity_columns))
+
+    # Concatenate the rearranged quantities horizontally
     return validation_set_complexmodel_output,validation_sets_metamodel_output
 
 
@@ -97,9 +109,20 @@ def get_validation_data():
 #plotter.plot_model_comparisons()
 
 if __name__ == "__main__":
-    #sm_output,complex_output=get_validation_data()
-    collocation_points_validation = full_complexity_model.read_data(results_folder_path,"collocation-points-validation.csv")
-    validation_sets_metamodel_output = sm.predict_(input_sets=collocation_points_validation, get_conf_int=True)
-    validation_set_complexmodel_output = full_complexity_model.output_processing(os.path.join(full_complexity_model.asr_dir,
-                                                                                 f'{full_complexity_model.dict_output_name}.json'))
-    plotter.plot_correlation(validation_sets_metamodel_output["output"],validation_set_complexmodel_output,full_complexity_model.calibration_quantities,n_loc_=n_loc,fig_title="plot")
+    complex_output,sm_output,=get_validation_data()
+    mid_index_locations = sm_output["output"].shape[1] // 2
+    sm_output1 = sm_output["output"][:, :mid_index_locations]
+    sm_output2 = sm_output["output"][:, mid_index_locations:]
+    complex_output1=complex_output[:, :mid_index_locations]
+    complex_output2=complex_output[:, mid_index_locations:]
+    # print(sm_output1)
+    # print(sm_output2)
+    # print(complex_output)
+
+    # collocation_points_validation = full_complexity_model.read_data(results_folder_path,"collocation-points-validation.csv")
+    # validation_sets_metamodel_output = sm.predict_(input_sets=collocation_points_validation, get_conf_int=True)
+    # validation_set_complexmodel_output = full_complexity_model.output_processing(os.path.join(full_complexity_model.asr_dir,
+    #                                                                              f'{full_complexity_model.dict_output_name}.json'))
+    plotter.plot_correlation(sm_output1,complex_output1,["WATER DEPTH"],n_loc_=n_loc,fig_title="water depth")
+    plotter.plot_correlation(sm_output2,complex_output2,["SCALAR VELOCITY"],n_loc_=n_loc,fig_title="velocity")
+
