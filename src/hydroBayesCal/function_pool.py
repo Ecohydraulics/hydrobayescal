@@ -400,3 +400,39 @@ def delete_slf(folder_path):
             print(f"Deleted: {file_path}")
         except Exception as e:
             print(f"Error deleting {file_path}: {e}")
+
+
+def filter_and_save_rows_by_column_avg(dataframe, arr, threshold, output_path):
+    """
+    Filters the rows of a DataFrame based on the indices of columns from a NumPy array
+    where the column average exceeds the specified threshold and saves the filtered rows to a CSV file.
+
+    Parameters
+    ----------
+    dataframe : pandas.DataFrame
+        DataFrame containing location data, with x and y coordinates in the 2nd and 3rd columns.
+    arr : numpy.ndarray
+        Input 2D array with shape (N, loc), where N is the number of runs and loc is the number of locations.
+    threshold : float
+        The threshold value. Columns whose average exceeds this value will be used to filter out rows.
+    output_path : str
+        The file path where the filtered DataFrame will be saved as a CSV file.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Filtered DataFrame containing only the rows that correspond to the columns with high averages.
+    """
+    # Compute the column-wise average from the NumPy array
+    column_averages = _np.mean(arr, axis=0)
+
+    # Get the indices of columns whose average exceeds the threshold
+    high_avg_column_indices = _np.where(column_averages > threshold)[0]
+
+    # Use these indices to filter out the corresponding rows in the DataFrame
+    filtered_dataframe = dataframe.iloc[high_avg_column_indices]
+
+    # Save the filtered DataFrame as a CSV file
+    filtered_dataframe.to_csv(output_path, index=False, header=True)
+
+    return filtered_dataframe

@@ -43,15 +43,20 @@ def setup_experiment_design(
         tp_selection_criteria='dkl'
 ):
     """
+    Sets up the experimental design for running the initial simulations of the hydrodynamic model.
 
     Parameters
     ----------
-    complex_model
-    tp_selection_criteria
+    complex_model : object
+        An instance representing the hydrodynamic model to be used in the experiment.
+    tp_selection_criteria : str, optional
+        The criteria for selecting new training points (TP) during the Bayesian Active Learning process.
+        Default is 'dkl' (relative entropy).
 
     Returns
     -------
-
+    exp_design : object
+        An instance of the experiment design object configured with the specified model and selection criteria.
     """
     Inputs = bvr.Input()
     # # One "Marginal" for each parameter.
@@ -83,6 +88,37 @@ def setup_experiment_design(
 def run_complex_model(complex_model,
                       experiment_design
                       ):
+    """
+    Executes the hydrodynamic model for a given experiment design and returns the collocation points,
+    model outputs, observations, and measurement errors.
+
+    Parameters
+    ----------
+    complex_model : obj
+        Instance representing the hydrodynamic model to be evaluated.
+    experiment_design : obj
+        Instance of the experiment design object that specifies the settings for the experimental runs.
+
+    Returns
+    -------
+    collocation_points : array
+        Contains the collocation points (parameter combination sets) with shape [number of runs x number of calibration
+        parameters] used for model evaluations.
+    model_outputs : array
+        Contains the model outputs. The shape of the array depends on the number of quantities:
+        - For 1 quantity: [number of runs x number of locations]
+        - For 2 quantities: [number of runs x 2 * number of locations]
+          (Each pair of columns contains the two quantities for each location.)
+    observations : array
+        A 1D array containing the observation values at each measurement location. If there are two calibration
+        quantities, the values are stacked horizontally.
+    errors : array
+        A 1D array containing the measurement errors at each measurement location. If there are two calibration
+        quantities, the values are stacked horizontally.
+    nloc : int
+        The number of calibration locations (i.e., calibration points).
+
+    """
     collocation_points = None
     model_outputs = None
 
@@ -99,17 +135,17 @@ def run_complex_model(complex_model,
         model_outputs = complex_model.model_evaluations
     else:
         try:
-            path_np_collocation_points = os.path.join(complex_model.asr_dir, 'collocation_points.csv')
-            path_np_model_results = os.path.join(complex_model.asr_dir, 'model_results.csv')
+            path_np_collocation_points = os.path.join(complex_model.asr_dir, 'collocation-points.csv')
+            path_np_model_results = os.path.join(complex_model.asr_dir, 'model-results.csv')
             # Load the collocation points and model results if they exist
             collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
             model_outputs = np.loadtxt(path_np_model_results, delimiter=',', skiprows=1)
 
+
         except FileNotFoundError:
             logger.info('Saved collocation points or model results as numpy arrays not found. '
                         'Please run initial runs first to execute only Bayesian Active Learning.')
-    # Importing measured values of the calibration quantities at the calibration points as a 2D numpy array shape [No.quantities , No.calibration points].
-    # Importing errors at calibration points as a numpy array shape [No. calibration points,No.calibration quantities]
+    # Importing observations and erros at calibration points.
     observations = complex_model.observations
     errors = complex_model.measurement_errors
 
@@ -125,11 +161,52 @@ def run_bal_model(collocation_points,
                   complex_model,
                   experiment_design,
                   eval_steps=1,  # By default
-                  prior_samples=25000,  # By default
-                  mc_samples=10000,  # By default
+                  prior_samples=10000,  # By default
+                  mc_samples=5000,  # By default
                   mc_exploration=1000,  # By default
                   gp_library="gpy",  # By default
                   ):
+    """
+    Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
+
+    Parameters
+    ----------
+    collocation_points : array
+        An array containing the collocation points used for model evaluations, with shape [number of runs x number of
+        calibration parameters].
+    model_outputs : array
+        Contains the outputs from the hydrodynamic model, with shape dependent on the number of quantities
+        and locations.
+    complex_model : obj
+        An instance representing the hydrodynamic model to be evaluated.
+    experiment_design : obj
+        Contains the experiment design object specifying the settings for the experimental runs.
+    eval_steps : int, optional
+        Every ow many iterations the surrogate model is evaluated and saved in surrogate model folder.
+        Default is 1. Every BAL iteration the surrogate model will be evaluated.
+    prior_samples : int, optional
+        The number of samples drawn from the prior distribution.
+        Default is 10,000.
+    mc_samples : int, optional
+        The number of Monte Carlo samples used for the Bayesian inference process.
+        Default is 5,000.
+    mc_exploration : int, optional
+        The number of samples used for exploring the parameter space during the Bayesian Active Learning process.
+        Default is 1,000.
+    gp_library : str, optional
+        The Gaussian Process library to be used for modeling. Options may include "gpy" or "skl".
+        Default is "gpy" for GPyTorch or "skl" for SciKitLearn.
+
+    Returns
+    -------
+    None
+        BAL_dictionary: Dictionary and .pkl file containing the data from Bayesian Active Learning
+        updated_collocation_points: array and .csv file containing all the collocation points (Initial + BAL-added)
+        model-results: File .csv containing all model output obtained from the collocation points.
+        model-outputs: File .json containing all model outputs from the collocation points.
+
+    """
+
     #Prior sampling
     prior = experiment_design.generate_samples(prior_samples)
     prior_logpdf = np.log(experiment_design.JDist.pdf(prior.T)).reshape(-1)
@@ -239,7 +316,7 @@ def run_bal_model(collocation_points,
             if n_iter < 0:
                 logger.info(
                     f'------------ Number of initial runs init_runs and n_tp_max are the same. Conditions: n_tp_max > init_runs.     -------------------')
-                exit()
+                # exit()
             else:
                 logger.info(f'------------ Training final surrogate model    -------------------')
         elif it > 0:
@@ -391,19 +468,19 @@ if __name__ == "__main__":
             control_file="tel_ering_restart0.5.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
-            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_VITESSE_filtered.csv",
-            n_cpus=4,
-            init_runs=30,
+            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/points_channel.csv",
+            n_cpus=8,
+            init_runs=15,
             calibration_parameters=["zone11", "zone9", "zone10", "zone1", "zone5", "zone7", "vg_zone7-par1",
                                     "vg_zone7-par2", "vg_zone7-par3",
                                     "ROUGHNESS COEFFICIENT OF BOUNDARIES","VELOCITY DIFFUSIVITY"],
             param_values=[[0.01, 0.18], [0.002, 0.07], [0.01, 0.18], [0.002, 0.07], [0.15, 0.30], [0.02, 0.10], [0.7, 1.3],
                           [5, 6],
                           [0.3, 0.6], [0.013, 0.035], [0.000015,0.0015]],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            dict_output_name="model-outputs-wd-veloc",
+            calibration_quantities=["WATER DEPTH"],
+            dict_output_name="model-outputs-wd",
             parameter_sampling_method="sobol",
-            max_runs=150,
+            max_runs=15,
             complete_bal_mode=True,
             only_bal_mode=False,
             delete_complex_outputs=True,
@@ -417,15 +494,15 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         experiment_design=exp_design,
     )
-    bal_dict, updated_collocation_points = run_bal_model(collocation_points=init_collocation_points,
-                                                         model_outputs=model_evaluations,
-                                                         complex_model=full_complexity_model,
-                                                         experiment_design=exp_design,
-                                                         eval_steps=10,
-                                                         prior_samples=25000,
-                                                         mc_samples=10000,
-                                                         mc_exploration=1000,
-                                                         gp_library="gpy")
+    run_bal_model(collocation_points=init_collocation_points,
+                 model_outputs=model_evaluations,
+                 complex_model=full_complexity_model,
+                 experiment_design=exp_design,
+                 eval_steps=10,
+                 prior_samples=20000,
+                 mc_samples=8000,
+                 mc_exploration=1000,
+                 gp_library="gpy")
 
     # # TODO: Why is this in a __main__ namespace? This should be refactored into functions and the function call - Refactored into functions
     # # TODO  sequence should self-explain the workflow. - Done

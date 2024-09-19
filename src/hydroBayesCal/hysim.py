@@ -42,7 +42,7 @@ class HydroSimulations:
             max_runs=int(),
             complete_bal_mode=True,
             only_bal_mode=False,
-            check_inputs=True,
+            check_inputs=False,
             delete_complex_outputs=False,
             validation=False,
             *args,

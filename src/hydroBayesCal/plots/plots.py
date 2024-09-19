@@ -10,6 +10,7 @@ import matplotlib.ticker as ticker
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from pathlib import Path
+from matplotlib import gridspec
 
 
 class BayesianPlotter:
@@ -74,7 +75,8 @@ class BayesianPlotter:
             param_values=None,  # List of arrays with (min, max) values for each parameter
             iterations_to_plot=None,
             bins=35,
-            density=True
+            density=True,
+            plot_prior=False  # New argument to choose whether to plot the prior or not
     ):
         """
         Plots the posterior distributions with the prior distribution shaded in light grey and additional auxiliary vertical grid lines.
@@ -93,9 +95,12 @@ class BayesianPlotter:
         iterations_to_plot: list of int or None
             List of iteration indices to plot. If None, only prior distributions are plotted.
         bins: int
-            Number of bins to use for the histograms. Default 30.
+            Number of bins to use for the histograms. Default 35.
         density: bool
             Whether to normalize the histograms to form a probability density.
+        plot_prior: bool
+            Whether to plot the prior distribution. Default is True.
+
         Returns
         -------
         None
@@ -117,16 +122,22 @@ class BayesianPlotter:
             for i in range(parameter_num):
                 x_limits[i] = param_values[i]  # Assuming param_values[i] is an array with [min, max]
 
-        # Calculate y_max for each parameter for the selected iterations
+        # Calculate y_min and y_max for each parameter for the selected iterations
+        y_min_posterior = np.zeros(parameter_num)
         y_max_posterior = np.zeros(parameter_num)
 
         if iterations_to_plot is not None:
             for i in range(parameter_num):
+                y_min_posterior[i] = np.inf  # Initialize with a large value
                 for iteration_idx in iterations_to_plot:
                     if posterior_arrays[iteration_idx] is not None:  # Check if the current array is not None
                         counts_posterior, _ = np.histogram(posterior_arrays[iteration_idx][:, i], bins=bins,
                                                            density=density)
-                        y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior))*1.15
+                        y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior)) * 1.15
+                        y_min_posterior[i] = min(y_min_posterior[i], min(counts_posterior))
+
+                # Set y_min_posterior to be 10% below the minimum density value
+                y_min_posterior[i] = y_min_posterior[i] * 0.9
 
         # Plot combined prior and posterior distributions
         if iterations_to_plot is not None:
@@ -137,17 +148,15 @@ class BayesianPlotter:
                     # Plot the posterior as a histogram
                     posterior_vector = posterior_arrays[iteration_idx]
                     ax.hist(posterior_vector[:, col], bins=bins, density=density, alpha=0.6, color='grey',
-                            label=f'Posterior (Max Density: {y_max_posterior[col]:.2f})', edgecolor='black',
-                            linewidth=0.8)
+                            edgecolor='black', linewidth=0.8, label='Posterior')
 
-                    # Plot the prior as a histogram with light color
-                    ax.hist(prior[:, col], bins=bins, density=density, alpha=0.3, color='lightgrey',
-                            label='Prior', edgecolor='black', linewidth=0.8)
+                    # Optionally plot the prior as a histogram with light color
+                    if plot_prior:
+                        ax.hist(prior[:, col], bins=bins, density=density, alpha=0.2, color='#1E90FF',  # DodgerBlue
+                                edgecolor='black', linewidth=0.8, label='Prior')
 
                     ax.set_xlabel(f'{parameter_names[col]}')
                     ax.set_ylabel(r'Density')
-                    ax.legend()
-                    ax.grid(True, linestyle='--', color='lightgrey', alpha=0.7)
 
                     # Apply LaTeX formatting to the axes
                     self._set_latex_format(ax)
@@ -156,9 +165,21 @@ class BayesianPlotter:
                     x_tick_labels = np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3)
                     ax.set_xticks(x_tick_labels)
 
-                    # Set y-limit to the maximum density value for selected iterations
-                    ax.set_ylim(0, y_max_posterior[col])
+                    # Set y-limit with min density value adjusted to be 10% below
+                    ax.set_ylim(y_min_posterior[col], y_max_posterior[col])
                     ax.set_xlim(x_limits[col])
+
+                    # Add vertical line at mean value of the parameter range
+                    mean_value = np.mean([x_limits[col][0], x_limits[col][1]])
+                    ax.axvline(mean_value, color='blue', linestyle='--', linewidth=1.5, label='Mean Value')
+
+                    # Add grid lines with secondary grid
+                    ax.grid(True, which='both', linestyle='--', linewidth=0.7, color='lightgrey')  # Major grid lines
+                    ax.minorticks_on()  # Enable minor ticks
+                    ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')  # Minor grid lines
+
+                    # Update legend
+                    ax.legend(fontsize=12)
 
                     fig.tight_layout()
 
@@ -414,11 +435,11 @@ class BayesianPlotter:
             param_indices=(0, 1),
             extra_param_index=4,
             grid_size=100,
-            last_iterations=25,
+            iteration_range=(1, 20),  # Specify the range of iterations
             plot_criteria="metric"
     ):
         """
-        Plots the BME scatter for the last specified iterations, a 3d surface interpolated from the scatter BME values
+        Plots the BME scatter for the specified range of iterations, a 3d surface interpolated from the scatter BME values,
         and adds a 2D contour plot to show high BME regions for 2 selected parameters.
 
         Parameters
@@ -435,8 +456,8 @@ class BayesianPlotter:
                 Index of the extra parameter for the 3D scatter plot.
             grid_size: int
                 Size of the grid for the surface and contour plots.
-            last_iterations: int
-                Number of last iterations to consider for the plot.
+            iteration_range: tuple of int
+                Range of iterations to consider for the plot, inclusive.
             plot_criteria: str
                 The criteria being plotted (e.g., 'BME' or 'RE').
 
@@ -450,13 +471,14 @@ class BayesianPlotter:
             save_folder = Path(save_folder)  # Ensure save_folder is a Path object
             save_folder.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
 
-        num_iterations = len(bme_values) - 1  # -1 because bme_values has iterations + 1 values
-        if num_iterations < last_iterations:
-            raise ValueError("Number of iterations is less than the last iterations specified")
+        # Validate iteration range
+        start_iter, end_iter = iteration_range
+        if start_iter < 0 or end_iter >= len(bme_values) or start_iter > end_iter:
+            raise ValueError("Invalid iteration range specified")
 
-        # Extract the last iterations + 1 BME values and corresponding parameters
-        bme_values = bme_values[-(last_iterations + 1):]
-        param_values = param_sets[-(last_iterations + 1):, :]
+        # Extract BME values and corresponding parameters for the specified iteration range
+        bme_values = bme_values[start_iter:end_iter ]
+        param_values = param_sets[start_iter:end_iter , :]
 
         # Extract ranges for the selected parameters
         x_range = param_ranges[param_indices[0]]
@@ -511,7 +533,8 @@ class BayesianPlotter:
         fig1 = plt.figure(figsize=(8, 6))
         ax1 = fig1.add_subplot(111, projection='3d')
         scatter = ax1.scatter(points[:, 0], points[:, 1], values, c=values, cmap='plasma', edgecolor='none', alpha=0.7)
-        ax1.set_title(f'{plot_criteria} Scatter Plot ({last_iterations} Last Iterations)', fontsize=16, weight='normal')
+        ax1.set_title(f'{plot_criteria} Scatter Plot (Iterations {start_iter} to {end_iter})', fontsize=16,
+                      weight='normal')
         ax1.set_xlabel(f'{x_name}', fontsize=12)
         ax1.set_ylabel(f'{y_name}', fontsize=12)
         ax1.set_zlabel(f'{plot_criteria}', fontsize=12, rotation=90)  # Make BME axis title vertical
@@ -535,7 +558,8 @@ class BayesianPlotter:
         ax2 = fig2.add_subplot(111)
         levels = np.linspace(Z_min, Z_max, 100)
         contour = ax2.contourf(X, Y, Z, cmap='plasma', levels=levels, alpha=0.8)  # Use 'plasma' for better visibility
-        ax2.set_title(f'2D - {plot_criteria} Values ({last_iterations} Last Iterations)', fontsize=16, weight='normal')
+        ax2.set_title(f'2D - {plot_criteria} Values (Iterations {start_iter} to {end_iter})', fontsize=16,
+                      weight='normal')
         ax2.set_xlabel(f'{x_name}', fontsize=12)
         ax2.set_ylabel(f'{y_name}', fontsize=12)
 
@@ -558,20 +582,19 @@ class BayesianPlotter:
         fig2.tight_layout()
         fig2.savefig(save_folder / f'2D_{plot_criteria}_contour_values.png')  # Save with .png extension
 
+        # Continue with other plots...
+
         # 3D Surface Plot
         fig3 = plt.figure(figsize=(8, 6))
         ax3 = fig3.add_subplot(111, projection='3d')
         surf = ax3.plot_surface(X, Y, Z, cmap='plasma', edgecolor='none', alpha=0.7)
-        ax3.set_title(f'{plot_criteria} Surface Plot ({last_iterations} Last Iterations)', fontsize=16, weight='normal')
+        ax3.set_title(f'{plot_criteria} Surface Plot (Iterations {start_iter} to {end_iter})', fontsize=16,
+                      weight='normal')
         ax3.set_xlabel(f'{x_name}', fontsize=12)
         ax3.set_ylabel(f'{y_name}', fontsize=12)
         ax3.set_zlabel(f'{plot_criteria}', fontsize=12, rotation=90)  # Make BME axis title vertical
         ax3.set_zlim(Z_min - margin, Z_max + margin)
         ax3.view_init(elev=30, azim=225)  # Adjust view angle
-
-        # Add the vertical dashed line projection
-        # ax3.plot([max_bme_point[0], max_bme_point[0]], [max_bme_point[1], max_bme_point[1]], [Z_min, max_bme_value],
-        #          linestyle='--', color='black', linewidth=1, label='Highest BME Projection')
 
         # Add a color bar
         cbar3 = fig3.colorbar(surf, orientation='vertical')
@@ -583,10 +606,9 @@ class BayesianPlotter:
 
         adjust_margins(fig3)
         fig3.tight_layout()
-        fig3.savefig(save_folder / f'3D_{plot_criteria}_surface_plot.png')  # Save with .png extension
-
+        fig3.savefig(save_folder / f'3D_{plot_criteria}_surface_plot.png')  #
         # Show the plot to the user
-        plt.show()
+        #plt.show()
 
         if extra_param_index is not None:
             # Prepare data for interpolation with extra parameter
@@ -604,7 +626,7 @@ class BayesianPlotter:
             scatter4 = ax4.scatter(param_values[:, param_indices[0]], param_values[:, param_indices[1]],
                                    param_values[:, extra_param_index], c=values, cmap='plasma', edgecolor='none',
                                    alpha=0.7)  # Changed colormap to 'plasma' for better visibility
-            ax4.set_title(f'3D - Scatter (3 parameters) ({last_iterations} Last Iterations)', fontsize=16,
+            ax4.set_title(f'3D - Scatter Plot', fontsize=16,
                           weight='normal')
             ax4.set_xlabel(f'{x_name}', fontsize=12)
             ax4.set_ylabel(f'{y_name}', fontsize=12)
@@ -622,7 +644,145 @@ class BayesianPlotter:
 
             adjust_margins(fig4)
             fig4.tight_layout()
-            fig4.savefig(save_folder / '3d_scatter_plot_with_extra_param.png')  #
+            fig4.savefig(save_folder / '3-parameters scatter plot.png')  # Save with .png extension
+
+    def plot_bme_comparison(
+            self,
+            param_sets,
+            param_ranges,
+            param_names,
+            bme_values,
+            param_indices=(0, 1),
+            grid_size=100,
+            total_iterations_range=(0, 100),  # Total range of iterations to consider
+            iterations_per_subplot=10,  # Number of iterations per subplot
+            plot_criteria="BME"
+    ):
+        """
+        Creates comparison plots of 2D BME or RE values across specified iteration ranges
+        in a single figure with subplots.
+
+        Parameters
+        ----------
+            param_sets: array
+                2D array where each row corresponds to parameter values for each iteration.
+            param_ranges: list of lists
+                List of [min, max] values for each parameter.
+            param_names: list of str
+                Names of the parameters.
+            bme_values: list of float
+                List of BME values, one for each iteration.
+            param_indices: tuple of int
+                Indices of the two parameters to plot.
+            grid_size: int
+                Size of the grid for the surface and contour plots.
+            total_iterations_range: tuple of int
+                Total range of iterations to consider (start, end).
+            iterations_per_subplot: int
+                Number of iterations to display in each subplot.
+            plot_criteria: str
+                The criteria being plotted (e.g., 'BME' or 'RE').
+
+        Returns
+        -------
+            None
+                The function creates a comparison plot and saves it as a .png file in the /plots folder.
+        """
+        save_folder = self.save_folder
+        if save_folder:
+            save_folder = Path(save_folder)  # Ensure save_folder is a Path object
+            save_folder.mkdir(parents=True, exist_ok=True)  # Create directory if it doesn't exist
+
+        start_iter, end_iter = total_iterations_range
+        if start_iter < 0 or end_iter >= len(bme_values) or start_iter > end_iter:
+            raise ValueError(f"Invalid total iteration range specified: {total_iterations_range}")
+
+        # Calculate the iteration ranges for subplots
+        iteration_ranges = [(i, min(i + iterations_per_subplot , end_iter)) for i in
+                            range(start_iter, end_iter , iterations_per_subplot)]
+
+        num_ranges = len(iteration_ranges)
+        ncols = min(num_ranges, 4)  # Maximum 4 subplots per row
+        nrows = (num_ranges + 3) // 4  # Calculate number of rows needed
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols * 6, nrows * 6), sharey=True)
+
+        # Flatten the axes array for easy iteration
+        axes = axes.flatten() if num_ranges > 1 else [axes]
+
+        # Set universal font properties
+        plt.rcParams.update({'font.size': 12, 'font.family': 'serif', 'font.weight': 'normal',
+                             'axes.labelsize': 12, 'xtick.labelsize': 12, 'ytick.labelsize': 12,
+                             'axes.linewidth': 0.8})  # Reduced axes line width
+
+        # Helper function to set grid style
+        def set_grid_style(ax):
+            ax.grid(True, linestyle='--', color='lightgrey', alpha=0.7)
+            for spine in ax.spines.values():
+                spine.set_linewidth(0.8)  # Set axis border thickness
+
+        for i, iteration_range in enumerate(iteration_ranges):
+            start, end = iteration_range
+
+            # Extract BME values and corresponding parameters for the specified iteration range
+            bme_range_values = bme_values[start:end ]
+            param_range_values = param_sets[start:end, :]
+
+            # Extract ranges for the selected parameters
+            x_range = param_ranges[param_indices[0]]
+            y_range = param_ranges[param_indices[1]]
+
+            # Extract names for the selected parameters
+            x_name = param_names[param_indices[0]]
+            y_name = param_names[param_indices[1]]
+
+            x = np.linspace(x_range[0], x_range[1], grid_size)
+            y = np.linspace(y_range[0], y_range[1], grid_size)
+            X, Y = np.meshgrid(x, y)
+
+            # Prepare data for interpolation
+            points = param_range_values[:, param_indices]
+            values = bme_range_values
+
+            # Interpolate BME values onto the grid
+            Z = griddata(points, values, (X, Y), method='cubic')
+
+            # Set Z-axis limits with margin based on BME values
+            Z_min = min(values) * 0.98
+            Z_max = max(values) * 1.05
+            margin = (Z_max - Z_min)  # 10% margin
+            Z = np.clip(Z, Z_min, Z_max)
+
+            # Plot in the current subplot
+            ax = axes[i]
+            levels = np.linspace(Z_min, Z_max, 100)
+            contour = ax.contourf(X, Y, Z, cmap='plasma', levels=levels,
+                                  alpha=0.8)  # Use 'plasma' for better visibility
+            ax.set_title(f'{plot_criteria} Values (Iterations {start} to {end})', fontsize=14)
+            ax.set_xlabel(f'{x_name}', fontsize=12)
+            ax.set_ylabel(f'{y_name}', fontsize=12)
+
+            # Optional: Highlight high BME regions
+            high_bme_indices = np.where(Z > np.percentile(values, 95))  # Example threshold for high BME
+            ax.scatter(X[high_bme_indices], Y[high_bme_indices], color='red', s=10,
+                       label=f'High {plot_criteria} Regions',
+                       alpha=0.5)
+
+            ax.legend(fontsize=10)
+            self._set_latex_format(ax)  # Use the LaTeX formatting function
+
+            # Add color bar for the current subplot
+            cbar = fig.colorbar(contour, ax=ax, orientation='vertical')
+            cbar.set_label(f'{plot_criteria} Value', fontsize=12)
+            cbar.ax.tick_params(labelsize=12)  # Set font size for color bar ticks
+
+        # Hide unused axes
+        for j in range(num_ranges, len(axes)):
+            axes[j].axis('off')
+
+        # Adjust layout and save figure
+        fig.tight_layout()
+        fig.savefig(save_folder / f'{plot_criteria}_comparison.png')  # Save with .png extension
+        plt.show()
     def plot_bme_surface_3d(
             self,
             collocation_points,
@@ -786,11 +946,11 @@ class BayesianPlotter:
         plt.tight_layout()
         plt.show()
 
-    def plot_model_outputs_vs_locations(self, observed_values, surrogate_outputs, complex_model_outputs, gpe_lower_ci,
-                                        gpe_upper_ci, measurement_error):
+    def plot_model_outputs_vs_locations(self, observed_values, surrogate_outputs, complex_model_outputs,
+                                        gpe_lower_ci=None, gpe_upper_ci=None, measurement_error=None, plot_ci=False):
         """
         Plots the outputs (velocities) of two models versus locations in a single figure,
-        including observed data, a confidence interval from GPE analysis, and measurement error.
+        including observed data, a confidence interval from GPE analysis (optional), and measurement error.
 
         Parameters
         ----------
@@ -802,12 +962,14 @@ class BayesianPlotter:
             1D array of outputs from the surrogate model.
         complex_model_outputs : numpy.ndarray
             1D array of outputs from the complex model.
-        gpe_lower_ci : numpy.ndarray
-            1D array of lower confidence intervals from GPE analysis.
-        gpe_upper_ci : numpy.ndarray
-            1D array of upper confidence intervals from GPE analysis.
+        gpe_lower_ci : numpy.ndarray, optional
+            1D array of lower confidence intervals from GPE analysis. If None, the confidence interval will not be plotted.
+        gpe_upper_ci : numpy.ndarray, optional
+            1D array of upper confidence intervals from GPE analysis. If None, the confidence interval will not be plotted.
         measurement_error : numpy.ndarray
-            1D array of measurement errors (standard deviations) for each observed value.
+            1D array of measurement errors (standard deviations) for each observed value. If None, measurement error will not be plotted.
+        plot_ci : bool, optional
+            Whether to plot the confidence interval from GPE analysis. Default is True.
 
         Returns
         -------
@@ -817,12 +979,18 @@ class BayesianPlotter:
         observed_values = observed_values.flatten()
         surrogate_outputs = surrogate_outputs.flatten()
         complex_model_outputs = complex_model_outputs.flatten()
-        gpe_lower_ci = gpe_lower_ci.flatten()
-        gpe_upper_ci = gpe_upper_ci.flatten()
         measurement_error = measurement_error.flatten()
 
-        if not (len(observed_values) == len(surrogate_outputs) == len(complex_model_outputs) == len(
-                gpe_lower_ci) == len(gpe_upper_ci) == len(measurement_error)):
+        if gpe_lower_ci is not None and gpe_upper_ci is not None:
+            gpe_lower_ci = gpe_lower_ci.flatten()
+            gpe_upper_ci = gpe_upper_ci.flatten()
+        else:
+            plot_ci = False  # Disable plotting CI if not provided
+
+        if measurement_error is not None:
+            measurement_error = measurement_error.flatten()
+
+        if not (len(observed_values) == len(surrogate_outputs) == len(complex_model_outputs) == len(measurement_error)):
             raise ValueError("All input arrays must have the same length.")
 
         locations = np.arange(1, len(observed_values) + 1)
@@ -836,12 +1004,14 @@ class BayesianPlotter:
 
         # Plot observed data with measurement error confidence interval
         plt.plot(locations, observed_values, marker='o', color='black', label='Observed Data')
-        plt.fill_between(locations, obs_lower_bound, obs_upper_bound, color='red', alpha=0.2,
-                         label='Measurement Error (±2 SD)')
+        if measurement_error is not None:
+            plt.fill_between(locations, obs_lower_bound, obs_upper_bound, color='red', alpha=0.2,
+                             label='Measurement Error (±2 SD)')
 
-        # Plot confidence interval from GPE analysis
-        plt.fill_between(locations, gpe_lower_ci, gpe_upper_ci, color='gray', alpha=0.3, hatch='/',
-                         label='GPE Confidence Interval')
+        # Plot confidence interval from GPE analysis if requested
+        if plot_ci and gpe_lower_ci is not None and gpe_upper_ci is not None:
+            plt.fill_between(locations, gpe_lower_ci, gpe_upper_ci, color='gray', alpha=0.3, hatch='/',
+                             label='GPE Confidence Interval')
 
         # Plot model outputs
         plt.plot(locations, surrogate_outputs, marker='o', color='blue', linestyle='--',
@@ -854,7 +1024,7 @@ class BayesianPlotter:
         plt.ylabel('Values')
         plt.title('Model Outputs vs Locations with Observed Data, Measurement Error, and Confidence Intervals')
         plt.legend(fontsize='small', loc='upper left')  # Set legend font size to small
-        plt.grid(True)
+        plt.grid(True, linestyle='--', color='gray', alpha=0.7)  # Secondary grid lines
         plt.tight_layout()
         plt.show()
 

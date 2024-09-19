@@ -498,7 +498,7 @@ class TelemacModel(HydroSimulations):
                                                                     delete_slf_files=self.delete_complex_outputs,
                                                                     validation=validation)
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
-
+            exit()
         return self.model_evaluations
 
     def output_processing(
@@ -709,7 +709,7 @@ class TelemacModel(HydroSimulations):
 
             # find the index of the node the user is seeking
             d, idx = tree.query((xu, yu), k=1)
-            # print('*** Extraction performed at the closest node to the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
+            print(f'*** Extraction {key},{xu},{yu} performed at the closest node to the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
             # now we need this index for all planes
             idx_all = np.zeros(NPLAN, dtype=np.int32)
             # the first plane
@@ -775,7 +775,8 @@ class TelemacModel(HydroSimulations):
         try:
             if os.path.exists(os.path.join(results_folder_directory, input_slf_file)):
                 # Remove the existing destination file
-                os.remove(os.path.join(results_folder_directory, input_slf_file))
+                pass
+                #os.remove(os.path.join(results_folder_directory, input_slf_file))
             shutil.move(os.path.join(model_directory, input_slf_file), results_folder_directory)
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
