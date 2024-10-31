@@ -74,7 +74,7 @@ class BayesianPlotter:
             prior,
             param_values=None,  # List of arrays with (min, max) values for each parameter
             iterations_to_plot=None,
-            bins=35,
+            bins=40,
             density=True,
             plot_prior=False  # New argument to choose whether to plot the prior or not
     ):
@@ -135,9 +135,11 @@ class BayesianPlotter:
                                                            density=density)
                         y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior)) * 1.15
                         y_min_posterior[i] = min(y_min_posterior[i], min(counts_posterior))
+                #
+                # # Set y_min_posterior to be 10% below the minimum density value
+                # y_min_posterior[i] = y_min_posterior[i] * 0.9
+                y_min_posterior[i] = y_min_posterior[i] * 0
 
-                # Set y_min_posterior to be 10% below the minimum density value
-                y_min_posterior[i] = y_min_posterior[i] * 0.9
 
         # Plot combined prior and posterior distributions
         if iterations_to_plot is not None:
@@ -912,11 +914,11 @@ class BayesianPlotter:
 
         # Figure 1: Observed vs Model 1 Outputs
         plt.figure(figsize=(8, 6))
-        plt.scatter(observed_values, surrogate_outputs, color='blue', label='Model 1 Outputs')
+        plt.scatter(observed_values, surrogate_outputs, color='blue', label='Metamodel Outputs')
         plt.plot([min_value, max_value], [min_value, max_value], 'r--', label='Observed vs Observed')
         plt.xlabel('Observed Values')
-        plt.ylabel('Model 1 Outputs')
-        plt.title('Model 1 vs Observed Values')
+        plt.ylabel('Metamodel')
+        plt.title('Metamodel vs Observed Values')
         plt.legend(title=f'MSE: {mse_model1:.4f}\nR²: {r2_model1:.4f}')
         plt.grid(True)
         plt.tight_layout()
@@ -924,11 +926,11 @@ class BayesianPlotter:
 
         # Figure 2: Observed vs Model 2 Outputs
         plt.figure(figsize=(8, 6))
-        plt.scatter(observed_values, complex_model_outputs, color='green', label='Model 2 Outputs')
+        plt.scatter(observed_values, complex_model_outputs, color='green', label='Complex model Outputs')
         plt.plot([min_value, max_value], [min_value, max_value], 'r--', label='Observed vs Observed')
         plt.xlabel('Observed Values')
-        plt.ylabel('Model 2 Outputs')
-        plt.title('Model 2 vs Observed Values')
+        plt.ylabel('Complex model Outputs')
+        plt.title('Complex model vs Observed Values')
         plt.legend(title=f'MSE: {mse_model2:.4f}\nR²: {r2_model2:.4f}')
         plt.grid(True)
         plt.tight_layout()
@@ -937,10 +939,10 @@ class BayesianPlotter:
         # Figure 3: Model 1 vs Model 2 Outputs
         plt.figure(figsize=(8, 6))
         plt.scatter(surrogate_outputs, complex_model_outputs, color='purple', label='Model Outputs')
-        plt.plot([min_value, max_value], [min_value, max_value], 'r--', label='Model 1 = Model 2')
-        plt.xlabel('Model 1 Outputs')
-        plt.ylabel('Model 2 Outputs')
-        plt.title('Model 1 vs Model 2 Outputs')
+        plt.plot([min_value, max_value], [min_value, max_value], 'r--', label='Metamodel = Complex model')
+        plt.xlabel('Metamodel Outputs')
+        plt.ylabel('Complex model Outputs')
+        plt.title('Metamodel vs Complex model Outputs')
         plt.legend(title=f'Correlation: {corr_model1_model2:.4f}')
         plt.grid(True)
         plt.tight_layout()
@@ -952,10 +954,10 @@ class BayesianPlotter:
         Plots the outputs (velocities) of two models versus locations in a single figure,
         including observed data, a confidence interval from GPE analysis (optional), and measurement error.
 
+        Also computes and displays MSE and R² for both surrogate and complex models compared to observed values.
+
         Parameters
         ----------
-        self : object
-            The instance of the class, if using class-based method.
         observed_values : numpy.ndarray
             1D array of observed values.
         surrogate_outputs : numpy.ndarray
@@ -999,6 +1001,17 @@ class BayesianPlotter:
         obs_lower_bound = observed_values - 2 * measurement_error
         obs_upper_bound = observed_values + 2 * measurement_error
 
+        # Compute MSE and R² for both models
+        surrogate_mse = mean_squared_error(observed_values, surrogate_outputs)
+        complex_mse = mean_squared_error(observed_values, complex_model_outputs)
+
+        surrogate_r2 = r2_score(observed_values, surrogate_outputs)
+        complex_r2 = r2_score(observed_values, complex_model_outputs)
+
+        # Print the MSE and R² values
+        print(f"Surrogate Model MSE: {surrogate_mse:.4f}, R²: {surrogate_r2:.4f}")
+        print(f"Complex Model MSE: {complex_mse:.4f}, R²: {complex_r2:.4f}")
+
         # Plot
         plt.figure(figsize=(12, 8))
 
@@ -1015,19 +1028,18 @@ class BayesianPlotter:
 
         # Plot model outputs
         plt.plot(locations, surrogate_outputs, marker='o', color='blue', linestyle='--',
-                 label='Surrogate Model Outputs')
+                 label=f'Surrogate Model Outputs (MSE: {surrogate_mse:.4f}, R²: {surrogate_r2:.4f})')
         plt.plot(locations, complex_model_outputs, marker='s', color='green', linestyle='--',
-                 label='Complex Model Outputs')
+                 label=f'Complex Model Outputs (MSE: {complex_mse:.4f}, R²: {complex_r2:.4f})')
 
         # Add labels, title, and legend with smaller font size
         plt.xlabel('Location')
         plt.ylabel('Values')
-        plt.title('Model Outputs vs Locations with Observed Data, Measurement Error, and Confidence Intervals')
-        plt.legend(fontsize='small', loc='upper left')  # Set legend font size to small
+        plt.title('Model Outputs vs Observed Data')
+        plt.legend(fontsize=12, loc='upper left')  # Set legend font size to a numerical value
         plt.grid(True, linestyle='--', color='gray', alpha=0.7)  # Secondary grid lines
         plt.tight_layout()
         plt.show()
-
     def plot_correlation(self,
             sm_out,
             valid_eval,

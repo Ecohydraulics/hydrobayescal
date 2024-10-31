@@ -31,17 +31,16 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 #Instance of Telemac Model for plotting results (calibration)
 full_complexity_model = TelemacModel(
     model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
-    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/points_channel.csv",
+    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/points_wet_area_MU.csv",
     #init_runs=1,
-    calibration_parameters=["zone11", "zone9", "zone10", "zone1", "zone5", "zone7", "vg_zone7-par1",
-                            "vg_zone7-par2", "vg_zone7-par3",
-                            "ROUGHNESS COEFFICIENT OF BOUNDARIES", "VELOCITY DIFFUSIVITY"],
-    param_values=[[0.01, 0.18], [0.002, 0.07], [0.01, 0.18], [0.002, 0.07], [0.15, 0.30], [0.02, 0.10], [0.7, 1.3],
-                  [5, 6],
-                  [0.3, 0.6], [0.013, 0.035], [0.000015, 0.0015]],
-    dict_output_name="channel-points",
-    calibration_quantities=["BOTTOM"],
+    calibration_parameters=["zone1", "zone2", "zone3", "zone4", "zone5", "zone6", "zone7",
+                            "vg_zone7-par2", "vg_zone7-par3"],
+    # param_values=[[0.01, 0.18], [0.002, 0.07], [0.01, 0.18], [0.002, 0.07], [0.15, 0.30], [0.02, 0.10], [0.7, 1.3],
+    #               [5, 6],
+    #               [0.3, 0.6], [0.013, 0.035], [0.000015, 0.0015]],
+    dict_output_name="wd-v-channel-points",
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     check_inputs=False,
 )
 # full_complexity_model.extract_data_point(input_slf_file="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/results2m3_1.slf",
@@ -56,7 +55,7 @@ X_coord=full_complexity_model.calibration_pts_df["X"].values
 Y_coord=full_complexity_model.calibration_pts_df["Y"].values
 model_results_flat=model_results.flatten()
 x_y_var=np.column_stack((X_coord, Y_coord, model_results_flat))
-header = "X,Y,ELEVATION"
+header = "X,Y,WATER DEPTH,VELOCITY"
 np.savetxt(full_complexity_model.asr_dir + '/' + 'output.xyz', x_y_var, fmt='%.6f', delimiter=',', header=header, comments='')
 
 

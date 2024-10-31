@@ -22,21 +22,10 @@ from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 from src.hydroBayesCal.bayesvalidrox.metamodel.bal_functions import BayesianInference, SequentialDesign
 from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_skl import *
 from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_gpytorch import *
-# from src.hydroBayesCal.bayesvalidrox.surrogate_models.inputs import Input
-# from src.hydroBayesCal.bayesvalidrox.surrogate_models.exp_designs import ExpDesigns
 from src.hydroBayesCal.function_pool import *
-
-
-# TODO: handle the following line differently. this template should be able
-# TODO  to access this line - all parameters assigned in TelemacModel instance
-# TODO: the following import has no target - done importing BayesianPlotter
-
-
-# TODO: Tidy up - here are many things that should go into a config file
 
 def initialize_model(complex_model=None):
     return complex_model
-
 
 def setup_experiment_design(
         complex_model,
@@ -457,30 +446,26 @@ if __name__ == "__main__":
     full_complexity_model = initialize_model(
         TelemacModel(
             # TelemacModel specific parameters
-            friction_file="friction_ering.tbl",
+            friction_file="friction_ering_MU.tbl",
             tm_xd="1",  # Either 'Telemac2d' or 'Telemac3d', or their corresponding indicator
             gaia_steering_file="",
-            results_filename_base="Results_ering2m3",
+            results_filename_base="results2m3_mu",
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
-
             # HydroSimulations class parameters
-            control_file="tel_ering_restart0.5.cas",
+            control_file="tel_ering_mu_restart.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
-            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/points_channel.csv",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_filtered.csv",
             n_cpus=8,
-            init_runs=15,
-            calibration_parameters=["zone11", "zone9", "zone10", "zone1", "zone5", "zone7", "vg_zone7-par1",
-                                    "vg_zone7-par2", "vg_zone7-par3",
-                                    "ROUGHNESS COEFFICIENT OF BOUNDARIES","VELOCITY DIFFUSIVITY"],
-            param_values=[[0.01, 0.18], [0.002, 0.07], [0.01, 0.18], [0.002, 0.07], [0.15, 0.30], [0.02, 0.10], [0.7, 1.3],
-                          [5, 6],
-                          [0.3, 0.6], [0.013, 0.035], [0.000015,0.0015]],
+            init_runs=30,
+            calibration_parameters=["zone3", "zone4", "zone10", "zone12","zone13","zone14","zone15","zone16","zone17"],
+            param_values=[[0.8, 1.5], [0.005, 0.01], [0.04, 0.1], [0.04, 0.1],[0.04, 0.1],[0.04, 0.1],[0.04, 0.1],
+                          [0.04, 0.1],[0.04, 0.1]],
             calibration_quantities=["WATER DEPTH"],
             dict_output_name="model-outputs-wd",
             parameter_sampling_method="sobol",
-            max_runs=15,
+            max_runs=50,
             complete_bal_mode=True,
             only_bal_mode=False,
             delete_complex_outputs=True,
@@ -499,8 +484,8 @@ if __name__ == "__main__":
                  complex_model=full_complexity_model,
                  experiment_design=exp_design,
                  eval_steps=10,
-                 prior_samples=20000,
-                 mc_samples=8000,
+                 prior_samples=25000,
+                 mc_samples=4000,
                  mc_exploration=1000,
                  gp_library="gpy")
 

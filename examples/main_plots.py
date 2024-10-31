@@ -3,7 +3,7 @@ Code that plots results for 1 quantity calibration.
 Plots:
 Histograms of uncertain parameters for the last iteration
 BME evolution over iterations
-Interpolation of BME over iterations. Plots regions with highest BME
+Interpolation of BME over iterations. Plots regions with the highest BME
 Plots of initial training points and selected during BAL.
 Plots model comparison between surrogate model , complex model and measured data.
 Model outputs at locations (sm, complex model, observed)
@@ -31,16 +31,13 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 #Instance of Telemac Model for plotting results (calibration)
 full_complexity_model = TelemacModel(
-    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_filtered.csv",
-    init_runs=30,
-    calibration_parameters=["zone11", "zone9", "zone10", "zone1", "zone5", "zone7", "vg_zone7-par1",
-                            "vg_zone7-par2", "vg_zone7-par3",
-                            "ROUGHNESS COEFFICIENT OF BOUNDARIES", "VELOCITY DIFFUSIVITY"],
-    param_values=[[0.01, 0.18], [0.002, 0.07], [0.01, 0.18], [0.002, 0.07], [0.15, 0.30], [0.02, 0.10], [0.7, 1.3],
-                  [5, 6],
-                  [0.3, 0.6], [0.013, 0.035], [0.000015, 0.0015]],
-    calibration_quantities=["WATER DEPTH"],
+    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_VITESSE_filtered.csv",
+    init_runs=4,
+    calibration_parameters=["zone3", "zone4", "zone10", "zone12", "zone13", "zone14", "zone15", "zone16", "zone17"],
+    param_values=[[0.8, 1.5], [0.005, 0.01], [0.04, 0.1], [0.04, 0.1], [0.04, 0.1], [0.04, 0.1], [0.04, 0.1],
+                  [0.04, 0.1], [0.04, 0.1]],
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     check_inputs=False,
 )
 results_folder_path = full_complexity_model.asr_dir
@@ -53,7 +50,7 @@ n_quantities=full_complexity_model.num_quantities
 bayesian_data=full_complexity_model.read_data(results_folder_path,'BAL_dictionary.pkl')
 collocation_points = full_complexity_model.read_data(results_folder_path,"collocation-points.csv")
 cm_outputs = full_complexity_model.read_data(results_folder_path,"model-results.csv")
-sm = full_complexity_model.read_data(results_folder_path, "surrogate-gpe/bal_dkl/gpr_gpy_TP150_bal_quantities1.pkl")
+sm = full_complexity_model.read_data(results_folder_path, "surrogate-gpe/bal_dkl/gpr_gpy_TP50_bal_quantities2.pkl")
 sm_predictions = (sm.predict_(input_sets=collocation_points))#,get_conf_int=True))
 sm_outputs=sm_predictions["output"]
 if len(full_complexity_model.calibration_quantities)==2:
@@ -90,7 +87,7 @@ if len(full_complexity_model.calibration_quantities)==2:
 
 
 plotter.plot_bme_re(bayesian_dict=bayesian_data,
-            num_bal_iterations=120,
+            num_bal_iterations=20,
                     plot_type='both')
 plotter.plot_combined_bal(collocation_points = collocation_points,
                   n_init_tp = full_complexity_model.init_runs,
@@ -99,25 +96,28 @@ plotter.plot_posterior_updates(posterior_arrays = bayesian_data['posterior'],
                        parameter_names = full_complexity_model.calibration_parameters,
                        prior = bayesian_data['prior'],
                         param_values = full_complexity_model.param_values,
-                        iterations_to_plot=[0,120],
+                        iterations_to_plot=[0,20],
                         plot_prior=True)
-plotter.plot_model_comparisons(obs, sm_outputs[-1, :].reshape(1, -1), cm_outputs[-1, :].reshape(1, -1))
-plotter.plot_model_outputs_vs_locations(observed_values=obs, surrogate_outputs=sm_outputs[-1, :].reshape(1, -1), complex_model_outputs=cm_outputs[-1, :].reshape(1, -1),measurement_error=err)
+if len(full_complexity_model.calibration_quantities)==1:
+    plotter.plot_model_comparisons(obs, sm_outputs[-1, :].reshape(1, -1), cm_outputs[-1, :].reshape(1, -1))
+    plotter.plot_model_outputs_vs_locations(observed_values=obs, surrogate_outputs=sm_outputs[-1, :].reshape(1, -1), complex_model_outputs=cm_outputs[-1, :].reshape(1, -1),measurement_error=err)
 
-# plotter.plot_model_comparisons(obs1, sm_outputs1[-1, :].reshape(1, -1), cm_outputs1[-1, :].reshape(1, -1))
-# plotter.plot_model_outputs_vs_locations(observed_values=obs1, surrogate_outputs=sm_outputs1[-1, :].reshape(1, -1), complex_model_outputs=cm_outputs1[-1, :].reshape(1, -1),measurement_error=err1)
-#
-# plotter.plot_model_comparisons(obs2, sm_outputs2[-1, :].reshape(1, -1), cm_outputs2[-1, :].reshape(1, -1))
-# plotter.plot_model_outputs_vs_locations(observed_values=obs2, surrogate_outputs=sm_outputs2[-1, :].reshape(1, -1), complex_model_outputs=cm_outputs2[-1, :].reshape(1, -1),measurement_error=err2)
-plotter.plot_bme_3d(param_sets=collocation_points,
-                    param_ranges=full_complexity_model.param_values,
-                    param_names=full_complexity_model.calibration_parameters,
-                    bme_values=bayesian_data['BME'],
-                    param_indices=(1, 3),
-                    grid_size=400,
-                    iteration_range=(100, 120),
-                    plot_criteria="BME"
-                    )
+if len(full_complexity_model.calibration_quantities)==2:
+
+    plotter.plot_model_comparisons(obs1, sm_outputs1[-1, :].reshape(1, -1), cm_outputs1[-1, :].reshape(1, -1))
+    plotter.plot_model_outputs_vs_locations(observed_values=obs1, surrogate_outputs=sm_outputs1[-1, :].reshape(1, -1), complex_model_outputs=cm_outputs1[-1, :].reshape(1, -1),measurement_error=err1)
+    #
+    plotter.plot_model_comparisons(obs2, sm_outputs2[-1, :].reshape(1, -1), cm_outputs2[-1, :].reshape(1, -1))
+    plotter.plot_model_outputs_vs_locations(observed_values=obs2, surrogate_outputs=sm_outputs2[-1, :].reshape(1, -1), complex_model_outputs=cm_outputs2[-1, :].reshape(1, -1),measurement_error=err2)
+# plotter.plot_bme_3d(param_sets=collocation_points,
+#                     param_ranges=full_complexity_model.param_values,
+#                     param_names=full_complexity_model.calibration_parameters,
+#                     bme_values=bayesian_data['BME'],
+#                     param_indices=(3,5),
+#                     grid_size=400,
+#                     iteration_range=(90,120),
+#                     plot_criteria="BME"
+#                     )
 # plotter.plot_bme_3d(param_sets=collocation_points,
 #                     param_ranges=full_complexity_model.param_values,
 #                     param_names=full_complexity_model.calibration_parameters,
@@ -127,12 +127,12 @@ plotter.plot_bme_3d(param_sets=collocation_points,
 #                     iteration_range=(30, 63),
 #                     plot_criteria="RE"
 #                     )
-plotter.plot_bme_comparison(param_sets=collocation_points,
-                    param_ranges=full_complexity_model.param_values,
-                    param_names=full_complexity_model.calibration_parameters,
-                    bme_values=bayesian_data['RE'],
-                    param_indices=(3, 4),
-                    total_iterations_range=(0,120),
-                    iterations_per_subplot=10,
-                    plot_criteria="RE"
-                    )
+# plotter.plot_bme_comparison(param_sets=collocation_points,
+#                     param_ranges=full_complexity_model.param_values,
+#                     param_names=full_complexity_model.calibration_parameters,
+#                     bme_values=bayesian_data['RE'],
+#                     param_indices=(3, 4),
+#                     total_iterations_range=(0,10),
+#                     iterations_per_subplot=10,
+#                     plot_criteria="RE"
+#                     )

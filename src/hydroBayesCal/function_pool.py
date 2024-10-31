@@ -7,6 +7,7 @@ import pickle
 import h5py
 import json
 import glob
+import pdb
 import shutil
 
 sys.path.insert(0, os.path.abspath('..'))
@@ -436,3 +437,34 @@ def filter_and_save_rows_by_column_avg(dataframe, arr, threshold, output_path):
     filtered_dataframe.to_csv(output_path, index=False, header=True)
 
     return filtered_dataframe
+
+
+def interpolate_values(coords, values, point):
+    """
+    Interpolates values at a given point using Inverse Distance Weighting.
+
+    Parameters:
+        coords (np.ndarray): Coordinates of the triangle's vertices, shape (3, 2),
+                             where each row is [X, Y] for a vertex.
+        values (np.ndarray): Values at each vertex for each variable, shape (3, num_variables).
+        point (tuple): Coordinates of the point where interpolation is desired, (px, py).
+
+    Returns:
+        np.ndarray: Interpolated values at the given point for each variable, shape (num_variables,).
+    """
+    px, py = point
+
+    # Calculate distances from the point to each vertex
+    distances = _np.linalg.norm(coords - _np.array([px, py]), axis=1)
+
+    # Avoid division by zero for vertices that might be at the same location as the point
+    distances[distances == 0] = _np.finfo(float).eps  # Small value to prevent division by zero
+
+    # Calculate inverse distance weights
+    weights = 1 / distances
+    weights /= _np.sum(weights)  # Normalize weights to sum to 1
+
+    # Interpolate each variable using weighted sum
+    interpolated_values = _np.dot(weights, values)  # Dot product for weighted sum
+
+    return interpolated_values.flatten()  # Return as a 1D array

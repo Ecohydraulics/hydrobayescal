@@ -498,7 +498,8 @@ class TelemacModel(HydroSimulations):
                                                                     delete_slf_files=self.delete_complex_outputs,
                                                                     validation=validation)
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
-            exit()
+
+            # exit()
         return self.model_evaluations
 
     def output_processing(
@@ -610,11 +611,14 @@ class TelemacModel(HydroSimulations):
             simulation_number,
             model_directory,
             results_folder_directory,
+            extraction_mode="interpolated", #"nearest"  "interpolated"
+            k=3
     ):
         """
         Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
         in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from
-        the closest node in the mesh to the x,y measurement coordinate.
+        the closest node in the mesh to the x,y measurement coordinate or interpolated values from the k nearest points to the
+        considered calibration point x,y.
         This method is typically called for each model run, storing outputs sequentially in 2 dictionaries
         saved in a .json file. That means if the surrogate model needs 'n' runs of the complex numerical model, this
         function is called 'n' times and the dictionary will store the model outputs for the 'n' simulations.
@@ -708,30 +712,42 @@ class TelemacModel(HydroSimulations):
             tree = spatial.cKDTree(source)
 
             # find the index of the node the user is seeking
-            d, idx = tree.query((xu, yu), k=1)
-            print(f'*** Extraction {key},{xu},{yu} performed at the closest node to the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
-            # now we need this index for all planes
-            idx_all = np.zeros(NPLAN, dtype=np.int32)
-            # the first plane
-            idx_all[0] = idx
+            if extraction_mode=="nearest":
+                k=1
+                idx_all = np.zeros(NPLAN, dtype=np.int32)
+            elif extraction_mode=="interpolated":
+                k=k
+                idx_all = np.zeros((k,NPLAN), dtype=np.int32)
+                idx_coord = np.zeros((k, 2), dtype=np.float64)
+            d, idx = tree.query((xu, yu), k=k)
+            print(f'*** Extraction {key},{xu},{yu} performed at the closest node(s) to the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
 
+            if k==1:
+                idx_all[0] = idx
+            else:
+                idx_all[:, 0] = idx
+                idx_coord[:, 0] = x[idx]
+                idx_coord[:, 1] = y[idx]
+                interpolation_coordinate = (xu, yu)
             # start at second plane and go to the end
             for i in range(1, NPLAN, 1):
-                idx_all[i] = idx_all[i - 1] + (NPOIN / NPLAN)
-
+                if k == 1:
+                    idx_all[i] = idx_all[i - 1] + (NPOIN // NPLAN)
+                else:
+                    idx_all[:, i] = idx_all[:, i - 1] + (NPOIN // NPLAN)
             # extract results for every plane (if there are multiple planes that is)
-            for p in range(NPLAN):
-                slf.readVariablesAtNode(idx_all[p])
+            results_all = np.zeros((k, NVAR))
+            for p in range(NPLAN):# Loop over planes
+                for j in range(k):  # Loop over points
+                    slf.readVariablesAtNode(idx_all[j, p] if k > 1 else idx_all[p])
 
-                # Extracts the results at all times steps for ALL model variables. The time steps for the model are
-                # stored in the variable 'times'
-                results = slf.getVarValuesAtNode()
-
-                # Extracts the results at the last time step for ALL model variables.
-                # If the extraction of the calibration variable is required at a different time step,
-                # change the code at this point
-                #-------------------------------------------------------------------
-                results_calibration = results[-1]
+                    # Extract results at all time steps for ALL model variables and chooses only for the last time step
+                    results = slf.getVarValuesAtNode()[-1]
+                    # Results_all stores the model outputs for each printout variable and at each nearest point (when interpolated is selected)
+                    if k != 1:
+                        results_all[j, :] = results
+                if k != 1:
+                    results = interpolate_values(idx_coord,results_all,interpolation_coordinate)
                 #-------------------------------------------------------------------
                 # Initializes an empty list to store values (calibration qunatities) for every key (point description) for the
                 # current simulation
@@ -739,7 +755,7 @@ class TelemacModel(HydroSimulations):
                 # Iterate over the common indices
                 for index in common_indices:
                     # Extract value from the last row based on the index
-                    value = results_calibration[index]
+                    value = results[index]
                     # Append the value to the list for the current key
                     modeled_values_dict[key].append(value)
 
