@@ -654,8 +654,6 @@ class TelemacModel(HydroSimulations):
             the calibration quantities as a nested dictionary with the variable name and the point description.
 
         """
-        # TODO: (1) why is this global defined inside a class method? - not defined as global variable
-        # TODO: (2) this method needs refactoring. It is too long.
         calibration_quantities = extraction_quantity
         input_file = os.path.join(model_directory, input_slf_file)
         json_path = os.path.join(results_folder_directory, f"{output_name}.json")

@@ -18,6 +18,7 @@ sys.path.insert(0, src_path)
 sys.path.insert(0, hydroBayesCal_path)
 
 # Import own scripts
+
 from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 from src.hydroBayesCal.function_pool import *
 
@@ -165,7 +166,7 @@ if __name__ == "__main__":
             control_file="tel_ering_mu_restart.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_filtered.csv",
+            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_VITESSE_filtered.csv",
             n_cpus=8,
             init_runs=5,
             calibration_parameters=["zone3",
