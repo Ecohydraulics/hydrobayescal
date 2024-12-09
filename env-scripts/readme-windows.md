@@ -3,7 +3,7 @@
 ## Background information
 
 
-The `source` command is commonly used in Unix-based systems to execute shell scripts that set up environment variables and paths. In Windows, you can achieve similar functionality by using either PowerShell or a compatible shell environment (e.g., WSL, Git Bash). Tun run a `.sh` file in Windows, use `.\file_name.sh`.
+The `source` command is commonly used in Unix-based systems to execute shell scripts that set up environment variables and paths. In Windows, you can achieve similar functionality by using either PowerShell or a compatible shell environment (e.g., WSL, Git Bash). To run a `.sh` file in Windows, use `.\file_name.sh`.
 
 
 ## Adjust the ps1 file
