@@ -176,7 +176,7 @@ The steps to activate the Python and Telemac environments for your system are th
 
    .. code:: bash
 
-      $TELEMAC_CONFIG_DIR = "C:\modelling\telemac\v8p5r0\configs"
+      $TELEMAC_CONFIG_DIR = "C:\modeling\telemac\v8p5r0\configs"
       $TELEMAC_CONFIG_NAME = "pysource.win.sh"
       $HBCenv_DIR = "C:\USER\hydrobayescal\HBCenv"
 

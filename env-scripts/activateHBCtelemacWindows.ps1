@@ -1,5 +1,5 @@
 # User definitions
-$TELEMAC_CONFIG_DIR = "C:\modelling\telemac\v8p5r0\configs"
+$TELEMAC_CONFIG_DIR = "C:\telemac\v8p5r0\configs"
 $TELEMAC_CONFIG_NAME = "pysource.win.sh"
 $HBCenv_DIR = "C:\USER\hydrobayescal\HBCenv"
 

@@ -12,7 +12,7 @@ The `source` command is commonly used in Unix-based systems to execute shell scr
 1. Open `activateHBCtelemacWindows.ps1` in a text editor and make sure to define the following parameters correctly according to your system settings:
 
     ```powershell
-    $TELEMAC_CONFIG_DIR = "C:\modelling\telemac\v8p5r0\configs"
+    $TELEMAC_CONFIG_DIR = "C:\modeling\telemac\v8p5r0\configs"
     $TELEMAC_CONFIG_NAME = "pysource.win.sh"
     $HBCenv_DIR = "C:\USER\hydrobayescal\HBCenv"
     ```
