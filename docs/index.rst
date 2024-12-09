@@ -130,15 +130,15 @@ directory where you downloaded ``requirements.txt`` to install the requirements:
     cd <TO/REQUIREMENTStxt-DOWNLOAD/FOLDER/>
     pip install -r requirements.txt
 
-Load HBCenv with TELEMAC
-========================
+Load HBCenv with TELEMAC (Linux)
+================================
 
 The simultaneous activation of the *HydroBayesCal* environment and TELEMAC environment variables requires some tweaking,
 which can be achieved by source-ing the environment activation templates. To activate the environment specifically for your system,
 you need to modify the ``activateHBCtelemac.sh`` file.
 The steps to activate the Python and Telemac environments for your system are the following:
 
-.. note:: Linux
+.. note:: 
 
    **One-time actions**:
 
@@ -167,41 +167,44 @@ The steps to activate the Python and Telemac environments for your system are th
       > Loading TELEMAC config...
       **Success**
 
-
-.. note:: Windows
-
-   The `source` command is commonly used in Unix-based systems to execute shell scripts that set up environment variables and paths. In Windows, you can achieve similar functionality by using either PowerShell or a compatible shell environment (e.g., WSL, Git Bash). To run a `.sh` file in Windows, use `.\file_name.sh`. Thus, take the following actions: 
-
-   1. Open `activateHBCtelemacWindows.ps1` in a text editor and make sure to define the following parameters correctly according to your system settings:
-
-   .. code:: bash
-
-      $TELEMAC_CONFIG_DIR = "C:\modeling\telemac\v8p5r0\configs"
-      $TELEMAC_CONFIG_NAME = "pysource.win.sh"
-      $HBCenv_DIR = "C:\USER\hydrobayescal\HBCenv"
-
-   2. Save the `.ps1` file.
-
-   3. Run the `.ps1` file in PowerShell:
-
-   .. code:: bash
-
-      .\activateHBCtelemacWindows.ps1
-
-   After setting up the environment, test if the Telemac API is working by running:
-
-   .. code:: bash
-
-      python -c "import telapy; print(telapy.__version__)"
-
-   There are a couple of issues that can be caused by the execution policy. To allow script execution, you may need to adjust your PowerShell execution policy using:
-
-   .. code:: bash
-
-      Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-
-
 If both environments are loaded without errors, you are good to go for running the codes.
+
+
+Windows usage
+=============
+
+The `source` command is commonly used in Unix-based systems to execute shell scripts that set up environment variables and paths. In Windows, you can achieve similar functionality by using either PowerShell or a compatible shell environment (e.g., WSL, Git Bash). To run a `.sh` file in Windows, use `.\file_name.sh`. Thus, take the following actions: 
+
+1. Open `activateHBCtelemacWindows.ps1` in a text editor and make sure to define the following parameters correctly according to your system settings:
+
+.. code:: bash
+   
+   $TELEMAC_CONFIG_DIR = "C:\modeling\telemac\v8p5r0\configs"
+   $TELEMAC_CONFIG_NAME = "pysource.win.sh"
+   $HBCenv_DIR = "C:\USER\hydrobayescal\HBCenv"
+
+2. Save the `.ps1` file.
+
+3. Run the `.ps1` file in PowerShell:
+
+.. code:: bash
+   
+   .\activateHBCtelemacWindows.ps1
+
+After setting up the environment, test if the Telemac API is working by running:
+
+.. code:: bash
+   
+   python -c "import telapy; print(telapy.__version__)"
+
+If both environments are loaded without errors, you are good to go for running the codes. There are a couple of issues that can be caused by the execution policy. To allow script execution, you may need to adjust your PowerShell execution policy using:
+
+.. code:: bash
+   
+   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+
+
 
 Overview of the package components
 ==================================
