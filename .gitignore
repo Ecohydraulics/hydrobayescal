@@ -7,8 +7,7 @@ __pycache__/
 examples/donau/
 examples/ering-data/
 examples/yuba
-HBCenv/
-HBCenvpy3.8/
+HBCenv*/
 examples/*.csv
 
 *.slf
