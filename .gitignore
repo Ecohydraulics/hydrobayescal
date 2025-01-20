@@ -6,8 +6,8 @@ __pycache__/
 # large data in example folders
 examples/donau/
 examples/ering-data/
-HBCenv/
-HBCenvpy3.8/
+examples/yuba
+HBCenv*/
 examples/*.csv
 
 *.slf
