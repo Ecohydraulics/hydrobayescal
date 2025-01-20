@@ -14,30 +14,19 @@ from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 full_complexity_model = TelemacModel(
-    control_file="tel_ering_restart0.5.cas",
+    control_file="tel_ering_mu_restart.cas",
     model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
-    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_filtered.csv",
-    n_cpus=4,
+    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_VITESSE_filtered.csv",
+    n_cpus=8,
     init_runs=1,
-    calibration_parameters=["zone1", "zone2", "zone3", "zone4", "zone5","zone6","zone7",
-                            "vg_zone7-par2", "vg_zone7-par3"],
-    # param_values=[[0.01, 0.18],
-    #               [0.01, 0.18],
-    #               [0.01, 0.18],
-    #               [0.01, 0.18],
-    #               [0.01, 0.18],
-    #               [0.01, 0.03],
-    #               [0.15, 0.30],
-    #               [0.02, 0.10]],
-    calibration_quantities=["WATER DEPTH"],
-    dict_output_name="model-outputs",
+    calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+    dict_output_name="model-outputs-valid",
     # TelemacModel class parameters
-    friction_file="friction_ering.tbl",
+    friction_file="friction_ering_MU.tbl",
     tm_xd="1",
-    results_filename_base="Results_ering2m3",
-    # stdout=6,
-    # python_shebang="#!/usr/bin/env python3",
+    results_filename_base="results2m3_mu",
     complete_bal_mode=False,
     only_bal_mode=False,
     check_inputs=False,
@@ -47,7 +36,7 @@ full_complexity_model = TelemacModel(
 
 results_folder_path = full_complexity_model.asr_dir
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
-sm = full_complexity_model.read_data(results_folder_path, "surrogate-gpe/bal_dkl/gpr_gpy_TP100_bal_quantities2.pkl")
+sm = full_complexity_model.read_data(results_folder_path, "surrogate-gpe/bal_dkl/gpr_gpy_TP15_bal_quantities2.pkl")
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 n_loc = full_complexity_model.nloc
@@ -58,10 +47,10 @@ def get_validation_data():
     #sm = full_complexity_model.read_data(results_folder_path,"surrogate-gpe/gpr_gpy_TP125_bal_quantities2.pkl")
     #GENERATE "N" RANDOM SAMPLES FOR MODEL PARAMETERS FROM EXP. DESIGN TO VALIDATE MY SURROGATE AND
     # I SAVE THEM AS NPARRAY VALIDATION SET
-    sm.exp_design.sampling_method = 'user'
-    # sm.exp_design.generate_ED(n_samples=10,max_pce_deg=1)
-    sm.exp_design.X = [[0.066, 0.066, 0.012, 0.006, 0.22,
-                          4.35,0.4]]
+    #sm.exp_design.sampling_method = 'user'
+    sm.exp_design.generate_ED(n_samples=10,max_pce_deg=1)
+    sm.exp_design.X = np.array([[3, 3, 3, 3, 3]])
+    #sm.exp_design.X = np.array([[7.05, 2.80, 2.40, 3.47]])
     validation_sets = sm.exp_design.X
     # validation_sets=full_complexity_model.read_data(results_folder_path,"collocation-points-validation.csv")
     # PREDICT OUTPUTS USING THE SURROGATE WITH THE VALIDATION SET
@@ -77,11 +66,19 @@ def get_validation_data():
     validation_set_complexmodel_output = full_complexity_model.model_evaluations
     num_simulations, num_columns = validation_set_complexmodel_output.shape
     # Separate the columns for each quantity
-    first_quantity_columns = validation_set_complexmodel_output[:, 0:num_columns:2]  # Take every second column starting from 0
-    second_quantity_columns = validation_set_complexmodel_output[:, 1:num_columns:2] # Take every second column starting from 1
+    if n_quantities==2:
+        first_quantity_columns_cm = validation_set_complexmodel_output[:, 0:num_columns:2]  # Take every second column starting from 0
+        second_quantity_columns_cm = validation_set_complexmodel_output[:, 1:num_columns:2] # Take every second column starting from 1
+        print(type(validation_sets_metamodel_output))
+        first_quantity_columns_sm = validation_sets_metamodel_output["output"][:,
+                                    0:num_columns:2]  # Take every second column starting from 0
+        second_quantity_columns_sm = validation_sets_metamodel_output["output"][:,
+                                     1:num_columns:2]  # Take every second column starting from 1
 
-    validation_set_complexmodel_output = np.hstack((first_quantity_columns, second_quantity_columns))
-
+        validation_set_complexmodel_output = np.hstack((first_quantity_columns_cm, second_quantity_columns_cm))
+        validation_sets_metamodel_output=np.hstack((first_quantity_columns_sm, second_quantity_columns_sm))
+        print(validation_set_complexmodel_output)
+        print(validation_sets_metamodel_output)
     # Concatenate the rearranged quantities horizontally
     return validation_set_complexmodel_output,validation_sets_metamodel_output
 
@@ -106,17 +103,34 @@ def get_validation_data():
 
 if __name__ == "__main__":
     complex_output,sm_output,=get_validation_data()
-    mid_index_locations = sm_output["output"].shape[1] // 2
-    sm_output1 = sm_output["output"][:, :mid_index_locations]
-    sm_output2 = sm_output["output"][:, mid_index_locations:]
-    complex_output1=complex_output[:, :mid_index_locations]
-    complex_output2=complex_output[:, mid_index_locations:]
-    # Get the first half of the columns
-    obs1 = obs[:, :mid_index_locations]
-    err1 = err[:mid_index_locations]
-    # Get the second half of the columns
-    obs2 = obs[:, mid_index_locations:]
-    err2 = err[mid_index_locations:]
+    print(complex_output)
+    print(sm_output)
+    if n_quantities==2:
+        mid_index_locations = sm_output.shape[1] // 2
+        sm_output1 = sm_output[:, :mid_index_locations]
+        sm_output2 = sm_output[:, mid_index_locations:]
+        complex_output1=complex_output[:, :mid_index_locations]
+        complex_output2=complex_output[:, mid_index_locations:]
+        # Get the first half of the columns
+        obs1 = obs[:, :mid_index_locations]
+        err1 = err[:mid_index_locations]
+        # Get the second half of the columns
+        obs2 = obs[:, mid_index_locations:]
+        err2 = err[mid_index_locations:]
+        plotter.plot_model_outputs_vs_locations(observed_values=obs1,
+                                                surrogate_outputs=sm_output1[-1, :].reshape(1, -1),
+                                                complex_model_outputs=complex_output1[-1, :].reshape(1, -1),
+                                                measurement_error=err1)
+        #
+        plotter.plot_model_outputs_vs_locations(observed_values=obs2,
+                                                surrogate_outputs=sm_output2[-1, :].reshape(1, -1),
+                                                complex_model_outputs=complex_output2[-1, :].reshape(1, -1),
+                                                measurement_error=err2)
+
+    #plotter.plot_model_comparisons(obs, sm_output[-1, :].reshape(1, -1), complex_output[-1, :].reshape(1, -1))
+    plotter.plot_model_outputs_vs_locations(observed_values=obs, surrogate_outputs=complex_output[-1, :].reshape(1, -1),
+                                            complex_model_outputs=complex_output[-1, :].reshape(1, -1),
+                                            measurement_error=err)
     # print(sm_output1)
     # print(sm_output2)
     # print(complex_output)
@@ -128,7 +142,4 @@ if __name__ == "__main__":
     # plotter.plot_correlation(sm_output1,complex_output1,["WATER DEPTH"],n_loc_=n_loc,fig_title="water depth")
     # plotter.plot_correlation(sm_output2,complex_output2,["SCALAR VELOCITY"],n_loc_=n_loc,fig_title="velocity")
 
-    plotter.plot_model_outputs_vs_locations(observed_values=obs1, surrogate_outputs=sm_output1[-1, :].reshape(1, -1), complex_model_outputs=complex_output1[-1, :].reshape(1, -1),measurement_error=err1)
-    #
-    plotter.plot_model_outputs_vs_locations(observed_values=obs2, surrogate_outputs=sm_output2[-1, :].reshape(1, -1), complex_model_outputs=complex_output2[-1, :].reshape(1, -1),measurement_error=err2)
 

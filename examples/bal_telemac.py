@@ -5,6 +5,7 @@ Can use normal training (once) or sequential training (BAL, SF, Sobol)
 
 Author: Andres Heredia Hidalgo MSc
 """
+import pdb
 import sys
 import os
 import bayesvalidrox as bvr
@@ -110,7 +111,6 @@ def run_complex_model(complex_model,
     """
     collocation_points = None
     model_outputs = None
-
     if not complex_model.only_bal_mode:
         logger.info(
             f"Sampling {complex_model.init_runs} collocation points for the selected calibration parameters with {complex_model.parameter_sampling_method} sampling method.")
@@ -124,11 +124,21 @@ def run_complex_model(complex_model,
         model_outputs = complex_model.model_evaluations
     else:
         try:
-            path_np_collocation_points = os.path.join(complex_model.asr_dir, 'collocation-points.csv')
-            path_np_model_results = os.path.join(complex_model.asr_dir, 'model-results.csv')
-            # Load the collocation points and model results if they exist
+            model_outputs = complex_model.output_processing(output_data_path=os.path.join(complex_model.restart_data_folder,
+                                                                                          f'collocation-points-outputs.json'),
+                                                            delete_slf_files=complex_model.delete_complex_outputs,
+                                                            validation=complex_model.validation,
+                                                            filter_outputs=True,
+                                                            save_extraction_outputs=True,
+                                                            run_range_filtering=(1, complex_model.init_runs))
+            path_np_collocation_points = os.path.join(complex_model.restart_data_folder, 'initial-collocation-points.csv')
             collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
-            model_outputs = np.loadtxt(path_np_model_results, delimiter=',', skiprows=1)
+
+            # path_np_collocation_points = os.path.join(complex_model.asr_dir, 'collocation-points.csv')
+            # path_np_model_results = os.path.join(complex_model.asr_dir, 'model-results-calibration.csv')
+            # # Load the collocation points and model results if they exist
+            # collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
+            # model_outputs = np.loadtxt(path_np_model_results, delimiter=',', skiprows=1)
 
 
         except FileNotFoundError:
@@ -274,7 +284,7 @@ def run_bal_model(collocation_points,
             # 1.1. Set up the kernel
 
             # 1.2. Set up Likelihood
-            if complex_model.num_quantities == 1:
+            if complex_model.num_calibration_quantities == 1:
                 kernel = gpytorch.kernels.ScaleKernel(
                     gpytorch.kernels.RBFKernel(ard_num_dims=complex_model.ndim))
                 likelihood = gpytorch.likelihoods.GaussianLikelihood(
@@ -291,13 +301,13 @@ def run_bal_model(collocation_points,
                 combined_kernel = gpytorch.kernels.ScaleKernel(
                     gpytorch.kernels.RBFKernel(ard_num_dims=complex_model.ndim))
                 kernel = (combined_kernel, combined_kernel)
-                multi_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=2)
+                multi_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=complex_model.num_calibration_quantities)
                 multi_sm = MultiGPyTraining(collocation_points,
                                             model_outputs,
                                             kernel,
                                             training_iter=150,
                                             likelihood=multi_likelihood,
-                                            optimizer="adam", lr=0.01, number_quantities=2,
+                                            optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
                                             )
 
         # Trains the GPR
@@ -315,7 +325,7 @@ def run_bal_model(collocation_points,
                 'Starting surrogate model training with the initial collocation points. Please check the .csv file if information required.')
             #logger.info(collocation_points)
 
-        if complex_model.num_quantities == 1:
+        if complex_model.num_calibration_quantities == 1:
             sm.train_()
             surrogate_object = sm
         else:
@@ -324,11 +334,11 @@ def run_bal_model(collocation_points,
 
         # 2. Validate GPR
         if it % eval_steps == 0:
-            if complex_model.num_quantities == 1:
+            if complex_model.num_calibration_quantities == 1:
                 # Construct the save_name path for single quantity
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities{complex_model.num_quantities}.pkl')
+                                         f'{experiment_design.exploit_method}_quantities{complex_model.num_calibration_quantities}.pkl')
                 sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(sm, file)
@@ -336,14 +346,14 @@ def run_bal_model(collocation_points,
                 # Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities{complex_model.num_quantities}.pkl')
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.num_calibration_quantities}.pkl')
                 multi_sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(multi_sm, file)
 
         # 3. Compute Bayesian scores in parameter space ----------------------------------------------------------
         # Surrogate outputs for prior samples
-        if complex_model.num_quantities == 1:
+        if complex_model.num_calibration_quantities == 1:
 
             surrogate_output = sm.predict_(input_sets=prior,
                                            get_conf_int=True)
@@ -360,7 +370,7 @@ def run_bal_model(collocation_points,
                     print(f"An error occurred while saving the dictionary: {e}")
 
         else:
-            surrogate_output = multi_sm.predict_(input_sets=prior)
+            surrogate_output = multi_sm.predict_(input_sets=prior,get_conf_int=True)
             total_error = complex_model.measurement_errors
             model_predictions = surrogate_output['output']
             if it == 0 or it == n_iter:
@@ -411,7 +421,7 @@ def run_bal_model(collocation_points,
 
             if complex_model.complete_bal_mode or complex_model.only_bal_mode:
                 bal_iteration = it + 1
-                complex_model.run_multiple_simulations(collocation_points=None,
+                complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                        bal_iteration=bal_iteration,
                                                        bal_new_set_parameters=new_tp,
                                                        complete_bal_mode=complex_model.complete_bal_mode,
@@ -426,14 +436,8 @@ def run_bal_model(collocation_points,
             else:
                 collocation_points = np.vstack((collocation_points, new_tp))
                 logger.info(f'------------ Finished iteration {it + 1}/{n_iter} -------------------')
-            try:
-                with open(os.path.join(complex_model.asr_dir, 'BAL_dictionary.pkl'), 'wb') as pickle_file:
-                    pickle.dump(bayesian_dict, pickle_file)
-                print("BAL data successfully saved.")
-            except Exception as e:
-                print(f"An error occurred while saving the dictionary: {e}")
         try:
-            with open(os.path.join(complex_model.asr_dir, 'BAL_dictionary.pkl'), 'wb') as pickle_file:
+            with open(os.path.join(complex_model.calibration_folder, 'BAL_dictionary.pkl'), 'wb') as pickle_file:
                 pickle.dump(bayesian_dict, pickle_file)
             print("BAL data successfully saved.")
         except Exception as e:
@@ -449,27 +453,32 @@ if __name__ == "__main__":
             friction_file="friction_ering_MU.tbl",
             tm_xd="1",  # Either 'Telemac2d' or 'Telemac3d', or their corresponding indicator
             gaia_steering_file="",
-            results_filename_base="results2m3_mu",
+            results_filename_base="results2m3",
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
             # HydroSimulations class parameters
             control_file="tel_ering_mu_restart.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_filtered.csv",
+            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025-red.csv",
             n_cpus=8,
-            init_runs=50,
-            calibration_parameters=["zone3", "zone4", "zone10", "zone12","zone13","zone14","zone15","zone16","zone17"],
-            param_values=[[0.8, 1.5], [0.005, 0.01], [0.04, 0.1], [0.04, 0.1],[0.04, 0.1],[0.04, 0.1],[0.04, 0.1],
-                          [0.04, 0.1],[0.04, 0.1]],
-            calibration_quantities=["WATER DEPTH"],
-            dict_output_name="model-outputs-wd",
+            init_runs=3,
+            # calibration_parameters=["zone3", "zone4","zone5","zone7", "zone11", "zone12","zone13","zone14","zone15"],
+            calibration_parameters=["zone11", "zone12", "zone13", "zone14",
+                                    "zone15"],
+            # param_values=[[2.5, 3.5], [2.5, 3.5], [2.5, 3.5], [2.5, 3.5], [1.8, 27], [1.8, 27], [0.85, 13],
+            #               [0.85, 13], [0.62, 10]],
+            param_values=[[1.8, 27], [1.8, 27], [0.85, 13],
+                          [0.85, 13], [0.62, 10]],
+            extraction_quantities=["WATER DEPTH","SCALAR VELOCITY","TURBULENT ENERG","BOTTOM"],
+            calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],#,"SCALAR VELOCITY","TURBULENT ENERG"],
+            dict_output_name="extraction-data",
             parameter_sampling_method="sobol",
-            max_runs=120,
-            complete_bal_mode=True,
+            max_runs=5,
+            complete_bal_mode=False,
             only_bal_mode=False,
             delete_complex_outputs=True,
-            validation=False
+            validation=True
         )
     )
     exp_design = setup_experiment_design(complex_model=full_complexity_model,
@@ -483,10 +492,10 @@ if __name__ == "__main__":
                  model_outputs=model_evaluations,
                  complex_model=full_complexity_model,
                  experiment_design=exp_design,
-                 eval_steps=10,
-                 prior_samples=30000,
-                 mc_samples=4000,
-                 mc_exploration=1000,
+                 eval_steps=1,
+                 prior_samples=100,
+                 mc_samples=50,
+                 mc_exploration=10,
                  gp_library="gpy")
 
     # # TODO: Why is this in a __main__ namespace? This should be refactored into functions and the function call - Refactored into functions

@@ -569,10 +569,10 @@ def save_valid_criteria(new_dict, old_dict, n_tp):
 
 class MultiGPyTraining:
     """
-    Class to train multiple Gaussian Process models using given collocation points and model evaluations. It uses
-    the MultiGPyTraining class for multitask regression using GPyTorch.
-    Multitask GP Regression: https://docs.gpytorch.ai/en/stable/examples/03_Multitask_Exact_GPs/Multitask_GP_Regression.html
+    Class to train multiple Gaussian Process models using given collocation points and model evaluations.
+    It uses the MultiGPyTraining class for multitask regression using GPyTorch.
     """
+
     def __init__(
             self,
             collocation_points,
@@ -590,44 +590,8 @@ class MultiGPyTraining:
         """
         Parameters
         ----------
-        :param collocation_points: numpy.ndarray
-            A numpy array of shape (t_p, n_parameters (parameter combination)).
-
-        :param model_evaluations: numpy.ndarray
-            A numpy array of shape (2*t_p, n_loc) representing the model evaluations for the 2 tasks (quantities)
-            at different locations for each of the parameter sets. The first t_p rows correspond to the evaluations of
-            the first quantity, and the next t_p rows correspond to the evaluations of the second quantity.
-
-        :param kernel: tuple(gpytorch.kernels.Kernel, gpytorch.kernels.Kernel)
-            A tuple of kernels to use for the Gaussian Process models. Each kernel corresponds to a different task.
-
-        :param training_iter:  int
-            The number of training iterations.
-
-       :param likelihood: gpytorch.likelihoods.MultitaskGaussianLikelihood
-            The multitask likelihood function to use in the Gaussian Process.
-
-        :param optimizer: str, optional
-            The optimizer to use for training. Default is "adam".
-
-        :param lr: float, optional
-            The learning rate for the optimizer. Default is 0.5.
-
-        :param n_restarts:
-            The number of restarts for the optimizer. Default is 1.
-        :type n_restarts: int, optional
-
-        :param parallelize: bool, optional
-            Whether to parallelize the training process. Default is False.
-
-        :param number_quantities: int, optional
-            The number of quantities to be predicted. Default is 2.
-
-        :param noise_constraint: gpytorch.constraints.Constraint, optional
-            The constraint on the noise parameter. Default is `GreaterThan(1e-6)`.
-
+        See original class docstring for parameter details.
         """
-
         # Basic attributes
         self.training_points = collocation_points
         self.model_evaluations = model_evaluations
@@ -635,6 +599,7 @@ class MultiGPyTraining:
         self.n_obs = self.model_evaluations.shape[1]
         self.n_params = collocation_points.shape[1]
         self.gp_list = []
+        self.normalization_params = []
 
         # Initialize likelihood and other hyperparameters
         self.likelihood = likelihood
@@ -644,99 +609,113 @@ class MultiGPyTraining:
         self.n_restarts = n_restarts
         self.lr = lr
         self.parallel = parallelize
-        self.noise_contraint = noise_constraint
-
-        self.parallel = parallelize
+        self.noise_constraint = noise_constraint
 
     def train(self):
         """
-        Train multitask Gaussian Process models using the provided collocation points and model evaluations.Initializes and
-        trains a separate GP model for each location in the model evaluations array. After training, the models are stored
-        in the `gp_list` attribute.
-
-        :return: None
+        Train multitask Gaussian Process models using the provided collocation points and model evaluations.
         """
-        #     1. Convert the collocation points and model evaluations to PyTorch tensors.
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
-        # Number of locations should be half the number of columns since columns are interleaved
+
+        # Number of locations
         num_locations = Y.shape[1] // self.number_quantities
 
-        # Iterate over each location in the model evaluations.
+        # Iterate over each location
         for loc in range(num_locations):
             # Extract the columns corresponding to the current location
-            Y_loc = Y[:, [2 * loc, 2 * loc + 1]]
+            Y_loc = Y[:, [2 * loc, 2 * loc + 1]].numpy()
 
-            # 2.1. Initialize the multitask GP model for the current location
-            model = MultitaskGPModel(X, Y_loc, self.likelihood, self.kernel)
+            # Normalize outputs
+            y_mean = np.mean(Y_loc, axis=0)
+            y_std = np.std(Y_loc, axis=0)
+            Y_loc_norm = (Y_loc - y_mean) / y_std
 
-            # 2.2 Set the model and likelihood to training mode
+            # Save normalization parameters
+            self.normalization_params.append((y_mean, y_std))
+
+            # Convert normalized Y_loc to torch
+            Y_loc_norm = torch.tensor(Y_loc_norm, dtype=torch.float32)
+
+            # Initialize multitask GP model
+            model = MultitaskGPModel(X, Y_loc_norm, self.likelihood, self.kernel,self.number_quantities)
+
+            # Set model and likelihood to training mode
             model.train()
             self.likelihood.train()
 
-            # 2.3 Set the optimizer
+            # Set optimizer
             if self.optimizer_ == "adam":
                 optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
             else:
                 raise ValueError(f"Optimizer '{self.optimizer_}' not supported.")
 
-            # 2.4 Set the MLL objective
+            # Set MLL objective
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
 
-            # 2.5 Training loop
+            # Training loop
             for _ in range(self.training_iter):
                 optimizer.zero_grad()
                 output = model(X)
-                loss = -mll(output, Y_loc)
+                loss = -mll(output, Y_loc_norm)
                 loss.backward()
                 optimizer.step()
 
-            # 2.6 Store trained model in the list
-            self.gp_list.append(model)
+            # Store trained model
+            self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std)})
 
-    def predict_(self, input_sets):
+    def predict_(self, input_sets, get_conf_int=False):
         """
-        Predict the outputs and their standard deviations for given input sets using the trained Gaussian Process models.
-        This method takes input sets, passes them through each of the trained GP models, and returns the mean and
-        standard deviation of the predictions for each task and location. The predictions for each task are concatenated and
-        returned as a dictionary.
-
-        :param input_sets: numpy.ndarray
-            Input sets (parameter combinations) for which predictions are made. The shape should be (n_samples, n_params).
-
-    :return: dict
-        Dictionary with two keys:
-        - 'output': A numpy array of shape (n_samples, n_tasks * n_loc) containing the predicted means for each
-          task and location. Here, `n_tasks` is the number of tasks (quantities) and `n_loc` is the number of
-          locations. The array is structured such that each row contains the predictions for all tasks and locations.
-        - 'std': A numpy array of shape (n_samples, n_tasks * n_loc) containing the predicted standard deviations
-          for each task and location. Similarly, each row contains the standard deviations for all tasks and
-          locations.
+        Predict the outputs and their standard deviations for given input sets using the trained GP models.
         """
         input_sets = torch.tensor(input_sets, dtype=torch.float32)
-        surrogate_outputs = {'output': [], 'std': []}
-        means = []
-        stds = []
+        n_samples = input_sets.shape[0]
+        n_obs = len(self.gp_list)
 
-        for model in self.gp_list:
-            model.eval()  # Set the model to evaluation mode
-            self.likelihood.eval()  # Set the likelihood to evaluation mode
-            with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                predictions = model(input_sets)
-                means.append(predictions.mean.numpy())
-                stds.append(predictions.stddev.numpy())
+        # Initialize storage for predictions
+        surrogate_prediction = np.zeros((n_samples, n_obs * self.number_quantities))
+        surrogate_std = np.zeros((n_samples, n_obs * self.number_quantities))
 
-        # Convert lists to numpy arrays and reshape for easy manipulation
-        means = np.concatenate(means, axis=1).reshape(input_sets.shape[0], -1)
-        means_1task = means[:, ::2]
-        means_2task = means[:, 1::2]
-        means = np.hstack((means_1task, means_2task))
-        stds = np.concatenate(stds, axis=1).reshape(input_sets.shape[0], -1)
-        stds_1task = stds[:, ::2]
-        std_2task = stds[:, 1::2]
-        stds = np.hstack((stds_1task, std_2task))
-        surrogate_outputs = {'output': means, 'std': stds}
-        return surrogate_outputs
+        if get_conf_int:
+            upper_ci = np.zeros((n_samples, n_obs * self.number_quantities))
+            lower_ci = np.zeros((n_samples, n_obs * self.number_quantities))
+
+        # Predict for each model
+        for i, model_info in enumerate(self.gp_list):
+            gp = model_info['gp']
+            y_mean, y_std = model_info['y_norm']
+
+            gp.eval()
+            self.likelihood.eval()
+
+            with torch.no_grad():
+                predictions = self.likelihood(gp(input_sets))
+                mean = predictions.mean.numpy()
+                std = predictions.stddev.numpy()
+
+                # Back-transform normalized predictions
+                mean = y_std * mean + y_mean
+                std = std * y_std
+
+                # Store predictions
+                surrogate_prediction[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean
+                surrogate_std[:, i * self.number_quantities:(i + 1) * self.number_quantities] = std
+
+                # Calculate confidence intervals
+                if get_conf_int:
+                    upper_ci[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean + 2 * std
+                    lower_ci[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean - 2 * std
+
+        # Prepare output dictionary
+        output_dic = {
+            'output': surrogate_prediction,
+            'std': surrogate_std,
+        }
+        if get_conf_int:
+            output_dic['upper_ci'] = upper_ci
+            output_dic['lower_ci'] = lower_ci
+
+        return output_dic
 
 class MultitaskGPModel(ExactGP):
     """
@@ -749,7 +728,8 @@ class MultitaskGPModel(ExactGP):
             train_x,
             train_y,
             likelihood,
-            kernel
+            kernel,
+            number_tasks=2
     ):
         """
         :param train_x: torch.Tensor
@@ -768,13 +748,13 @@ class MultitaskGPModel(ExactGP):
             A tuple of kernel components to be used in the GP model. The tuple should contain two kernel components.
         """
         super(MultitaskGPModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = MultitaskMean(ConstantMean(), num_tasks=2)
+        self.mean_module = MultitaskMean(ConstantMean(), num_tasks=number_tasks)
         self.covar_module = MultitaskKernel(
             AdditiveKernel(
                 ProductKernel(kernel[0], kernel[1]),  # Assuming kernel is a tuple of two components
                 ScaleKernel(kernel[0])
             ),
-            num_tasks=2, rank=1
+            num_tasks=number_tasks, rank=1
         )
 
     def forward(self, x):

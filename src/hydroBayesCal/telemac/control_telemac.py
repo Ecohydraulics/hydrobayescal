@@ -4,6 +4,7 @@
 #
 # Authors: Andres Heredia, Sebastian Schwindt
 # """
+import pdb
 
 # # TODO: Do you still use the global parameters from conf_telemac? -> this not anymore # Not anymore
 # # from config_telemac import *
@@ -15,6 +16,7 @@ import numpy as np
 from mpi4py import MPI
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
+from collections import OrderedDict
 try:
     from telapy.api.t2d import Telemac2d
     from telapy.api.t3d import Telemac3d
@@ -163,7 +165,7 @@ class TelemacModel(HydroSimulations):
                     parts = param.split("-")  # Assuming the format is like "vg_zoneXX_X"
                     if len(parts) == 2:
                         zone_identifier = parts[0][7:]  # Extracts the number after 'vg_zone'
-                        veg_param_value = parts[1][3:]  # Extracts the vegetation parameter number
+                        veg_param_value = parts[1]  # Extracts the vegetation parameter number
                         # Process the extracted values as needed
                         self.tbl_creator(zone_identifier, value, friction_file_path,veg_param_number=veg_param_value,veg_indicator=True)
 
@@ -334,14 +336,14 @@ class TelemacModel(HydroSimulations):
         logger.info("TELEMAC simulation time: " + str(datetime.now() - start_time))
 
         # Load results if required
-        if load_results:
-            self.extract_data_point(self.tm_results_filename,
-                                    self.calibration_pts_df,
-                                    self.dict_output_name,
-                                    self.calibration_quantities,
-                                    self.num_run,
-                                    self.model_dir,
-                                    self.asr_dir)
+        # if load_results:
+        #     self.extract_data_point(self.tm_results_filename,
+        #                             self.calibration_pts_df,
+        #                             self.dict_output_name,
+        #                             self.calibration_quantities,
+        #                             self.num_run,
+        #                             self.model_dir,
+        #                             self.asr_dir)
 
     def run_multiple_simulations(
             self,
@@ -379,7 +381,8 @@ class TelemacModel(HydroSimulations):
             For 2.quantities: [No. runs x 2* No. loc] -> 1 column for each quantity
         """
         calibration_parameters = self.calibration_parameters
-        res_dir = self.asr_dir
+        res_dir = self.calibration_folder
+        restart_data_path = self.restart_data_folder
         fr_tbl = self.fr_tbl
         init_runs = self.init_runs
 
@@ -388,7 +391,7 @@ class TelemacModel(HydroSimulations):
         start_time = datetime.now()
         if complete_bal_mode:
             # This part of the code runs the initial runs for initial surrogate.
-            if collocation_points is not None:
+            if bal_new_set_parameters is None:
                 # Convert collocation_points to a numpy array if it is not already
                 if not isinstance(collocation_points, np.ndarray):
                     collocation_points = np.array(collocation_points)
@@ -397,6 +400,8 @@ class TelemacModel(HydroSimulations):
                 if collocation_points.ndim == 1:
                     collocation_points = collocation_points[:, np.newaxis]
 
+                # print(collocation_points)
+                # pdb.set_trace()
                 # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
                 if validation:
@@ -405,11 +410,23 @@ class TelemacModel(HydroSimulations):
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
                 else:
-                    with open(res_dir + os.sep + "/collocation-points.csv", mode='w', newline='') as file:
+                    quantities_str = '_'.join(self.calibration_quantities)
+                    with open(res_dir + os.sep + f"collocation-points-{quantities_str}.csv", mode='w',
+                              newline='') as file:
                         writer = csv.writer(file)
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
+                    with open(restart_data_path + os.sep + "initial-collocation-points.csv", mode='w',
+                              newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(calibration_parameters)
+                        writer.writerows(array_list)  # Write the array data
+                        #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
 
+                # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
+                collocation_points=collocation_points*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
+
+                #-----------------------------------------------------------------------------------------------
                 for i in range(init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list = collocation_points[i].tolist()
@@ -420,40 +437,103 @@ class TelemacModel(HydroSimulations):
                                                auxiliary_file_path=fr_tbl,
                                                simulation_id=self.num_run)
                     self.run_single_simulation(self.control_file)
-                    self.model_evaluations = self.output_processing(os.path.join(res_dir,
-                                                                                 f'{self.dict_output_name}.json'),
+                    self.extract_data_point(self.tm_results_filename,
+                                            self.calibration_pts_df,
+                                            self.dict_output_name,
+                                            self.extraction_quantities,
+                                            self.num_run,
+                                            self.model_dir,
+                                            self.calibration_folder)
+                    self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
+                                                                      f'{self.dict_output_name}-detailed.json'),
                                                                     delete_slf_files=self.delete_complex_outputs,
-                                                                    validation=validation)
+                                                                    validation=validation,
+                                                                    save_extraction_outputs=True)
+                    if self.num_run == self.init_runs:
+                        self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
+                                                                                                      f'{self.dict_output_name}-detailed.json'),
+                                                                        delete_slf_files=self.delete_complex_outputs,
+                                                                        validation=validation,
+                                                                        filter_outputs=True,
+                                                                        save_extraction_outputs=True,
+                                                                        run_range_filtering=(1, init_runs + 1))
+                    # else:
+                    #     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
+                    #                                                                                   f'{self.dict_output_name}-detailed.json'),
+                    #                                                     delete_slf_files=self.delete_complex_outputs,
+                    #                                                     validation=validation,
+                    #                                                     save_extraction_outputs=True)
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
             # This part of the code runs BAL
             else:
+                # Convert collocation_points to a numpy array if it is not already
+                if not isinstance(collocation_points, np.ndarray):
+                    collocation_points = np.array(collocation_points)
+
+                # Ensure collocation_points is a 2D array
+                if collocation_points.ndim == 1:
+                    collocation_points = collocation_points[:, np.newaxis]
+
                 self.bal_iteration = bal_iteration
                 self.num_run = bal_iteration + init_runs
-                if bal_new_set_parameters is not None:
-                    collocation_point_sim_list = bal_new_set_parameters.tolist()[0]
-                    logger.info(
-                        f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {collocation_point_sim_list} ")
-                    # TODO: the following needs to be re-integrated
-                    if validation:
-                        update_collocation_pts_file(res_dir + "/collocation-points-validation.csv",
-                                                    new_collocation_point=collocation_point_sim_list)
-                    else:
-                        update_collocation_pts_file(res_dir + "/collocation-points.csv",
-                                                    new_collocation_point=collocation_point_sim_list)
-                    self.update_model_controls(collocation_point_values=collocation_point_sim_list,
-                                               calibration_parameters=calibration_parameters,
-                                               auxiliary_file_path=fr_tbl,
-                                               simulation_id=self.num_run)
-                    self.run_single_simulation(self.control_file)
-                    self.model_evaluations = self.output_processing(os.path.join(res_dir,
-                                                                                 f'{self.dict_output_name}.json'),
-                                                                    delete_slf_files=self.delete_complex_outputs,
-                                                                    validation=validation)
-                    logger.info(
-                        "TELEMAC simulations time after Bayesian Active Learning: " + str(datetime.now() - start_time))
+
+                # TODO: the following needs to be re-integrated
+
+                    #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
+                # new_collocation_point=bal_new_set_parameters * [[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
+                new_collocation_point=bal_new_set_parameters * [[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                updated_collocation_points = np.vstack((collocation_points, new_collocation_point))
+                print(updated_collocation_points)
+                # pdb.set_trace()
+                collocation_point_sim_list = updated_collocation_points[-1].tolist()
+                array_list = updated_collocation_points.tolist()
+                print(array_list)
+                logger.info(
+                    f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {array_list} ")
+                if validation:
+                    update_collocation_pts_file(res_dir + "/collocation-points-validation.csv",
+                                                new_collocation_point=array_list)
                 else:
-                    logger.error("BAL_new_set_parameters is None. Please provide valid parameters.")
-                    raise ValueError("BAL_new_set_parameters is None. Please provide valid parameters.")
+                    quantities_str = '_'.join(self.calibration_quantities)
+                    with open(res_dir + os.sep + f"collocation-points-{quantities_str}.csv", mode='w',
+                              newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(calibration_parameters)
+                        writer.writerows(array_list)
+                    #-----------------------------------------------------------------------------
+                self.update_model_controls(collocation_point_values=collocation_point_sim_list,
+                                           calibration_parameters=calibration_parameters,
+                                           auxiliary_file_path=fr_tbl,
+                                           simulation_id=self.num_run)
+                self.run_single_simulation(self.control_file)
+                output_name_calibration = f'{self.dict_output_name}{"_".join(self.calibration_quantities)}'
+                self.extract_data_point(self.tm_results_filename,
+                                        self.calibration_pts_df,
+                                        self.dict_output_name,
+                                        self.extraction_quantities,
+                                        self.num_run,
+                                        self.model_dir,
+                                        self.calibration_folder)
+                # In this first output processing, ALL the extraction quantities are saved as .csv file in the calibration folder.
+                self.output_processing(output_data_path=os.path.join(res_dir,f'{self.dict_output_name}-detailed.json'),
+                                                                delete_slf_files=self.delete_complex_outputs,
+                                                                validation=validation,
+                                                                save_extraction_outputs=True,extraction_mode=True)
+                # This part extracts the calibration quantities from the detailed dictionary as a numpy array for BAL and creates a new filtered dictionary.
+                self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
+                                                                                              f'{self.dict_output_name}-detailed.json'),
+                                                                delete_slf_files=self.delete_complex_outputs,
+                                                                validation=validation,
+                                                                filter_outputs=True,
+                                                                save_extraction_outputs=True,
+                                                                run_range_filtering=(1, init_runs +bal_iteration))
+                quantities_str = '_'.join(self.calibration_quantities)
+                self.output_processing(output_data_path=os.path.join(res_dir,f'{quantities_str}-detailed.json'),
+                                                                delete_slf_files=self.delete_complex_outputs,
+                                                                validation=validation,
+                                                                save_extraction_outputs=True,
+                                                                calibration_mode=True)
+                logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
 
         # This part of the code only runs iterative runs without performing BAL
         else:
@@ -479,10 +559,23 @@ class TelemacModel(HydroSimulations):
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
                 else:
-                    with open(res_dir + os.sep + "/collocation-points.csv", mode='w', newline='') as file:
+                    quantities_str = '_'.join(self.calibration_quantities)
+                    with open(res_dir + os.sep + f"collocation-points-{quantities_str}.csv", mode='w',
+                              newline='') as file:
                         writer = csv.writer(file)
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
+                    with open(restart_data_path + os.sep + "initial-collocation-points.csv", mode='w',
+                              newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(calibration_parameters)
+                        writer.writerows(array_list)  # Write the array data
+                #collocation_points=collocation_points*[[0.5,0.001,0.073,0.02,0.00625,0.00625,0.0131,0.0131,0.0178]]
+                # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
+                collocation_points=collocation_points*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.022, 0.022, 0.022, 0.022, 0.022]]
+                #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.0178, 0.0178, 0.0178, 0.0178, 0.0178]]
+
                 for i in range(init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list = collocation_points[i].tolist()
@@ -493,20 +586,34 @@ class TelemacModel(HydroSimulations):
                                                auxiliary_file_path=fr_tbl,
                                                simulation_id=self.num_run)
                     self.run_single_simulation(self.control_file)
-                    self.model_evaluations = self.output_processing(os.path.join(res_dir,
-                                                                                 f'{self.dict_output_name}.json'),
+                    self.extract_data_point(self.tm_results_filename,
+                                            self.calibration_pts_df,
+                                            self.dict_output_name,
+                                            self.extraction_quantities,
+                                            self.num_run,
+                                            self.model_dir,
+                                            self.calibration_folder)
+                    self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
+                                                                    f'{self.dict_output_name}-detailed.json'),
                                                                     delete_slf_files=self.delete_complex_outputs,
-                                                                    validation=validation)
+                                                                    validation=validation,
+                                                                    save_extraction_outputs=False) # This option True saves ALL model outputs of ALL required quantities at ALL points as a .csv file
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
 
-            # exit()
+                exit()
         return self.model_evaluations
 
     def output_processing(
             self,
             output_data_path='',
+            calibration_quantities='',
             delete_slf_files=False,
-            validation=False
+            validation=False,
+            save_extraction_outputs = False,
+            filter_outputs=False,
+            run_range_filtering=None,
+            extraction_mode = False,
+            calibration_mode = False,
     ):
         """
         Processes model output data from a JSON file into a 2D array format for Bayesian calibration
@@ -539,68 +646,153 @@ class TelemacModel(HydroSimulations):
         with open(output_data_path, "r") as file:
             output_data = json.load(file)
 
+        # Get quantities from the first entry dynamically
+        extraction_quantities = self.extraction_quantities  # Extract quantities from the first run of the first calibration point
+        calibration_quantities = self.calibration_quantities
         n_calibration_pts = self.nloc
         n_total_runs = self.init_runs + self.bal_iteration
-
-        # Number of quantities per location
-        num_quantities = self.num_quantities
-
+        # Number of quantities per location for calibration purposes
+        num_quantities_calibration = len(calibration_quantities)
+        num_quantities_extraction = len(extraction_quantities)
         # Initialize a 2D NumPy array with zeros
-        model_results = np.zeros((num_quantities * n_total_runs, n_calibration_pts))
-
-        # Populate the array with the values from the dictionary
-        for i, key in enumerate(output_data.keys()):
-            values = output_data[key]
-            for j, value_set in enumerate(values):
-                for k in range(num_quantities):
-                    model_results[k * n_total_runs + j, i] = value_set[k]
-        if self.num_quantities == 1:
-            headers = [f'{i + 1}' for i in range(n_calibration_pts)]
-
-            if validation:
-                np.savetxt(
-                    os.path.join(self.asr_dir, 'model-results-validation.csv'),
-                    model_results,
-                    delimiter=',',
-                    fmt='%.8f',
-                    header=','.join(headers),
-                )
-            else:
-                np.savetxt(
-                    os.path.join(self.asr_dir, 'model-results.csv'),
-                    model_results,
-                    delimiter=',',
-                    fmt='%.8f',
-                    header=','.join(headers),
-                )
-
+        model_results_calibration = np.zeros((num_quantities_calibration * n_total_runs, n_calibration_pts))
+        model_results_extraction = np.zeros((num_quantities_extraction * n_total_runs, n_calibration_pts))
+        # Filtering
+        if filter_outputs:
+            quantities_str = '_'.join(calibration_quantities)
+            filtered_output_data = filter_model_outputs(data_dict=output_data,
+                                               quantities=calibration_quantities,
+                                               run_range_filtering=run_range_filtering)
+            with open(os.path.join(self.calibration_folder,f'{quantities_str}-detailed.json'), 'w') as json_file:
+                json.dump(filtered_output_data, json_file, indent=4)
+            # update_json_file(json_path=os.path.join(self.asr_dir,f'{quantities_str}-detailed.json'), modeled_values_dict=filtered_output_data, detailed_dict=True)
+            # pdb.set_trace()
+            for i, (key, values) in enumerate(filtered_output_data.items()):  # Iterate over calibration points
+                for j, value_set in enumerate(values):  # Iterate over runs
+                    for k, quantity in enumerate(calibration_quantities):  # Calibrate quantities
+                        if quantity in value_set:
+                            model_results_calibration[k * n_total_runs + j, i] = value_set[quantity]
+                        else:
+                            raise ValueError(f"Quantity '{quantity}' not found in data for calibration point '{key}'.")
+            model_results_calibration = rearrange_array(model_results_calibration, num_quantities_calibration)
+            model_results_calibration=model_results_calibration[~np.all(model_results_calibration == 0, axis=1)]
         else:
-            model_results = rearrange_array(model_results)
-            num_columns = model_results.shape[1]
-            headers = []
-            for i in range(1, num_columns // 2 + 1):
-                headers.append(f'{i}_{self.calibration_quantities[0]}')
-                headers.append(f'{i}_{self.calibration_quantities[1]}')
-            if validation:
-                np.savetxt(
-                    os.path.join(self.asr_dir, 'model-results-validation.csv'),
-                    model_results,
-                    delimiter=',',
-                    fmt='%.8f',
-                    header=','.join(headers),
-                )
-            else:
-                np.savetxt(
-                    os.path.join(self.asr_dir, 'model-results.csv'),
-                    model_results,
-                    delimiter=',',
-                    fmt='%.8f',
-                    header=','.join(headers),
-                )
-        if delete_slf_files:
-            delete_slf(self.asr_dir)
+            if extraction_mode: # This mode processes (extracts data from dictionary and populate the array with the values from the dictionary )
+                                # the detailed dictionary data for ALL model parameters (extraction parameters).
+                for i, (key, values) in enumerate(output_data.items()):  # Iterate over calibration points
+                    for j, value_set in enumerate(values):  # Iterate over runs
+                        for k, quantity in enumerate(extraction_quantities):  # Extract quantities
+                            model_results_extraction[k * n_total_runs + j, i] = value_set[quantity]
+            if calibration_mode: # This mode processes (extracts data from dictionary and transforms into numpy arrays )
+                                # the detailed dictionary data for calibration parameters.
+                for i, (key, values) in enumerate(output_data.items()):
+                    for j, value_set in enumerate(values):  # Iterate over runs
+                        for k, quantity in enumerate(calibration_quantities):  # Calibrate quantities
+                            if quantity in value_set:
+                                model_results_calibration[k * n_total_runs + j, i] = value_set[quantity]
+                            else:
+                                raise ValueError(f"Quantity '{quantity}' not found in data for calibration point '{key}'.")
+            if not extraction_mode and not calibration_mode: # This mode processes (extracts data from dictionary and transforms into numpy arrays )
+                                                            # the detailed dictionary data for the calibration parameters and ALL model outputs.
+                for i, (key, values) in enumerate(output_data.items()):  # Iterate over calibration points
+                    for j, value_set in enumerate(values):  # Iterate over runs
+                        for k, quantity in enumerate(extraction_quantities):  # Extract quantities
+                            model_results_extraction[k * n_total_runs + j, i] = value_set[quantity]
 
-        return model_results
+                    for j, value_set in enumerate(values):  # Iterate over runs
+                        for k, quantity in enumerate(calibration_quantities):  # Calibrate quantities
+                            if quantity in value_set:
+                                model_results_calibration[k * n_total_runs + j, i] = value_set[quantity]
+
+            if num_quantities_calibration == 1:
+                column_headers_calibration = []
+                for i in range(1, n_calibration_pts + 1):  # Calibration point indices
+                    for quantity in calibration_quantities:
+                        column_headers_calibration.append(f'PT{i}_{quantity}')
+
+                if validation:
+                    np.savetxt(
+                        os.path.join(self.calibration_folder, 'model-results-validation.csv'),
+                        model_results_calibration,
+                        delimiter=',',
+                        fmt='%.8f',
+                        header=','.join(column_headers_calibration),
+                    )
+                else:
+                    quantities_str = '_'.join(calibration_quantities)
+                    np.savetxt(
+                        os.path.join(self.calibration_folder, f"model-results-calibration-{quantities_str}.csv"),
+                        model_results_calibration,
+                        delimiter=',',
+                        fmt='%.8f',
+                        header=','.join(column_headers_calibration),
+                    )
+
+                if save_extraction_outputs and extraction_mode:
+                    model_results_extraction = rearrange_array(model_results_extraction, num_quantities_extraction)
+                    column_headers_extraction = []
+                    for i in range(1, n_calibration_pts + 1):  # Calibration point indices
+                        for quantity in extraction_quantities:
+                            column_headers_extraction.append(f'PT{i}_{quantity}')
+                    np.savetxt(
+                        os.path.join(self.calibration_folder, 'model-results-extraction.csv'),
+                        model_results_extraction,
+                        delimiter=',',
+                        fmt='%.8f',
+                        header=','.join(column_headers_extraction),
+                    )
+
+            else:
+                model_results_extraction = rearrange_array(model_results_extraction,num_quantities_extraction)
+                model_results_calibration = rearrange_array(model_results_calibration,num_quantities_calibration)
+                num_columns_calibration = model_results_calibration.shape[1]
+                num_columns_extraction = model_results_extraction.shape[1]
+                column_headers_calibration = []
+                column_headers_extraction = []
+                for i in range(1, num_columns_calibration // num_quantities_calibration + 1):  # Loop through each set of columns
+                    for quantity in calibration_quantities:  # Loop through each calibration parameter
+                        column_headers_calibration.append(f'{i}_{quantity}')
+                for i in range(1, num_columns_extraction // num_quantities_extraction + 1):  # Loop through each set of columns
+                    for quantity in extraction_quantities:  # Loop through each calibration parameter
+                        column_headers_extraction.append(f'{i}_{quantity}')
+                if validation:
+                    np.savetxt(
+                        os.path.join(self.calibration_folder, 'model-results-validation.csv'),
+                        model_results_extraction,
+                        delimiter=',',
+                        fmt='%.8f',
+                        header=','.join(column_headers_calibration),
+                    )
+                else:
+                    quantities_str = '_'.join(calibration_quantities)
+                    np.savetxt(
+                        os.path.join(self.calibration_folder, f"model-results-calibration-{quantities_str}.csv"),
+                        model_results_calibration,
+                        delimiter=',',
+                        fmt='%.8f',
+                        header=','.join(column_headers_calibration),
+                    )
+                if save_extraction_outputs and extraction_mode:
+                    column_headers_extraction = []
+                    for i in range(1, n_calibration_pts + 1):  # Calibration point indices
+                        for quantity in extraction_quantities:
+                            column_headers_extraction.append(f'PT{i}_{quantity}')
+                    np.savetxt(
+                        os.path.join(self.calibration_folder, 'model-results-extraction.csv'),
+                        model_results_extraction,
+                        delimiter=',',
+                        fmt='%.8f',
+                        header=','.join(column_headers_extraction),
+                    )
+
+            if delete_slf_files:
+                delete_slf(self.calibration_folder)
+
+
+
+        # If required, we can return also the whole matrix containing the model results for ALL extraction quantities.
+        # To do it, return model_results_extraction
+        return model_results_calibration
 
     def extract_data_point(
             self,
@@ -612,7 +804,8 @@ class TelemacModel(HydroSimulations):
             model_directory,
             results_folder_directory,
             extraction_mode="interpolated", #"nearest"  "interpolated"
-            k=3
+            k=3,
+            #extraction_mode="nearest",
     ):
         """
         Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
@@ -654,15 +847,16 @@ class TelemacModel(HydroSimulations):
             the calibration quantities as a nested dictionary with the variable name and the point description.
 
         """
-        calibration_quantities = extraction_quantity
+        extraction_quantity = extraction_quantity
         input_file = os.path.join(model_directory, input_slf_file)
         json_path = os.path.join(results_folder_directory, f"{output_name}.json")
         json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
+        json_path_restart_data = os.path.join(self.restart_data_folder, "collocation-points-outputs.json")
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
         differentiated_dict = {}
         logger.info(
-            f'Extracting {calibration_quantities} from results file {input_slf_file} \n')
+            f'Extracting {extraction_quantity} from results file {input_slf_file} \n')
 
         for key, h in zip(keys, range(len(calibration_pts_df))):
             xu = calibration_pts_df.iloc[h, 1]
@@ -671,13 +865,14 @@ class TelemacModel(HydroSimulations):
             # reads the *.slf file
             slf = ppSELAFIN(input_file)
             slf.readHeader()
+
             slf.readTimes()
 
             # gets times of the selafin file, and the variable names
             #times = slf.getTimes()
             variables = slf.getVarNames()
+            # pdb.set_trace()
             units = slf.getVarUnits()
-
             NVAR = len(variables)
 
             # to remove duplicate spaces from variables and units
@@ -688,7 +883,7 @@ class TelemacModel(HydroSimulations):
             common_indices = []
 
             # Iterate over the secondary list
-            for value in calibration_quantities:
+            for value in extraction_quantity:
                 # Find the index of the value in the original list
                 index = variables.index(value)
                 # Add the index to the common_indices list
@@ -711,14 +906,16 @@ class TelemacModel(HydroSimulations):
 
             # find the index of the node the user is seeking
             if extraction_mode=="nearest":
+                mode = "at nearest point"
                 k=1
                 idx_all = np.zeros(NPLAN, dtype=np.int32)
             elif extraction_mode=="interpolated":
                 k=k
+                mode=f"though interpolation using {k} closest points "
                 idx_all = np.zeros((k,NPLAN), dtype=np.int32)
                 idx_coord = np.zeros((k, 2), dtype=np.float64)
             d, idx = tree.query((xu, yu), k=k)
-            print(f'*** Extraction {key},{xu},{yu} performed at the closest node(s) to the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
+            print(f'*** Extraction {key},{xu},{yu} performed {mode} for the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
 
             if k==1:
                 idx_all[0] = idx
@@ -741,11 +938,12 @@ class TelemacModel(HydroSimulations):
 
                     # Extract results at all time steps for ALL model variables and chooses only for the last time step
                     results = slf.getVarValuesAtNode()[-1]
-                    # Results_all stores the model outputs for each printout variable and at each nearest point (when interpolated is selected)
+                    # Results_all stores the model outputs for each printout variable and at each nearest point (when nearest is selected)
                     if k != 1:
                         results_all[j, :] = results
                 if k != 1:
                     results = interpolate_values(idx_coord,results_all,interpolation_coordinate)
+
                 #-------------------------------------------------------------------
                 # Initializes an empty list to store values (calibration qunatities) for every key (point description) for the
                 # current simulation
@@ -766,12 +964,11 @@ class TelemacModel(HydroSimulations):
                 # Create a dictionary to store the differentiated values for the current key
                 differentiated_values = {}
                 # Iterate over the titles and corresponding values
-                for title, value in zip(calibration_quantities, values):
+                for title, value in zip(extraction_quantity, values):
                     # Add the title and corresponding value to the dictionary
                     differentiated_values[title] = value
                 # Add the differentiated values for the current key to the new dictionary
                 differentiated_dict[key] = differentiated_values
-
         if simulation_number == 1:
             try:
                 # Removes the output_file.json when starting a new run of the code
@@ -785,12 +982,10 @@ class TelemacModel(HydroSimulations):
         # Updating json files for every run
         update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
         update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict, detailed_dict=True)
+        if simulation_number == self.init_runs:
+            update_json_file(json_path=json_path_detailed,modeled_values_dict=differentiated_dict, detailed_dict=True,save_dict=True,saving_path = json_path_restart_data)
 
         try:
-            if os.path.exists(os.path.join(results_folder_directory, input_slf_file)):
-                # Remove the existing destination file
-                pass
-                #os.remove(os.path.join(results_folder_directory, input_slf_file))
             shutil.move(os.path.join(model_directory, input_slf_file), results_folder_directory)
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)

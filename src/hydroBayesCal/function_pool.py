@@ -189,25 +189,36 @@ def log_actions(func):
 
 def update_collocation_pts_file(
         file_path,
-        new_collocation_point
+        new_collocation_point,
+        mode="update"
 ):
     """
-    Append a new row to a CSV file.
+    Append a new row to a CSV file or create a new file depending on the mode.
 
     :param file_path: Path to the CSV file.
     :param new_collocation_point: List of values to be added as a new row.
+    :param mode: Mode to determine whether to 'update' (append) or 'generate' (overwrite) the file.
     """
-    # Ensure new_set_parameters is a list
+    # Ensure new_collocation_point is a list
     if not isinstance(new_collocation_point, list):
-        raise ValueError("new_set_parameters must be a list")
+        raise ValueError("new_collocation_point must be a list")
 
-    # Create the new line with the PC description and the new parameters
-    new_line = new_collocation_point
+    # Check if the file exists
+    file_exists = os.path.isfile(file_path)
 
-    # Open the file in append mode and write the new row
-    with open(file_path, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(new_line)
+    # Open the file in the appropriate mode: append for 'update', write for 'generate'
+    if mode == "generate" or not file_exists:
+        # Open file for writing (overwrite if exists)
+        with open(file_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(new_collocation_point)  # Assuming the first row is the header
+    elif mode == "update":
+        # Open the file in append mode to add the new row
+        with open(file_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(new_collocation_point)
+    else:
+        raise ValueError("Invalid mode. Use 'update' or 'generate'.")
 
 
 def save_data(file_path, data):
@@ -305,39 +316,42 @@ def save_np_data(data, path, name):
         print(f"An error occurred while saving the file: {e}")
 
 
-def rearrange_array(data):
+def rearrange_array(data, num_quantities):
     """
-    Rearrange a NumPy array such that velocity and water depth data are interleaved by columns.
+    Rearrange a NumPy array such that data from multiple quantities is interleaved by columns.
 
-    :param data: A NumPy array of shape (2n, m) where n is the number of velocity/water depth data points.
-    :return: A NumPy array with interleaved columns of velocity and water depth data.
+    :param data: A NumPy array of shape (num_quantities * n, m) where n is the number of data points per quantity.
+    :param num_quantities: An integer indicating the number of quantities (e.g., velocity, water depth, etc.).
+    :return: A NumPy array with interleaved columns for all quantities.
     """
     # Determine the number of rows and columns
     num_rows, num_columns = data.shape
 
-    # Ensure the number of rows is even
-    if num_rows % 2 != 0:
-        raise ValueError("The number of rows should be even, corresponding to velocity and water depth data.")
+    # Ensure the number of rows is divisible by num_quantities
+    if num_rows % num_quantities != 0:
+        raise ValueError(
+            f"The number of rows ({num_rows}) should be divisible by the number of quantities ({num_quantities})."
+        )
 
-    # Split the data into velocity and water depth parts
-    velocity_data = data[:num_rows // 2, :]
-    water_depth_data = data[num_rows // 2:, :]
+    # Calculate the number of data points per quantity
+    n = num_rows // num_quantities
+
+    # Split the data into parts for each quantity
+    quantity_data = [data[i * n:(i + 1) * n, :] for i in range(num_quantities)]
 
     # Initialize an empty array to store the rearranged data
-    rearranged_data = _np.empty((num_rows // 2, num_columns * 2))
+    rearranged_data = _np.empty((n, num_columns * num_quantities))
 
-    # Interleave velocity and water depth data
+    # Interleave the data columns for all quantities
     for i in range(num_columns):
-        rearranged_data[:, 2 * i] = velocity_data[:, i]  # Velocity data
-        rearranged_data[:, 2 * i + 1] = water_depth_data[:, i]  # Water depth data
-
+        for j in range(num_quantities):
+            rearranged_data[:, i * num_quantities + j] = quantity_data[j][:, i]
     return rearranged_data
 
 
 
-
 #----------------------------------------------
-def update_json_file(json_path, modeled_values_dict, detailed_dict = False):
+def update_json_file(json_path, modeled_values_dict=None, detailed_dict=False, save_dict=False, saving_path=None):
     """
     Updates the JSON file at `json_path` with data from `modeled_values_dict`.
 
@@ -350,34 +364,52 @@ def update_json_file(json_path, modeled_values_dict, detailed_dict = False):
         The path to the JSON file to be updated or created.
     modeled_values_dict: dict
         A dictionary with data to be added or updated in the JSON file.
+    detailed_dict: bool, optional
+        Whether to handle the data as nested lists for detailed structures.
+    save_dict: bool, optional
+        If True, saves the entire `output_data` to the `saving_path`.
+    saving_path: str, optional
+        The path to save the final JSON file when `save_dict` is True.
+        If not provided, defaults to `json_path`.
     """
+    if save_dict is False:
+        if os.path.exists(json_path):
+            # File exists, so open it for writing
+            with open(json_path, "r") as file:
+                output_data = json.load(file)
 
-    if os.path.exists(json_path):
-        # File exists, so open it for writing
-        with open(json_path, "r") as file:
-            output_data = json.load(file)
-            for key, value in modeled_values_dict.items():
-                if key in output_data:
-                    if detailed_dict:
-                        if isinstance(output_data[key], list):
-                            output_data[key].append(value)
+                for key, value in modeled_values_dict.items():
+                    if key in output_data:
+                        if detailed_dict:
+                            if isinstance(output_data[key], list):
+                                output_data[key].append(value)
+                            else:
+                                output_data[key] = [output_data[key], value]
                         else:
-                            output_data[key] = [output_data[key], value]
+                            output_data[key].append(value)
                     else:
-                        output_data[key].append(value)
-                else:
-                    output_data[key] = [value]
-            with open(json_path, 'w') as file:
-                json.dump(output_data, file, indent=4)
-
+                        output_data[key] = [value]
+                with open(json_path, 'w') as file:
+                    json.dump(output_data, file, indent=4)
+        else:
+            # Save the updated JSON file
+            with open(json_path, "w") as file:
+                for key in modeled_values_dict:
+                    # Convert the existing list into a nested list with a single element
+                    modeled_values_dict[key] = [modeled_values_dict[key]]
+                json.dump(modeled_values_dict, file, indent=4)
     else:
-        # Save the updated JSON file
-        with open(json_path, "w") as file:
-            for key in modeled_values_dict:
-                # Convert the existing list into a nested list with a single element
-                modeled_values_dict[key] = [modeled_values_dict[key]]
-            json.dump(modeled_values_dict, file, indent=4)
+        if os.path.exists(json_path):
+            # File exists, so open it for reading
+            with open(json_path, "r") as file:
+                output_data = json.load(file)
 
+            # Save the data to the specified saving path
+            if saving_path:
+                with open(saving_path, "w") as file:
+                    json.dump(output_data, file, indent=4)
+        else:
+            print(f"File at {json_path} does not exist. Cannot save to {saving_path}.")
 def delete_slf(folder_path):
     """
     Deletes all files with the .slf extension in the specified folder.
@@ -391,9 +423,9 @@ def delete_slf(folder_path):
     -------
     None
     """
+    path = folder_path
     # Get all files with .slf extension in the specified folder
-    slf_files = glob.glob(os.path.join(folder_path, '*.slf'))
-
+    slf_files = glob.glob(os.path.join(path, '*.slf'))
     # Delete each .slf file
     for file_path in slf_files:
         try:
@@ -401,6 +433,51 @@ def delete_slf(folder_path):
             print(f"Deleted: {file_path}")
         except Exception as e:
             print(f"Error deleting {file_path}: {e}")
+
+
+def filter_model_outputs(data_dict, quantities, run_range_filtering=None):
+    """
+    Filters the data from the model outputs dictionary based on desired quantities
+    and optionally limits the runs included to a specific range.
+
+    Parameters
+    ----------
+    data_dict : dict
+        Dictionary containing model outputs with points as keys and lists of run outputs as values.
+    quantities : list of str
+        List of quantities to extract from the model outputs.
+    run_range : tuple of int, optional
+        Range of runs to include (start, end). If None, includes all runs.
+        The range is inclusive of the start index and exclusive of the end index.
+
+    Returns
+    -------
+    dict
+        Filtered dictionary containing only the selected quantities and runs within the specified range.
+    """
+    filtered_data = {}
+    for point, runs in data_dict.items():
+        # Extract the specified range of runs
+        if run_range_filtering is not None:
+            start, end = run_range_filtering
+            runs = runs[start - 1:end]
+
+        # Filter quantities from each run
+        filtered_runs_data = []
+        for run in runs:
+            filtered_run = {quantity: run[quantity] for quantity in quantities if quantity in run}
+            filtered_runs_data.append(filtered_run)
+
+        filtered_data[point] = filtered_runs_data
+    # pdb.set_trace()
+    # all_values = {}
+    # for point_name, data in filtered_data.items():
+    #     # Extract inner list of dictionaries (removing one level of nesting)
+    #     all_values[point_name] = data[0]
+
+    return filtered_data
+
+
 
 
 def filter_and_save_rows_by_column_avg(dataframe, arr, threshold, output_path):

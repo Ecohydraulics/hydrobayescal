@@ -21,34 +21,34 @@ sys.path.insert(0, hydroBayesCal_path)
 from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 
 full_complexity_model = TelemacModel(
-    control_file="tel_ering_mu_restart.cas",
-    model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
-    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/points_wet_area_MU.csv",
+    control_file="tel_ering_mu_initial.cas",
+    model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/telemac_files/",
+    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/telemac_files",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/telemac_files/points_wet_area_MU.csv",
     n_cpus=4,
     init_runs=1,
-    calibration_parameters=["zone3",
+    calibration_parameters=[
+                            "zone3",
                             "zone4",
-                            "zone10",
+                            "zone5",
+                            "zone7",
+                            "zone11",
                             "zone12",
                             "zone13",
                             "zone14",
-                            "zone15",
-                            "zone16",
-                            "zone17"],
+                            "zone15"],
     calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     dict_output_name="wd-v-channel-points",
     # TelemacModel class parameters
     friction_file="friction_ering_MU.tbl",
     tm_xd="1",
-    results_filename_base="Results_ering2m3",
+    results_filename_base="initial_results",
     complete_bal_mode=False,
     only_bal_mode=False,
     check_inputs=False,
     delete_complex_outputs=True,
 )
-simulation_set = [[1, 0.007, 0.066, 0.006, 0.006,0.006,0.006,
-                   0.006, 0.006]]
+simulation_set = [[3,3,3,3,3,3,3,3,3]]
 full_complexity_model.run_multiple_simulations(collocation_points=simulation_set,
                                                complete_bal_mode=False,)
 model_outputs = full_complexity_model.model_evaluations

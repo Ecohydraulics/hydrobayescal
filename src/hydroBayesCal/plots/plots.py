@@ -949,7 +949,7 @@ class BayesianPlotter:
         plt.show()
 
     def plot_model_outputs_vs_locations(self, observed_values, surrogate_outputs, complex_model_outputs,
-                                        gpe_lower_ci=None, gpe_upper_ci=None, measurement_error=None, plot_ci=False):
+                                        gpe_lower_ci=None, gpe_upper_ci=None, measurement_error=None, plot_ci=True):
         """
         Plots the outputs (velocities) of two models versus locations in a single figure,
         including observed data, a confidence interval from GPE analysis (optional), and measurement error.

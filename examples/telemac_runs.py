@@ -7,6 +7,8 @@ Author: Andres Heredia Hidalgo
 """
 import sys
 import os
+import numpy as _np
+import pandas as _pd
 import bayesvalidrox as bvr
 
 # Base directory of the project
@@ -74,13 +76,14 @@ def setup_experiment_design(
     # 6) chebyshev(FT) 7) grid(FT) 8)user
     exp_design.sampling_method = complex_model.parameter_sampling_method
     exp_design.n_new_samples = 1
-    #exp_design.X=
     exp_design.n_max_samples = complex_model.max_runs
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
     exp_design.exploit_method = 'bal'
     exp_design.util_func = tp_selection_criteria
-    exp_design.generate_ED(n_samples=exp_design.n_init_samples, max_pce_deg=1)
+    exp_design.X= _np.array([[3, 3, 3, 3, 3, 3, 3, 3, 3]])
+    exp_design.generate_ED(n_samples=exp_design.n_init_samples, max_pce_deg=1)#
+
 
     return exp_design
 
@@ -125,7 +128,10 @@ def run_complex_model(complex_model,
     if not complex_model.only_bal_mode:
         logger.info(
             f"Sampling {complex_model.init_runs} collocation points for the selected calibration parameters with {complex_model.parameter_sampling_method} sampling method.")
-        collocation_points = experiment_design.generate_samples(n_samples=experiment_design.n_init_samples,
+        if experiment_design.sampling_method=='user':
+            collocation_points = experiment_design.X
+        else:
+            collocation_points = experiment_design.generate_samples(n_samples=experiment_design.n_init_samples,
                                                                 sampling_method=experiment_design.sampling_method)
 
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
@@ -164,33 +170,18 @@ if __name__ == "__main__":
             python_shebang="#!/usr/bin/env python3",
             # HydroSimulations class parameters
             control_file="tel_ering_mu_restart.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_VITESSE_filtered.csv",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac",
+            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/synthetic-data-run.csv",
             n_cpus=8,
-            init_runs=5,
-            calibration_parameters=["zone3",
-                                    "zone4",
-                                    "zone10",
-                                    "zone12",
-                                    "zone13",
-                                    "zone14",
-                                    "zone15",
-                                    "zone16",
-                                    "zone17"],
-            param_values=[[0.8, 1.5],
-                          [0.005, 0.01],
-                          [0.04, 0.1],
-                          [0.04, 0.1],
-                          [0.04, 0.1],
-                          [0.04, 0.1],
-                          [0.04, 0.1],
-                          [0.04, 0.1],
-                          [0.04, 0.1]],
-
+            init_runs=1,
+            calibration_parameters=["zone3", "zone4","zone5","zone7", "zone11", "zone12","zone13","zone14","zone15"],
+            param_values=[[2.5, 3.5], [2.5, 3.5], [2.5, 3.5], [2.5, 3.5], [1.8, 27], [1.8, 27], [0.85, 13],
+                          [0.85, 13], [0.62, 10]],
+            # param_values=[[3,3], [3,3], [3,3], [3,3], [3,3], [3,3], [3,3], [3,3], [3,3]],
             calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            dict_output_name="model-outputs-wd",
-            parameter_sampling_method="sobol",
+            dict_output_name="model-outputs-wd-sv",
+            parameter_sampling_method="user",
             complete_bal_mode=False,
             only_bal_mode=False,
             delete_complex_outputs=True,
@@ -203,3 +194,16 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         experiment_design=exp_design,
     )
+    # Reshape the array: separate water depth and velocity
+    water_depth = model_evaluations[:, ::2]  # Columns 1, 3, 5... (WATER DEPTH)
+    velocity = model_evaluations[:, 1::2]  # Columns 2, 4, 6... (SCALAR VELOCITY)
+
+    # Stack water depth and velocity as two columns
+    reshaped_data = _np.column_stack((water_depth.flatten(), velocity.flatten()))
+
+    # Create a DataFrame for better labeling
+    df = _pd.DataFrame(reshaped_data, columns=["Water Depth", "Velocity"])
+
+    # Save as CSV
+    output_path = "output.csv"  # Replace with your desired path
+    df.to_csv(output_path, index=False)

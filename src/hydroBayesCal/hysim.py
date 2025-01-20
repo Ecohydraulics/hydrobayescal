@@ -11,7 +11,7 @@ import pickle
 import numpy as np
 from datetime import datetime
 
-# TODO: there is a log_actions wrapper function in the function pool - use this instead!
+# TODO: there is a log_actions wrapper function in the function pool - use this instead!-Done
 from src.hydroBayesCal.function_pool import *
 
 
@@ -37,6 +37,7 @@ class HydroSimulations:
             calibration_parameters=None,
             param_values=None,
             calibration_quantities=None,
+            extraction_quantities=None,
             dict_output_name='output-dictionary',
             parameter_sampling_method='',
             max_runs=int(),
@@ -87,7 +88,8 @@ class HydroSimulations:
         only_bal_mode : bool, optional (Default: False)
             If False: This option executes either a complete surrogate-assisted calibration or only the initial runs (depending of what is indicated above.)
             If True: When only the surrogate model construction and Bayesian Active Learning of preexisting model outputs
-                  at predefined collocation points is required. This can be run ONLY if a complete process (Complete_bal_mode_mode = True) has been performed.
+                  at predefined collocation points is required. This can be run ONLY if a complete process(complete_bal_mode_mode = True; only_bal_mode=True)
+                  or only initial (complete_bal_mode_mode = False; only_bal_mode=False) runs has been performed.
         check_inputs : bool, optional (Default: False)
             If True, checks input files and parameters before running simulations.
             If False, inputs are not checked.
@@ -147,6 +149,7 @@ class HydroSimulations:
         self.nproc = n_cpus
         self.param_values = param_values
         self.calibration_quantities = calibration_quantities
+        self.extraction_quantities = extraction_quantities
         self.calibration_parameters = calibration_parameters
         self.parameter_sampling_method = parameter_sampling_method
         self.init_runs = init_runs
@@ -162,7 +165,8 @@ class HydroSimulations:
         self.nloc = None
         self.ndim = None
         self.param_dic = None
-        self.num_quantities = None
+        self.num_calibration_quantities = None
+        self.num_extraction_quantities = None
         self.observations = None
         self.measurement_errors = None
         self.calibration_pts_df = None
@@ -170,17 +174,26 @@ class HydroSimulations:
         if calibration_parameters:
             self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
         if calibration_pts_file_path:
-            self.observations, self.measurement_errors, self.nloc, self.num_quantities, self.calibration_pts_df = self.set_observations_and_errors(
-                calibration_pts_file_path, calibration_quantities)
+            self.observations, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_errors(
+                calibration_pts_file_path, calibration_quantities,extraction_quantities)
 
         self.asr_dir = os.path.join(res_dir,
-                                    f"auto-saved-results-{self.num_quantities}-quantities_{'_'.join(self.calibration_quantities)}")
+                                    f"auto-saved-results-HydroBayesCal")
+        quantities_str = '_'.join(self.calibration_quantities)
+        self.calibration_folder = os.path.join(self.asr_dir,"calibration-data",f"{quantities_str}")
+        self.restart_data_folder = os.path.join(self.asr_dir,"restart_data")
         if not os.path.exists(self.asr_dir):
             os.makedirs(self.asr_dir)
+        if not os.path.exists(self.calibration_folder):
+            os.makedirs(self.calibration_folder)
+        if not os.path.exists(self.restart_data_folder):
+            os.makedirs(self.restart_data_folder)
         if not os.path.exists(os.path.join(self.asr_dir, "plots")):
             os.makedirs(os.path.join(self.asr_dir, "plots"))
         if not os.path.exists(os.path.join(self.asr_dir, "surrogate-gpe")):
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
+        if complete_bal_mode and only_bal_mode:
+            update_json_file(json_path=os.path.join(self.restart_data_folder, "collocation-points-outputs.json"),save_dict=True,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
         self.model_evaluations = None
 
     def check_inputs(
@@ -400,7 +413,8 @@ class HydroSimulations:
 
     def set_observations_and_errors(self,
                                     calibration_pts_file_path,
-                                    calibration_quantities):
+                                    calibration_quantities,
+                                    extraction_quantities):
         """
         Reads and sets the observations and errors at calibration points based on the provided data file.
 
@@ -417,7 +431,6 @@ class HydroSimulations:
             to the columns or fields in the calibration data file that contain the relevant
             observational data.
 
-
         Returns
         -------
         observations : 2D array
@@ -431,23 +444,37 @@ class HydroSimulations:
         calibration_pts_df : DataFrame
             Contains the raw calibration data points read from the file.
         """
-        n_calib_quantities = len(calibration_quantities)
+        # Read the CSV file into a DataFrame
         calibration_pts_df = pd.read_csv(calibration_pts_file_path)
-        # Calculate the column indices for observations dynamically (starting from the 3rd column)
-        observation_indices = [2 * i + 3 for i in range(n_calib_quantities)]
-        # Calculate the column indices for errors dynamically (starting from the 4th column)
-        error_indices = [2 * i + 4 for i in range(n_calib_quantities)]
-        # Select the observation columns and convert them to a NumPy array
-        if n_calib_quantities == 1:
-            observations = calibration_pts_df.iloc[:, observation_indices].to_numpy().reshape(1, -1)
-            measurement_errors = calibration_pts_df.iloc[:, error_indices].to_numpy().flatten()
-            n_loc = observations.size
-        else:
-            observations = calibration_pts_df.iloc[:, observation_indices].to_numpy().transpose().ravel().reshape(1, -1)
-            measurement_errors = calibration_pts_df.iloc[:, error_indices].to_numpy().transpose().ravel()
-            n_loc = int(observations.size / n_calib_quantities)
 
-        return observations, measurement_errors, n_loc, n_calib_quantities, calibration_pts_df
+        # List to store the observation and error columns based on calibration_quantities
+        observation_columns = []
+        error_columns = []
+
+        # Loop through the calibration quantities to match with the column names
+        for quantity in calibration_quantities:
+            observation_columns.append(f"{quantity}_DATA")
+            error_columns.append(f"{quantity}_ERROR")
+
+        # Select the observation and error columns based on the list
+        observations = calibration_pts_df[observation_columns].to_numpy()
+        measurement_errors = calibration_pts_df[error_columns].to_numpy()
+
+        # Reshape observations and errors to match the expected output format
+        observations = observations.flatten().reshape(1, -1)
+        measurement_errors = measurement_errors.flatten()
+
+        # Calculate the number of unique locations or data points
+        n_loc = len(calibration_pts_df)
+
+        # Number of calibration quantities (based on the input list)
+        n_calib_quantities = len(calibration_quantities)
+        if extraction_quantities is None:
+            n_extraction_quantities = 0
+        else:
+            n_extraction_quantities = len(extraction_quantities)
+
+        return observations, measurement_errors, n_loc, n_calib_quantities, calibration_pts_df,n_extraction_quantities
 
     @staticmethod
     def read_data(results_folder, file_name):
