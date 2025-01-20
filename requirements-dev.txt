@@ -1,3 +1,9 @@
+matplotlib
+mpi4py
+numpy
+openpyxl
+pandas
+scikit-learn
 pip>=22.0.4
 wheel>=0.37.1
 affine>=2.3.0

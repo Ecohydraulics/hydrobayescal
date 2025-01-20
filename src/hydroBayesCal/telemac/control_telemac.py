@@ -483,13 +483,10 @@ class TelemacModel(HydroSimulations):
                 # new_collocation_point=bal_new_set_parameters * [[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
                 new_collocation_point=bal_new_set_parameters * [[0.00625,0.00625,0.0131,0.0131,0.0178]]
                 updated_collocation_points = np.vstack((collocation_points, new_collocation_point))
-                print(updated_collocation_points)
-                # pdb.set_trace()
                 collocation_point_sim_list = updated_collocation_points[-1].tolist()
                 array_list = updated_collocation_points.tolist()
-                print(array_list)
                 logger.info(
-                    f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {array_list} ")
+                    f" Running  full complexity model after BAL # {self.bal_iteration} with collocation point : {collocation_point_sim_list} ")
                 if validation:
                     update_collocation_pts_file(res_dir + "/collocation-points-validation.csv",
                                                 new_collocation_point=array_list)
