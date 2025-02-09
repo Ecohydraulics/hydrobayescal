@@ -980,12 +980,12 @@ class TelemacModel(HydroSimulations):
             try:
                 # Removes the output_file.json when starting a new run of the code
                 os.remove(json_path)
-                try:
-                    os.remove(json_path_detailed)
-                except FileNotFoundError:
-                    print("No detailed result file found. Creating a new file.")
             except FileNotFoundError:
                 print("No nested result file found. Creating a new file.")
+            try:
+                os.remove(json_path_detailed)
+            except FileNotFoundError:
+                print("No detailed result file found. Creating a new file.")
         # Updating json files for every run
         #update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
         if validation:
