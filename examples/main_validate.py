@@ -1,6 +1,8 @@
-import sys,os
+import sys
+import os
 import numpy as np
 import bayesvalidrox as bvr
+
 # Base directory of the project
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src_path = os.path.join(base_dir, 'src')
@@ -9,21 +11,22 @@ sys.path.insert(0, base_dir)
 sys.path.insert(0, src_path)
 sys.path.insert(0, hydroBayesCal_path)
 
-#from user_settings import user_inputs_tm
 from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 from src.hydroBayesCal.plots.plots import BayesianPlotter
 
+# Initialize full complexity model
 full_complexity_model = TelemacModel(
     control_file="tel_ering_mu_restart.cas",
     model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurementsWDEPTH_VITESSE_filtered.csv",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025.csv",
     n_cpus=8,
-    init_runs=1,
+    init_runs=4,
     calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+    calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY"],
+    extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
     dict_output_name="model-outputs-valid",
-    # TelemacModel class parameters
+    parameter_sampling_method="sobol",
     friction_file="friction_ering_MU.tbl",
     tm_xd="1",
     results_filename_base="results2m3_mu",
@@ -35,102 +38,80 @@ full_complexity_model = TelemacModel(
 )
 
 results_folder_path = full_complexity_model.asr_dir
+restart_data_folder = full_complexity_model.restart_data_folder
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
-sm = full_complexity_model.read_data(results_folder_path, "surrogate-gpe/bal_dkl/gpr_gpy_TP15_bal_quantities2.pkl")
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 n_loc = full_complexity_model.nloc
-n_quantities = full_complexity_model.num_quantities
-def get_validation_data():
+n_quantities = full_complexity_model.num_calibration_quantities
 
-    #IMPORT LAST TRAINED SURROGATE
-    #sm = full_complexity_model.read_data(results_folder_path,"surrogate-gpe/gpr_gpy_TP125_bal_quantities2.pkl")
-    #GENERATE "N" RANDOM SAMPLES FOR MODEL PARAMETERS FROM EXP. DESIGN TO VALIDATE MY SURROGATE AND
-    # I SAVE THEM AS NPARRAY VALIDATION SET
-    #sm.exp_design.sampling_method = 'user'
-    sm.exp_design.generate_ED(n_samples=10,max_pce_deg=1)
-    sm.exp_design.X = np.array([[3, 3, 3, 3, 3]])
-    #sm.exp_design.X = np.array([[7.05, 2.80, 2.40, 3.47]])
-    validation_sets = sm.exp_design.X
-    # validation_sets=full_complexity_model.read_data(results_folder_path,"collocation-points-validation.csv")
-    # PREDICT OUTPUTS USING THE SURROGATE WITH THE VALIDATION SET
-    validation_sets_metamodel_output = sm.predict_(input_sets=validation_sets)# , get_conf_int=True
-    # RUN COMPLEX MODEL WITH THE SAME VALIDATION SET AND GET THE OUTPUTS
-    full_complexity_model.run_multiple_simulations(collocation_points=validation_sets,
-                              complete_bal_mode=False,validation=full_complexity_model.validation
-                              )
-    # validation_set_complexmodel_output = full_complexity_model.output_processing(results_folder_path + "/model-outputs-validation.json"
-    #                                                                              ,False,False)
-    # num_simulations, num_columns = validation_set_complexmodel_output.shape
+# Import last trained surrogate model
+sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP150_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}.pkl")
 
-    validation_set_complexmodel_output = full_complexity_model.model_evaluations
-    num_simulations, num_columns = validation_set_complexmodel_output.shape
-    # Separate the columns for each quantity
-    if n_quantities==2:
-        first_quantity_columns_cm = validation_set_complexmodel_output[:, 0:num_columns:2]  # Take every second column starting from 0
-        second_quantity_columns_cm = validation_set_complexmodel_output[:, 1:num_columns:2] # Take every second column starting from 1
-        print(type(validation_sets_metamodel_output))
-        first_quantity_columns_sm = validation_sets_metamodel_output["output"][:,
-                                    0:num_columns:2]  # Take every second column starting from 0
-        second_quantity_columns_sm = validation_sets_metamodel_output["output"][:,
-                                     1:num_columns:2]  # Take every second column starting from 1
+# Load validation sets from CSV
+validation_sets = full_complexity_model.read_data(restart_data_folder, "collocation-points-validation.csv")
 
-        validation_set_complexmodel_output = np.hstack((first_quantity_columns_cm, second_quantity_columns_cm))
-        validation_sets_metamodel_output=np.hstack((first_quantity_columns_sm, second_quantity_columns_sm))
-        print(validation_set_complexmodel_output)
-        print(validation_sets_metamodel_output)
-    # Concatenate the rearranged quantities horizontally
-    return validation_set_complexmodel_output,validation_sets_metamodel_output
+# Predict outputs using the surrogate model
+sm_predictions = sm.predict_(input_sets=validation_sets, get_conf_int=True)
 
+# Load complex model outputs from CSV
+cm_outputs = full_complexity_model.output_processing(output_data_path=os.path.join(full_complexity_model.restart_data_folder,
+                                                                                          f'collocation-points-outputs.json'),
+                                                            validation=full_complexity_model.validation,
+                                                            filter_outputs=True,
+                                                            run_range_filtering=(1, full_complexity_model.init_runs))
 
-    # bayesian_data=full_complexity_model.read_data(results_folder_path,'BAL_dictionary.pkl')
-    # collocation_points = full_complexity_model.read_data(results_folder_path,"collocation-points.csv")
-    # model_evaluations = full_complexity_model.read_data(results_folder_path,"model-results.csv")
-    #surrogate_outputs = full_complexity_model.read_data(results_folder_path,"surrogate_output_iter_15.pkl")
+# Number of columns per quantity
+num_simulations, num_columns = cm_outputs.shape
+columns_per_quantity = num_columns // n_quantities
 
-    #sm.Exp_Design.X=np.array([0.06,0.13,0.09,0.12,0.0105,0.018,0.24,0.048]).reshape(1, -1) # post calibration set
-    #sm.Exp_Design.X=np.array([0.066,0.066,0.066,0.066,0.066,0.22,0.027,0.077]).reshape(1, -1) # pre calibration set
+# Split outputs dynamically for each quantity
+cm_outputs_split = {}
+sm_outputs_split = {}
+sm_upper_ci_split = {}
+sm_lower_ci_split = {}
+obs_split = {}
+err_split = {}
 
-    # RUN COMPLEX MODEL WITH THE SAME VALIDATION SET AND GET THE OUTPUTS
+for i in range(n_quantities):
+    cm_outputs_split[f'cm_outputs_{i + 1}'] = cm_outputs[:, i::n_quantities]
+    sm_outputs_split[f'sm_outputs_{i + 1}'] = sm_predictions["output"][:, i::n_quantities]
+    sm_upper_ci_split[f'sm_upper_ci_{i + 1}'] = sm_predictions["upper_ci"][:, i::n_quantities]
+    sm_lower_ci_split[f'sm_lower_ci_{i + 1}'] = sm_predictions["lower_ci"][:, i::n_quantities]
+    obs_split[f'obs_{i + 1}'] = obs[:, i::n_quantities]
+    err_split[f'err_{i + 1}'] = err[i::n_quantities]
 
-#
-# set=collocation_points[-1].reshape(1, -1)
-# lower_ci = validation_sets_metamodel_output["lower_ci"]
-# upper_ci = validation_sets_metamodel_output["upper_ci"]
-# plotter.plot_model_comparisons(obs, validation_sets_metamodel_output["output"], validation_set_complexmodel_output[-1, :].reshape(1, -1))
-# plotter.plot_model_outputs_vs_locations(obs, validation_sets_metamodel_output["output"], model_evaluations[-1, :].reshape(1, -1), upper_ci, lower_ci, err)
-#plotter.plot_model_comparisons()
+# Plot results dynamically for each quantity
+for i in range(n_quantities):
+    cm_output = cm_outputs_split[f'cm_outputs_{i + 1}']
+    sm_output = sm_outputs_split[f'sm_outputs_{i + 1}']
+    sm_upper_ci = sm_upper_ci_split[f'sm_upper_ci_{i + 1}']
+    sm_lower_ci = sm_lower_ci_split[f'sm_lower_ci_{i + 1}']
+    obs_quantity = obs_split[f'obs_{i + 1}']
+    err_quantity = err_split[f'err_{i + 1}']
 
-if __name__ == "__main__":
-    complex_output,sm_output,=get_validation_data()
-    print(complex_output)
-    print(sm_output)
-    if n_quantities==2:
-        mid_index_locations = sm_output.shape[1] // 2
-        sm_output1 = sm_output[:, :mid_index_locations]
-        sm_output2 = sm_output[:, mid_index_locations:]
-        complex_output1=complex_output[:, :mid_index_locations]
-        complex_output2=complex_output[:, mid_index_locations:]
-        # Get the first half of the columns
-        obs1 = obs[:, :mid_index_locations]
-        err1 = err[:mid_index_locations]
-        # Get the second half of the columns
-        obs2 = obs[:, mid_index_locations:]
-        err2 = err[mid_index_locations:]
-        plotter.plot_model_outputs_vs_locations(observed_values=obs1,
-                                                surrogate_outputs=sm_output1[-1, :].reshape(1, -1),
-                                                complex_model_outputs=complex_output1[-1, :].reshape(1, -1),
-                                                measurement_error=err1)
-        #
-        plotter.plot_model_outputs_vs_locations(observed_values=obs2,
-                                                surrogate_outputs=sm_output2[-1, :].reshape(1, -1),
-                                                complex_model_outputs=complex_output2[-1, :].reshape(1, -1),
-                                                measurement_error=err2)
+    # plotter.plot_validation_results(obs_quantity, sm_output, cm_output,gpe_lower_ci=sm_lower_ci ,gpe_upper_ci=sm_upper_ci,
+    #                                 measurement_error=err_quantity, plot_ci=True,N=2)
+    plotter.plot_validation_locations(sm_output, cm_output, sm_lower_ci, sm_upper_ci,selected_locations=[2,15,26,28])
+    plotter.plot_model_outputs_vs_locations(
+        observed_values=obs_quantity,
+        surrogate_outputs=sm_output[-1, :].reshape(1, -1),
+        complex_model_outputs=cm_output[-1, :].reshape(1, -1),
+        gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
+        gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
+        measurement_error=err_quantity)
 
-    #plotter.plot_model_comparisons(obs, sm_output[-1, :].reshape(1, -1), complex_output[-1, :].reshape(1, -1))
-    plotter.plot_model_outputs_vs_locations(observed_values=obs, surrogate_outputs=complex_output[-1, :].reshape(1, -1),
-                                            complex_model_outputs=complex_output[-1, :].reshape(1, -1),
-                                            measurement_error=err)
+    # Plot Bayesian results
+    # plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=35, plot_type='both')
+    # plotter.plot_posterior_updates(
+    #     posterior_arrays=bayesian_data['posterior'],
+    #     parameter_names=full_complexity_model.calibration_parameters,
+    #     prior=bayesian_data['prior'],
+    #     param_values=full_complexity_model.param_values,
+    #     iterations_to_plot=[0, 35],
+    #     bins=20,
+    #     plot_prior=True,
+    # )
     # print(sm_output1)
     # print(sm_output2)
     # print(complex_output)

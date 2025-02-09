@@ -5,7 +5,8 @@ Code for plotting results in the context of Bayesian Calibration with GPE
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde, norm, linregress
-from sklearn.metrics import mean_squared_error, r2_score
+import random
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import matplotlib.ticker as ticker
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
@@ -981,7 +982,6 @@ class BayesianPlotter:
         observed_values = observed_values.flatten()
         surrogate_outputs = surrogate_outputs.flatten()
         complex_model_outputs = complex_model_outputs.flatten()
-        measurement_error = measurement_error.flatten()
 
         if gpe_lower_ci is not None and gpe_upper_ci is not None:
             gpe_lower_ci = gpe_lower_ci.flatten()
@@ -992,14 +992,13 @@ class BayesianPlotter:
         if measurement_error is not None:
             measurement_error = measurement_error.flatten()
 
-        if not (len(observed_values) == len(surrogate_outputs) == len(complex_model_outputs) == len(measurement_error)):
+        if not (len(observed_values) == len(surrogate_outputs) == len(complex_model_outputs)):
             raise ValueError("All input arrays must have the same length.")
 
         locations = np.arange(1, len(observed_values) + 1)
 
         # Calculate the measurement confidence interval (2 standard deviations at each location)
-        obs_lower_bound = observed_values - 2 * measurement_error
-        obs_upper_bound = observed_values + 2 * measurement_error
+        obs_error = 2 * measurement_error if measurement_error is not None else None
 
         # Compute MSE and R² for both models
         surrogate_mse = mean_squared_error(observed_values, surrogate_outputs)
@@ -1015,28 +1014,28 @@ class BayesianPlotter:
         # Plot
         plt.figure(figsize=(12, 8))
 
-        # Plot observed data with measurement error confidence interval
-        plt.plot(locations, observed_values, marker='o', color='black', label='Observed Data')
-        if measurement_error is not None:
-            plt.fill_between(locations, obs_lower_bound, obs_upper_bound, color='red', alpha=0.2,
-                             label='Measurement Error (±2 SD)')
+        # Plot observed data with measurement error bars
+        plt.errorbar(locations, observed_values, yerr=obs_error, fmt='o', color='black', label='Observed Data',
+                     capsize=4, zorder=3)
 
-        # Plot confidence interval from GPE analysis if requested
+        # Plot confidence interval from GPE analysis using vertical bars
         if plot_ci and gpe_lower_ci is not None and gpe_upper_ci is not None:
-            plt.fill_between(locations, gpe_lower_ci, gpe_upper_ci, color='gray', alpha=0.3, hatch='/',
-                             label='GPE Confidence Interval')
+            plt.vlines(
+                x=locations, ymin=gpe_lower_ci, ymax=gpe_upper_ci,
+                colors='gray', alpha=0.6, linewidth=2, label='GPE Confidence Interval'
+            )
 
-        # Plot model outputs
-        plt.plot(locations, surrogate_outputs, marker='o', color='blue', linestyle='--',
-                 label=f'Surrogate Model Outputs (MSE: {surrogate_mse:.4f}, R²: {surrogate_r2:.4f})')
-        plt.plot(locations, complex_model_outputs, marker='s', color='green', linestyle='--',
-                 label=f'Complex Model Outputs (MSE: {complex_mse:.4f}, R²: {complex_r2:.4f})')
+        # Plot model outputs as independent points
+        plt.scatter(locations, surrogate_outputs, color='blue',
+                    label=f'Surrogate Model Outputs (MSE: {surrogate_mse:.4f}, R²: {surrogate_r2:.4f})', zorder=3)
+        plt.scatter(locations, complex_model_outputs, color='green',
+                    label=f'Complex Model Outputs (MSE: {complex_mse:.4f}, R²: {complex_r2:.4f})', zorder=3)
 
-        # Add labels, title, and legend with smaller font size
+        # Add labels, title, and legend
         plt.xlabel('Location')
         plt.ylabel('Values')
         plt.title('Model Outputs vs Observed Data')
-        plt.legend(fontsize=12, loc='upper left')  # Set legend font size to a numerical value
+        plt.legend(fontsize=12, loc='upper left')
         plt.grid(True, linestyle='--', color='gray', alpha=0.7)  # Secondary grid lines
         plt.tight_layout()
         plt.show()
@@ -1098,6 +1097,183 @@ class BayesianPlotter:
         fig.legend(handles=handles, labels=labels, loc="center right", ncol=1)
         plt.subplots_adjust(top=0.9, bottom=0.15, wspace=0.2, hspace=0.5)
         plt.show()
+
+    def plot_validation_results(self,obs, surrogate_outputs, complex_model_outputs, gpe_lower_ci=None, gpe_upper_ci=None,
+                                measurement_error=None, plot_ci=True, N=5):
+        """
+        Plots N randomly selected realizations of surrogate and complex model outputs versus observed values.
+        Each realization is plotted in a separate subplot with confidence intervals.
+        """
+        obs = obs.flatten()
+        if surrogate_outputs.ndim == 1:
+            surrogate_outputs = surrogate_outputs.reshape(1, -1)
+        if complex_model_outputs.ndim == 1:
+            complex_model_outputs = complex_model_outputs.reshape(1, -1)
+
+        num_realizations_surrogate, num_points = surrogate_outputs.shape
+        num_realizations_complex, _ = complex_model_outputs.shape
+
+        if measurement_error is not None:
+            measurement_error = measurement_error.flatten()
+        obs_error = 2 * measurement_error if measurement_error is not None else None
+
+        # Randomly select N realizations to plot
+        N = min(N, num_realizations_surrogate, num_realizations_complex)
+        selected_indices = random.sample(range(num_realizations_surrogate), N)
+
+        fig, axes = plt.subplots(N, 1, figsize=(12, 3 * N), sharex=True)
+        if N == 1:
+            axes = [axes]  # Ensure axes is iterable
+
+        for idx, realization in enumerate(selected_indices):
+            ax = axes[idx]
+            locations = np.arange(1, num_points + 1)
+
+            # Extract CI for the specific realization
+            gpe_lower = gpe_lower_ci[realization, :] if gpe_lower_ci is not None else None
+            gpe_upper = gpe_upper_ci[realization, :] if gpe_upper_ci is not None else None
+
+            # Compute MSE and R² for the current realization
+            surrogate_mse = mean_squared_error(obs, surrogate_outputs[realization, :])
+            complex_mse = mean_squared_error(obs, complex_model_outputs[realization, :])
+            surrogate_r2 = r2_score(obs, surrogate_outputs[realization, :])
+            complex_r2 = r2_score(obs, complex_model_outputs[realization, :])
+
+            # Plot observed data with measurement error bars
+            ax.errorbar(locations, obs, yerr=obs_error, fmt='o', color='black', label='Observed Data', capsize=4,
+                        zorder=3)
+
+            # Plot confidence interval for the selected realization
+            if plot_ci and gpe_lower is not None and gpe_upper is not None:
+                ax.fill_between(locations, gpe_lower, gpe_upper, color='gray', alpha=0.3,
+                                label='GPE Confidence Interval')
+
+            # Plot surrogate and complex model outputs
+            ax.plot(locations, surrogate_outputs[realization, :], color='blue', alpha=0.8, linewidth=1.5,
+                    label='Surrogate Model')
+            ax.plot(locations, complex_model_outputs[realization, :], color='green', alpha=0.8, linewidth=1.5,
+                    label='Complex Model')
+
+            # Labels and legend
+            ax.set_ylabel('Values')
+            ax.set_title(
+                f'Realization {realization + 1}: MSE(SM)={surrogate_mse:.4f}, R²(SM)={surrogate_r2:.4f}, MSE(CM)={complex_mse:.4f}, R²(CM)={complex_r2:.4f}')
+            ax.legend()
+            ax.grid(True, linestyle='--', color='gray', alpha=0.7)
+
+        axes[-1].set_xlabel('Location')
+        plt.tight_layout()
+        plt.show()
+
+    def plot_validation_locations(self, surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci,
+                                  selected_locations, plot_residuals=False):
+        """
+        Plots surrogate model confidence intervals and complex model realizations for multiple locations.
+        Adds surrogate model realization values as points along with hatch bars for the confidence intervals.
+        Computes and displays metrics between the complex model and surrogate model, including residuals in a separate plot.
+
+        Parameters:
+        -----------
+        surrogate_outputs : numpy.ndarray
+            2D array of surrogate model outputs (rows = realizations, columns = locations).
+        complex_model_outputs : numpy.ndarray
+            2D array of complex model outputs (rows = realizations, columns = locations).
+        gpe_lower_ci : numpy.ndarray
+            2D array of lower confidence bounds from the surrogate model.
+        gpe_upper_ci : numpy.ndarray
+            2D array of upper confidence bounds from the surrogate model.
+        selected_locations : list of int
+            List of location indices to visualize.
+        plot_residuals : bool
+            If True, plots residuals; if False, plots comparison (CM vs SM).
+
+        Returns:
+        --------
+        None
+        """
+
+        def compute_metrics(cm_values, sm_values):
+            """Compute various metrics between complex model and surrogate model."""
+            mse = mean_squared_error(cm_values, sm_values)
+            rmse = np.sqrt(mse)
+            mae = mean_absolute_error(cm_values, sm_values)
+            correlation = np.corrcoef(cm_values, sm_values)[0, 1]
+            return mse, rmse, mae, correlation
+
+        num_locations = len(selected_locations)
+        fig, axes = plt.subplots(1, num_locations, figsize=(5 * num_locations, 5), sharey=False)
+        if num_locations == 1:
+            axes = [axes]
+
+        # Create a separate figure for residuals (if requested)
+        if plot_residuals:
+            fig_residuals, axes_residuals = plt.subplots(1, num_locations, figsize=(5 * num_locations, 5), sharey=False)
+            if num_locations == 1:
+                axes_residuals = [axes_residuals]
+        else:
+            axes_residuals = [None] * num_locations
+
+
+        for ax, selected_location, ax_residual in zip(axes, selected_locations, axes_residuals):
+            # Extract values at the selected location
+            sm_lower_ci = gpe_lower_ci[:, selected_location]  # CI lower bound per realization
+            sm_upper_ci = gpe_upper_ci[:, selected_location]  # CI upper bound per realization
+            sm_values = surrogate_outputs[:, selected_location]  # SM realizations
+            cm_values = complex_model_outputs[:, selected_location]  # CM realizations
+
+            # Compute residuals: the difference between complex model and surrogate model outputs
+            residuals = cm_values - sm_values
+
+            if plot_residuals:
+                # Plot residuals in a separate plot
+                ax_residual.scatter(range(len(residuals)), residuals, color='red', alpha=0.6, label='Residuals')
+                ax_residual.set_title(f"Residuals - Location {selected_location}")
+                ax_residual.set_xlabel("Realization Index")
+                ax_residual.set_ylabel("Residual Value")
+                ax_residual.grid(True, linestyle="--", alpha=0.6)
+            else:
+                # Plot individual realizations of the complex model
+                ax.scatter(range(len(cm_values)), cm_values, color='green', alpha=0.6, label='CM Realizations')
+
+                # Plot hatch bars for the surrogate model confidence intervals
+                for i in range(len(sm_lower_ci)):
+                    ax.bar(i, sm_upper_ci[i] - sm_lower_ci[i], bottom=sm_lower_ci[i], width=0.8, color='gray',
+                           alpha=0.5, hatch='/')
+
+                    # Plot the surrogate model realization values as points
+                    ax.scatter(i, sm_values[i], color='blue', marker='x')
+
+                # Compute metrics between complex model and surrogate model
+                mse, rmse, mae, correlation = compute_metrics(cm_values, sm_values)
+
+                # Formatting for comparison plot
+                ax.set_title(f"Location {selected_location}")
+                ax.set_xlabel("Realization Index")
+                ax.set_ylabel("Output Value")
+                ax.grid(True, linestyle="--", alpha=0.6)
+
+                # Prepare metrics for the legend and text box
+                metrics_text = (f"MSE: {mse:.2e}\n"
+                                f"RMSE: {rmse:.2e}\n"
+                                f"MAE: {mae:.2e}\n"
+                                f"Correlation: {correlation:.2f}")
+
+                # Plot legend for comparison plot
+                ax.legend(loc='upper right', fontsize=8, bbox_to_anchor=(1, 1))
+
+                # Display the metrics in the top-right corner as a text box
+                plt.figtext(0.95, 0.95, metrics_text, horizontalalignment='right', verticalalignment='top', fontsize=10,
+                            bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5'))
+
+        # Adjust layout for both figures
+        plt.tight_layout()
+        plt.show()
+
+        if plot_residuals:
+            # Show residuals plots
+            fig_residuals.tight_layout()
+            plt.show()
+
 # def plot_bme_concentration_last_iterations(param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,
 #                                            last_iterations=10, interval=1):
 #     """

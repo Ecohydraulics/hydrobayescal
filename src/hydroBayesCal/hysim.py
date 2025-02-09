@@ -46,6 +46,7 @@ class HydroSimulations:
             check_inputs=False,
             delete_complex_outputs=False,
             validation=False,
+            multitask_selection="variables",
             *args,
             **kwargs,
     ):
@@ -158,6 +159,7 @@ class HydroSimulations:
         self.only_bal_mode = only_bal_mode
         self.delete_complex_outputs=delete_complex_outputs
         self.validation=validation
+        self.multitask_selection = multitask_selection
         if self.validation:
             self.dict_output_name = dict_output_name + "-validation"
         else:
@@ -170,6 +172,7 @@ class HydroSimulations:
         self.observations = None
         self.measurement_errors = None
         self.calibration_pts_df = None
+        self.user_collocation_points = None
 
         if calibration_parameters:
             self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
@@ -194,6 +197,10 @@ class HydroSimulations:
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
         if complete_bal_mode and only_bal_mode:
             update_json_file(json_path=os.path.join(self.restart_data_folder, "collocation-points-outputs.json"),save_dict=True,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
+        if parameter_sampling_method == "user":
+            collocation_path = os.path.join(self.restart_data_folder, 'initial-collocation-points.csv')
+            self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1)
+
         self.model_evaluations = None
 
     def check_inputs(

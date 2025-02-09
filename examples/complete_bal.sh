@@ -14,3 +14,7 @@ python bal_telemac.py --calibration_quantities "SCALAR VELOCITY" --complete_bal_
 # Command 3: Run with SCALAR VELOCITY and WATER DEPTH
 echo "Running with calibration_quantities: SCALAR VELOCITY and WATER DEPTH, complete_bal_mode: True, only_bal_mode: True"
 python bal_telemac.py --calibration_quantities "SCALAR VELOCITY" "WATER DEPTH" --complete_bal_mode True --only_bal_mode True
+
+# Command 4: Run with SCALAR VELOCITY and TKE
+#echo "Running with calibration_quantities: SCALAR VELOCITY and TURBULENT ENERGY, complete_bal_mode: True, only_bal_mode: True"
+#python bal_telemac.py --calibration_quantities "SCALAR VELOCITY" "TURBULENT ENERG" --complete_bal_mode True --only_bal_mode True

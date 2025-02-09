@@ -424,7 +424,7 @@ class TelemacModel(HydroSimulations):
                         #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
 
                 # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                collocation_points=collocation_points*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                collocation_points=collocation_points#*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
 
                 #-----------------------------------------------------------------------------------------------
                 for i in range(init_runs):
@@ -455,7 +455,7 @@ class TelemacModel(HydroSimulations):
                                                                         delete_slf_files=self.delete_complex_outputs,
                                                                         validation=validation,
                                                                         filter_outputs=True,
-                                                                        save_extraction_outputs=True,
+                                                                        save_extraction_outputs=False,
                                                                         run_range_filtering=(1, init_runs + 1))
                     # else:
                     #     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
@@ -481,7 +481,7 @@ class TelemacModel(HydroSimulations):
 
                     #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
                 # new_collocation_point=bal_new_set_parameters * [[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                new_collocation_point=bal_new_set_parameters * [[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                new_collocation_point=bal_new_set_parameters #* [[0.00625,0.00625,0.0131,0.0131,0.0178]]
                 updated_collocation_points = np.vstack((collocation_points, new_collocation_point))
                 collocation_point_sim_list = updated_collocation_points[-1].tolist()
                 array_list = updated_collocation_points.tolist()
@@ -515,20 +515,21 @@ class TelemacModel(HydroSimulations):
                 self.output_processing(output_data_path=os.path.join(res_dir,f'{self.dict_output_name}-detailed.json'),
                                                                 delete_slf_files=self.delete_complex_outputs,
                                                                 validation=validation,
-                                                                save_extraction_outputs=True,extraction_mode=True)
+                                                                save_extraction_outputs=False, # When True, it saves ALL model outputs of ALL extraction quantities at ALL points as a .csv file
+                                                                extraction_mode=True)
                 # This part extracts the calibration quantities from the detailed dictionary as a numpy array for BAL and creates a new filtered dictionary.
                 self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
                                                                                               f'{self.dict_output_name}-detailed.json'),
                                                                 delete_slf_files=self.delete_complex_outputs,
                                                                 validation=validation,
                                                                 filter_outputs=True,
-                                                                save_extraction_outputs=True,
+                                                                save_extraction_outputs=False,
                                                                 run_range_filtering=(1, init_runs +bal_iteration))
                 quantities_str = '_'.join(self.calibration_quantities)
                 self.output_processing(output_data_path=os.path.join(res_dir,f'{quantities_str}-detailed.json'),
                                                                 delete_slf_files=self.delete_complex_outputs,
                                                                 validation=validation,
-                                                                save_extraction_outputs=True,
+                                                                save_extraction_outputs=False,
                                                                 calibration_mode=True)
                 logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
 
@@ -551,7 +552,7 @@ class TelemacModel(HydroSimulations):
                 # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
                 if validation:
-                    with open(res_dir + os.sep + "/collocation-points-validation.csv", mode='w', newline='') as file:
+                    with open(restart_data_path + os.sep + "/collocation-points-validation.csv", mode='w', newline='') as file:
                         writer = csv.writer(file)
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
@@ -569,7 +570,7 @@ class TelemacModel(HydroSimulations):
                         writer.writerows(array_list)  # Write the array data
                 #collocation_points=collocation_points*[[0.5,0.001,0.073,0.02,0.00625,0.00625,0.0131,0.0131,0.0178]]
                 # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                collocation_points=collocation_points*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                collocation_points=collocation_points#*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
                 #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.022, 0.022, 0.022, 0.022, 0.022]]
                 #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.0178, 0.0178, 0.0178, 0.0178, 0.0178]]
 
@@ -589,15 +590,20 @@ class TelemacModel(HydroSimulations):
                                             self.extraction_quantities,
                                             self.num_run,
                                             self.model_dir,
-                                            self.calibration_folder)
-                    self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
-                                                                    f'{self.dict_output_name}-detailed.json'),
+                                            self.calibration_folder,
+                                            self.validation)
+                    if validation:
+                        output_data_path = os.path.join(restart_data_path,'collocation-points-validation.json')
+                    else:
+                        output_data_path = os.path.join(res_dir,f'{self.dict_output_name}-detailed.json')
+
+                    self.model_evaluations = self.output_processing(output_data_path=output_data_path,
                                                                     delete_slf_files=self.delete_complex_outputs,
                                                                     validation=validation,
                                                                     save_extraction_outputs=False) # This option True saves ALL model outputs of ALL required quantities at ALL points as a .csv file
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
-
                 exit()
+
         return self.model_evaluations
 
     def output_processing(
@@ -660,8 +666,11 @@ class TelemacModel(HydroSimulations):
             filtered_output_data = filter_model_outputs(data_dict=output_data,
                                                quantities=calibration_quantities,
                                                run_range_filtering=run_range_filtering)
-            with open(os.path.join(self.calibration_folder,f'{quantities_str}-detailed.json'), 'w') as json_file:
-                json.dump(filtered_output_data, json_file, indent=4)
+            if validation:
+                pass
+            else:
+                with open(os.path.join(self.calibration_folder,f'{quantities_str}-detailed.json'), 'w') as json_file:
+                    json.dump(filtered_output_data, json_file, indent=4)
             # update_json_file(json_path=os.path.join(self.asr_dir,f'{quantities_str}-detailed.json'), modeled_values_dict=filtered_output_data, detailed_dict=True)
             # pdb.set_trace()
             for i, (key, values) in enumerate(filtered_output_data.items()):  # Iterate over calibration points
@@ -709,7 +718,7 @@ class TelemacModel(HydroSimulations):
 
                 if validation:
                     np.savetxt(
-                        os.path.join(self.calibration_folder, 'model-results-validation.csv'),
+                        os.path.join(self.restart_data_folder, 'model-results-validation.csv'),
                         model_results_calibration,
                         delimiter=',',
                         fmt='%.8f',
@@ -754,7 +763,7 @@ class TelemacModel(HydroSimulations):
                         column_headers_extraction.append(f'{i}_{quantity}')
                 if validation:
                     np.savetxt(
-                        os.path.join(self.calibration_folder, 'model-results-validation.csv'),
+                        os.path.join(self.restart_data_folder, 'model-results-validation.csv'),
                         model_results_extraction,
                         delimiter=',',
                         fmt='%.8f',
@@ -800,6 +809,7 @@ class TelemacModel(HydroSimulations):
             simulation_number,
             model_directory,
             results_folder_directory,
+            validation=False,
             extraction_mode="interpolated", #"nearest"  "interpolated"
             k=3,
             #extraction_mode="nearest",
@@ -977,9 +987,13 @@ class TelemacModel(HydroSimulations):
             except FileNotFoundError:
                 print("No nested result file found. Creating a new file.")
         # Updating json files for every run
-        update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
-        update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict, detailed_dict=True)
-        if simulation_number == self.init_runs:
+        #update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
+        if validation:
+            update_json_file(json_path=os.path.join(self.restart_data_folder, "collocation-points-validation.json"), modeled_values_dict=differentiated_dict, detailed_dict=True)
+        else:
+            update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict,
+                             detailed_dict=True)
+        if simulation_number == self.init_runs and not validation:
             update_json_file(json_path=json_path_detailed,modeled_values_dict=differentiated_dict, detailed_dict=True,save_dict=True,saving_path = json_path_restart_data)
 
         try:

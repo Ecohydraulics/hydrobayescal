@@ -65,7 +65,7 @@ def setup_experiment_design(
     # 6) chebyshev(FT) 7) grid(FT) 8)user
     exp_design.sampling_method = complex_model.parameter_sampling_method
     exp_design.n_new_samples = 1
-    #exp_design.X=
+    exp_design.X=complex_model.user_collocation_points
     exp_design.n_max_samples = complex_model.max_runs
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
@@ -115,7 +115,10 @@ def run_complex_model(complex_model,
     if not complex_model.only_bal_mode:
         logger.info(
             f"Sampling {complex_model.init_runs} collocation points for the selected calibration parameters with {complex_model.parameter_sampling_method} sampling method.")
-        collocation_points = experiment_design.generate_samples(n_samples=experiment_design.n_init_samples,
+        if complex_model.parameter_sampling_method == "user":
+            collocation_points = experiment_design.X
+        else:
+            collocation_points = experiment_design.generate_samples(n_samples=experiment_design.n_init_samples,
                                                                 sampling_method=experiment_design.sampling_method)
         # # bal_mode = True : Activates Bayesian Active Learning after finishing the initial runs of the full complexity model
         # # bal_mode = False : Only runs the full complexity model the number of times indicated in init_runs
@@ -134,13 +137,6 @@ def run_complex_model(complex_model,
                                                             run_range_filtering=(1, complex_model.init_runs))
             path_np_collocation_points = os.path.join(complex_model.restart_data_folder, 'initial-collocation-points.csv')
             collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
-
-            # path_np_collocation_points = os.path.join(complex_model.asr_dir, 'collocation-points.csv')
-            # path_np_model_results = os.path.join(complex_model.asr_dir, 'model-results-calibration.csv')
-            # # Load the collocation points and model results if they exist
-            # collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
-            # model_outputs = np.loadtxt(path_np_model_results, delimiter=',', skiprows=1)
-
 
         except FileNotFoundError:
             logger.info('Saved collocation points or model results as numpy arrays not found. '
@@ -299,17 +295,36 @@ def run_bal_model(collocation_points,
                                  optimizer="adam",
                                  verbose=False)
             else:
-                combined_kernel = gpytorch.kernels.ScaleKernel(
-                    gpytorch.kernels.RBFKernel(ard_num_dims=complex_model.ndim))
-                kernel = (combined_kernel, combined_kernel)
-                multi_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=complex_model.num_calibration_quantities)
-                multi_sm = MultiGPyTraining(collocation_points,
-                                            model_outputs,
-                                            kernel,
-                                            training_iter=150,
-                                            likelihood=multi_likelihood,
-                                            optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
-                                            )
+                kernel = gpytorch.kernels.ScaleKernel(
+                                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
+                                        )
+                if complex_model.multitask_selection == "variables":
+                    multi_likelihood_var = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=complex_model.num_calibration_quantities,
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
+                    )
+                    multi_sm_var = MultiGPyTraining(collocation_points,
+                                                    model_outputs,
+                                                    kernel,
+                                                    training_iter=150,
+                                                    likelihood=multi_likelihood_var,
+                                                    optimizer="adam", lr=0.01,
+                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    )
+                if complex_model.multitask_selection == "locations":
+
+                    multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=complex_model.nloc,
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
+                    )
+
+                    multi_sm_loc = MultiGPyTraining(collocation_points,
+                                                model_outputs,
+                                                kernel,
+                                                training_iter=150,
+                                                likelihood=multi_likelihood_loc,
+                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
+                                                )
 
         # Trains the GPR
         if it == n_iter:
@@ -330,8 +345,13 @@ def run_bal_model(collocation_points,
             sm.train_()
             surrogate_object = sm
         else:
-            multi_sm.train()
-            surrogate_object = multi_sm
+            if complex_model.multitask_selection == "variables":
+                multi_sm_var.train_tasks_variables()
+                surrogate_object = multi_sm_var
+            if complex_model.multitask_selection == "locations":
+                multi_sm_loc.train_tasks_locations()
+                surrogate_object = multi_sm_loc
+
 
         # 2. Validate GPR
         if it % eval_steps == 0:
@@ -339,7 +359,7 @@ def run_bal_model(collocation_points,
                 # Construct the save_name path for single quantity
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities{complex_model.num_calibration_quantities}_{complex_model.calibration_parameters}.pkl')
+                                         f'{experiment_design.exploit_method}_quantities{complex_model.calibration_quantities}_{complex_model.calibration_parameters}.pkl')
                 sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(sm, file)
@@ -347,10 +367,10 @@ def run_bal_model(collocation_points,
                 # Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities_{complex_model.num_calibration_quantities}_{complex_model.calibration_parameters}.pkl')
-                multi_sm.exp_design = experiment_design
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}.pkl')
+                surrogate_object.exp_design = experiment_design
                 with open(save_name, "wb") as file:
-                    pickle.dump(multi_sm, file)
+                    pickle.dump(surrogate_object, file)
 
         # 3. Compute Bayesian scores in parameter space ----------------------------------------------------------
         # Surrogate outputs for prior samples
@@ -371,7 +391,7 @@ def run_bal_model(collocation_points,
                     print(f"An error occurred while saving the dictionary: {e}")
 
         else:
-            surrogate_output = multi_sm.predict_(input_sets=prior,get_conf_int=True)
+            surrogate_output = surrogate_object.predict_(input_sets=prior,get_conf_int=True)
             total_error = complex_model.measurement_errors
             model_predictions = surrogate_output['output']
             if it == 0 or it == n_iter:
@@ -446,121 +466,93 @@ def run_bal_model(collocation_points,
     updated_collocation_points = collocation_points
     return bayesian_dict, updated_collocation_points
 
-
 # def main():
 #     # Parse command-line arguments
-#     parser = argparse.ArgumentParser()
+#     parser = argparse.ArgumentParser(description="Run Telemac Model with calibration parameters.")
 #     parser.add_argument(
 #         '--calibration_quantities',
 #         type=str,
-#         nargs='+',  # Allows for multiple arguments (a list of strings)
+#         nargs='+',  # Accept multiple arguments as a list
 #         required=True,
-#         help='Calibration quantities as a list of strings (e.g., WATER DEPTH SCALAR VELOCITY)'
+#         help='Calibration quantities as a list of strings, e.g., "WATER DEPTH" "SCALAR VELOCITY".'
 #     )
-#     parser.add_argument(
-#         '--only_bal_mode',
-#         type=str,
-#         default="False",  # Accept as a string and convert later
-#         help='Set to True if only Bayesian Active Learning mode is to be used, otherwise False.'
-#     )
-#     parser.add_argument(
-#         '--complete_bal_mode',
-#         type=str,
-#         default="True",  # Accept as a string and convert later
-#         help='Set to False if only initial runs are required, otherwise True.'
-#     )
+#     # parser.add_argument(
+#     #     '--only_bal_mode',
+#     #     type=str,
+#     #     default=False,  # Default value is False
+#     #     help='Set to True if only Bayesian Active Learning mode is to be used.'
+#     # )
+#     # parser.add_argument(
+#     #     '--complete_bal_mode',
+#     #     type=str,
+#     #     default=True,  # Default value is True
+#     #     help='Set to False if only initial runs are required.'
+#     # )
 #
 #     args = parser.parse_args()
 #
-#     # Convert string arguments to boolean
-#     only_bal_mode = args.only_bal_mode.lower() == "true"
-#     complete_bal_mode = args.complete_bal_mode.lower() == "true"
+#     # Extract arguments
 #     calibration_quantities = args.calibration_quantities
-#     # Initialize the model with the dynamic calibration_quantities and only_bal_mode
+#     # only_bal_mode = args.only_bal_mode
+#     # complete_bal_mode = args.complete_bal_mode
+#
+#     print(f"Calibration Quantities: {calibration_quantities}")
+#     # print(f"Only BAL Mode: {only_bal_mode}")
+#     # print(f"Complete BAL Mode: {complete_bal_mode}")
+#
+#     #Initialize the model with arguments
 #     full_complexity_model = initialize_model(
 #         TelemacModel(
-#             # TelemacModel specific parameters
 #             friction_file="friction_ering_MU.tbl",
-#             tm_xd="1",  # Either 'Telemac2d' or 'Telemac3d', or their corresponding indicator
+#             tm_xd="1",
 #             gaia_steering_file="",
 #             results_filename_base="results2m3",
 #             stdout=6,
 #             python_shebang="#!/usr/bin/env python3",
-#             # HydroSimulations class parameters
 #             control_file="tel_ering_mu_restart.cas",
 #             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
 #             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-#             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025-red.csv",
+#             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025.csv",
 #             n_cpus=8,
-#             init_runs=3,
+#             init_runs=30,
 #             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-#             param_values=[[1.8, 27], [1.8, 27], [0.85, 13], [0.85, 13], [0.62, 10]],
-#             extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "BOTTOM"],
-#             calibration_quantities=calibration_quantities,
+#             param_values=[[0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17]],
+#             extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
+#             calibration_quantities=calibration_quantities,  # Dynamic from command line
 #             dict_output_name="extraction-data",
-#             parameter_sampling_method="sobol",
-#             max_runs=5,
-#             complete_bal_mode=complete_bal_mode,
-#             only_bal_mode=only_bal_mode,  # Use the parsed value for only_bal_mode
+#             parameter_sampling_method="user",
+#             max_runs=150,
+#             complete_bal_mode=True,  # Dynamic from command line
+#             only_bal_mode=False,  # Dynamic from command line
 #             delete_complex_outputs=True,
 #             validation=False
 #         )
 #     )
-#     exp_design = setup_experiment_design(complex_model=full_complexity_model,
-#                                          tp_selection_criteria='dkl'
-#                                          )
-#     init_collocation_points, model_evaluations, obs, error_pp, n_loc = run_complex_model(
+#
+#     # Setup and run the experiment
+#     exp_design = setup_experiment_design(
+#         complex_model=full_complexity_model,
+#         tp_selection_criteria='dkl'
+#     )
+#     init_collocation_points, model_evaluations= run_complex_model(
 #         complex_model=full_complexity_model,
 #         experiment_design=exp_design,
 #     )
-#     run_bal_model(collocation_points=init_collocation_points,
-#                  model_outputs=model_evaluations,
-#                  complex_model=full_complexity_model,
-#                  experiment_design=exp_design,
-#                  eval_steps=1,
-#                  prior_samples=100,
-#                  mc_samples=50,
-#                  mc_exploration=10,
-#                  gp_library="gpy")
-#
-# if __name__ == "__main__":
-#     main()
+#     run_bal_model(
+#         collocation_points=init_collocation_points,
+#         model_outputs=model_evaluations,
+#         complex_model=full_complexity_model,
+#         experiment_design=exp_design,
+#         eval_steps=40,
+#         prior_samples=20000,
+#         mc_samples=2000,
+#         mc_exploration=1000,
+#         gp_library="gpy"
+#     )
 
-def main():
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Run Telemac Model with calibration parameters.")
-    parser.add_argument(
-        '--calibration_quantities',
-        type=str,
-        nargs='+',  # Accept multiple arguments as a list
-        required=True,
-        help='Calibration quantities as a list of strings, e.g., "WATER DEPTH" "SCALAR VELOCITY".'
-    )
-    parser.add_argument(
-        '--only_bal_mode',
-        type=str,
-        default=False,  # Default value is False
-        help='Set to True if only Bayesian Active Learning mode is to be used.'
-    )
-    parser.add_argument(
-        '--complete_bal_mode',
-        type=str,
-        default=True,  # Default value is True
-        help='Set to False if only initial runs are required.'
-    )
 
-    args = parser.parse_args()
-
-    # Extract arguments
-    calibration_quantities = args.calibration_quantities
-    only_bal_mode = args.only_bal_mode
-    complete_bal_mode = args.complete_bal_mode
-
-    print(f"Calibration Quantities: {calibration_quantities}")
-    print(f"Only BAL Mode: {only_bal_mode}")
-    print(f"Complete BAL Mode: {complete_bal_mode}")
-
-    # Initialize the model with arguments
+if __name__ == "__main__":
+    #main()
     full_complexity_model = initialize_model(
         TelemacModel(
             friction_file="friction_ering_MU.tbl",
@@ -574,18 +566,20 @@ def main():
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025.csv",
             n_cpus=8,
-            init_runs=30,
+            init_runs=20,
             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-            param_values=[[1.8, 27], [1.8, 27], [0.85, 13], [0.85, 13], [0.62, 10]],
-            extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "BOTTOM"],
-            calibration_quantities=calibration_quantities,  # Dynamic from command line
+            param_values=[[0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17]],
+            extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],  # Dynamic from command line
             dict_output_name="extraction-data",
-            parameter_sampling_method="sobol",
+            parameter_sampling_method="random", # If user is selected, a .csv file with all parameter sets (collocation points) in restart folder should exist.
+                                            # The file must be called init-collocation-points
             max_runs=150,
-            complete_bal_mode=complete_bal_mode,  # Dynamic from command line
-            only_bal_mode=only_bal_mode,  # Dynamic from command line
+            complete_bal_mode=True,  # Dynamic from command line
+            only_bal_mode=False,  # Dynamic from command line
             delete_complex_outputs=True,
-            validation=False
+            validation=False,
+            multitask_selection = "locations"
         )
     )
 
@@ -603,16 +597,11 @@ def main():
         model_outputs=model_evaluations,
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        eval_steps=20,
-        prior_samples=20000,
+        eval_steps=10,
+        prior_samples=15000,
         mc_samples=2000,
         mc_exploration=1000,
-        gp_library="gpy"
-    )
-
-
-if __name__ == "__main__":
-    main()
+        gp_library="gpy")
 
     # # TODO: Why is this in a __main__ namespace? This should be refactored into functions and the function call - Refactored into functions
     # # TODO  sequence should self-explain the workflow. - Done
