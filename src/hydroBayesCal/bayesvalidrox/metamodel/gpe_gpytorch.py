@@ -667,6 +667,7 @@ class MultiGPyTraining:
     def train_tasks_locations(self):
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
+        Trains the model for each output variable (water depth OR velocity) at all locations simultaneously.
         """
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
@@ -916,6 +917,54 @@ class MultiGPyTraining:
     #         output_dic['lower_ci'] = lower_ci
     #
     #     return output_dic
+
+    def train_tasks_all(self):
+        """
+        Train a single multitask Gaussian Process model using all outputs (water depth and velocity)
+        at all locations simultaneously.
+        """
+        X = torch.tensor(self.training_points, dtype=torch.float32)
+        Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
+
+        # Number of locations
+        num_locations = Y.shape[1] // self.number_quantities  # Total number of locations
+
+        # Reshape Y into (N, num_locations, number_quantities)
+        # Y = Y.view(Y.shape[0], num_locations, self.number_quantities)  # (N, num_locations, 2)
+
+        # Normalize Y
+        y_mean = torch.mean(Y, dim=0)  # Compute mean per (location, quantity)
+        y_std = torch.std(Y, dim=0)  # Compute std per (location, quantity)
+        Y_norm = (Y - y_mean) / y_std  # Normalize Y
+
+        # Save normalization parameters
+        self.normalization_params = {'y_mean': y_mean, 'y_std': y_std}
+
+        # Initialize multitask GP model
+        model = MultitaskGPModel(X, Y_norm, self.likelihood, self.kernel, number_tasks=self.n_obs)
+
+        # Set model and likelihood to training mode
+        model.train()
+        self.likelihood.train()
+
+        # Set optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+
+        # Set MLL objective
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
+
+        # Training loop
+        for _ in range(self.training_iter):
+            optimizer.zero_grad()
+            output = model(X)
+
+            # Compute negative marginal likelihood loss
+            loss = -mll(output, Y_norm)
+            loss.backward()
+            optimizer.step()
+
+        # Store trained model
+        self.gp_list = [{'gp': model, 'y_norm': (y_mean, y_std)}]
     def predict_(self, input_sets, get_conf_int=False):
         """
         Predict the outputs and their standard deviations for given input sets using the trained GP models.
@@ -934,7 +983,32 @@ class MultiGPyTraining:
             upper_ci = np.zeros((n_samples, n_obs))
             lower_ci = np.zeros((n_samples, n_obs))
 
-        if len(self.gp_list) == self.number_quantities:
+        if len(self.gp_list) == 1:
+            model_info = self.gp_list[0]
+            gp = model_info['gp']
+            y_mean, y_std = model_info['y_norm']
+
+            gp.eval()
+            self.likelihood.eval()
+
+            with torch.no_grad():
+                predictions = self.likelihood(gp(input_sets))
+                mean = predictions.mean  # PyTorch tensor of shape (n_samples, n_obs)
+                std = predictions.stddev  # PyTorch tensor of shape (n_samples, n_obs)
+
+                # Back-transform normalized predictions
+                mean = y_std * mean + y_mean  # Undo normalization
+                std = std * y_std
+
+                # Convert to NumPy arrays and store in the respective matrices
+                surrogate_prediction[:] = mean.numpy()
+                surrogate_std[:] = std.numpy()
+
+                if get_conf_int:
+                    upper_ci[:] = surrogate_prediction + 2 * surrogate_std
+                    lower_ci[:] = surrogate_prediction - 2 * surrogate_std
+
+        elif len(self.gp_list) == self.number_quantities:
             # Use logic from predict__
             for m, model_info in enumerate(self.gp_list):
                 gp = model_info['gp']

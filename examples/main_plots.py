@@ -31,13 +31,15 @@ full_complexity_model = TelemacModel(
     calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025.csv",
     init_runs=30,
     calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    param_values=[[0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17]],
+    param_values=[[0.011, 0.79], [0.011, 0.79], [0.002, 0.056], [0.002, 0.056], [0.056, 0.79]],
     calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+    multitask_selection="variables",
     check_inputs=False,
 )
 results_folder_path = full_complexity_model.asr_dir
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
-
+iterations_to_plot = 5
+surrogate_to_analyze = 30
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -46,7 +48,7 @@ n_quantities=full_complexity_model.num_calibration_quantities
 bayesian_data=full_complexity_model.read_data(full_complexity_model.calibration_folder,'BAL_dictionary.pkl')
 collocation_points = full_complexity_model.read_data(full_complexity_model.calibration_folder,f"collocation-points-{quantities_str}.csv")
 cm_outputs = full_complexity_model.read_data(full_complexity_model.calibration_folder,f"model-results-calibration-{quantities_str}.csv")
-sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP200_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}.pkl")
+sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}_{full_complexity_model.multitask_selection}.pkl")
 sm_predictions = (sm.predict_(input_sets=collocation_points,get_conf_int=True))
 sm_outputs=sm_predictions["output"]
 # Number of columns per quantity
@@ -96,13 +98,13 @@ for i in range(n_quantities):
     )
 
 # Plot Bayesian results
-plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=58, plot_type='both')
+plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
 plotter.plot_posterior_updates(
     posterior_arrays=bayesian_data['posterior'],
     parameter_names=full_complexity_model.calibration_parameters,
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
-    iterations_to_plot=[0,58],
+    iterations_to_plot=[iterations_to_plot],
     bins=20,
     plot_prior=True,
 )

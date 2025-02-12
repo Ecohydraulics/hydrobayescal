@@ -1259,7 +1259,7 @@ class BayesianPlotter:
                                 f"Correlation: {correlation:.2f}")
 
                 # Plot legend for comparison plot
-                ax.legend(loc='upper right', fontsize=8, bbox_to_anchor=(1, 1))
+                ax.legend(loc='upper right', fontsize=4, bbox_to_anchor=(0.5, 0.5))
 
                 # Display the metrics in the top-right corner as a text box
                 plt.figtext(0.95, 0.95, metrics_text, horizontalalignment='right', verticalalignment='top', fontsize=10,
@@ -1273,6 +1273,74 @@ class BayesianPlotter:
             # Show residuals plots
             fig_residuals.tight_layout()
             plt.show()
+
+    def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
+        """
+        Plots selected realizations comparing the complex model and surrogate model outputs.
+        Each realization is displayed in a separate subplot with confidence intervals.
+
+        Parameters:
+        -----------
+        surrogate_outputs : numpy.ndarray
+            2D array of surrogate model outputs (rows = realizations, columns = locations).
+        complex_model_outputs : numpy.ndarray
+            2D array of complex model outputs (rows = realizations, columns = locations).
+        gpe_lower_ci : numpy.ndarray
+            2D array of lower confidence bounds from the surrogate model.
+        gpe_upper_ci : numpy.ndarray
+            2D array of upper confidence bounds from the surrogate model.
+
+        Returns:
+        --------
+        None
+        """
+        num_realizations = surrogate_outputs.shape[0]
+
+        # Ask user which realizations to plot
+        selected_realizations = input(
+            f"Enter the realizations to plot (0 to {num_realizations - 1}, comma-separated): ")
+        selected_realizations = list(map(int, selected_realizations.split(',')))
+
+        num_plots = len(selected_realizations)
+        fig, axes = plt.subplots(num_plots, 1, figsize=(10, 5 * num_plots), sharex=True)
+        if num_plots == 1:
+            axes = [axes]
+
+        for ax, realization in zip(axes, selected_realizations):
+            cm_values = complex_model_outputs[realization, :]
+            sm_values = surrogate_outputs[realization, :]
+            lower_ci = gpe_lower_ci[realization, :]
+            upper_ci = gpe_upper_ci[realization, :]
+            locations = np.arange(len(cm_values))
+
+            # Compute residuals
+            residuals = cm_values - sm_values
+            mse = mean_squared_error(cm_values, sm_values)
+            rmse = np.sqrt(mse)
+            mae = mean_absolute_error(cm_values, sm_values)
+            correlation = np.corrcoef(cm_values, sm_values)[0, 1]
+
+            # Plot data
+            ax.plot(locations, cm_values, 'g-o', label='Complex Model')
+            ax.plot(locations, sm_values, 'b-x', label='Surrogate Model')
+            ax.fill_between(locations, lower_ci, upper_ci, color='gray', alpha=0.3, hatch='//',
+                            label='Confidence Interval')
+
+            # Labels and title
+            ax.set_title(f'Realization {realization}')
+            ax.set_ylabel('Output Value')
+            ax.grid(True, linestyle='--', alpha=0.6)
+
+            # Metrics
+            metrics_text = (f"MSE: {mse:.2e}\nRMSE: {rmse:.2e}\nMAE: {mae:.2e}\nCorrelation: {correlation:.2f}")
+            ax.text(0.98, 0.02, metrics_text, transform=ax.transAxes, fontsize=10,
+                    verticalalignment='bottom', horizontalalignment='right', bbox=dict(facecolor='white', alpha=0.8))
+
+            ax.legend()
+
+        axes[-1].set_xlabel('Locations')
+        plt.tight_layout()
+        plt.show()
 
 # def plot_bme_concentration_last_iterations(param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,
 #                                            last_iterations=10, interval=1):

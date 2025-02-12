@@ -283,7 +283,8 @@ def run_bal_model(collocation_points,
             # 1.2. Set up Likelihood
             if complex_model.num_calibration_quantities == 1:
                 kernel = gpytorch.kernels.ScaleKernel(
-                    gpytorch.kernels.RBFKernel(ard_num_dims=complex_model.ndim))
+                                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
+                                        )
                 likelihood = gpytorch.likelihoods.GaussianLikelihood(
                     noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
                 # Modify default kernel/likelihood values:
@@ -325,6 +326,19 @@ def run_bal_model(collocation_points,
                                                 likelihood=multi_likelihood_loc,
                                                 optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
                                                 )
+                if complex_model.multitask_selection == "all":
+                    multi_likelihood_all = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=model_outputs.shape[1],
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
+                    )
+                    multi_sm_all = MultiGPyTraining(collocation_points,
+                                                    model_outputs,
+                                                    kernel,
+                                                    training_iter=150,
+                                                    likelihood=multi_likelihood_all,
+                                                    optimizer="adam", lr=0.01,
+                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    )
 
         # Trains the GPR
         if it == n_iter:
@@ -351,6 +365,9 @@ def run_bal_model(collocation_points,
             if complex_model.multitask_selection == "locations":
                 multi_sm_loc.train_tasks_locations()
                 surrogate_object = multi_sm_loc
+            if complex_model.multitask_selection == "all":
+                multi_sm_all.train_tasks_all()
+                surrogate_object = multi_sm_all
 
 
         # 2. Validate GPR
@@ -359,7 +376,7 @@ def run_bal_model(collocation_points,
                 # Construct the save_name path for single quantity
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities{complex_model.calibration_quantities}_{complex_model.calibration_parameters}.pkl')
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}.pkl')
                 sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(sm, file)
@@ -367,7 +384,7 @@ def run_bal_model(collocation_points,
                 # Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}.pkl')
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}_{complex_model.multitask_selection}.pkl')
                 surrogate_object.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(surrogate_object, file)
@@ -566,20 +583,21 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025.csv",
             n_cpus=8,
-            init_runs=20,
+            init_runs=30,
             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-            param_values=[[0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17]],
+            # param_values=[[0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17]], # all intervals correspond to meaningfull physical values of Maning coefficie for gravel bed channels (0.018 - 0.026)
+            param_values=[[0.011, 0.79], [0.011, 0.79], [0.002, 0.056], [0.002, 0.056], [0.056, 0.79]],
             extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
             calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],  # Dynamic from command line
             dict_output_name="extraction-data",
-            parameter_sampling_method="random", # If user is selected, a .csv file with all parameter sets (collocation points) in restart folder should exist.
+            parameter_sampling_method="sobol", # If user is selected, a .csv file with all parameter sets (collocation points) in restart folder should exist.
                                             # The file must be called init-collocation-points
-            max_runs=150,
+            max_runs=70,
             complete_bal_mode=True,  # Dynamic from command line
             only_bal_mode=False,  # Dynamic from command line
             delete_complex_outputs=True,
             validation=False,
-            multitask_selection = "locations"
+            multitask_selection = "variables"
         )
     )
 
@@ -598,7 +616,7 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         experiment_design=exp_design,
         eval_steps=10,
-        prior_samples=15000,
+        prior_samples=10000,
         mc_samples=2000,
         mc_exploration=1000,
         gp_library="gpy")
