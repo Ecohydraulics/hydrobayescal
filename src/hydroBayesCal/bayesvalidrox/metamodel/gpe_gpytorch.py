@@ -624,7 +624,7 @@ class MultiGPyTraining:
         # Iterate over each location
         for loc in range(num_locations):
             # Extract the columns corresponding to the current location
-            Y_loc = Y[:, [2 * loc, 2 * loc + 1]].numpy()
+            Y_loc = Y[:, self.number_quantities * loc : self.number_quantities * (loc + 1)].numpy()
 
             # Normalize outputs
             y_mean = np.mean(Y_loc, axis=0)

@@ -16,6 +16,7 @@ import numpy as np
 from mpi4py import MPI
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
+
 from collections import OrderedDict
 try:
     from telapy.api.t2d import Telemac2d
@@ -385,7 +386,6 @@ class TelemacModel(HydroSimulations):
         restart_data_path = self.restart_data_folder
         fr_tbl = self.fr_tbl
         init_runs = self.init_runs
-
         logger.info(
             "* Running multiple Telemac simulations can take time -- check CPU acitivity...")
         start_time = datetime.now()
@@ -455,7 +455,7 @@ class TelemacModel(HydroSimulations):
                                                                         delete_slf_files=self.delete_complex_outputs,
                                                                         validation=validation,
                                                                         filter_outputs=True,
-                                                                        save_extraction_outputs=False,
+                                                                        save_extraction_outputs=True,
                                                                         run_range_filtering=(1, init_runs + 1))
                     # else:
                     #     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
@@ -515,7 +515,7 @@ class TelemacModel(HydroSimulations):
                 self.output_processing(output_data_path=os.path.join(res_dir,f'{self.dict_output_name}-detailed.json'),
                                                                 delete_slf_files=self.delete_complex_outputs,
                                                                 validation=validation,
-                                                                save_extraction_outputs=False, # When True, it saves ALL model outputs of ALL extraction quantities at ALL points as a .csv file
+                                                                save_extraction_outputs=True, # When True, it saves ALL model outputs of ALL extraction quantities at ALL points as a .csv file
                                                                 extraction_mode=True)
                 # This part extracts the calibration quantities from the detailed dictionary as a numpy array for BAL and creates a new filtered dictionary.
                 self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
@@ -600,9 +600,11 @@ class TelemacModel(HydroSimulations):
                     self.model_evaluations = self.output_processing(output_data_path=output_data_path,
                                                                     delete_slf_files=self.delete_complex_outputs,
                                                                     validation=validation,
-                                                                    save_extraction_outputs=False) # This option True saves ALL model outputs of ALL required quantities at ALL points as a .csv file
+                                                                    save_extraction_outputs=True,# This option True saves ALL model outputs of ALL required quantities at ALL points as a .csv file
+                                                                    calibration_mode=True
+                                                                    )#This option True extracts the data from the dictionary and populates the array with the values from the dictionary for the parameters in extraction_quantities.
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
-                exit()
+                # exit()
 
         return self.model_evaluations
 

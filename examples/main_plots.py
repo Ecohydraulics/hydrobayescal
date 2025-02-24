@@ -28,18 +28,18 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 # Instance of Telemac Model for plotting results (calibration)
 full_complexity_model = TelemacModel(
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements_calibration-total-2025.csv",
-    init_runs=30,
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+    init_runs=20,
     calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    param_values=[[0.011, 0.79], [0.011, 0.79], [0.002, 0.056], [0.002, 0.056], [0.056, 0.79]],
-    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+    param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.065], [0.0016, 0.065], [0.065, 0.79]],
+    calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH"],
     multitask_selection="variables",
     check_inputs=False,
 )
 results_folder_path = full_complexity_model.asr_dir
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
-iterations_to_plot = 5
-surrogate_to_analyze = 30
+iterations_to_plot = 100
+surrogate_to_analyze = 120
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -48,6 +48,7 @@ n_quantities=full_complexity_model.num_calibration_quantities
 bayesian_data=full_complexity_model.read_data(full_complexity_model.calibration_folder,'BAL_dictionary.pkl')
 collocation_points = full_complexity_model.read_data(full_complexity_model.calibration_folder,f"collocation-points-{quantities_str}.csv")
 cm_outputs = full_complexity_model.read_data(full_complexity_model.calibration_folder,f"model-results-calibration-{quantities_str}.csv")
+# sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}.pkl")
 sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}_{full_complexity_model.multitask_selection}.pkl")
 sm_predictions = (sm.predict_(input_sets=collocation_points,get_conf_int=True))
 sm_outputs=sm_predictions["output"]

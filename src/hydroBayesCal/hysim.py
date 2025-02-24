@@ -198,7 +198,7 @@ class HydroSimulations:
         if complete_bal_mode and only_bal_mode:
             update_json_file(json_path=os.path.join(self.restart_data_folder, "collocation-points-outputs.json"),save_dict=True,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
         if parameter_sampling_method == "user":
-            collocation_path = os.path.join(self.restart_data_folder, 'initial-collocation-points.csv')
+            collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
             self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1)
 
         self.model_evaluations = None

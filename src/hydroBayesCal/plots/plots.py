@@ -73,120 +73,122 @@ class BayesianPlotter:
             posterior_arrays,
             parameter_names,
             prior,
-            param_values=None,  # List of arrays with (min, max) values for each parameter
+            param_values=None,
             iterations_to_plot=None,
             bins=40,
             density=True,
-            plot_prior=False  # New argument to choose whether to plot the prior or not
+            plot_prior=False
     ):
         """
-        Plots the posterior distributions with the prior distribution shaded in light grey and additional auxiliary vertical grid lines.
+        Plots posterior distributions, highlighting the max density value for the considered iteration.
 
         Parameters
         ----------
         posterior_arrays: list of arrays
             List of 2D arrays with posterior samples for each update.
         parameter_names: list of str
-            List of parameter names corresponding to the columns of the arrays.
+            List of parameter names.
         prior: array
             2D array with prior samples.
         param_values: list of arrays, optional
-            List of arrays where each array contains two values (min, max) for the x-axis limits of each parameter.
-            If None, the x-axis limits are computed from the prior data.
+            X-axis limits for each parameter.
         iterations_to_plot: list of int or None
-            List of iteration indices to plot. If None, only prior distributions are plotted.
+            Iteration indices to plot.
         bins: int
-            Number of bins to use for the histograms. Default 35.
+            Number of bins for histograms.
         density: bool
-            Whether to normalize the histograms to form a probability density.
+            Normalize histograms to probability density.
         plot_prior: bool
-            Whether to plot the prior distribution. Default is True.
+            Whether to plot the prior distribution.
 
         Returns
         -------
         None
-            The function creates plots of the prior and posterior distribution functions and saves them as .png files in the /plots folder.
+            Saves the plots.
         """
         save_folder = self.save_folder
-
-        # Ensure save_folder exists
         save_folder.mkdir(parents=True, exist_ok=True)
 
         parameter_num = len(parameter_names)
 
-        # Calculate x_limits for each parameter from the prior data or use provided limits
+        # Define x-axis limits
         x_limits = np.zeros((parameter_num, 2))
         if param_values is None:
             for i in range(parameter_num):
                 x_limits[i] = (prior[:, i].min(), prior[:, i].max())
         else:
             for i in range(parameter_num):
-                x_limits[i] = param_values[i]  # Assuming param_values[i] is an array with [min, max]
+                x_limits[i] = param_values[i]
 
-        # Calculate y_min and y_max for each parameter for the selected iterations
+        # Calculate y-axis limits for the selected iterations
         y_min_posterior = np.zeros(parameter_num)
         y_max_posterior = np.zeros(parameter_num)
 
         if iterations_to_plot is not None:
             for i in range(parameter_num):
-                y_min_posterior[i] = np.inf  # Initialize with a large value
+                y_min_posterior[i] = np.inf
                 for iteration_idx in iterations_to_plot:
-                    if posterior_arrays[iteration_idx] is not None:  # Check if the current array is not None
+                    if posterior_arrays[iteration_idx] is not None:
                         counts_posterior, _ = np.histogram(posterior_arrays[iteration_idx][:, i], bins=bins,
                                                            density=density)
                         y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior)) * 1.15
                         y_min_posterior[i] = min(y_min_posterior[i], min(counts_posterior))
-                #
-                # # Set y_min_posterior to be 10% below the minimum density value
-                # y_min_posterior[i] = y_min_posterior[i] * 0.9
-                y_min_posterior[i] = y_min_posterior[i] * 0
+                y_min_posterior[i] = 0  # Ensure the minimum is set to 0
 
-
-        # Plot combined prior and posterior distributions
+        # Plot posterior distributions
         if iterations_to_plot is not None:
             for plot_index, iteration_idx in enumerate(iterations_to_plot):
                 for col in range(parameter_num):
                     fig, ax = plt.subplots(figsize=(6, 8))
 
-                    # Plot the posterior as a histogram
-                    posterior_vector = posterior_arrays[iteration_idx]
-                    ax.hist(posterior_vector[:, col], bins=bins, density=density, alpha=0.6, color='grey',
+                    # Get the posterior samples for the current iteration
+                    posterior_vector = posterior_arrays[iteration_idx][:, col]
+
+                    # Compute histogram density
+                    counts_posterior, bin_edges = np.histogram(posterior_vector, bins=bins, density=density)
+
+                    # Find the mode (max density value)
+                    max_density_idx = np.argmax(counts_posterior)
+                    mode_value = (bin_edges[max_density_idx] + bin_edges[max_density_idx + 1]) / 2
+
+                    # Plot posterior histogram
+                    ax.hist(posterior_vector, bins=bins, density=density, alpha=0.6, color='grey',
                             edgecolor='black', linewidth=0.8, label='Posterior')
 
-                    # Optionally plot the prior as a histogram with light color
+                    # Optionally plot the prior
                     if plot_prior:
-                        ax.hist(prior[:, col], bins=bins, density=density, alpha=0.2, color='#1E90FF',  # DodgerBlue
+                        ax.hist(prior[:, col], bins=bins, density=density, alpha=0.2, color='#1E90FF',
                                 edgecolor='black', linewidth=0.8, label='Prior')
 
+                    # Set axis labels
                     ax.set_xlabel(f'{parameter_names[col]}')
-                    ax.set_ylabel(r'Density')
+                    ax.set_ylabel('Density')
 
-                    # Apply LaTeX formatting to the axes
+                    # Apply LaTeX formatting
                     self._set_latex_format(ax)
 
-                    # Ensure only 4 labeled x-ticks
-                    x_tick_labels = np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3)
-                    ax.set_xticks(x_tick_labels)
-
-                    # Set y-limit with min density value adjusted to be 10% below
+                    # Set x and y limits
+                    ax.set_xticks(np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3))
                     ax.set_ylim(y_min_posterior[col], y_max_posterior[col])
                     ax.set_xlim(x_limits[col])
 
-                    # Add vertical line at mean value of the parameter range
+                    # Add vertical lines for mode and mean
+                    ax.axvline(mode_value, color='red', linestyle='--', linewidth=2,
+                               label=f'Max Density: {mode_value:.3f}')  # Show exact mode value
                     mean_value = np.mean([x_limits[col][0], x_limits[col][1]])
                     ax.axvline(mean_value, color='blue', linestyle='--', linewidth=1.5, label='Mean Value')
 
-                    # Add grid lines with secondary grid
-                    ax.grid(True, which='both', linestyle='--', linewidth=0.7, color='lightgrey')  # Major grid lines
-                    ax.minorticks_on()  # Enable minor ticks
-                    ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')  # Minor grid lines
+                    # Add grid
+                    ax.grid(True, which='both', linestyle='--', linewidth=0.7, color='lightgrey')
+                    ax.minorticks_on()
+                    ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')
 
                     # Update legend
                     ax.legend(fontsize=12)
 
                     fig.tight_layout()
 
-                    # Save the plot with parameter name and iteration index
+                    # Save the plot
                     fig.savefig(
                         save_folder / f'combined_distribution_{parameter_names[col].replace(" ", "_")}_iteration_{iteration_idx + 1}.png')
                     plt.close(fig)
@@ -1001,15 +1003,15 @@ class BayesianPlotter:
         obs_error = 2 * measurement_error if measurement_error is not None else None
 
         # Compute MSE and R² for both models
-        surrogate_mse = mean_squared_error(observed_values, surrogate_outputs)
-        complex_mse = mean_squared_error(observed_values, complex_model_outputs)
+        surrogate_rmse = mean_squared_error(observed_values, surrogate_outputs, squared=False)
+        complex_rmse = mean_squared_error(observed_values, complex_model_outputs, squared=False)
 
         surrogate_r2 = r2_score(observed_values, surrogate_outputs)
         complex_r2 = r2_score(observed_values, complex_model_outputs)
 
         # Print the MSE and R² values
-        print(f"Surrogate Model MSE: {surrogate_mse:.4f}, R²: {surrogate_r2:.4f}")
-        print(f"Complex Model MSE: {complex_mse:.4f}, R²: {complex_r2:.4f}")
+        print(f"Surrogate Model RMSE: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f}")
+        print(f"Complex Model RMSE: {complex_rmse:.4f}, R²: {complex_r2:.4f}")
 
         # Plot
         plt.figure(figsize=(12, 8))
@@ -1027,9 +1029,9 @@ class BayesianPlotter:
 
         # Plot model outputs as independent points
         plt.scatter(locations, surrogate_outputs, color='blue',
-                    label=f'Surrogate Model Outputs (MSE: {surrogate_mse:.4f}, R²: {surrogate_r2:.4f})', zorder=3)
+                    label=f'Surrogate Model Outputs (MSE: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f})', zorder=3)
         plt.scatter(locations, complex_model_outputs, color='green',
-                    label=f'Complex Model Outputs (MSE: {complex_mse:.4f}, R²: {complex_r2:.4f})', zorder=3)
+                    label=f'Complex Model Outputs (MSE: {complex_rmse:.4f}, R²: {complex_r2:.4f})', zorder=3)
 
         # Add labels, title, and legend
         plt.xlabel('Location')
