@@ -286,7 +286,6 @@ class TelemacModel(HydroSimulations):
     def run_single_simulation(
             self,
             control_file="tel.cas",
-            load_results=True
     ):
         """
         Runs a Telemac2D or Telemac3D simulation with one or more processors.
@@ -294,15 +293,14 @@ class TelemacModel(HydroSimulations):
 
         Parameters
         ----------
-        control_file : str, optional
-            Name for a Python file that will be automatically created to control the simulation.
-            Default is "run_launcher.py".
-        load_results : bool, optional
-            Whether to load results from the results.slf file. Default is True.
+        control_file : str
+            The name of the control file used to launch the simulation.
+            Default is "tel.cas". This file should be located in the model directory.
 
         Returns
         -------
         None
+            The method executes the model run using a launcher command.
         """
         logger.info("Running full complexity model " + str(self.num_run))
 
@@ -336,16 +334,6 @@ class TelemacModel(HydroSimulations):
 
         logger.info("TELEMAC simulation time: " + str(datetime.now() - start_time))
 
-        # Load results if required
-        # if load_results:
-        #     self.extract_data_point(self.tm_results_filename,
-        #                             self.calibration_pts_df,
-        #                             self.dict_output_name,
-        #                             self.calibration_quantities,
-        #                             self.num_run,
-        #                             self.model_dir,
-        #                             self.asr_dir)
-
     def run_multiple_simulations(
             self,
             collocation_points=None,
@@ -357,8 +345,6 @@ class TelemacModel(HydroSimulations):
         """
         Runs multiple Telemac2d or Telemac3d simulations with a set of collocation points and a new set of
         calibration parameters when BAL mode is chosen. The number of processors to use is defined by self.nproc in user_inputs.
-
-        TODO: Make sure this also runs outside the BAL context
 
         Parameters
         ----------
@@ -373,13 +359,20 @@ class TelemacModel(HydroSimulations):
         complete_bal_mode : bool
             Default is True when the code accounts for initial runs, surrogate construction and BAL phase. False when
             only initial runs are required.
+        validation : bool
+            If `True`, the method runs a separate set of simulations for validation purposes.
 
         Returns
         -------
-        model_evaluations: array
-            Model evaluations as array with shape:
-            For 1. quantity : [No. runs x No. loc]
-            For 2.quantities: [No. runs x 2* No. loc] -> 1 column for each quantity
+         model_evaluations:array
+                     2D array containing processed model outputs.
+            Shape: `[num_runs, nloc * num_calibration_quantities]`, where:
+            - `num_runs` is the total number of model evaluations, including both initial runs and Bayesian Active Learning iterations.
+            - `nloc * num_calibration_quantities` represents the total number of outputs, with results interleaved in columns.
+
+            Example: For two calibration quantities and two calibration locations:
+            - Columns 1 and 2 correspond to the outputs (2 quantities) of the first calibration location.
+            - Columns 3 and 4 correspond to the outputs of the second location, and so on.
         """
         calibration_parameters = self.calibration_parameters
         res_dir = self.calibration_folder
@@ -437,12 +430,8 @@ class TelemacModel(HydroSimulations):
                                                auxiliary_file_path=fr_tbl,
                                                simulation_id=self.num_run)
                     self.run_single_simulation(self.control_file)
-                    self.extract_data_point(self.tm_results_filename,
-                                            self.calibration_pts_df,
-                                            self.dict_output_name,
-                                            self.extraction_quantities,
-                                            self.num_run,
-                                            self.model_dir,
+                    self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
+                                            self.extraction_quantities, self.num_run, self.model_dir,
                                             self.calibration_folder)
                     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
                                                                       f'{self.dict_output_name}-detailed.json'),
@@ -504,12 +493,8 @@ class TelemacModel(HydroSimulations):
                                            simulation_id=self.num_run)
                 self.run_single_simulation(self.control_file)
                 output_name_calibration = f'{self.dict_output_name}{"_".join(self.calibration_quantities)}'
-                self.extract_data_point(self.tm_results_filename,
-                                        self.calibration_pts_df,
-                                        self.dict_output_name,
-                                        self.extraction_quantities,
-                                        self.num_run,
-                                        self.model_dir,
+                self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
+                                        self.extraction_quantities, self.num_run, self.model_dir,
                                         self.calibration_folder)
                 # In this first output processing, ALL the extraction quantities are saved as .csv file in the calibration folder.
                 self.output_processing(output_data_path=os.path.join(res_dir,f'{self.dict_output_name}-detailed.json'),
@@ -584,14 +569,9 @@ class TelemacModel(HydroSimulations):
                                                auxiliary_file_path=fr_tbl,
                                                simulation_id=self.num_run)
                     self.run_single_simulation(self.control_file)
-                    self.extract_data_point(self.tm_results_filename,
-                                            self.calibration_pts_df,
-                                            self.dict_output_name,
-                                            self.extraction_quantities,
-                                            self.num_run,
-                                            self.model_dir,
-                                            self.calibration_folder,
-                                            self.validation)
+                    self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
+                                            self.extraction_quantities, self.num_run, self.model_dir,
+                                            self.calibration_folder, self.validation)
                     if validation:
                         output_data_path = os.path.join(restart_data_path,'collocation-points-validation.json')
                     else:
@@ -630,13 +610,15 @@ class TelemacModel(HydroSimulations):
         Parameters
         ----------
         output_data_path : str
-            Path to the JSON file containing the model outputs. The JSON file should be structured
-            so that its keys correspond to calibration points and its values are lists of model
-            output values for each run and quantity.
-        delete_slf_files : bool, optional
-            If True, deletes any unnecessary .slf files after processing. Default is False.
-        validation : bool, optional
-            If True, performs additional validation checks on the processed data. Default is False.
+            Path to the file (.json) containing the model outputs. The file should be structured
+            such that its keys correspond to calibration points, and its values are lists of nested dictionaries having the
+            output values for each run and quantity/ies.
+        delete_complex_outputs: Boolean, Default: False
+            Delete complex model output files from the results folder (e.g. auto-saved-results-HydroBayesCal/<variable>).
+            Recommended when running several simulations of the full complexity model.
+        validation: Boolean, Default: False
+            If True, new files for collocation points and model results are created. This is done to keep
+            the collocation points and model results obtained during the calibration process.
 
         Returns
         -------
@@ -804,7 +786,7 @@ class TelemacModel(HydroSimulations):
 
     def extract_data_point(
             self,
-            input_slf_file,
+            input_file,
             calibration_pts_df,
             output_name,
             extraction_quantity,
@@ -814,50 +796,61 @@ class TelemacModel(HydroSimulations):
             validation=False,
             extraction_mode="interpolated", #"nearest"  "interpolated"
             k=3,
-            #extraction_mode="nearest",
     ):
         """
-        Extracts the model outputs (i.e., calibration quantities) from the slf_file.slf using the points located
-        in a .csv  with the x,y coordinates of the measurement points. The function extracts the model output from
-        the closest node in the mesh to the x,y measurement coordinate or interpolated values from the k nearest points to the
-        considered calibration point x,y.
-        This method is typically called for each model run, storing outputs sequentially in 2 dictionaries
-        saved in a .json file. That means if the surrogate model needs 'n' runs of the complex numerical model, this
-        function is called 'n' times and the dictionary will store the model outputs for the 'n' simulations.
+        Extracts model outputs (i.e., calibration quantities) from a SELAFIN (.slf) file using calibration points
+        specified in a CSV file with x, y coordinates. The extracted values can be obtained from the nearest mesh node
+        or interpolated from the k-nearest nodes.
+
+        This method is typically called for each model run, sequentially storing outputs in two dictionaries saved
+        as JSON files. If the surrogate model requires 'n' runs of the complex numerical model, this function
+        is called 'n' times, and the dictionary accumulates the outputs for all simulations.
 
         Parameters
         ----------
-        input_slf_file : str
+        input_file : str
             Name of the SELAFIN (.slf) file containing the model outputs.
         calibration_pts_df : pd.DataFrame
-            DataFrame containing calibration points. It should include the point descriptions (e.g., "P1"),
-            x and y coordinates of the measurement points, and the measured value/error for the calibration quantities.
-            The expected columns are: 'Point Name', 'X', 'Y', 'Measured Value', 'Measured Error'.
-            If 2 calibration quantities are required the expected columns should be: 'Point Name', 'X', 'Y', 'Measured Value 1', 'Measured Error 1', 'Measured Value 2', 'Measured Error 2'.
+            Contains calibration points. It must include:
+            - Point descriptions (e.g., "P1").
+            - X and Y coordinates of the measurement points.
+            - Measured values and errors for the calibration quantities.
+
+            Expected columns:
+            - For a single calibration quantity: `['Point Name', 'X', 'Y', 'Measured Value', 'Measured Error']`
+            - For two calibration quantities: `['Point Name', 'X', 'Y', 'Measured Value 1', 'Measured Error 1', 'Measured Value 2', 'Measured Error 2']`
         output_name : str
-            Base name for the JSON file that will store the extracted model outputs. Two files are generated:
-            a standard results file (`<output_name>.json`) and a detailed results file (`<output_name>_detailed.json`).
+            Base name for the JSON file storing the extracted model outputs. Two files are generated:
+            - `<output_name>.json` (standard results file)
+            - `<output_name>_detailed.json` (detailed results file)
         extraction_quantity : list of str
-            List of variables (calibration quantities) to be extracted from the SELAFIN file. Please check before extraction the variable name from the .slf file.
+            List of variables (calibration quantities) to be extracted from the SELAFIN file.
+            Ensure the variable names match those in the .slf file before extraction.
         simulation_number : int
-            The current simulation number. This is used to manage the output file, ensuring that data is appended
-            correctly across multiple simulations.
+            Current simulation number. Used to manage output files and ensure correct data accumulation.
         model_directory : str
             Path to the directory containing the SELAFIN file.
         results_folder_directory : str
             Path to the directory where the output JSON files will be saved.
+        validation : bool, optional (default: False)
+            If True, the extracted data is used for validation purposes.
+        extraction_mode : str, optional (default: "interpolated")
+            Specifies the method for extracting model outputs:
+            - `"nearest"`: Uses the closest node in the mesh.
+            - `"interpolated"`: Uses an interpolation of the k-nearest nodes.
+        k : int, optional (default: 3)
+            Number of nearest nodes used for interpolation when `extraction_mode="interpolated"`.
 
         Returns
         -------
         None
-            The method saves the extracted model outputs to two JSON files in the specified results directory.
-            If this is the first simulation run, any existing JSON files with the same name will be deleted.
-            After each run, the extracted results are appended to the JSON files.The detailed results file stores
-            the calibration quantities as a nested dictionary with the variable name and the point description.
-
+            The extracted model outputs are saved to two JSON files in the specified results directory.
+            - If this is the first simulation run, existing JSON files with the same name are deleted.
+            - After each run, the extracted results are appended to the JSON files.
+            - The detailed results file stores calibration quantities in a nested dictionary format, organized by variable name and point description.
         """
         extraction_quantity = extraction_quantity
-        input_file = os.path.join(model_directory, input_slf_file)
+        input_file = os.path.join(model_directory, input_file)
         json_path = os.path.join(results_folder_directory, f"{output_name}.json")
         json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
         json_path_restart_data = os.path.join(self.restart_data_folder, "collocation-points-outputs.json")
@@ -865,7 +858,7 @@ class TelemacModel(HydroSimulations):
         modeled_values_dict = {}
         differentiated_dict = {}
         logger.info(
-            f'Extracting {extraction_quantity} from results file {input_slf_file} \n')
+            f'Extracting {extraction_quantity} from results file {input_file} \n')
 
         for key, h in zip(keys, range(len(calibration_pts_df))):
             xu = calibration_pts_df.iloc[h, 1]
@@ -999,7 +992,7 @@ class TelemacModel(HydroSimulations):
             update_json_file(json_path=json_path_detailed,modeled_values_dict=differentiated_dict, detailed_dict=True,save_dict=True,saving_path = json_path_restart_data)
 
         try:
-            shutil.move(os.path.join(model_directory, input_slf_file), results_folder_directory)
+            shutil.move(os.path.join(model_directory, input_file), results_folder_directory)
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 

@@ -5,9 +5,7 @@ and Bayesian Active Learning .
 Author: Andres Heredia M.Sc.
 
 """
-import os
 import pandas as pd
-import pickle
 import numpy as np
 from datetime import datetime
 
@@ -28,10 +26,10 @@ from src.hydroBayesCal.function_pool import *
 class HydroSimulations:
     def __init__(
             self,
-            control_file = "control.file",
+            control_file = "control.cas",
             model_dir="",
             res_dir="",
-            calibration_pts_file_path=None,
+            calibration_pts_file_path="",
             n_cpus=int(),
             init_runs=1,
             calibration_parameters=None,
@@ -58,47 +56,72 @@ class HydroSimulations:
         Parameters
         ----------
         control_file : str
-            Name of the file that controls the full complexity model simulation (default is "control.file" as an example).
+            Name of the file that controls the full complexity model simulation (default is "control.cas" as an example for Telemac).
         model_dir : str
-            Full complexity model directory where all simulation files are located.
+            Full complexity model directory where all simulation files (mesh, control file, boundary conditions) are located.
         res_dir : str
-            Directory where a subfolder called "auto-saved-results" will be created to store all the result files. The auto-saved-results folder
-            changes its name depending on the selected calibration quantities.
+            Directory where a subfolder called "auto-saved-results-HydroBayesCal" will be created to store all the result files. In this directory, the results of the calibration
+            process will be stored according to the calibration quantity name. Addiionally, subfolders for plots, surrogate models, and restart data will be created.
         calibration_pts_file_path : str or optional
             File path to the calibration points data file. Please check documentation for further details of the file format.
         n_cpus : int
-            Number of CPUs to be used for parallel processing.
+            Number of CPUs to be used for parallel processing (if available).
         init_runs : int
             Initial runs of the full complexity model (before Bayesian Active Learning).
         calibration_parameters : list of str
-            Names of the considered calibration parameters.
+            Names of the considered calibration parameters (e.g. roughness coefficients, empirical constants, turbulent viscosity, etc).
         param_values : list
-            Value ranges considered for parameter sampling.
+            Value ranges considered for parameter sampling. Example: [[min1, max1], [min2, max2], ...].
         calibration_quantities : list of str
-            Names of the quantities (model outputs) used for calibration. These quantities usually correspond to the measured values for calibration purposes.
+            Names of the calibration targets (model outputs) used for calibration. These quantities usually correspond to the measured values for calibration purposes.
+            Example: ['WATER DEPTH'] for a single quantity.
+            Example: ['WATER DEPTH', 'SCALAR VELOCITY'] for multiple quantities.
         dict_output_name : str
             Base name for output dictionary files where the outputs are saved as .json files.
+            This dictionary will be saved in the calibration-data subfolder for the considered calibration target.
         parameter_sampling_method : str
-            Parameter sampling method during the calibration process.
+            Method used for sampling parameter values during the calibration process. The available options are:
+            - "random"           : Random sampling.
+            - "latin_hypercube"  : Latin Hypercube Sampling (LHS).
+            - "sobol"            : Sobol sequence sampling.
+            - "halton"           : Halton sequence sampling.
+            - "hammersley"       : Hammersley sequence sampling.
+            - "chebyshev(FT)"    : Chebyshev nodes (Fourier Transform-based).
+            - "grid(FT)"         : Grid-based sampling (Fourier Transform-based).
+            - "user"             : User-defined sampling.
+
+            Example:
+                parameter_sampling_method = "sobol"  # Uses Sobol sequence sampling.
+
+            If "user" is selected, a `.csv` file containing user-defined collocation points must be provided
+            in the restart data folder. The file should follow this format:
+
+                param1    param2    param3    param4    param5
+                0.148     0.770     0.014     0.014     0.700
+                0.066     0.066     0.066     0.066     0.066
+
         max_runs : int
-            Maximum number of model simulations, including Bayesian Active Learning iterations.
+            Maximum (total) number of model simulations, including initial runs and Bayesian Active Learning iterations.
         complete_bal_mode : bool, optional (Default: True)
-            If True: When after the initial runs a Bayesian Active Learning is performed (complete surrogate-assisted calibration process)
-                             This option MUST be selected if you choose to perform only BAL (only_bal_mode = True).
-            If False: If only the initial runs are required. The model outputs are stored as .json files
+            - If True: Bayesian Active Learning (BAL) is performed after the initial runs, enabling a complete surrogate‐assisted calibration process.
+              **This option MUST be selected if you choose to perform only BAL** (i.e., when `only_bal_mode = True`).
+            - If False: Only the initial runs of the full complexity model are executed, and the model outputs are stored as `.json` files.
+
         only_bal_mode : bool, optional (Default: False)
-            If False: This option executes either a complete surrogate-assisted calibration or only the initial runs (depending of what is indicated above.)
-            If True: When only the surrogate model construction and Bayesian Active Learning of preexisting model outputs
-                  at predefined collocation points is required. This can be run ONLY if a complete process(complete_bal_mode_mode = True; only_bal_mode=True)
-                  or only initial (complete_bal_mode_mode = False; only_bal_mode=False) runs has been performed.
-        check_inputs : bool, optional (Default: False)
-            If True, checks input files and parameters before running simulations.
-            If False, inputs are not checked.
-        delete_complex_outputs : bool, optional (Default: True)
-            If True, deletes complex model output files after processing to save disk space.
-            If False, output files from the complex models are saved in the auto-saved-results folder.
+            - If False: The process will either execute a complete surrogate‐assisted calibration or only the initial runs, depending on the value of `complete_bal_mode`.
+            - If True: Only the surrogate model construction and Bayesian Active Learning of preexisting model outputs at predefined collocation points are performed.
+              **This mode can be executed only if either a complete process has already been performed** (`complete_bal_mode = True` and `only_bal_mode = True`) **or if only the initial runs have been executed** (`complete_bal_mode = False` and `only_bal_mode = False`).
+
+        Shortcut Combinations and Their Corresponding Tasks:
+
+            | complete_bal_mode | only_bal_mode                   | Task Description                                                             |
+            |-------------------|---------------------------------|------------------------------------------------------------------------------|
+            | True              | False                           | Complete surrogate-assisted calibration                                      |
+            | False             | False                           | Only initial runs (no surrogate model)                                       |
+            | True              | True, with init_runs = max_runs | Only surrogate construction with a set of predefined runs (no BAL)           |
+            | True              | True, with init_runs > max_runs | Surrogate model construction and Bayesian Active Learning (BAL) applied      |
         validation : bool, optional (Default: False)
-            If True, creates output files corresponding to validation process.
+            If True, creates output files (inputs and outputs) corresponding to validation process.
         *args : tuple, optional
             Additional positional arguments.
         **kwargs : dict, optional
@@ -107,31 +130,88 @@ class HydroSimulations:
         Attributes
         ----------
         asr_dir : str
-            Auto-saved-results directory.
+            Directory for auto-saved results.
+        model_dir : str
+            Path to the directory containing the model files.
+        res_dir : str
+            Path to the directory where results will be stored.
+        control_file : str
+            Path to the control file used in the calibration process.
+        calibration_pts_file_path : str
+            Path to the file containing the calibration points data.
+        nproc : int
+            Number of processors (CPUs) to be used.
+        param_values : array
+            Parameter values used in calibration.
+        calibration_quantities : list
+            Calibration quantities to be evaluated.
+        extraction_quantities : list
+           Quantities extracted from the model during calibration (calibration quantities must be included here).
+        calibration_parameters : list
+            Parameters involved in the calibration process.
+        parameter_sampling_method : str
+            Method used for sampling parameters during calibration. Options:
+            - "random"
+            - "latin_hypercube"
+            - "sobol"
+            - "halton"
+            - "hammersley"
+            - "chebyshev(FT)"
+            - "grid(FT)"
+            - "user" (requires a CSV file with user-defined collocation points in the restart data folder).
+        init_runs : int
+            Number of initial runs before surrogate-assisted calibration.
+        max_runs : int
+            Maximum number of calibration runs, including Bayesian Active Learning iterations.
+        complete_bal_mode : bool
+            If True, enables complete surrogate-assisted calibration with Bayesian Active Learning.
+            Must be selected if `only_bal_mode = True`.
+        only_bal_mode : bool
+            If True, only surrogate model construction and Bayesian Active Learning are performed.
+            Requires prior execution of either the full calibration process (`complete_bal_mode = True`)
+            or initial runs (`complete_bal_mode = False`).
+        delete_complex_outputs : bool
+            If True, deletes complex model outputs after processing.
+        validation : bool
+            If True, the model is run in validation mode.
+        multitask_selection : bool
+            If True, enables multitask selection for surrogate modeling.
+        dict_output_name : str
+            Name of the output dictionary file. Appends "-validation" if validation mode is enabled.
         nloc : int
-            Number of calibration points, where measured data have been taken.
+            Number of calibration points where measured data are available.
         ndim : int
-            Number of model parameters for calibration.
+            Number of model parameters used in the calibration.
         param_dic : dict
-            Dictionary that contains the calibration parameters and the parameter ranges (initialized as None).
-        num_quantities : int
-            Number of calibration quantities.
-        observations : darray
-            Observed values at each calibration point (initialized as None).
+            Dictionary containing calibration parameters and their respective ranges.
+        num_calibration_quantities : int
+            Number of quantities used for calibration.
+        num_extraction_quantities : int
+            Number of additional quantities extracted from the model.
+        observations : array
+            Observed values at each calibration point.
         measurement_errors : array
-            Measurement errors at each calibration point (initialized as None).
+            Measurement errors associated with each calibration point.
         calibration_pts_df : pandas.DataFrame
-            Calibration points data  (initialized as None).
-            Header:         Point  |    X       |	     Y	     |       MEASUREMENT 1	     |   ERROR 1 |       MEASUREMENT 2	     |   ERROR 2 |
-        model_evaluations: array
-            2D array containing the processed model outputs. The shape of the array is
-            [No. of quantities x No. of total runs, No. of calibration points], where 'No. of quantities'
-            is the number of calibration quantities being processed, and 'No. of total runs' is the sum
-            of initial runs and Bayesian active learning iterations. The array is also saved to a CSV file
-            in the specified directory.
-        """
+            DataFrame containing calibration point information.
+            Header format:
+                | Point | X | Y | MEASUREMENT 1 | ERROR 1 | MEASUREMENT 2 | ERROR 2 | ...
+        user_collocation_points : array
+            User-defined collocation points loaded from a CSV file (only applicable when `parameter_sampling_method="user"`).
+        calibration_folder : str
+            Directory where calibration data are stored.
+        restart_data_folder : str
+            Directory for restart data, used for resuming calibration runs.
+        model_evaluations : array
+            2D array containing processed model outputs.
+            Shape: `[num_runs, nloc * num_calibration_quantities]`, where:
+            - `num_runs` is the total number of model evaluations, including both initial runs and Bayesian Active Learning iterations.
+            - `nloc * num_calibration_quantities` represents the total number of outputs, with results interleaved in columns.
 
-        # TODO: the following lines come from FullComplexityModel and require integration into your scheme
+            Example: For two calibration quantities and two calibration locations:
+            - Columns 1 and 2 correspond to the outputs (2 quantities) of the first calibration location.
+            - Columns 3 and 4 correspond to the outputs of the second location, and so on.
+        """
         if check_inputs:
             self.check_inputs(model_dir=model_dir,
                               res_dir=res_dir,
@@ -165,8 +245,8 @@ class HydroSimulations:
         else:
             self.dict_output_name = dict_output_name
         self.nloc = None
-        self.ndim = None
-        self.param_dic = None
+        # self.ndim = None
+        # self.param_dic = None
         self.num_calibration_quantities = None
         self.num_extraction_quantities = None
         self.observations = None
@@ -174,8 +254,8 @@ class HydroSimulations:
         self.calibration_pts_df = None
         self.user_collocation_points = None
 
-        if calibration_parameters:
-            self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
+        # if calibration_parameters:
+        #     self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
         if calibration_pts_file_path:
             self.observations, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_errors(
                 calibration_pts_file_path, calibration_quantities,extraction_quantities)
@@ -308,41 +388,66 @@ class HydroSimulations:
 
     def extract_data_point(
             self,
+            input_file,
+            calibration_pts_df,
+            output_name,
+            extraction_quantity,
+            simulation_number,
+            model_directory,
+            results_folder_directory,
             *args,
             **kwargs
     ):
         """
-        Extract a specific data from the desired coordinate from any hydrodynamic model.
+        Extract data from a specified coordinate in a hydrodynamic model output file.
 
-        This is a generic method intended to be implemented for various hydrodynamic models
-        (e.g., Telemac, OpenFOAM, etc.). The method can extract data based on provided
-        input_output_file and .csv file containing the coordinates of the desired points.
+        This generic method is designed for use with various hydrodynamic models
+        (e.g., Telemac, OpenFOAM, etc.). It extracts data from an input file
+        based on a provided CSV file containing the coordinates of the target points.
 
         Parameters
         ----------
+        input_file : str
+            Path to the hydrodynamic model output file from which data will be extracted.
+        calibration_pts_df : pd.DataFrame
+            Contains the coordinates of the points where data extraction is required.
+            It must include:
+            - Point descriptions (e.g., "P1").
+            - X and Y coordinates of the measurement points.
+            - Measured values and errors for the calibration quantities.
+
+            Expected columns:
+            - For a single calibration quantity: `['Point Name', 'X', 'Y', 'Measured Value', 'Measured Error']`
+            - For two calibration quantities: `['Point Name', 'X', 'Y', 'Measured Value 1', 'Measured Error 1', 'Measured Value 2', 'Measured Error 2']`
+        output_name : str
+            Base name for the output file where extracted data will be stored.
+        extraction_quantity : list of str
+            List of variables or quantities to be extracted.
+            Example: extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"]
+        simulation_number : int
+            The current simulation number, used to manage and organize data extraction (e.g. simulation number).
+        model_directory : str
+            Path to the directory containing the model output files.
+        results_folder_directory : str
+            Path to the directory where the extracted data will be saved.
         *args :
-            Arguments used to define the data extraction criteria, such as data indices,
-            output file paths, etc.
+            Additional positional arguments defining specific extraction criteria, such as
+            data indices or custom processing parameters.
         **kwargs :
-            Arguments that allow for more flexible and descriptive criteria for data
-            extraction, such as 'time', 'location', 'variable_name', or any other relevant
-            parameters that are specific to the data or model being used.
+            Additional keyword arguments for flexible data extraction criteria, such as:
+            - `time`: Specific time step for extraction.
+            - `location`: Specific coordinate or region of interest.
+            - `variable_name`: Name of the variable to extract.
+            - Any other model-specific parameters required for data extraction.
 
         Returns
         -------
         None
-            The method saves the extracted model outputs to JSON files in the specified result directory.
-
+            The extracted data is saved to output files in the specified results directory.
         """
 
 
         pass
-
-    #     TODO: A "tm_simulations" method should not be in the HydroSimulations class,
-    #         because it is specific to Telemac. Please rename this to simulations or what-
-    #         ever generic, model-independent name works.
-
-    #     # TODO delete the above line. In this structure, this is all you need!
 
     @log_actions
     def run_multiple_simulations(
@@ -351,11 +456,16 @@ class HydroSimulations:
             bal_new_set_parameters=None,
             bal_iteration=0,
             complete_bal_mode=True,
+            validation=False
     ):
         """
          Executes multiple hydrodynamic simulations in the context of Bayesian Active Learning (BAL) with a set of collocation points.
          The method also considers the inclusion of a new set of calibration parameters as an array when BAL iterations are being done.
-         Complete_bal_mode can be added as False when only multiple runs of the hydrodynmaic model are required.
+             - If `complete_bal_mode=True`, the process includes initial runs, surrogate model construction,
+                and BAL iterations.
+             - If `complete_bal_mode=False`, only the initial hydrodynamic model runs are performed.
+             - If `validation=True`, a separate set of model runs is executed for validation purposes
+      (e.g., assessing surrogate model performance).
          The number of processors to use is defined by self.nproc during the initialization of the HydroSimulation class.
 
          Parameters
@@ -370,12 +480,23 @@ class HydroSimulations:
          bal_iteration : int
              The number of the BAL iteration. Default is 0.
          complete_bal_mode : bool
-             Default is True when the code accounts for initial runs, surrogate construction and BAL phase. False when
-             only initial runs are required.
+             Default is True: Performs the full process, including initial runs, surrogate model construction,
+                                and Bayesian Active Learning.
+             False when only initial runs are required.
+         validation : bool
+             If `True`, the method runs a separate set of simulations for validation purposes.
 
          Returns
          -------
-         model_evaluations:
+         model_evaluations:array
+                     2D array containing processed model outputs.
+            Shape: `[num_runs, nloc * num_calibration_quantities]`, where:
+            - `num_runs` is the total number of model evaluations, including both initial runs and Bayesian Active Learning iterations.
+            - `nloc * num_calibration_quantities` represents the total number of outputs, with results interleaved in columns.
+
+            Example: For two calibration quantities and two calibration locations:
+            - Columns 1 and 2 correspond to the outputs (2 quantities) of the first calibration location.
+            - Columns 3 and 4 correspond to the outputs of the second location, and so on.
          """
         self.model_evaluations = np.empty((2, 2))
 
@@ -385,31 +506,23 @@ class HydroSimulations:
     def run_single_simulation(
             self,
             control_file="control_file.hydro",
-            load_results=True
     ):
         """
-        Executes a single simulation run using a specified script or launcher file.
+        Executes a single model run using a specified script or launcher file.
 
         This method is intended to handle the execution of a single simulation for various models
         (e.g., Telemac, OpenFOAM, Basement) by calling the appropriate launcher script.
-        It also provides an option to load and process the results of the simulation after execution.
 
         Parameters
         ----------
-        filename : str, optional
+        control_file : str
             The name of the control file used to launch the simulation. Defaults to "control_file.hydro" as an example.
             This file should be present in the appropriate directory and executable through a terminal.
-        load_results : bool, optional
-            A flag indicating whether to load and process the results after the simulation run.
-            If `True`, the method will attempt to read and process the output data; otherwise,
-            it will only execute the simulation. Defaults to `True`.
 
         Returns
         -------
-        result : json,files or None
-            The result of the simulation, which could be a data structure, simulation output file and .json files
-            depending on the simulation model and the implementation. If `load_results` is `False`,
-            this may return only the simulation results file.
+        None
+            The method executes the model run using a launcher command.
         """
         start_time = datetime.now()
         print("DUMMY CALL")
@@ -423,38 +536,45 @@ class HydroSimulations:
                                     calibration_quantities,
                                     extraction_quantities):
         """
-        Reads and sets the observations and errors at calibration points based on the provided data file.
+        Reads and processes calibration point data, extracting observations and measurement errors.
 
-        It ensures that the observations and errors are properly aligned and formatted
-        for Bayesian Inference.
+        This method reads a file containing calibration point data, extracts the observed values
+        and associated measurement errors, and formats them appropriately for Bayesian inference.
+        Determines the number of calibration locations and
+        quantities being processed .
 
         Parameters
         ----------
         calibration_pts_file_path : str
-            Path to the file containing the calibration data points. This file should include the
-            observed values and their corresponding errors.
+            Path to the CSV file containing calibration data points. The file should include
+            columns for observed values and their corresponding measurement errors.
         calibration_quantities : list of str
-            Quantities for which calibration is being performed. These should correspond
-            to the columns or fields in the calibration data file that contain the relevant
-            observational data.
+            List of calibration quantities to be extracted from the data file. The method expects
+            corresponding columns labeled as `<quantity>_DATA` for observations and `<quantity>_ERROR`
+            for measurement errors. <quantity> is the name of how the extraction variable is recognized in
+            the model output file.
+            Example: WATER DEPTH_DATA means the name WATER DEPTH recognizes the variable WATER DEPTH in Telemac .slf files
+        extraction_quantities : list of str
+            List of all quantities required to be extracted from the model output file.
+
 
         Returns
         -------
-        observations : 2D array
-            Observed values extracted from the calibration data file with shape [1 x (No. calibration points * n_calib_quantities)].
-        measurement_errors : 1D array
-            Measurement errors associated with the observed values with shape [(No.calibration points * n_calib_quantities), ]
+        observations : ndarray, shape (1, n_loc * n_calib_quantities)
+            A 2D array containing the extracted observed values for all calibration points.
+        measurement_errors : ndarray, shape (n_loc * n_calib_quantities,)
+            A 1D array containing the measurement errors associated with the observations.
         n_loc : int
-            Number of unique locations or data points where observations are made.
+            The number of unique calibration locations (data points).
         n_calib_quantities : int
-            Number of calibration quantities being processed.
-        calibration_pts_df : DataFrame
-            Contains the raw calibration data points read from the file.
+            The number of calibration quantities being processed.
+        calibration_pts_df : pd.DataFrame
+            A DataFrame containing the raw calibration data read from the file.
+        n_extraction_quantities : int
+            The number of all extraction quantities being processed.
         """
-        # Read the CSV file into a DataFrame
-        calibration_pts_df = pd.read_csv(calibration_pts_file_path)
 
-        # List to store the observation and error columns based on calibration_quantities
+        calibration_pts_df = pd.read_csv(calibration_pts_file_path)
         observation_columns = []
         error_columns = []
 
@@ -529,8 +649,6 @@ class HydroSimulations:
             print(f"An error occurred while reading the file: {e}")
             return None
 
-    #     TODO: Merge with run() method - merged with run method
-
     def set_calibration_parameters(self, params, values):
         """
         Create a dictionary from calibration parameters and their value ranges if both params and values exist.
@@ -587,7 +705,7 @@ class HydroSimulations:
         auxiliary_file_path : str
             Path to an auxiliary file that may be required for running the model controls (i.e., .tbl file in Telemac).
 
-        simulation_id : int, optional
+        simulation_id : int
             An optional identifier for the simulation. The default is 0. This ID can be used to distinguish
             different simulations or runs.
 
@@ -606,17 +724,17 @@ class HydroSimulations:
             validation=False
     ):
         """
-        Extract data from a .JSON file containing model outputs to 2D array ready to use in Bayesian calibration and saves
-        the results to a CSV file.
+        Extract data from a file(.txt,json,etc) containing model outputs to 2D array ready to use in Bayesian calibration
+        and saves the results to a CSV file.
 
         Parameters
         ----------
         output_data_path : str
-            Path to the .json file containing the model outputs. The file should be structured
-            such that its keys correspond to calibration points, and its values are lists of model
-            output values for each run and quantity.
+            Path to the file (.json) containing the model outputs. The file should be structured
+            such that its keys correspond to calibration points, and its values are lists of nested dictionaries having the
+            output values for each run and quantity/ies.
         delete_complex_outputs: Boolean, Default: False
-            Delete complex model outtput files from the results folder (e.g. auto-saved-results).
+            Delete complex model output files from the results folder (e.g. auto-saved-results-HydroBayesCal/<variable>).
             Recommended when running several simulations of the full complexity model.
         validation: Boolean, Default: False
             If True, new files for collocation points and model results are created. This is done to keep
@@ -635,9 +753,8 @@ class HydroSimulations:
 
     def __call__(self, *args, **kwargs):
         """
-        TODO: Merge this method from FulComplexityModel with your workflow, making sure there is no __main___ statement at the bottom of the file
 
-        Call method forwards to self.run_simulation()
+        Call method forwards to self.run_multiple_simulations()
 
         :param args:
         :param kwargs:

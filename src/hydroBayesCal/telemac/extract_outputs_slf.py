@@ -30,10 +30,6 @@ calibration_pts_df=control_tm.calibration_pts_df
 output_name=control_tm.dict_output_name
 calibration_quantities=control_tm.calibration_quantities
 # Call extract_data_point method
-control_tm.extract_data_point(input_slf_file='R_donau_1.slf',
-                              calibration_pts_df=calibration_pts_df,
-                              output_name=output_name,
-                              extraction_quantity=calibration_quantities,
-                              simulation_number=1,
-                              model_directory=model_dir,
-                              results_folder_directory=res_dir)
+control_tm.extract_data_point(input_file='R_donau_1.slf', calibration_pts_df=calibration_pts_df,
+                              output_name=output_name, extraction_quantity=calibration_quantities, simulation_number=1,
+                              model_directory=model_dir, results_folder_directory=res_dir)
