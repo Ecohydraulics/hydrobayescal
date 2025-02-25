@@ -9,6 +9,7 @@ import numpy as np
 import sys
 import sklearn
 import copy
+import pdb
 from joblib import Parallel, delayed
 import torch
 import gpytorch
@@ -617,7 +618,6 @@ class MultiGPyTraining:
         """
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
-
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities
 

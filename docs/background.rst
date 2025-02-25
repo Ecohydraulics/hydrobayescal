@@ -26,7 +26,7 @@ be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hyd
     To expedite surrogate-assisted calibration, it is recommended to perform one dry model initialization initially. Afterward, switch to fast-converging hotstart (wet initial) conditions.
 
 
-Step 1: Assign user inpuit parameters
+Step 1: Assign user input parameters
 -------------------------------
 
 As it was mentioned before the calibration process involves to well defined parts in the code. Both processes depend on the user defined input parameters, which are essential

@@ -583,16 +583,16 @@ if __name__ == "__main__":
     #         res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
     #         calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     #         n_cpus=8,
-    #         init_runs=2,
+    #         init_runs=20,
     #         calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
     #         # param_values=[[0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17]], # all intervals correspond to meaningfull physical values of Maning coefficie for gravel bed channels (0.018 - 0.026)
-    #         param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.056], [0.0016, 0.056], [0.056, 0.79]],
+    #         param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.056, 0.79]],
     #         extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG","VELOCITY U","VELOCITY V"],
-    #         calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH","TURBULENT ENERG"],  # Dynamic from command line
+    #         calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH"],  # Dynamic from command line
     #         dict_output_name="extraction-data",
     #         parameter_sampling_method="sobol", # If user is selected, a .csv file with all parameter sets (collocation points) in restart folder should exist.
     #                                         # The file must be called init-collocation-points
-    #         max_runs=3,
+    #         max_runs=23,
     #         complete_bal_mode=True,  # Dynamic from command line
     #         only_bal_mode=True,  # Dynamic from command line
     #         delete_complex_outputs=True,

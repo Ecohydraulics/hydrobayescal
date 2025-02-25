@@ -29,17 +29,20 @@ Purpose and description
 ========================
 The package aims to make significant development and contribution on creating a tool for automated Bayesian Calibration for hydrodynamic models using open source software such as
 Telemac and/or OpenFoam. Stochastic calibration techniques require a huge number of full complexity model realizations to perform statistical analysis.
-However, this is unfeasible when a single realization may require several hours or even days. To make this possible, surrogate models (reduced models) are constructed as
+However, this is unfeasible when a single realization may require several hours or even days. To make this possible, surrogate models (approximated models) are constructed as
 a first step with only a few number of model realizations or so called initial collocation points which are strategically selected using advanced parameter sampling methods.
+The package builds on top of `BayesValidRox <https://pages.iws.uni-stuttgart.de/inversemodeling/bayesvalidrox/>`_ (until now only for Design of Experiments) and uses Gaussian Process Regression(GPR)
+to construct single outputs and multioutputs surrogate models which are useful to predict the model outputs at any parameter combination and Bayesian Inference to quantify the uncertainty of the model
+parameters.
 
-The program employs Bayesian Active Learning, or BAL, to iteratively add new training points (parameter combinations) that yielded the highest value of relative entropy, hence increasing the model's
-accuracy in the parameter space regions that are most crucial for Bayesian inference.
+The package employs Bayesian Active Learning, or BAL, to iteratively add new training points (parameter combinations) that yielded the highest value of relative entropy,
+hence increasing the model's accuracy in the parameter space regions that are most crucial for Bayesian inference.
 
 Prerequisites (requirements)
 ===========================
 
 HydroBayesCal is a Python package, bound to the installation of numerical model. Currently, only Telemac 2D/ 3D bindings are enabled. The package runs in Debian Linux platforms
-including Ubuntu and its derivatives and Windows, however, it is recommended to be installed in a Linux Operating System because
+including Ubuntu and its derivatives. We recommended to install the package in a Linux Operating System because
 it gives the flexibility for configuring the virtual environment and optimizing settings for Telemac simulations while providing
 a powerful command-line interface, which is well-suited for running batch simulations and automating tasks.
 
@@ -58,7 +61,7 @@ Windows user will have the best experience with Anaconda/conda env and Linux use
 
 .. admonition:: New to Python?
 
-    Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_,
+Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_,
 and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
 
 

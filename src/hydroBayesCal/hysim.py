@@ -193,7 +193,7 @@ class HydroSimulations:
         measurement_errors : array
             Measurement errors associated with each calibration point.
         calibration_pts_df : pandas.DataFrame
-            DataFrame containing calibration point information.
+            Contains calibration point information.
             Header format:
                 | Point | X | Y | MEASUREMENT 1 | ERROR 1 | MEASUREMENT 2 | ERROR 2 | ...
         user_collocation_points : array
@@ -245,8 +245,8 @@ class HydroSimulations:
         else:
             self.dict_output_name = dict_output_name
         self.nloc = None
-        # self.ndim = None
-        # self.param_dic = None
+        self.ndim = None
+        self.param_dic = None
         self.num_calibration_quantities = None
         self.num_extraction_quantities = None
         self.observations = None
@@ -254,8 +254,8 @@ class HydroSimulations:
         self.calibration_pts_df = None
         self.user_collocation_points = None
 
-        # if calibration_parameters:
-        #     self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
+        if calibration_parameters:
+            self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
         if calibration_pts_file_path:
             self.observations, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_errors(
                 calibration_pts_file_path, calibration_quantities,extraction_quantities)
