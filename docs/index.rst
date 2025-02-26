@@ -1,9 +1,4 @@
 .. Introduction.
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
-   background
 
 About
 =====
@@ -227,3 +222,8 @@ All user input parameters are assigned in the ``bal_telemac.py`` file.
 
 You will find a detailed explanation of each module's functionality in the following documentation.
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   background
