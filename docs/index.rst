@@ -41,8 +41,8 @@ hence increasing the model's accuracy in the parameter space regions that are mo
 Prerequisites (requirements)
 ===========================
 
-HydroBayesCal is a Python package, bound to the installation of numerical model. Currently, only Telemac 2D/ 3D bindings are enabled. The package runs in Debian Linux platforms
-including Ubuntu and its derivatives. We recommended to install the package in a Linux Operating System because
+HydroBayesCal is a Python package, bound to the installation of a numerical model. Currently, only Telemac 2D/ 3D bindings are enabled. The package runs in Debian Linux platforms
+including Ubuntu and its derivatives. he package has not been tested in Windows yet. We recommended to install the package in a Linux Operating System because
 it gives the flexibility for configuring the virtual environment and optimizing settings for Telemac simulations while providing
 a powerful command-line interface, which is well-suited for running batch simulations and automating tasks.
 
@@ -67,7 +67,7 @@ and dive into the `Python tutorials <https://hydro-informatics.com/python-basics
 
 .. todo::
 
-    Add Library requirements through a link to 
+    View the environment requirements for the package and the installation of the package in the `requirements section <requirements>`_.
 
 Telemac
 ------
