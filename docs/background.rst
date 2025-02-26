@@ -32,20 +32,94 @@ Step 1: Assign user input parameters
 As it was mentioned before the calibration process involves two well defined parts in the code. Both processes depend on the user defined input parameters, which are essential
 to run the code properly.
 Firstly, the initialization of all input parameters must be done in ``bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
-calls the necesary instances of the classes that run the hydrodynamic model, surrogate models and BAL.
+calls the necesary instances of the classes that run the hydrodynamic model, creation of surrogate models and BAL.
 
 ------------------------
-Global Full Complexity Model Parameters
+HydroSimulations Class (Global Full Complexity Model Parameters)
 ------------------------
 The **HydroSimulations** class manages and runs hydrodynamic simulations within the context of Bayesian Calibration using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup,
 execution, and result storage while managing calibration parameters and Bayesian Active Learning (BAL) iterations.
 
 This class contains the general attributes that a hydrodynamic simulation requires to run. The attributes are:
 
-.. autoclass:: telemac.control_telemac.TelemacModel
-   :members:
-   :undoc-members:
-   :show-inheritance:
+* **control_file**: Name of the file that controls the full complexity model simulation (default is "control.cas" as an example for Telemac).
+
+* **model_dir**: Full complexity model directory where all simulation files (mesh, control file, boundary conditions) are located.
+
+* **res_dir**: Directory where a subfolder called "auto-saved-results-HydroBayesCal" will be created to store all the result files.
+  Additionally, subfolders for plots, surrogate models, and restart data will be created.
+
+* **calibration_pts_file_path**: File path to the calibration points data file. Please check documentation for further details of the file format.
+.. table:: Measurement Data
+
+   ======================= ================== ================== ====================== ===============
+   Point                   X                  Y                  MEASUREMENT 1           ERROR 1
+   ======================= ================== ================== ====================== ===============
+   [Point data row 1]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
+   [Point data row 2]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
+   [Point data row 3]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
+   ======================= ================== ================== ====================== ===============
+
+* **n_cpus**: Number of CPUs to be used for parallel processing (if available).
+
+* **init_runs**: Initial runs of the full complexity model (before Bayesian Active Learning).
+
+* **calibration_parameters**: Names of the considered calibration parameters (e.g., roughness coefficients, empirical constants, turbulent viscosity, etc.),
+  any uncertain parameter that can be introduced in the numerical model for calibration purposes.
+
+  * **Notes**:
+
+    * No limit in calibration parameters.
+    * For Telemac users, the calibration parameters **MUST** coincide with the **KEYWORD** in Telemac found in the `.cas` file.
+      You can find more details in the `Telemac User Manuals <https://wiki.opentelemac.org/doku.php#principal_documentation>`_.
+
+  * **Example**:
+
+    .. code-block:: python
+
+        calib_parameter_1 = "LAW OF FRICTION ON LATERAL BOUNDARIES"
+        calib_parameter_2 = "INITIAL ELEVATION"
+        calib_parameter_3 = "FRICTION COEFFICIENT"
+
+
+    * If you want to calibrate different values of roughness coefficients in roughness zones, the roughness zones description MUST be indicated in the .tbl file.
+    * The .tbl file name MUST be indicated in the friction file input. More information on friction zones in `Friction (Roughness) Zones <https://hydro-informatics.com/numerics/telemac/roughness.html>`_
+    * The calibration zone MUST contain the word zone,ZONE or Zone as a prefix in the calib_parameter field.
+
+   * **Example**:
+
+     .. code-block:: python
+
+             calib_parameter_1='zone99999100'   # if the zone description is: 99999100
+
+* **param_values**: Value ranges considered for parameter sampling.
+
+* Notes:
+        Example: `[[min1, max1], [min2, max2], ...]`.
+
+* **calibration_quantities**: Names of the calibration targets (model outputs) used for calibration.
+
+  Examples:
+
+  * `['WATER DEPTH']` for a single quantity.
+  * `['WATER DEPTH', 'SCALAR VELOCITY']` for multiple quantities.
+
+* **dict_output_name**: Base name for output dictionary files where the outputs are saved as `.json` files.
+
+* **parameter_sampling_method**: Method used for sampling parameter values during the calibration process.
+
+  Available options:
+
+  * **"random"** - Random sampling.
+  * **"latin_hypercube"** - Latin Hypercube Sampling (LHS).
+  * **"sobol"** - Sobol sequence sampling.
+  * **"halton"** - Halton sequence sampling.
+  * **"hammersley"** - Hammersley sequence sampling.
+  * **"chebyshev(FT)"** - Chebyshev nodes (Fourier Transform-based).
+  * **"grid(FT)"** - Grid-based sampling (Fourier Transform-based).
+  * **"user"** - User-defined sampling.
+
+
 
 * **control_file_name**: Name of the TELEMAC steering file (.cas)
 
