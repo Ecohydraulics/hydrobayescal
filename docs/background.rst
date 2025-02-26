@@ -1,4 +1,4 @@
-.. Stochastic surrogate workflow.
+.. Full complexity model
 
 
 Full-complexity - Surrogate Calibration Workflow
@@ -23,20 +23,29 @@ be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hyd
     A hotstart simulation involves re-using the output file (.slf) of a previous simulation that began under dry conditions as a file containing the new initial conditions.
     In a typical numerical model of a fluvial ecosystem, it is common to start with dry conditions to prevent filling disconnected terrain depressions with water. However, applying wet initial
     conditions that approximately correspond to the target conditions can significantly speed up convergence.
-    To expedite surrogate-assisted calibration, it is recommended to perform one dry model initialization initially. Afterward, switch to fast-converging hotstart (wet initial) conditions.
+    To expedite surrogate-assisted calibration, it is recommended to perform one dry model initialization. Afterwards, switch to fast-converging hotstart (wet initial) conditions.
 
 
 Step 1: Assign user input parameters
 -------------------------------
 
-As it was mentioned before the calibration process involves to well defined parts in the code. Both processes depend on the user defined input parameters, which are essential
+As it was mentioned before the calibration process involves two well defined parts in the code. Both processes depend on the user defined input parameters, which are essential
 to run the code properly.
-Firstly, the initialization of all input parameters must be done through the ``user_settings.py`` Python script. The file is divided in two parts, the full complexity model global parameters
-and the Bayesian Active Learning **(BAL)** global parameters. Each of the parameters has a purpose in the code running so be sure to follow the instructions properly.
+Firstly, the initialization of all input parameters must be done in ``bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
+calls the necesary instances of the classes that run the hydrodynamic model, surrogate models and BAL.
 
 ------------------------
 Global Full Complexity Model Parameters
 ------------------------
+The **HydroSimulations** class manages and runs hydrodynamic simulations within the context of Bayesian Calibration using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup,
+execution, and result storage while managing calibration parameters and Bayesian Active Learning (BAL) iterations.
+
+This class contains the general attributes that a hydrodynamic simulation requires to run. The attributes are:
+
+.. autoclass:: telemac.control_telemac.TelemacModel
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 * **control_file_name**: Name of the TELEMAC steering file (.cas)
 

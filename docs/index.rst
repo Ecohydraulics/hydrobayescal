@@ -1,4 +1,9 @@
 .. Introduction.
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   background
 
 About
 =====
@@ -221,9 +226,4 @@ The package consists of two well-defined parts:
 All user input parameters are assigned in the ``bal_telemac.py`` file.
 
 You will find a detailed explanation of each module's functionality in the following documentation.
-.. _hydro-informatics.com: https://hydro-informatics.com
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-   background  # Replace with your actual file name (without .rst)
