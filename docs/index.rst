@@ -1,6 +1,5 @@
 .. Introduction.
 
-
 About
 =====
 
@@ -64,10 +63,7 @@ Windows user will have the best experience with Anaconda/conda env and Linux use
 Have a look at `hydro-informatics.com`_, follow the detailed `Python installation guide for your platform <https://hydro-informatics.com/python-basics/pyinstall.html>`_,
 and dive into the `Python tutorials <https://hydro-informatics.com/python-basics/python.html>`_
 
-
-.. todo::
-
-    View the environment requirements for the package and the installation of the package in the `requirements section <requirements>`_.
+View the environment requirements for the package in the `HydroBayesCal-requirements.txt <https://github.com/Ecohydraulics/hydrobayescal>`_ file.
 
 Telemac
 ------
@@ -101,7 +97,7 @@ Open an Anaconda Prompt or any other Python-pip-able Terminal and enter:
 
     pip install HydroBayesCal
 
-It is also possible to install manually by cloning HydroBayesCal from GitHub repository:
+It is also possible to install manually by cloning HydroBayesCal from GitHub repository `GitHub repository <https://github.com/Ecohydraulics/hydrobayescal>`_ :
 
 .. code::
 
@@ -124,14 +120,14 @@ Enter this command:
 
    python3 -m venv HBCenv
 
-Next, activate the environment, `download requirements.txt <https://github.com/Ecohydraulics/hydrobayescal/requirements.txt>`_ and, ``cd`` into the
-directory where you downloaded ``requirements.txt`` to install the requirements:
+Next, activate the environment, `download requirements.txt <https://github.com/Ecohydraulics/hydrobayescal/blob/main/HydroBayesCal-requirements.txt>`_ and, ``cd`` into the
+directory where you downloaded ``HydroBayesCal-requirements.txt`` to install the requirements:
 
 .. code::
 
     source HBCenv/bin/activate
     cd <TO/REQUIREMENTStxt-DOWNLOAD/FOLDER/>
-    pip install -r requirements.txt
+    pip install -r HydroBayesCal-requirements.txt
 
 Load HBCenv with TELEMAC (Linux)
 ================================
@@ -207,7 +203,7 @@ If both environments are loaded without errors, you are good to go for running t
    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 
-
+.. Introduction
 
 Overview of the package components
 ==================================
@@ -215,14 +211,19 @@ Overview of the package components
 The package consists of two well-defined parts:
 
 1. **Hydrodynamic Simulations**:
-   This part performs hydrodynamic simulations using any open-source hydrodynamic software.
+   This part performs hydrodynamic simulations using any open-source hydrodynamic software (currently, only Telemac is supported).
 
 2. **Surrogate Model and Bayesian Active Learning**:
-   This part builds the initial surrogate model using Gaussian Process Regression and performs Bayesian Active Learning. The goal is to improve the initial surrogate by adding new collocation points.
+   This part builds the initial surrogate model using Gaussian Process Regression and performs Bayesian Active Learning. The goal is
+    to iteratively add new training points using the methodology in `Oladyshkin, S., et al (2020) <https://doi.org/10.3390/e22080890>`_, hence increasing the model's accuracy in the parameter space regions
+    that are most crucial for Bayesian inference.
 
-All user input parameters are assigned in the ``user_input.py`` file.
+All user input parameters are assigned in the ``bal_telemac.py`` file.
 
 You will find a detailed explanation of each module's functionality in the following documentation.
-
-
 .. _hydro-informatics.com: https://hydro-informatics.com
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+   background  # Replace with your actual file name (without .rst)
