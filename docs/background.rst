@@ -1,7 +1,7 @@
 .. Full complexity model
 
 
-Full-complexity - Surrogate Calibration Workflow
+Complex model - Metamodel Calibration Workflow
 ================================================
 
 The workflow describes the use of Bayesian Model Evidence (BME) and Relative Entropy (RE) in conjunction with a Gaussian Process Emulator,
@@ -100,6 +100,15 @@ This class contains the general attributes that a hydrodynamic simulation requir
        calibration_quantities = ['WATER DEPTH']  # Single quantity
        calibration_quantities = ['WATER DEPTH', 'SCALAR VELOCITY']  # Multiple quantities
 
+
+* **extraction_quantities**: Quantities to be extracted from the model output files. Generally, these are the same as or more than the **calibration_quantities**. These quantities will be extracted from the model and used for calibration purposes (using any quantity) when restarting it with the option ``only_bal_mode = True``.
+
+    .. code-block:: python
+
+      calibration_quantities = ['WATER DEPTH'] # WATER DEPTH as a calibration parameter.
+      extraction_quantities = ['WATER DEPTH', 'SCALAR VELOCITY', 'TURBULENT ENERG', 'VELOCITY U', 'VELOCITY V'] # Calibration and additional quantities to be extracted.
+
+    Any of these additional extracted quantities can be used for calibration purposes.
 * **dict_output_name**: Base name for output dictionary files where the outputs are saved as `.json` files.
 
 * **parameter_sampling_method**: Method used for sampling parameter values during the calibration process.
@@ -193,40 +202,49 @@ For telemac simulations, the following parameters should be defined in the **Tel
 
 Step 2: Data storage and extraction
 -----------------------------------------
-In each run, HydroBayesCal creates a results folder called "auto-saved-results-HydroBayesCal" in the results directory specified by the user.
+In each run, HydroBayesCal creates a results folder called "auto-saved-results-HydroBayesCal" in the directory specified by the user.
 This folder contains the following subfolders:
 
-* **calibration-data**: Contains the calibration data (model outputs) for each calibration parameter set.
-* **plots**: Contains plots of the calibration parameters and the calibration quantities.
-* **surrogate_models**: Contains the surrogate models created during the calibration process.
-* **restart_data**: Contains the restart data for the calibration process.
+* **calibration-data**: Contains the calibration data for the considered calibration quantity/ies. The files are:
 
+  * **``BAL_dictionary.pkl``**: Contains the Bayesian Active Learning data after iterations, including: prior distributions, posterior distributions, observations, errors, BME, RE.
+  * **``collocation-points-<CALIBRATION_QUANTITY>.csv``**: Stores the collocation points used in the calibration process, including initial collocation points and those added during the BAL iterations for the specified <CALIBRATION_QUANTITY>.
+  * **``extraction-data-detailed.json``**: Contains the output data as a dictionary JSON from the complex model simulations, for all collocation points and for the variables in ``extraction_quantities``.
+  * **``model-results-calibration-<CALIBRATION_QUANTITY>.csv``**: Stores the model results used for all collocation points and for the specified <CALIBRATION_QUANTITY> as .csv file.
+  * **``model-results-extraction.csv``**: Contains extracted model results from the simulations and for the variables in ``extraction_quantities``.
+  * **``<CALIBRATION_QUANTITY>-detailed.json``**: Provides a detailed JSON file of the extracted <CALIBRATION_QUANTITY> for each collocation points and location.
+
+* **plots**: Stores the plots after the calibration process. The Python script called plots.py is used to generate the plots.
+* **surrogate_models**: Contains the surrogate models created during the calibration process. The surrogate models are saved as pickle files.
+* **restart_data**: Contains the restart data for the calibration process. Typically, the files saved in this folder are:
+  * **``initial-collocation-points.csv``**: Contains the initial collocation points (parameter combinations) for the calibration process. The number of
+        collocation points corresponds to the value assigned in init_runs.
+  * **``initial-outputs.json``**: Contains the initial outputs (expressed in extraction_quantities) of the full complexity model at the collocation points as dictionary .json.
 
 
 Step 3: Bayesian Model Optimization
 -----------------------------------
 
-With the initial model setup and the measurement points, the Bayesian model optimization process has everything it needs for its iterative score calculation. The number of iterations corresponds to the user-defined limit (recall, the default is ``it_limit = 15``) and the following tasks are performed in every iteration:
+With the initial model setup and the measurement points, the Bayesian model optimization process has everything it needs for its iterative score calculation. The number of iterations corresponds to the user-defined limit in **``max_runs``** and the following tasks are performed in every iteration:
 
-1. Compute a surrogate model prediction for all collocation (measurement) points
-    * Instantiate a prediction and a standard deviation array, each with the size of of measurement points.
-    * Loop over the model predictions at the collocation points:
-        - Instantiate a `radial-basis function (RBF) kernel <https://scikit-learn.org/stable/modules/generated/sklearn.gaussian_process.kernels.RBF.html>`_ corresponding to the possible value ranges of the selected calibration parameters.
-        - Instantiate a `Gaussian process regressor <https://scikit-learn.org/stable/modules/generated/sklearn.gaussian_process.GaussianProcessRegressor.html?highlight=gaussianprocessregressor>`_ with the RBF kernel.
-        - Fit the Gaussian process regression model.
-        - Create parameter predictions with the Gaussian process regression (also known as `kriging <https://en.wikipedia.org/wiki/Kriging>`_ ) model, which represent the **surrogate predictions** (i.e., fill the previously instantiated prediction arrays).
-2. Calculate the error in the likelihood functions as :math:`{\varepsilon}^2=({\varepsilon}^2_{measured} + {\varepsilon}^2_{surrogate})`
-3. Calculate Bayesian model evidence (BME) and relative entropy (RE)
-    * Bayesian model evidence rates the model quality compared with available data and is here estimated as the expectancy value of a Monte Carlo sampling.
-    * Relative entropy is also known as `Kullback-Leibler divergence <https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence>`_ and measures the difference (distance) between two probability distributions.
-4. Run Bayesian active learning (BAL) on the output space (**heavy computation load**):
-    * Use the indices of priors (i.e. collocation points) that have not been used in the previous steps.
-    * Instantiate an active learning output space as a function of a user-defined size (``mc_samples_al``), and the above-calculated surrogate prediction and standard deviation arrays (see item 1)
-    * Calculate Bayesian scores as a function of the user-defined strategy (BME or RE), the observations, and the active learning output space.
-5. Find the best performing calibration parameter values (maximum BME/RE scores) and set it as the new best parameter set for use with the deterministic (TELEMAC) model
-6. Run TELEMAC with the best best performing calibration parameter values.
+1. Initial surrogate model with the initial collocation points and the corresponding model outputs:
+    * **Training a initial metamodel** using single or multitask Gaussian Process Regression. To train a GP metamodel, a coviariance function (kernel) must be defined.
+        - `Single GP Regression  <https://docs.gpytorch.ai/en/v1.13/examples/01_Exact_GPs/Simple_GP_Regression.html>`_
+        - `Multi-task GP Regression <https://docs.gpytorch.ai/en/v1.13/examples/03_Multitask_Exact_GPs/Multitask_GP_Regression.html>`_
+        - `Gaussian Process Kernels <https://docs.gpytorch.ai/en/v1.13/kernels.html>`_
+    *  **Surrogate model predictions**  using the trained metamodel to predict the model outputs at  Monte Carlo collocation points according to the user-defined prior samples (taken from a uniform distribution).
+2. Bayesian Inference in light of measured data
+    *  **Bayesian Inference** through the calculation of likelihood functions based on surrogate model predictions , measurements and the errors. Note that the errors are taken from the calibration points file (.csv) in **calibration_pts_file_path**. Those errors must include measurement and surrogate errors :math:`{\varepsilon}^2=({\varepsilon}^2_{measured} + {\varepsilon}^2_{surrogate})`
+    *  **Uncertainty quantification** of calibration parameters by estimating their posterior distributions using rejection sampling.
+3. Bayesian Active Learning (BAL) iterations (**heavy computation load**)
+    In each BAL iteration, the following steps are performed:
+    *  From the original prior sample pool (``prior_samples``), the code selects the MC samples using their indices (i.e. collocation points) that have not been used in the previous steps and taken according to the number expressed in (``mc_samples_al``).
+    *  Instantiate an active learning output space as a function of a user-defined size (``mc_samples_al``), and the calculated surrogate prediction and standard deviation arrays.
+    *  Calculate Bayesian model evidence (BME) and relative entropy (RE) according to the user-defined (``mc_exploration``).
+           - **Bayesian model evidence** rates the model quality compared with available measured data `Bayesian Model Evidence <https://en.wikipedia.org/wiki/Marginal_likelihood>`_.
+           - **Relative Entropy** also known as `Kullback-Leibler divergence <https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence>`_ and measures the so-called **information geometry** in moving from the prior :math:`p(\omega)` to the posterior :math:`p(\omega | D)`.
+     `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
+    *  Find the best performing calibration parameter values (maximum BME/RE scores) and set it as the new best parameter set for use with the deterministic (TELEMAC) model
+    *  Run the complex model (i.e., TELEMAC) with the best best performing calibration parameter values.
+4.  Repeat the process until the maximum number of iterations or a convergence in BME/RE is reached. The last iteration step corresponds to the supposedly best solution. Consider trying more iteration steps, other calibration parameters, or other value ranges if the calibration results in physical non-sense combinations.
 
-Step 4: Get Best Performing solution
-------------------------------------
-
-The last iteration step corresponds to the supposedly best solution. Consider trying more iteration steps, other calibration parameters, or other value ranges if the calibration results in physical non-sense combinations.

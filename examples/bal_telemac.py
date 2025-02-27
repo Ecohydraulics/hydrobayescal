@@ -158,7 +158,7 @@ def run_bal_model(collocation_points,
                   experiment_design,
                   eval_steps=1,  # By default
                   prior_samples=10000,  # By default
-                  mc_samples=5000,  # By default
+                  mc_samples_al=5000,  # By default
                   mc_exploration=1000,  # By default
                   gp_library="gpy",  # By default
                   ):
@@ -448,7 +448,7 @@ def run_bal_model(collocation_points,
                                   errors=total_error,
                                   do_tradeoff=False,
                                   gaussian_assumption=False,
-                                  mc_samples=mc_samples,
+                                  mc_samples=mc_samples_al,
                                   mc_exploration=mc_exploration)  # multiprocessing=parallelize
 
             new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
@@ -562,7 +562,7 @@ def main():
         experiment_design=exp_design,
         eval_steps=20,
         prior_samples=15000,
-        mc_samples=2000,
+        mc_samples_al=2000,
         mc_exploration=1000,
         gp_library="gpy"
     )

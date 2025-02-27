@@ -76,6 +76,11 @@ class HydroSimulations:
             Names of the calibration targets (model outputs) used for calibration. These quantities usually correspond to the measured values for calibration purposes.
             Example: ['WATER DEPTH'] for a single quantity.
             Example: ['WATER DEPTH', 'SCALAR VELOCITY'] for multiple quantities.
+        extraction_quantities : list of str
+            Names of the quantities to be extracted from the model output files. Generally, the same or more than the calibration_quantities. These quantities will be extracted from the model.
+            Example: calibration_quantities = ['WATER DEPTH'] , WATER DEPTH as calibration parameter.
+            Example: extraction_quantitiies = ['WATER DEPTH', 'SCALAR VELOCITY', 'TURBULENT ENERG', 'VELOCITY U', 'VELOCITY V'] . Any of these additional quantities can be used for calibration purposes when restarting the
+                                    calibration process in only_bal_mode = True.
         dict_output_name : str
             Base name for output dictionary files where the outputs are saved as .json files.
             This dictionary will be saved in the calibration-data subfolder for the considered calibration target.

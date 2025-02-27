@@ -853,7 +853,7 @@ class TelemacModel(HydroSimulations):
         input_file = os.path.join(model_directory, input_file)
         json_path = os.path.join(results_folder_directory, f"{output_name}.json")
         json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
-        json_path_restart_data = os.path.join(self.restart_data_folder, "collocation-points-outputs.json")
+        json_path_restart_data = os.path.join(self.restart_data_folder, "initial-model-outputs.json")
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
         differentiated_dict = {}
