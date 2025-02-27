@@ -8,5 +8,5 @@ This is the documentation for the HydroBayesCal package. This package is a Bayes
    :maxdepth: 2
    :caption: List of contents:
 
-    introduction
-    background
+   introduction
+   background
