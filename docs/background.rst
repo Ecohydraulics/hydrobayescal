@@ -50,15 +50,16 @@ This class contains the general attributes that a hydrodynamic simulation requir
   Additionally, subfolders for plots, surrogate models, and restart data will be created.
 
 * **calibration_pts_file_path**: File path to the calibration points data file. Please check documentation for further details of the file format.
+
 .. table:: Measurement Data
 
-   ======================= ================== ================== ====================== ===============
-   Point                   X                  Y                  MEASUREMENT 1           ERROR 1
-   ======================= ================== ================== ====================== ===============
-   [Point data row 1]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
-   [Point data row 2]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
-   [Point data row 3]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
-   ======================= ================== ================== ====================== ===============
+   ======================= ================== ================== ====================== =============== ====================== ===============
+   Point                   X                  Y                  MEASUREMENT 1           ERROR 1        MEASUREMENT 2           ERROR 2
+   ======================= ================== ================== ====================== =============== ====================== ===============
+   [Point data row 1]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]  [Measurement 2 value]  [Error 2 value]
+   [Point data row 2]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]  [Measurement 2 value]  [Error 2 value]
+   [Point data row 3]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]  [Measurement 2 value]  [Error 2 value]
+   ======================= ================== ================== ====================== =============== ====================== ===============
 
 * **n_cpus**: Number of CPUs to be used for parallel processing (if available).
 
@@ -69,46 +70,41 @@ This class contains the general attributes that a hydrodynamic simulation requir
 
   * **Notes**:
 
-    * No limit in calibration parameters.
+    * No limit in the number of calibration parameters.
     * For Telemac users, the calibration parameters **MUST** coincide with the **KEYWORD** in Telemac found in the `.cas` file.
+      The notation should be BOTTOM FRICTION = 0.025 in the `.cas` file. **IMPORTANT: (with ' = ' not with ' : ')**
       You can find more details in the `Telemac User Manuals <https://wiki.opentelemac.org/doku.php#principal_documentation>`_.
-
-  * **Example**:
 
     .. code-block:: python
 
-        calib_parameter_1 = "LAW OF FRICTION ON LATERAL BOUNDARIES"
-        calib_parameter_2 = "INITIAL ELEVATION"
-        calib_parameter_3 = "FRICTION COEFFICIENT"
-
+       calibration_parameters = ["LAW OF FRICTION ON LATERAL BOUNDARIES", "INITIAL ELEVATION", "BOTTOM FRICTION"]  # Correspond to KEYWORDS in TELEMAC .cas file
 
     * If you want to calibrate different values of roughness coefficients in roughness zones, the roughness zones description MUST be indicated in the .tbl file.
-    * The .tbl file name MUST be indicated in the friction file input. More information on friction zones in `Friction (Roughness) Zones <https://hydro-informatics.com/numerics/telemac/roughness.html>`_
-    * The calibration zone MUST contain the word zone,ZONE or Zone as a prefix in the calib_parameter field.
+    * The friction zone name **MUST** be indicated in the friction file .tbl. More information on friction zones in Telemac in `Friction (Roughness) Zones <https://hydro-informatics.com/numerics/telemac/roughness.html>`_
+    * The calibration zone **MUST** contain the word zone,ZONE or Zone as a prefix in the calib_parameter field.
 
-   * **Example**:
+    .. code-block:: python
 
-     .. code-block:: python
-
-             calib_parameter_1='zone99999100'   # if the zone description is: 99999100
+       calibration_parameters = ['zone1', 'zone2', 'Zone3','ZONE99999100']  # 3 friction zones numbered as 1, 2, and 3
 
 * **param_values**: Value ranges considered for parameter sampling.
 
-* Notes:
-        Example: `[[min1, max1], [min2, max2], ...]`.
+    .. code-block:: python
+
+       param_values = [[min1, max1], [min2, max2], ...]
 
 * **calibration_quantities**: Names of the calibration targets (model outputs) used for calibration.
 
-  Examples:
+    .. code-block:: python
 
-  * `['WATER DEPTH']` for a single quantity.
-  * `['WATER DEPTH', 'SCALAR VELOCITY']` for multiple quantities.
+       calibration_quantities = ['WATER DEPTH']  # Single quantity
+       calibration_quantities = ['WATER DEPTH', 'SCALAR VELOCITY']  # Multiple quantities
 
 * **dict_output_name**: Base name for output dictionary files where the outputs are saved as `.json` files.
 
 * **parameter_sampling_method**: Method used for sampling parameter values during the calibration process.
 
-  Available options:
+    Available options:
 
   * **"random"** - Random sampling.
   * **"latin_hypercube"** - Latin Hypercube Sampling (LHS).
@@ -119,97 +115,93 @@ This class contains the general attributes that a hydrodynamic simulation requir
   * **"grid(FT)"** - Grid-based sampling (Fourier Transform-based).
   * **"user"** - User-defined sampling.
 
+    If "user" is selected, a ``.csv`` file containing user-defined collocation points must be provided
+    in the restart data folder. The file should follow this format:
+
+.. table:: User-Defined Collocation Points
+
+       ================== ================== ================== ================== ==================
+       param1            param2              param3             param4             param5
+       ================== ================== ================== ================== ==================
+       0.148             0.770               0.014              0.014              0.700
+       0.066             0.066               0.066              0.066              0.066
+       ================== ================== ================== ================== ==================
+
+* **max_runs**: Maximum (total) number of model simulations, including initial runs and Bayesian Active Learning iterations.
+
+* **complete_bal_mode**: (Default: ``True``)
+
+  - If ``True``: Bayesian Active Learning (BAL) is performed after the initial runs, enabling a complete surrogate-assisted calibration process.
+    **This option MUST be selected if you choose to perform only BAL** (i.e., when ``only_bal_mode = True``).
+  - If ``False``: Only the initial runs of the full complexity model are executed, and the model outputs are stored as ``.json`` files.
+
+* **only_bal_mode**: (Default: ``False``)
+
+  - If ``False``: The process will either execute a complete surrogate-assisted calibration or only the initial runs, depending on the value of ``complete_bal_mode``.
+  - If ``True``: Only the surrogate model construction and Bayesian Active Learning of preexisting model outputs at predefined collocation points are performed.
+    **This mode can be executed only if either a complete process has already been performed** (``complete_bal_mode = True`` and ``only_bal_mode = True``)
+    **or if only the initial runs have been executed** (``complete_bal_mode = False`` and ``only_bal_mode = False``).
+
+* **validation**: (Default: ``False``)
+  If ``True``, creates output files (inputs and outputs) for validation of the surrogate model. If it is True,
+the validation data is saved in the restart data folder.
+
+* **Shortcut Combinations and Their Corresponding Tasks**:
+
+.. table:: Task Descriptions
+
+   ===================== =============================== ============================================================================
+   **complete_bal_mode**  **only_bal_mode**               **Task Description**
+   ===================== =============================== ============================================================================
+   True                  False                            Complete surrogate-assisted calibration
+   False                 False                            Only initial runs (no surrogate model)
+   True                  True, with ``init_runs = max_runs``  Only surrogate construction with a set of predefined runs (no BAL)
+   True                  True, with ``init_runs > max_runs``  Surrogate model construction and Bayesian Active Learning (BAL) applied
+   ===================== =============================== ============================================================================
 
 
-* **control_file_name**: Name of the TELEMAC steering file (.cas)
+------------------------
+TelemacModel Class (Telemac specific parameters)
+------------------------
 
-* **telemac_solver**: TELEMAC solver.
+For telemac simulations, the following parameters should be defined in the **TelemacModel** class if necesarry:
 
-  Two options are possible:
+* **friction_file** :
+  Name of the friction file .tbl to be used in Telemac simulations (should end with ``.tbl``); do not include the directory path.
 
-  * 1 = Telemac 2D
-  * 2 = Telemac 3D
+* **tm_xd** :
+  Specifies the Telemac hydrodynamic solver, either ``Telemac2d`` or ``Telemac3d``.
 
-* **model_simulation_path**: Folder path where all the necessary Telemac simulation files (.cas ; .cli ; .tbl ; .slf) are located
+.. code-block:: text
 
-* **results_folder_path**: Folder path where all simulation outputs will be stored. Inside this folder a subfolder called ``auto-saved-results`` will be created with the following files:
+   tm_xd = "1"  # Telemac 2D
+   tm_xd = "2"  # Telemac 3D
 
-  * .slf (For all simulations)
-  * collocation_points.csv
-  * collocation_points.npy
-  * model_results.npy
-  * surrogate.pickle (One for each surrogate evaluation)
+* **gaia_steering_file**:
+  Name of the Gaia steering file; should be provided if required. Not implemented in this HydroBayesCal version.
 
-* **calib_pts_file_path**: Complete folder path where the ``calibration_points.csv`` file is located. ``calibration_points.csv`` is the file which holds the information of measured data for calibration purposes. The .csv file MUST be structured as follows:
+* **results_filename_base** :
+  Base name for the results file, which will be iteratively updated in the ``.cas`` file.
+  This indicates the base name of the results file. In each run, the results file changes so
+  it is used for data extraction.
 
-.. table:: Measurement Data
+.. code-block:: text
 
-   ======================= ================== ================== ====================== ===============
-   Point                   X                  Y                  MEASUREMENT 1           ERROR 1
-   ======================= ================== ================== ====================== ===============
-   [Point data row 1]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
-   [Point data row 2]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
-   [Point data row 3]      [X value]          [Y value]          [Measurement 1 value]  [Error 1 value]
-   ======================= ================== ================== ====================== ===============
-* **n_cpus**: Number of CPUs for Telemac Simulations.
-
-* **init_runs**: Number of initial full-complexity model runs. The initial simulations will run with the initial training points for surrogate model construction.
-
-* **friction_file**: Friction file .tbl that contains the information of friction zones for the Telemac simulation. This name MUST be indicated in the Telemac .cas file with the keyword **FRICTION DATA FILE**.
-
-* **dict_output_name**: Desired name of the external file .json file containing the model outputs of the calibration quantities
-
-* **results_filename_base**: Desired name of the results.slf ile to be iteratively created after each simulation. Add the name WITHOUT the extension .slf (i.e., "telemac_rfile"). The results file (.slf) will be stored inside the *auto-saved-results* folder, inside the *results* folder.
-
-* **Calibration parameters**: Assign calibration parameters. They must be assigned as *strings*. Please consider these recommendations before assigning the calibration parameters.
-
-    * Notes:
-        * MAXIMUM number of calibration parameters = 5.
-        * The calibration parameters MUST coincide with the Telemac KEYWORD in the .cas file. You can find more details in the Telemac User Manuals `http://wiki.opentelemac.org/doku.php#principal_documentation <https://wiki.opentelemac.org/doku.php#principal_documentation>`_
-             Example: calib_parameter_1 = "LAW OF FRICTION ON LATERAL BOUNDARIES"
-                      calib_parameter_2 = "INITIAL ELEVATION"
-        * If you want to calibrate different values of roughness coefficients in roughness zones, the roughness zones description MUST be indicated in the .tbl file.
-        * The .tbl file name MUST be indicated in the friction file input.
-        * The calibration zone MUST contain the word zone,ZONE or Zone as a prefix in the calib_parameter field.
-             Example: calib_parameter_1='zone99999100'   , if the zone description is: 99999100
-
-    * calib_parameter_1
-    * calib_parameter_2
-    * calib_parameter_3
-    * calib_parameter_4
-    * calib_parameter_5
-
-* **Calibration ranges**: Assign calibration ranges of the parameters. They must be assigned as *strings*.
-
-    * param_range_1
-    * param_range_2
-    * param_range_3
-    * param_range_4
-    * param_range_5
-
-* **Calibration quantities**: Assign calibration quantities (i.e., extraction of model outputs). They must be assigned as *strings* and according to the *KEYWORD* in Telemac.
-
-    * calib_quantity_1
-    * calib_quantity_2
-    * calib_quantity_3
-    * calib_quantity_4
-    * calib_quantity_5
-
-* **dict_output_name**
-
-* **results_file_name_base**
+    results_filename_base="results"
 
 
 
+Step 2: Data storage and extraction
+-----------------------------------------
+In each run, HydroBayesCal creates a results folder called "auto-saved-results-HydroBayesCal" in the results directory specified by the user.
+This folder contains the following subfolders:
 
-Step 2: Read Collocation Points
--------------------------------
+* **calibration-data**: Contains the calibration data (model outputs) for each calibration parameter set.
+* **plots**: Contains plots of the calibration parameters and the calibration quantities.
+* **surrogate_models**: Contains the surrogate models created during the calibration process.
+* **restart_data**: Contains the restart data for the calibration process.
 
-The second step consist of reading the (initial) collocation (measurement) point file. The measurement points correspond to the target values for the model optimization regarding, for instance, topographic change, water depth, or flow velocity. The measurement point's coordinates must correspond to mesh nodes of the computational mesh. Rather than forcing the numerical mesh to exactly fit the coordinates of a measurement point, we recommend to interpolate measurement data the closest measurement point(s) onto selected mesh nodes.
 
-.. tip::
-
-    The number of measurement points scales exponentially with the run time for the surrogate-assisted calibration process. Therefore, we recommend to use **no more than 200 measurement points** (speed criterion) and **at least 100 measurement points** (quality criterion).
 
 Step 3: Bayesian Model Optimization
 -----------------------------------
