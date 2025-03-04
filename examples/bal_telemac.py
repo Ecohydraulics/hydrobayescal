@@ -49,6 +49,9 @@ def setup_experiment_design(
     parameter_distribution: str, optional
         The criteria for selecting the parameter distribution.
         Default: 'uniform' (uniform distribution)
+    parameter_sampling: str, optional
+        The criteria for selecting the parameter sampling.
+        Default: 'sobol'
 
     Returns
     -------
@@ -87,7 +90,7 @@ def run_complex_model(complex_model,
                       ):
     """
     Executes the hydrodynamic model for a given experiment design and returns the collocation points,
-    model outputs, observations, and measurement errors.
+    model outputs.
 
     Parameters
     ----------
@@ -106,14 +109,6 @@ def run_complex_model(complex_model,
         - For 1 quantity: [number of runs x number of locations]
         - For 2 quantities: [number of runs x 2 * number of locations]
           (Each pair of columns contains the two quantities for each location.)
-    observations : array
-        A 1D array containing the observation values at each measurement location. If there are two calibration
-        quantities, the values are stacked horizontally.
-    errors : array
-        A 1D array containing the measurement errors at each measurement location. If there are two calibration
-        quantities, the values are stacked horizontally.
-    nloc : int
-        The number of calibration locations (i.e., calibration points).
 
     """
     collocation_points = None

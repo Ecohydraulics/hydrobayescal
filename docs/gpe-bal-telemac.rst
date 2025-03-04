@@ -100,18 +100,27 @@ exp_design instance:
         parameter_sampling_method='sobol'
     )
 
+This function returns an instance of the ``ExpDesigns`` class from BayesValidRox,
+which will be used in subsequent steps.
 
-.. autofunction:: bal_telemac.setup_experiment_design
+The attribute ``exp_design.X`` stores the collocation points for the initial execution of the complex model.
+
+
+.. autofunction:: bal.setup_experiment_design
+
 
 Run complex model with experiment design
 ----------------------------------------
+Executes the hydrodynamic model for a given experiment design and returns the collocation points,
+model outputs. The collocation points are the input parameters of the initial model runs.
 
 .. code-block:: python
 
     init_collocation_points, model_evaluations= run_complex_model(
-        complex_model=full_complexity_model,
+        complex_model=complex_model,
         experiment_design=exp_design,
     )
+
 
 Run 'Bayesian Active Learning
 -----------------------------
