@@ -100,6 +100,7 @@ exp_design instance:
         parameter_sampling_method='sobol'
     )
 
+
 This function returns an instance of the ``ExpDesigns`` class from BayesValidRox,
 which will be used in subsequent steps.
 
@@ -109,18 +110,45 @@ The attribute ``exp_design.X`` stores the collocation points for the initial exe
 .. autofunction:: bal.setup_experiment_design
 
 
-Run complex model with experiment design
-----------------------------------------
-Executes the hydrodynamic model for a given experiment design and returns the collocation points,
-model outputs. The collocation points are the input parameters of the initial model runs.
+Run Complex Model with Experiment Design
+========================================
+
+This step executes the hydrodynamic model for a given experiment design and returns
+the collocation points (previously obtained in the experiment design) and the model outputs.
+The collocation points serve as the input parameters for the initial model runs.
+
+Example Usage
+-------------
 
 .. code-block:: python
 
-    init_collocation_points, model_evaluations= run_complex_model(
+    init_collocation_points, model_evaluations = run_complex_model(
         complex_model=complex_model,
         experiment_design=exp_design,
     )
 
+Parameters
+----------
+
+**complex_model** : obj
+    Instance representing the hydrodynamic model to be evaluated.
+
+**experiment_design** : obj
+    Instance of the experiment design object that specifies the settings for the experimental runs.
+
+Returns
+-------
+
+**collocation_points** : array
+    Contains the collocation points (parameter combination sets) with shape
+    ``[number of runs x number of calibration parameters]`` used for model evaluations.
+
+**model_outputs** : array
+    Contains the model outputs. The shape of the array depends on the number of quantities:
+
+    - **For 1 quantity**: ``[number of runs x number of locations]``
+    - **For 2 quantities**: ``[number of runs x 2 * number of locations]``
+      *(Each pair of columns contains the two quantities for each location.)*
 
 Run 'Bayesian Active Learning
 -----------------------------
