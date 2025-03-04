@@ -31,7 +31,9 @@ def initialize_model(complex_model=None):
 
 def setup_experiment_design(
         complex_model,
-        tp_selection_criteria='dkl'
+        tp_selection_criteria='dkl',
+        parameter_sampling_method = 'sobol'
+
 ):
     """
     Sets up the experimental design for running the initial simulations of the hydrodynamic model.
@@ -62,8 +64,8 @@ def setup_experiment_design(
     exp_design.n_init_samples = complex_model.init_runs
     # Sampling methods
     # 1) random 2) latin_hypercube 3) sobol 4) halton 5) hammersley
-    # 6) chebyshev(FT) 7) grid(FT) 8)user
-    exp_design.sampling_method = complex_model.parameter_sampling_method
+    # 6) chebyshev(FT) 7) grid(FT) 8) User
+    exp_design.sampling_method = parameter_sampling_method
     exp_design.n_new_samples = 1
     exp_design.X=complex_model.user_collocation_points
     exp_design.n_max_samples = complex_model.max_runs
@@ -71,7 +73,7 @@ def setup_experiment_design(
     exp_design.explore_method = 'random'
     exp_design.exploit_method = 'bal'
     exp_design.util_func = tp_selection_criteria
-    exp_design.generate_ED(n_samples=exp_design.n_init_samples, max_pce_deg=1)
+    exp_design.generate_ED(n_samples=exp_design.n_init_samples)
 
     return exp_design
 
@@ -114,14 +116,8 @@ def run_complex_model(complex_model,
     model_outputs = None
     if not complex_model.only_bal_mode:
         logger.info(
-            f"Sampling {complex_model.init_runs} collocation points for the selected calibration parameters with {complex_model.parameter_sampling_method} sampling method.")
-        if complex_model.parameter_sampling_method == "user":
-            collocation_points = experiment_design.X
-        else:
-            collocation_points = experiment_design.generate_samples(n_samples=experiment_design.n_init_samples,
-                                                                sampling_method=experiment_design.sampling_method)
-        # # bal_mode = True : Activates Bayesian Active Learning after finishing the initial runs of the full complexity model
-        # # bal_mode = False : Only runs the full complexity model the number of times indicated in init_runs
+            f"Sampling {complex_model.init_runs} collocation points for the selected calibration parameters with {experiment_design.sampling_method} sampling method.")
+        collocation_points = experiment_design.X
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                complete_bal_mode=complex_model.complete_bal_mode,
                                                validation=complex_model.validation)
@@ -129,14 +125,13 @@ def run_complex_model(complex_model,
     else:
         try:
             model_outputs = complex_model.output_processing(output_data_path=os.path.join(complex_model.restart_data_folder,
-                                                                                          f'collocation-points-outputs.json'),
+                                                                                          f'initial-model-outputs.json'),
                                                             delete_slf_files=complex_model.delete_complex_outputs,
                                                             validation=complex_model.validation,
                                                             filter_outputs=True,
                                                             save_extraction_outputs=True,
                                                             run_range_filtering=(1, complex_model.init_runs))
-            path_np_collocation_points = os.path.join(complex_model.restart_data_folder, 'initial-collocation-points.csv')
-            collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
+            collocation_points = complex_model.restart_collocation_points
 
         except FileNotFoundError:
             logger.info('Saved collocation points or model results as numpy arrays not found. '
@@ -440,7 +435,7 @@ def run_bal_model(collocation_points,
                 f'Selecting {experiment_design.n_new_samples} additional TP using {experiment_design.exploit_method}')
 
             # gaussian_assumption = True (Assumes Analytical Function Bayesian Active Learning )
-            # gaussian assumption = True (General Bayesian Active Learning)
+            # gaussian assumption = False (General Bayesian Active Learning)
 
             SD = SequentialDesign(exp_design=experiment_design,
                                   sm_object=surrogate_object,
@@ -520,27 +515,27 @@ def main():
     #Initialize the model with arguments
     full_complexity_model = initialize_model(
         TelemacModel(
+            # Telemac parameters
             friction_file="friction_ering_MU.tbl",
             tm_xd="1",
             gaia_steering_file="",
+            # General hydrosimulation parameters
             results_filename_base="results2m3",
-            stdout=6,
-            python_shebang="#!/usr/bin/env python3",
             control_file="tel_ering_mu_restart.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-              calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+            calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/synthetic-data-run-R.csv",
             n_cpus=8,
-            init_runs=20,
+            init_runs=30,
             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
             param_values = [[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.060, 0.79]],
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-            calibration_quantities=calibration_quantities,  # Dynamic from command line
+            calibration_quantities=calibration_quantities,
             dict_output_name="extraction-data",
-            parameter_sampling_method="sobol",
-            max_runs=120,
-            complete_bal_mode=complete_bal_mode,  # Dynamic from command line
-            only_bal_mode=only_bal_mode,  # Dynamic from command line
+            user_param_values = False,
+            max_runs=150,
+            complete_bal_mode=complete_bal_mode,
+            only_bal_mode=only_bal_mode,
             delete_complex_outputs=True,
             validation=False
         )
@@ -549,7 +544,8 @@ def main():
     # Setup and run the experiment
     exp_design = setup_experiment_design(
         complex_model=full_complexity_model,
-        tp_selection_criteria='dkl'
+        tp_selection_criteria='dkl',
+        parameter_sampling_method = 'sobol'
     )
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
@@ -576,35 +572,33 @@ if __name__ == "__main__":
     #         tm_xd="1",
     #         gaia_steering_file="",
     #         results_filename_base="results2m3",
-    #         stdout=6,
-    #         python_shebang="#!/usr/bin/env python3",
+    #         # stdout=6,
+    #         # python_shebang="#!/usr/bin/env python3",
     #         control_file="tel_ering_mu_restart.cas",
     #         model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
     #         res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
     #         calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     #         n_cpus=8,
-    #         init_runs=20,
+    #         init_runs=30,
     #         calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    #         # param_values=[[0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17], [0.011, 0.17]], # all intervals correspond to meaningfull physical values of Maning coefficie for gravel bed channels (0.018 - 0.026)
-    #         param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.056, 0.79]],
-    #         extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG","VELOCITY U","VELOCITY V"],
-    #         calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH"],  # Dynamic from command line
+    #         param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.060, 0.79]],
+    #         extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
+    #         calibration_quantities=["WATER DEPTH"],  # Dynamic from command line
     #         dict_output_name="extraction-data",
-    #         parameter_sampling_method="sobol", # If user is selected, a .csv file with all parameter sets (collocation points) in restart folder should exist.
-    #                                         # The file must be called init-collocation-points
-    #         max_runs=23,
+    #         user_param_values=False,
+    #         max_runs=150,
     #         complete_bal_mode=True,  # Dynamic from command line
     #         only_bal_mode=True,  # Dynamic from command line
     #         delete_complex_outputs=True,
-    #         validation=False,
-    #         multitask_selection = "variables"
+    #         validation=False
     #     )
     # )
     #
     # # Setup and run the experiment
     # exp_design = setup_experiment_design(
     #     complex_model=full_complexity_model,
-    #     tp_selection_criteria='dkl'
+    #     tp_selection_criteria='dkl',
+    #     parameter_sampling_method = 'sobol'
     # )
     # init_collocation_points, model_evaluations= run_complex_model(
     #     complex_model=full_complexity_model,
@@ -617,7 +611,7 @@ if __name__ == "__main__":
     #     experiment_design=exp_design,
     #     eval_steps=10,
     #     prior_samples=20000,
-    #     mc_samples=2000,
+    #     mc_samples_al=2000,
     #     mc_exploration=1000,
     #     gp_library="gpy")
 

@@ -18,7 +18,8 @@ class BayesianPlotter:
     def __init__(
             self,
             results_folder_path='',
-            plots_subfolder='plots'
+            plots_subfolder='plots',
+            variable_name = ''
     ):
         """
         Constructor of BayesianPlotter class, which is used to create and save various plots related to Bayesian calibration.
@@ -35,7 +36,7 @@ class BayesianPlotter:
         save_folder : pathlib.Path
             A Path object representing the directory where plots will be saved.
         """
-        self.save_folder = Path(results_folder_path) / plots_subfolder
+        self.save_folder = Path(results_folder_path) / plots_subfolder / variable_name
         plt.rcParams.update({
             'text.usetex': True,
             'font.family': 'serif',

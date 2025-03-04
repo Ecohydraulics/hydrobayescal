@@ -267,55 +267,6 @@ def save_data(file_path, data):
         print(f"An error occurred while saving the file: {e}")
 
 
-def save_np_data(data, path, name):
-    """
-    Save NumPy array data to a file based on the provided file name and extension.
-
-    :param data: NumPy array data to be saved.
-    :param path: Directory path where the file should be saved.
-    :param name: Name of the file including the extension (e.g., 'data.csv', 'data.json').
-    """
-    try:
-        # Determine the full file path
-        file_path = os.path.join(path, name)
-        # Extract the file extension from the name
-        file_extension = os.path.splitext(name)[1].lower()
-
-        if file_extension == '.npy':
-            _np.save(file_path, data)
-
-        elif file_extension in ['.pkl', '.pickle']:
-            with open(file_path, 'wb') as file:
-                pickle.dump(data, file)
-
-        elif file_extension == '.json':
-            # Convert NumPy array to list for JSON serialization
-            data_list = data.tolist()
-            with open(file_path, 'w') as file:
-                json.dump(data_list, file, indent=4)
-
-        elif file_extension == '.csv':
-            if isinstance(data, _np.ndarray):
-                _np.savetxt(file_path, data, delimiter=',', fmt='%.8f')
-            else:
-                raise ValueError("For CSV format, data should be a NumPy array.")
-
-        elif file_extension in ['.xlsx', '.xls']:
-            df = _pd.DataFrame(data)
-            df.to_excel(file_path, index=False)
-
-        elif file_extension in ['.h5', '.hdf5']:
-            with h5py.File(file_path, 'w') as file:
-                file.create_dataset('dataset', data=data)
-
-        else:
-            raise ValueError(
-                f"Unsupported file format: {file_extension}. Supported formats are 'npy', 'pickle', 'json', 'csv', 'excel', 'h5py'.")
-
-    except Exception as e:
-        print(f"An error occurred while saving the file: {e}")
-
-
 def rearrange_array(data, num_quantities):
     """
     Rearrange a NumPy array such that data from multiple quantities is interleaved by columns.
@@ -478,42 +429,6 @@ def filter_model_outputs(data_dict, quantities, run_range_filtering=None):
     return filtered_data
 
 
-
-
-def filter_and_save_rows_by_column_avg(dataframe, arr, threshold, output_path):
-    """
-    Filters the rows of a DataFrame based on the indices of columns from a NumPy array
-    where the column average exceeds the specified threshold and saves the filtered rows to a CSV file.
-
-    Parameters
-    ----------
-    dataframe : pandas.DataFrame
-        DataFrame containing location data, with x and y coordinates in the 2nd and 3rd columns.
-    arr : numpy.ndarray
-        Input 2D array with shape (N, loc), where N is the number of runs and loc is the number of locations.
-    threshold : float
-        The threshold value. Columns whose average exceeds this value will be used to filter out rows.
-    output_path : str
-        The file path where the filtered DataFrame will be saved as a CSV file.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Filtered DataFrame containing only the rows that correspond to the columns with high averages.
-    """
-    # Compute the column-wise average from the NumPy array
-    column_averages = _np.mean(arr, axis=0)
-
-    # Get the indices of columns whose average exceeds the threshold
-    high_avg_column_indices = _np.where(column_averages > threshold)[0]
-
-    # Use these indices to filter out the corresponding rows in the DataFrame
-    filtered_dataframe = dataframe.iloc[high_avg_column_indices]
-
-    # Save the filtered DataFrame as a CSV file
-    filtered_dataframe.to_csv(output_path, index=False, header=True)
-
-    return filtered_dataframe
 
 
 def interpolate_values(coords, values, point):

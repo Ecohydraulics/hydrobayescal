@@ -1,3 +1,112 @@
+.. BAL Telemac
+
+Complete Bayesian Active Learning (BAL) for the Gaussian Process Emulator (GPE) using Telemac
+=============================================================================================
+
+Telemac simulation folder
+------------------------------
+
+To run HydroBayesCal using Telemac, you need to have Telemac and all the necesary files to run a hydrodynamic model.
+Create a folder called **Telemac simulation** and copy the necessary files for a Telemac simulation into it:
+For example (hydrodynamic numerical model):
+
+- **telemac.cas:** Numerical configuration of the hydrodynamic model.
+- **liquid.liq:** Liquid boundary condition (flow inflow/outflow) (in case of unsteady flow, a .liq file is needed)
+- **boundary-conditions.cli:** File that defines the type and location of the boundary conditions.
+- **geometry.slf:** File that defines the mesh structure for the hydrodynamic model.
+- **zones.tbl:** File that defines the roughness zones of the mesh.
+- **rating-curve.txt:**: File that defines the stage-discharge rating curve of the outlet boundary condition.
+
+Until now, the code cannot run sediment transport model with GAIA. Only hydrodynamic simulations are possible.
+
+OpenFoam simulation folder
+------------------------------
+
+Definition of HydroBayesCal parameters
+---------------------------------------
+
+A complete surrogate assisted calibration of a hydrodynamic model requires the definition of some parameters corresponding to the complex model (e.g. Telemac or OpenFoam) and the metamodel based on Gaussian Process.
+
+complex_model instance:
+
+.. code-block:: python
+
+    complex_model = initialize_model(
+        TelemacModel(
+            friction_file="/path/to/friction_file.tbl",
+            tm_xd="1",
+            gaia_steering_file="",
+            results_filename_base="results",
+            control_file="/path/to/control_file.cas",
+            model_dir="/path/to/model_directory/",
+            res_dir="/path/to/results_directory/",
+            calibration_pts_file_path="/path/to/calibration_points.csv",
+            n_cpus=8,
+            init_runs=15,
+            calibration_parameters=["zone1", "zone2", "zone3", "ROUGHNESS COEFFICIENT OF BOUNDARIES", ],
+            param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.018, 0.028]],
+            extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERGY", "VELOCITY U", "VELOCITY V"],
+            calibration_quantities= ["WATER DEPTH", "SCALAR VELOCITY"]
+            dict_output_name="output-data",
+            user_param_values=False,
+            max_runs=30,
+            complete_bal_mode=True,
+            only_bal_mode=False,
+            delete_complex_outputs=True,
+            validation=False
+        )
+    )
+
+
+In this example, the model is calibrated for three roughness zones, including the roughness coefficients of the boundaries.
+The prior assumptions for these uncertain calibration parameters are defined as four ranges in **param_values**.
+The measured data, stored in a `.csv` file, consists of water depth and scalar velocity. These quantities are extracted from the model and specified in **calibration_quantities** as ["WATER DEPTH", "SCALAR VELOCITY"].
+
+.. image:: _static/UML-bal-reduced.png
+   :alt: UML complete surrogate assisted calibration
+   :width: 80%
+   :align: center
+
+Experiment design definition
+----------------------------
+
+exp_design instance:
+
+.. code-block:: python
+
+    exp_design = setup_experiment_design(
+        complex_model=full_complexity_model,
+        tp_selection_criteria='dkl',
+        parameter_sampling_method='sobol'
+    )
+
+
+Run complex model with experiment design
+----------------------------------------
+
+.. code-block:: python
+
+    init_collocation_points, model_evaluations= run_complex_model(
+        complex_model=full_complexity_model,
+        experiment_design=exp_design,
+    )
+
+Run 'Bayesian Active Learning
+-----------------------------
+
+.. code-block:: python
+    run_bal_model(
+        collocation_points=init_collocation_points,
+        model_outputs=model_evaluations,
+        complex_model=complex_model,
+        experiment_design=exp_design,
+        eval_steps=20,
+        prior_samples=15000,
+        mc_samples_al=2000,
+        mc_exploration=1000,
+        gp_library="gpy"
+    )
+
 Methods by:
 Oladyshkin, S., Mohammadi, F., Kroeker, I., & Nowak, W. (2020). Bayesian3 Active Learning for the Gaussian Process Emulator Using Information Theory. Entropy, 22(8), 890.
 ----------------------

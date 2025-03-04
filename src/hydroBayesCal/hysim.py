@@ -37,7 +37,7 @@ class HydroSimulations:
             calibration_quantities=None,
             extraction_quantities=None,
             dict_output_name='output-dictionary',
-            parameter_sampling_method='',
+            user_param_values=False,
             max_runs=int(),
             complete_bal_mode=True,
             only_bal_mode=False,
@@ -237,7 +237,6 @@ class HydroSimulations:
         self.calibration_quantities = calibration_quantities
         self.extraction_quantities = extraction_quantities
         self.calibration_parameters = calibration_parameters
-        self.parameter_sampling_method = parameter_sampling_method
         self.init_runs = init_runs
         self.max_runs = max_runs
         self.complete_bal_mode = complete_bal_mode
@@ -258,6 +257,9 @@ class HydroSimulations:
         self.measurement_errors = None
         self.calibration_pts_df = None
         self.user_collocation_points = None
+        self.restart_collocation_points = None
+        self.model_evaluations = None
+
 
         if calibration_parameters:
             self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
@@ -281,12 +283,13 @@ class HydroSimulations:
         if not os.path.exists(os.path.join(self.asr_dir, "surrogate-gpe")):
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
         if complete_bal_mode and only_bal_mode:
-            update_json_file(json_path=os.path.join(self.restart_data_folder, "collocation-points-outputs.json"),save_dict=True,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
-        if parameter_sampling_method == "user":
+            update_json_file(json_path=os.path.join(self.restart_data_folder, "initial-model-outputs.json"),save_dict=True,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
+        if user_param_values:
             collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
             self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1)
-
-        self.model_evaluations = None
+        if only_bal_mode:
+            collocation_path = os.path.join(self.restart_data_folder, 'initial-collocation-points.csv')
+            self.restart_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1)
 
     def check_inputs(
             self,
