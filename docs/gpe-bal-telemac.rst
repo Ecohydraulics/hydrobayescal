@@ -91,6 +91,10 @@ If the uncertain parameters are defined as distribution types, they must be defi
 
 exp_design instance:
 
+Example Usage
+-------------
+
+
 .. code-block:: python
 
     exp_design = setup_experiment_design(
@@ -106,6 +110,29 @@ which will be used in subsequent steps.
 
 The attribute ``exp_design.X`` stores the collocation points for the initial execution of the complex model.
 
+Parameters
+----------
+
+**complex_model** : object
+    An instance representing the hydrodynamic model to be used in the experiment.
+
+**tp_selection_criteria** : str, optional
+    The criteria for selecting new training points (TP) during the Bayesian Active Learning process.
+    Default: ``'dkl'`` (relative entropy).
+
+**parameter_distribution** : str, optional
+    The criteria for selecting the parameter distribution.
+    Default: ``'uniform'`` (uniform distribution).
+
+**parameter_sampling** : str, optional
+    The criteria for selecting the parameter sampling method.
+    Default: ``'sobol'``.
+
+Returns
+-------
+
+**exp_design** : object
+    An instance of the experiment design object configured with the specified model and selection criteria.
 
 .. autofunction:: bal.setup_experiment_design
 
