@@ -61,7 +61,7 @@ complex_model instance:
 In this example, the model is calibrated for three roughness zones and the roughness coefficients of the boundaries.
 The prior assumptions for these uncertain calibration parameters are defined as four ranges in **param_values** following a uniform distribution.
 The measured data, stored in a `.csv` file, consists of water depth and scalar velocity. Each of these quantities has a measurement error which is also assigned in the corresponding column in the .csv file. These quantities will be the calibration targets and are extracted from the model The user-specified **calibration_quantities** are ["WATER DEPTH", "SCALAR VELOCITY"].
-please see the section :ref:`HydroSimulations Class (Global Full Complexity Model Parameters)` for more details.
+please see the section :ref:`HydroSimulations_class` for more details.
 
 .. image:: _static/UML-bal-reduced.png
    :alt: UML complete surrogate assisted calibration

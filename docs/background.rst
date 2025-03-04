@@ -32,8 +32,9 @@ Step 1: Assign user input parameters
 As it was mentioned before the calibration process involves two well defined parts in the code. Both processes depend on the user defined input parameters, which are essential
 to run the code properly.
 Firstly, the initialization of all input parameters must be done in ``bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
-calls the necesary instances of the classes that run the hydrodynamic model, creation of surrogate models and BAL.
+calls the necessary instances of the classes that run the hydrodynamic model, creation of surrogate models and BAL.
 
+.. _HydroSimulations_class:
 ------------------------
 HydroSimulations Class (Global Full Complexity Model Parameters)
 ------------------------
