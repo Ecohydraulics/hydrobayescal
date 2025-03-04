@@ -25,7 +25,7 @@ OpenFoam simulation folder
 Definition of HydroBayesCal parameters
 ---------------------------------------
 
-A complete surrogate assisted calibration of a hydrodynamic model requires the definition of some parameters corresponding to the complex model (e.g. Telemac or OpenFoam) and the metamodel based on Gaussian Process.
+A complete surrogate assisted calibration of a hydrodynamic model requires the definition of some parameters corresponding to the complex model (e.g. Telemac or OpenFoam) and parameters for the metamodel construction based on Gaussian Process.
 
 complex_model instance:
 
@@ -37,7 +37,7 @@ complex_model instance:
             tm_xd="1",
             gaia_steering_file="",
             results_filename_base="results",
-            control_file="/path/to/control_file.cas",
+            control_file="control_file.cas",
             model_dir="/path/to/model_directory/",
             res_dir="/path/to/results_directory/",
             calibration_pts_file_path="/path/to/calibration_points.csv",
@@ -58,9 +58,10 @@ complex_model instance:
     )
 
 
-In this example, the model is calibrated for three roughness zones, including the roughness coefficients of the boundaries.
-The prior assumptions for these uncertain calibration parameters are defined as four ranges in **param_values**.
-The measured data, stored in a `.csv` file, consists of water depth and scalar velocity. These quantities are extracted from the model and specified in **calibration_quantities** as ["WATER DEPTH", "SCALAR VELOCITY"].
+In this example, the model is calibrated for three roughness zones and the roughness coefficients of the boundaries.
+The prior assumptions for these uncertain calibration parameters are defined as four ranges in **param_values** following a uniform distribution.
+The measured data, stored in a `.csv` file, consists of water depth and scalar velocity. Each of these quantities has a measurement error which is also assigned in the corresponding column in the .csv file. These quantities will be the calibration targets and are extracted from the model The user-specified **calibration_quantities** are ["WATER DEPTH", "SCALAR VELOCITY"].
+please see the section :ref:`HydroSimulations Class (Global Full Complexity Model Parameters)` for more details.
 
 .. image:: _static/UML-bal-reduced.png
    :alt: UML complete surrogate assisted calibration
