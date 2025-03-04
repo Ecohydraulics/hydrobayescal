@@ -32,6 +32,7 @@ def initialize_model(complex_model=None):
 def setup_experiment_design(
         complex_model,
         tp_selection_criteria='dkl',
+        parameter_distribution = 'uniform',
         parameter_sampling_method = 'sobol'
 
 ):
@@ -45,6 +46,9 @@ def setup_experiment_design(
     tp_selection_criteria : str, optional
         The criteria for selecting new training points (TP) during the Bayesian Active Learning process.
         Default is 'dkl' (relative entropy).
+    parameter_distribution: str, optional
+        The criteria for selecting the parameter distribution.
+        Default: 'uniform' (uniform distribution)
 
     Returns
     -------
@@ -56,7 +60,7 @@ def setup_experiment_design(
     for i in range(complex_model.ndim):
         Inputs.add_marginals()  # Create marginal for parameter "i"
         Inputs.Marginals[i].name = complex_model.calibration_parameters[i]  # Parameter name
-        Inputs.Marginals[i].dist_type = 'uniform'  # Parameter distribution (see exp_design.py --> build_dist()
+        Inputs.Marginals[i].dist_type = parameter_distribution  # Parameter distribution (see exp_design.py --> build_dist()
         Inputs.Marginals[i].parameters = complex_model.param_values[i]  # Inputs needed for distribution
 
     # # Experimental design: ....................................................................
@@ -545,6 +549,7 @@ def main():
     exp_design = setup_experiment_design(
         complex_model=full_complexity_model,
         tp_selection_criteria='dkl',
+        parameter_distribution='uniform',
         parameter_sampling_method = 'sobol'
     )
     init_collocation_points, model_evaluations= run_complex_model(

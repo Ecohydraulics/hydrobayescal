@@ -2,12 +2,18 @@
 
 Complete Bayesian Active Learning (BAL) for the Gaussian Process Emulator (GPE) using Telemac
 =============================================================================================
+A complete surrogate-assisted calibration using Gaussian Process and Bayesian Active Learning (BAL) is performed for a hydrodynamic model using Telemac and is launched with the main script as follows:
+
+.. image:: _static/UML-bal-reduced.png
+   :alt: UML complete surrogate assisted calibration
+   :width: 80%
+   :align: center
 
 Telemac simulation folder
 ------------------------------
 
 To run HydroBayesCal using Telemac, you need to have Telemac and all the necesary files to run a hydrodynamic model.
-Create a folder called **Telemac simulation** and copy the necessary files for a Telemac simulation into it:
+Create a folder called **telemac_simulation** and copy the necessary files for a Telemac simulation into it:
 For example (hydrodynamic numerical model):
 
 - **telemac.cas:** Numerical configuration of the hydrodynamic model.
@@ -38,7 +44,7 @@ complex_model instance:
             gaia_steering_file="",
             results_filename_base="results",
             control_file="control_file.cas",
-            model_dir="/path/to/model_directory/",
+            model_dir="/path/to/model_directory/telemac_simulation",
             res_dir="/path/to/results_directory/",
             calibration_pts_file_path="/path/to/calibration_points.csv",
             n_cpus=8,
@@ -58,18 +64,30 @@ complex_model instance:
     )
 
 
-In this example, the model is calibrated for three roughness zones and the roughness coefficients of the boundaries.
-The prior assumptions for these uncertain calibration parameters are defined as four ranges in **param_values** following a uniform distribution.
-The measured data, stored in a `.csv` file, consists of water depth and scalar velocity. Each of these quantities has a measurement error which is also assigned in the corresponding column in the .csv file. These quantities will be the calibration targets and are extracted from the model The user-specified **calibration_quantities** are ["WATER DEPTH", "SCALAR VELOCITY"].
-please see the section :ref:`HydroSimulations_class` for more details.
+In this example, the **Telemac** files are saved in **telemac_simulation** folder. The path to this folder is defined in ``model_dir``.
+.. code::
 
-.. image:: _static/UML-bal-reduced.png
-   :alt: UML complete surrogate assisted calibration
-   :width: 80%
-   :align: center
+    model_dir="/path/to/model_directory/telemac_simulation".
+
+The prior assumptions for these uncertain calibration parameters are defined as four ranges in ``param_values`` following a uniform distribution limited by the minimum and maximum limits. The model is calibrated for three roughness zones and the roughness coefficients of the boundaries.
+.. code::
+
+    param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.018, 0.028]].
+
+The measured data, stored in a `.csv` file, should consists of water depth and scalar velocity. Each of these quantities has a measurement error which is also assigned in the corresponding column in the .csv file. These quantities will be the calibration targets and are extracted from the model. The user-specified ``calibration_quantities``are ["WATER DEPTH", "SCALAR VELOCITY"].
+.. code::
+
+    calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY"]
+
+For more details on the assignment of complex model parameters, please refer to the section :ref:`HydroSimulations_class`.
+
 
 Experiment design definition
 ----------------------------
+The calibration model parameters are associated with uncertainty and are described as probability distributions.
+To define the values of the input parameters, **HydroBayesCal** uses the classes `ExpDesigns` and `Input` from BayesValidRox:`Priors, input space and experimental design <https://pages.iws.uni-stuttgart.de/inversemodeling/bayesvalidrox/input_description.html>`_
+If the uncertain parameters are defined as distribution types, they must be defined as:
+
 
 exp_design instance:
 
@@ -78,9 +96,11 @@ exp_design instance:
     exp_design = setup_experiment_design(
         complex_model=full_complexity_model,
         tp_selection_criteria='dkl',
+        parameter_distribution='uniform',
         parameter_sampling_method='sobol'
     )
 
+.. autofunction:: examples.bal_telemac.setup_experiment_design
 
 Run complex model with experiment design
 ----------------------------------------
