@@ -177,7 +177,7 @@ def run_bal_model(collocation_points,
     prior_samples : int, optional
         The number of samples drawn from the prior distribution.
         Default is 10,000.
-    mc_samples : int, optional
+    mc_samples_al : int, optional
         The number of Monte Carlo samples used for the Bayesian inference process.
         Default is 5,000.
     mc_exploration : int, optional
@@ -192,8 +192,9 @@ def run_bal_model(collocation_points,
     None
         BAL_dictionary: Dictionary and .pkl file containing the data from Bayesian Active Learning
         updated_collocation_points: array and .csv file containing all the collocation points (Initial + BAL-added)
-        model-results: File .csv containing all model output obtained from the collocation points.
-        model-outputs: File .json containing all model outputs from the collocation points.
+        model-outputs: Files .csv and .jason containing all model output obtained from the collocation points and required model variables.
+
+        *These files are saved in the user-defined results directory res_dir as auto-saved-results-HydroBayesCal
 
     """
 

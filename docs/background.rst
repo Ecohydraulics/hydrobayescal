@@ -35,7 +35,7 @@ Firstly, the initialization of all input parameters must be done in ``bal_telema
 calls the necessary instances of the classes that run the hydrodynamic model, creation of surrogate models and BAL.
 
 .. _HydroSimulations_class:
-------------------------
+--------------------------
 HydroSimulations Class (Global Full Complexity Model Parameters)
 ------------------------
 The **HydroSimulations** class manages and runs hydrodynamic simulations within the context of Bayesian Calibration using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup,
@@ -200,27 +200,17 @@ For telemac simulations, the following parameters should be defined in the **Tel
     results_filename_base="results"
 
 
-
+.. _calibration_outputs:
+------------------------
 Step 2: Data storage and extraction
 -----------------------------------------
 In each run, HydroBayesCal creates a results folder called "auto-saved-results-HydroBayesCal" in the directory specified by the user.
 This folder contains the following subfolders:
 
-* **calibration-data**: Contains the calibration data for the considered calibration quantity/ies. The files are:
-
-  * **``BAL_dictionary.pkl``**: Contains the Bayesian Active Learning data after iterations, including: prior distributions, posterior distributions, observations, errors, BME, RE.
-  * **``collocation-points-<CALIBRATION_QUANTITY>.csv``**: Stores the collocation points used in the calibration process, including initial collocation points and those added during the BAL iterations for the specified <CALIBRATION_QUANTITY>.
-  * **``extraction-data-detailed.json``**: Contains the output data as a dictionary JSON from the complex model simulations, for all collocation points and for the variables in ``extraction_quantities``.
-  * **``model-results-calibration-<CALIBRATION_QUANTITY>.csv``**: Stores the model results used for all collocation points and for the specified <CALIBRATION_QUANTITY> as .csv file.
-  * **``model-results-extraction.csv``**: Contains extracted model results from the simulations and for the variables in ``extraction_quantities``.
-  * **``<CALIBRATION_QUANTITY>-detailed.json``**: Provides a detailed JSON file of the extracted <CALIBRATION_QUANTITY> for each collocation points and location.
-
-* **plots**: Stores the plots after the calibration process. The Python script called plots.py is used to generate the plots.
-* **surrogate_models**: Contains the surrogate models created during the calibration process. The surrogate models are saved as pickle files.
-* **restart_data**: Contains the restart data for the calibration process. Typically, the files saved in this folder are:
-  * **``initial-collocation-points.csv``**: Contains the initial collocation points (parameter combinations) for the calibration process. The number of
-        collocation points corresponds to the value assigned in init_runs.
-  * **``initial-outputs.json``**: Contains the initial outputs (expressed in extraction_quantities) of the full complexity model at the collocation points as dictionary .json.
+.. image:: _static/output-folders.png
+   :alt: UML complete surrogate assisted calibration
+   :width: 80%
+   :align: center
 
 
 Step 3: Bayesian Model Optimization
