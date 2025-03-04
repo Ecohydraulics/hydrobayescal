@@ -100,7 +100,8 @@ exp_design instance:
         parameter_sampling_method='sobol'
     )
 
-.. autofunction:: bal_telemac.setup_experiment_design
+
+.. autofunction:: examples.bal_telemac.setup_experiment_design
 
 Run complex model with experiment design
 ----------------------------------------
