@@ -200,20 +200,7 @@ For telemac simulations, the following parameters should be defined in the **Tel
     results_filename_base="results"
 
 
-.. _calibration_outputs:
-------------------------
-Step 2: Data storage and extraction
------------------------------------------
-In each run, HydroBayesCal creates a results folder called "auto-saved-results-HydroBayesCal" in the directory specified by the user.
-This folder contains the following subfolders:
-
-.. image:: _static/output-folders.png
-   :alt: UML complete surrogate assisted calibration
-   :width: 80%
-   :align: center
-
-
-Step 3: Bayesian Model Optimization
+Step 2: Bayesian Model Optimization
 -----------------------------------
 
 With the initial model setup and the measurement points, the Bayesian model optimization process has everything it needs for its iterative score calculation. The number of iterations corresponds to the user-defined limit in **``max_runs``** and the following tasks are performed in every iteration:
@@ -239,3 +226,18 @@ With the initial model setup and the measurement points, the Bayesian model opti
     *  Run the complex model (i.e., TELEMAC) with the best best performing calibration parameter values.
 4.  Repeat the process until the maximum number of iterations or a convergence in BME/RE is reached. The last iteration step corresponds to the supposedly best solution. Consider trying more iteration steps, other calibration parameters, or other value ranges if the calibration results in physical non-sense combinations.
 
+
+Step 3: Post-calibration data
+------------------------------------
+
+Bayesian Active Learning Iterations
+-----------------------------------
+
+The Bayesian Active Learning (BAL) process runs iteratively until the specified ``max_runs`` limit is reached.
+After completion, the post-calibration data is automatically saved in a directory named
+**auto-saved-results-HydroBayesCal**.
+
+Inside this directory, you will find four subfolders containing all the necessary information
+for analyzing the calibration process, including the trained GPR metamodels.
+
+For a detailed explanation of the saved data, please refer to :ref:`outputs-folder`.

@@ -255,27 +255,67 @@ the name **auto-saved-results-HydroBayesCal**:
 - **model_outputs**: Files ``.csv`` and ``.json`` containing all model outputs obtained from the
   collocation points and required model variables.
 
-Surrogate-assisted BAL calibration outputs
-----------------------------------------
+.. _outputs-folder:
+----------------------
+Surrogate-Assisted BAL Calibration Outputs
+-------------------------------------------
 
-The surrogate assisted calibration process will run until max_runs is reached. When the calibration process gets to that point, the output files have been created. Please refer to: :ref:`calibration_outputs` to see which files are created.
-Each of the files contain data that can be extracted or used for further anaylsis.
+The surrogate-assisted Bayesian Active Learning (BAL) calibration runs iteratively until the specified ``max_runs`` limit is reached.
+Once the calibration process is completed, the output files are generated and organized into separate folders based on the type of data.
 
-* **calibration-data**: Contains the calibration data for the considered calibration quantity/ies. The files are:
+.. image:: _static/output-folders.png
+   :alt: Post-calibration output folders
+   :width: 100%
+   :align: center
 
-  * **``BAL_dictionary.pkl``**: Contains the Bayesian Active Learning data after iterations, including: prior distributions, posterior distributions, observations, errors, BME, RE.
-  * **``collocation-points-<CALIBRATION_QUANTITY>.csv``**: Stores the collocation points used in the calibration process, including initial collocation points and those added during the BAL iterations for the specified <CALIBRATION_QUANTITY>.
-  * **``extraction-data-detailed.json``**: Contains the output data as a dictionary JSON from the complex model simulations, for all collocation points and for the variables in ``extraction_quantities``.
-  * **``model-results-calibration-<CALIBRATION_QUANTITY>.csv``**: Stores the model results used for all collocation points and for the specified <CALIBRATION_QUANTITY> as .csv file.
-  * **``model-results-extraction.csv``**: Contains extracted model results from the simulations and for the variables in ``extraction_quantities``.
-  * **``<CALIBRATION_QUANTITY>-detailed.json``**: Provides a detailed JSON file of the extracted <CALIBRATION_QUANTITY> for each collocation points and location.
+Each folder contains essential data that can be extracted or used for further analysis.
+The generated folders and their contents are as follows:
 
-* **plots**: Stores the plots after the calibration process. The Python script called plots.py is used to generate the plots.
-* **surrogate_models**: Contains the surrogate models created during the calibration process. The surrogate models are saved as pickle files.
-* **restart_data**: Contains the restart data for the calibration process. Typically, the files saved in this folder are:
-  * **``initial-collocation-points.csv``**: Contains the initial collocation points (parameter combinations) for the calibration process. The number of
-        collocation points corresponds to the value assigned in init_runs.
-  * **``initial-outputs.json``**: Contains the initial outputs (expressed in extraction_quantities) of the full complexity model at the collocation points as dictionary .json.
+### **1. Calibration Data**
+   Contains all calibration-related data for the specified calibration quantity/quantities.
+
+   - **``BAL_dictionary.pkl``**:
+     Stores Bayesian Active Learning data after iterations, including prior/posterior distributions, observations, errors,
+     Bayesian Model Evidence (BME), and Relative Entropy (RE).
+
+   - **``collocation-points-<CALIBRATION_QUANTITY>.csv``**:
+     Lists the collocation points used during calibration, including both initial and BAL-added points for the specified ``<CALIBRATION_QUANTITY>``.
+
+   - **``extraction-data-detailed.json``**:
+     A JSON dictionary containing the output data from the complex model simulations for all collocation points
+     and the variables in ``extraction_quantities``.
+
+   - **``model-results-calibration-<CALIBRATION_QUANTITY>.csv``**:
+     A CSV file storing model results for all collocation points and the specified ``<CALIBRATION_QUANTITY>``.
+
+   - **``model-results-extraction.csv``**:
+     Extracted model results from simulations for the variables defined in ``extraction_quantities``.
+
+   - **``<CALIBRATION_QUANTITY>-detailed.json``**:
+     A detailed JSON file containing extracted data for ``<CALIBRATION_QUANTITY>`` at each collocation point and location.
+
+### **2. Plots**
+   This folder stores plots generated after the calibration process.
+   The Python script **``plots.py``** is used to create these plots.
+
+### **3. Surrogate Models**
+   Contains surrogate models developed during the calibration process.
+   These models are saved as **pickle** files for further use.
+
+### **4. Restart Data**
+   Stores data necessary for resuming the calibration process.
+   The following files are typically included:
+
+   - **``initial-collocation-points.csv``**:
+     Contains the initial parameter combinations used for calibration.
+     The number of collocation points corresponds to the value assigned in ``init_runs``.
+
+   - **``initial-outputs.json``**:
+     A JSON dictionary storing initial outputs (defined in ``extraction_quantities``) from the full-complexity model at the collocation points.
+
+---
+
+These organized outputs ensure a structured post-processing workflow for analyzing the calibration process.
 
 Methods by:
 Oladyshkin, S., Mohammadi, F., Kroeker, I., & Nowak, W. (2020). Bayesian3 Active Learning for the Gaussian Process Emulator Using Information Theory. Entropy, 22(8), 890.
