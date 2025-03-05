@@ -12,9 +12,9 @@ A complete surrogate-assisted calibration using Gaussian Process and Bayesian Ac
 Telemac simulation folder
 ------------------------------
 
-To run HydroBayesCal using Telemac, you need to have Telemac and all the necesary files to run a hydrodynamic model.
-Create a folder called **telemac_simulation** and copy the necessary files for a Telemac simulation into it:
-For example (hydrodynamic numerical model):
+To run HydroBayesCal using Telemac, you need to have Telemac installed in your PC and all the necesary files to run a hydrodynamic model.
+First, create a folder called **telemac_simulation** and copy the necessary files for a Telemac simulation into it:
+For example, for a hydrodynamic numerical model you might require:
 
 - **telemac.cas:** Numerical configuration of the hydrodynamic model.
 - **liquid.liq:** Liquid boundary condition (flow inflow/outflow) (in case of unsteady flow, a .liq file is needed)
@@ -23,7 +23,10 @@ For example (hydrodynamic numerical model):
 - **zones.tbl:** File that defines the roughness zones of the mesh.
 - **rating-curve.txt:**: File that defines the stage-discharge rating curve of the outlet boundary condition.
 
-Until now, the code cannot run sediment transport model with GAIA. Only hydrodynamic simulations are possible.
+.. admonition:: Note
+
+    - *Please, before starting any BAL calibration, check that your hydrodynamic model runs properly.*
+    - *Until now, the code cannot run sediment transport model with GAIA. Only hydrodynamic simulations are possible.*
 
 OpenFoam simulation folder
 ------------------------------
@@ -338,7 +341,8 @@ The generated folders and their contents are as follows:
    - **user-collocation-points.csv**:
      Contains the initial user-defined parameter combinations used for surrogate training and further BAL calibration.
 
-     For resuming BAL calibration process:
+     For validating surrogate model with independent collocation points:
+
    - **``collocation-points-validation.csv``**: Contains the parameter combinations used for surrogate validation, independent of the training data.
    - **``collocation-points-validation.json``**: Stores the corresponding model outputs associated with the validation collocation points.
    - **``model-results-validation.csv``**: Contains the model outputs obtained from evaluating the validation collocation points, used for assessing the surrogate model's accuracy.
