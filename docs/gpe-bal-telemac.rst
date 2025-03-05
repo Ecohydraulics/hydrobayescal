@@ -1,6 +1,6 @@
 .. BAL Telemac
 
-Complete Bayesian Active Learning (BAL) for the Gaussian Process Emulator (GPE) using Telemac
+Complete Bayesian Active Learning (BAL) for Gaussian Process Emulator (GPE) using Telemac
 =============================================================================================
 A complete surrogate-assisted calibration using Gaussian Process and Bayesian Active Learning (BAL) is performed for a hydrodynamic model using Telemac and is launched with the main script as follows:
 
@@ -286,7 +286,7 @@ Once the calibration process is completed, the output files are generated and or
 Each folder contains essential data that can be extracted or used for further analysis.
 The generated folders and their contents are as follows:
 
-### **1. Calibration Data**
+**1. Calibration Data**
    Contains all calibration-related data for the specified calibration quantity/quantities.
 
    - **``BAL_dictionary.pkl``**:
@@ -309,27 +309,40 @@ The generated folders and their contents are as follows:
    - **``<CALIBRATION_QUANTITY>-detailed.json``**:
      A detailed JSON file containing extracted data for ``<CALIBRATION_QUANTITY>`` at each collocation point and location.
 
-### **2. Plots**
+**2. Plots**
    This folder stores plots generated after the calibration process.
    The Python script **``plots.py``** is used to create these plots.
 
-### **3. Surrogate Models**
+**3. Surrogate Models**
    Contains surrogate models developed during the calibration process. Inside this folder a subfolder will be created depending on the training point selection criteria.
    Inside the corresponding folder the surrogate models are saved as **pickle** files for further use.
 
    - **bal_bme**: Folder that stores the surrogate models trained with BME criteria.
    - **bal_dkl**: Folder that stores the surrogate models trained with DKL criteria.
 
-### **4. Restart Data**
-   Stores data necessary for resuming the calibration process.
+**4. Restart Data**
+   Stores data necessary for resuming the calibration process or stores independent sets of parameters with their respective outputs for surrogate validation.
    The following files are typically included:
 
+    For resuming BAL calibration process:
+
+    These files allow the continuation of the BAL calibration process. This is the training data for the initial surrogate model before BAL iterations.
+    It is possible also to build the surrogate model with either **ALL** the restart data or just a **PART** of it. To use only a part of it, initialize the ``initial_runs`` with the desired number of initial training ponts.
    - **``initial-collocation-points.csv``**:
-     Contains the initial parameter combinations used for calibration.
+     Contains the initial parameter combinations used for surrogate training and further BAL calibration..
      The number of collocation points corresponds to the value assigned in ``init_runs``.
 
    - **``initial-outputs.json``**:
      A JSON dictionary storing initial outputs (defined in ``extraction_quantities``) from the full-complexity model at the collocation points.
+
+   - **user-collocation-points.csv**:
+     Contains the initial user-defined parameter combinations used for surrogate training and further BAL calibration.
+
+     For resuming BAL calibration process:
+   - **``collocation-points-validation.csv``**: Contains the parameter combinations used for surrogate validation, independent of the training data.
+   - **``collocation-points-validation.json``**: Stores the corresponding model outputs associated with the validation collocation points.
+   - **``model-results-validation.csv``**: Contains the model outputs obtained from evaluating the validation collocation points, used for assessing the surrogate model's accuracy.
+
 
 ---
 
