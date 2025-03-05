@@ -584,7 +584,7 @@ class TelemacModel(HydroSimulations):
                                                                     calibration_mode=True
                                                                     )#This option True extracts the data from the dictionary and populates the array with the values from the dictionary for the parameters in extraction_quantities.
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
-                # exit()
+                exit()
 
         return self.model_evaluations
 

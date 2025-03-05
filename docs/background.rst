@@ -128,14 +128,15 @@ This class contains the general attributes that a hydrodynamic simulation requir
     If "user" is selected, a ``.csv`` file containing user-defined collocation points must be provided
     in the restart data folder. The file should follow this format:
 
+
 .. table:: User-Defined Collocation Points
 
-       ================== ================== ================== ================== ==================
-       param1            param2              param3             param4             param5
-       ================== ================== ================== ================== ==================
-       0.148             0.770               0.014              0.014              0.700
-       0.066             0.066               0.066              0.066              0.066
-       ================== ================== ================== ================== ==================
+   ================== ================== ================== ================== ==================
+   param1            param2              param3             param4             param5
+   ================== ================== ================== ================== ==================
+   0.148             0.770               0.014              0.014              0.700
+   0.066             0.066               0.066              0.066              0.066
+   ================== ================== ================== ================== ==================
 
 * **max_runs**: Maximum (total) number of model simulations, including initial runs and Bayesian Active Learning iterations.
 
@@ -158,19 +159,21 @@ the validation data is saved in the restart data folder.
 
 * **Shortcut Combinations and Their Corresponding Tasks**:
 
+
 .. table:: Task Descriptions
 
-   ===================== =============================== ============================================================================
-   **complete_bal_mode**  **only_bal_mode**               **Task Description**
-   ===================== =============================== ============================================================================
-   True                  False                            Complete surrogate-assisted calibration
-   False                 False                            Only initial runs (no surrogate model)
+   ===================== =================================== ============================================================================
+   **complete_bal_mode**  **only_bal_mode**                   **Task Description**
+   ===================== =================================== ============================================================================
+   True                  False                                Complete surrogate-assisted calibration
+   False                 False                                Only initial runs (no surrogate model)
+   False                 False, with ``validation=True``      Only initial runs (for validation data)
    True                  True, with ``init_runs = max_runs``  Only surrogate construction with a set of predefined runs (no BAL)
    True                  True, with ``init_runs > max_runs``  Surrogate model construction and Bayesian Active Learning (BAL) applied
-   ===================== =============================== ============================================================================
+   ===================== =================================== ============================================================================
 
 
-------------------------
+
 TelemacModel Class (Telemac specific parameters)
 ------------------------
 
