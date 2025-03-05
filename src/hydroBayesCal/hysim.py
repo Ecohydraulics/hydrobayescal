@@ -268,7 +268,7 @@ class HydroSimulations:
             self.observations,self.variances, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_variances(
                 calibration_pts_file_path, calibration_quantities, extraction_quantities)
 
-       self.asr_dir = os.path.join(res_dir,
+        self.asr_dir = os.path.join(res_dir,
                                     f"auto-saved-results-HydroBayesCal")
         quantities_str = '_'.join(self.calibration_quantities)
         self.calibration_folder = os.path.join(self.asr_dir,"calibration-data",f"{quantities_str}")

@@ -118,13 +118,28 @@ Parameters
     The criteria for selecting new training points (TP) during the Bayesian Active Learning process.
     Default: ``'dkl'`` (relative entropy).
 
+    Available options:
+    * **"dkl"** - Relative Entropy (Kullback–Leibler divergence).
+    * **"bme"** - Bayesian Model Evidence (LHS).
+
 **parameter_distribution** : str, optional
     The criteria for selecting the parameter distribution.
     Default: ``'uniform'`` (uniform distribution).
 
-**parameter_sampling** : str, optional
+**parameter_sampling_method** : str, optional
     The criteria for selecting the parameter sampling method.
     Default: ``'sobol'``.
+
+   Available options:
+
+   * **"random"** - Random sampling.
+   * **"latin_hypercube"** - Latin Hypercube Sampling (LHS).
+   * **"sobol"** - Sobol sequence sampling.
+   * **"halton"** - Halton sequence sampling.
+   * **"hammersley"** - Hammersley sequence sampling.
+   * **"chebyshev(FT)"** - Chebyshev nodes (Fourier Transform-based).
+   * **"grid(FT)"** - Grid-based sampling (Fourier Transform-based).
+   * **"user"** - User-defined sampling. (Requires a user-defined .csv file with the sampling points.)
 
 Returns
 ^^^^^^^^
@@ -255,8 +270,8 @@ the name **auto-saved-results-HydroBayesCal**:
 - **model_outputs**: Files ``.csv`` and ``.json`` containing all model outputs obtained from the
   collocation points and required model variables.
 
-.. _outputs-folder:
-----------------------
+.. _outputs-folder: outputs-folder
+
 Surrogate-Assisted BAL Calibration Outputs
 -------------------------------------------
 
@@ -299,8 +314,11 @@ The generated folders and their contents are as follows:
    The Python script **``plots.py``** is used to create these plots.
 
 ### **3. Surrogate Models**
-   Contains surrogate models developed during the calibration process.
-   These models are saved as **pickle** files for further use.
+   Contains surrogate models developed during the calibration process. Inside this folder a subfolder will be created depending on the training point selection criteria.
+   Inside the corresponding folder the surrogate models are saved as **pickle** files for further use.
+
+   - **bal_bme**: Folder that stores the surrogate models trained with BME criteria.
+   - **bal_dkl**: Folder that stores the surrogate models trained with DKL criteria.
 
 ### **4. Restart Data**
    Stores data necessary for resuming the calibration process.

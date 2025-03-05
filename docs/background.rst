@@ -112,7 +112,9 @@ This class contains the general attributes that a hydrodynamic simulation requir
     Any of these additional extracted quantities can be used for calibration purposes.
 * **dict_output_name**: Base name for output dictionary files where the outputs are saved as `.json` files.
 
-* **parameter_sampling_method**: Method used for sampling parameter values during the calibration process.
+* **user_param_values**: (Default: ``False``). Boolean variable that enables the use of user-defined collocation points taken from a .csv file located in the restart folder.
+- If ``True``: Collocation points are taken from the user-defined .csv file.
+- If ``False``: Sampling methods from BayesValidRox according to the available sampling options.
 
     Available options:
 
@@ -139,20 +141,20 @@ This class contains the general attributes that a hydrodynamic simulation requir
 
 * **max_runs**: Maximum (total) number of model simulations, including initial runs and Bayesian Active Learning iterations.
 
-* **complete_bal_mode**: (Default: ``True``)
+* **complete_bal_mode**: (Default: ``True``). Boolean variable to select a complete BAL calibration or not.
 
   - If ``True``: Bayesian Active Learning (BAL) is performed after the initial runs, enabling a complete surrogate-assisted calibration process.
     **This option MUST be selected if you choose to perform only BAL** (i.e., when ``only_bal_mode = True``).
   - If ``False``: Only the initial runs of the full complexity model are executed, and the model outputs are stored as ``.json`` and ``.csv`` files.
 
-* **only_bal_mode**: (Default: ``False``)
+* **only_bal_mode**: (Default: ``False``). Boolean variable to select the BAL or not.
 
   - If ``False``: The process will either execute a complete surrogate-assisted calibration or only the initial runs, depending on the value of ``complete_bal_mode``.
   - If ``True``: Only the surrogate model construction and Bayesian Active Learning of preexisting model outputs at predefined collocation points are performed.
     **This mode can be executed only if either a complete process has already been performed** (``complete_bal_mode = True`` and ``only_bal_mode = True``)
     **or if only the initial runs have been executed** (``complete_bal_mode = False`` and ``only_bal_mode = False``). It is possible also to build the surrogate model with either **ALL** the restart data or just a **PART** of it. To use only a part of it, initialize the ``initial_runs`` accordingly.
 
-* **validation**: (Default: ``False``)
+* **validation**: (Default: ``False``). Boolean variable to select the creation of a independent set of collocation points and outputs for surrogate validation purposes.
   If ``True``, creates output files (inputs and outputs) for validation of the surrogate model. If it is True, the validation data is saved in the restart data folder.
 
 * **Shortcut Combinations and Their Corresponding Tasks**:
