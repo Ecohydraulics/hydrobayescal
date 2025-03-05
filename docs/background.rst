@@ -54,7 +54,6 @@ This class contains the general attributes that a hydrodynamic simulation requir
 * **calibration_pts_file_path**: File path to the calibration points data file. Please check documentation for further details of the file format.
 
 .. table:: Measurement Data
-
    ======================= ================== ================== ====================== =============== ====================== ===============
    Point                   X                  Y                  MEASUREMENT 1           ERROR 1        MEASUREMENT 2           ERROR 2
    ======================= ================== ================== ====================== =============== ====================== ===============
@@ -144,18 +143,17 @@ This class contains the general attributes that a hydrodynamic simulation requir
 
   - If ``True``: Bayesian Active Learning (BAL) is performed after the initial runs, enabling a complete surrogate-assisted calibration process.
     **This option MUST be selected if you choose to perform only BAL** (i.e., when ``only_bal_mode = True``).
-  - If ``False``: Only the initial runs of the full complexity model are executed, and the model outputs are stored as ``.json`` files.
+  - If ``False``: Only the initial runs of the full complexity model are executed, and the model outputs are stored as ``.json`` and ``.csv`` files.
 
 * **only_bal_mode**: (Default: ``False``)
 
   - If ``False``: The process will either execute a complete surrogate-assisted calibration or only the initial runs, depending on the value of ``complete_bal_mode``.
   - If ``True``: Only the surrogate model construction and Bayesian Active Learning of preexisting model outputs at predefined collocation points are performed.
     **This mode can be executed only if either a complete process has already been performed** (``complete_bal_mode = True`` and ``only_bal_mode = True``)
-    **or if only the initial runs have been executed** (``complete_bal_mode = False`` and ``only_bal_mode = False``).
+    **or if only the initial runs have been executed** (``complete_bal_mode = False`` and ``only_bal_mode = False``). It is possible also to build the surrogate model with either **ALL** the restart data or just a **PART** of it. To use only a part of it, initialize the ``initial_runs`` accordingly.
 
 * **validation**: (Default: ``False``)
-  If ``True``, creates output files (inputs and outputs) for validation of the surrogate model. If it is True,
-the validation data is saved in the restart data folder.
+  If ``True``, creates output files (inputs and outputs) for validation of the surrogate model. If it is True, the validation data is saved in the restart data folder.
 
 * **Shortcut Combinations and Their Corresponding Tasks**:
 

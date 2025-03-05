@@ -574,16 +574,16 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=8,
-            init_runs=5,
+            init_runs=3,
             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
             param_values = [[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.060, 0.79]],
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+            calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
-            max_runs=10,
+            max_runs=4,
             complete_bal_mode=True,
-            only_bal_mode=False,
+            only_bal_mode=True,
             delete_complex_outputs=True,
             validation=False
         )
@@ -594,7 +594,7 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         tp_selection_criteria='dkl',
         parameter_distribution='uniform',
-        parameter_sampling_method = 'sobol'
+        parameter_sampling_method = 'random'
     )
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,

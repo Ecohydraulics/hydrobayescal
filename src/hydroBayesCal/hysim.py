@@ -268,7 +268,7 @@ class HydroSimulations:
             self.observations,self.variances, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_variances(
                 calibration_pts_file_path, calibration_quantities, extraction_quantities)
 
-        self.asr_dir = os.path.join(res_dir,
+       self.asr_dir = os.path.join(res_dir,
                                     f"auto-saved-results-HydroBayesCal")
         quantities_str = '_'.join(self.calibration_quantities)
         self.calibration_folder = os.path.join(self.asr_dir,"calibration-data",f"{quantities_str}")
@@ -283,14 +283,14 @@ class HydroSimulations:
             os.makedirs(os.path.join(self.asr_dir, "plots"))
         if not os.path.exists(os.path.join(self.asr_dir, "surrogate-gpe")):
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
-        if complete_bal_mode and only_bal_mode:
-            update_json_file(json_path=os.path.join(self.restart_data_folder, "initial-model-outputs.json"),save_dict=True,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
+        # if complete_bal_mode and only_bal_mode:
+        #     update_json_file(json_path=os.path.join(self.restart_data_folder, "initial-model-outputs.json"),save_dict=False,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
         if user_param_values:
             collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
             self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1)
         if only_bal_mode:
             collocation_path = os.path.join(self.restart_data_folder, 'initial-collocation-points.csv')
-            self.restart_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1)
+            self.restart_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, max_rows=self.init_runs)
 
     def check_inputs(
             self,

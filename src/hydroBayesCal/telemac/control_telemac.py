@@ -581,7 +581,8 @@ class TelemacModel(HydroSimulations):
                                                                     delete_slf_files=self.delete_complex_outputs,
                                                                     validation=validation,
                                                                     save_extraction_outputs=True,# This option True saves ALL model outputs of ALL required quantities at ALL points as a .csv file
-                                                                    calibration_mode=True
+                                                                    calibration_mode=True,
+                                                                    extraction_mode = True
                                                                     )#This option True extracts the data from the dictionary and populates the array with the values from the dictionary for the parameters in extraction_quantities.
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
                 exit()
@@ -647,17 +648,23 @@ class TelemacModel(HydroSimulations):
         # Filtering
         if filter_outputs:
             quantities_str = '_'.join(calibration_quantities)
-            filtered_output_data = filter_model_outputs(data_dict=output_data,
+            filtered_output_data_extraction = filter_model_outputs(data_dict=output_data,
+                                               quantities=extraction_quantities,
+                                               run_range_filtering=run_range_filtering)
+            filtered_output_data_calibration = filter_model_outputs(data_dict=output_data,
                                                quantities=calibration_quantities,
                                                run_range_filtering=run_range_filtering)
             if validation:
                 pass
             else:
-                with open(os.path.join(self.calibration_folder,f'{quantities_str}-detailed.json'), 'w') as json_file:
-                    json.dump(filtered_output_data, json_file, indent=4)
+                with open(os.path.join(self.calibration_folder,f'{self.dict_output_name}-detailed.json'), 'w') as json_file:
+                    json.dump(filtered_output_data_extraction, json_file, indent=4)
+                with open(os.path.join(self.calibration_folder, f'{quantities_str}-detailed.json'),
+                          'w') as json_file:
+                    json.dump(filtered_output_data_calibration, json_file, indent=4)
             # update_json_file(json_path=os.path.join(self.asr_dir,f'{quantities_str}-detailed.json'), modeled_values_dict=filtered_output_data, detailed_dict=True)
             # pdb.set_trace()
-            for i, (key, values) in enumerate(filtered_output_data.items()):  # Iterate over calibration points
+            for i, (key, values) in enumerate(filtered_output_data_extraction.items()):  # Iterate over calibration points
                 for j, value_set in enumerate(values):  # Iterate over runs
                     for k, quantity in enumerate(calibration_quantities):  # Calibrate quantities
                         if quantity in value_set:
