@@ -34,8 +34,10 @@ to run the code properly.
 Firstly, the initialization of all input parameters must be done in ``bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
 calls the necessary instances of the classes that run the hydrodynamic model, creation of surrogate models and BAL.
 
+
 .. _HydroSimulations_class:
 --------------------------
+
 HydroSimulations Class (Global Full Complexity Model Parameters)
 ------------------------
 The **HydroSimulations** class manages and runs hydrodynamic simulations within the context of Bayesian Calibration using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup,
@@ -132,10 +134,10 @@ This class contains the general attributes that a hydrodynamic simulation requir
 .. table:: User-Defined Collocation Points
 
    ================== ================== ================== ================== ==================
-   param1            param2              param3             param4             param5
+   param1             param2              param3             param4             param5
    ================== ================== ================== ================== ==================
-   0.148             0.770               0.014              0.014              0.700
-   0.066             0.066               0.066              0.066              0.066
+   0.148              0.770               0.014              0.014              0.700
+   0.066              0.066               0.066              0.066              0.066
    ================== ================== ================== ================== ==================
 
 * **max_runs**: Maximum (total) number of model simulations, including initial runs and Bayesian Active Learning iterations.
@@ -175,7 +177,7 @@ the validation data is saved in the restart data folder.
 
 
 TelemacModel Class (Telemac specific parameters)
-------------------------
+-------------------------------------------------
 
 For telemac simulations, the following parameters should be defined in the **TelemacModel** class if necesarry:
 
@@ -209,7 +211,9 @@ Step 2: Bayesian Model Optimization
 With the initial model setup and the measurement points, the Bayesian model optimization process has everything it needs for its iterative score calculation. The number of iterations corresponds to the user-defined limit in **``max_runs``** and the following tasks are performed in every iteration:
 
 1. Initial surrogate model with the initial collocation points and the corresponding model outputs:
+
     * **Training a initial metamodel** using single or multitask Gaussian Process Regression. To train a GP metamodel, a coviariance function (kernel) must be defined.
+
         - `Single GP Regression  <https://docs.gpytorch.ai/en/v1.13/examples/01_Exact_GPs/Simple_GP_Regression.html>`_
         - `Multi-task GP Regression <https://docs.gpytorch.ai/en/v1.13/examples/03_Multitask_Exact_GPs/Multitask_GP_Regression.html>`_
         - `Gaussian Process Kernels <https://docs.gpytorch.ai/en/v1.13/kernels.html>`_

@@ -255,6 +255,7 @@ class HydroSimulations:
         self.num_extraction_quantities = None
         self.observations = None
         self.measurement_errors = None
+        self.variances = None
         self.calibration_pts_df = None
         self.user_collocation_points = None
         self.restart_collocation_points = None
@@ -264,8 +265,8 @@ class HydroSimulations:
         if calibration_parameters:
             self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
         if calibration_pts_file_path:
-            self.observations, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_errors(
-                calibration_pts_file_path, calibration_quantities,extraction_quantities)
+            self.observations,self.variances, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_variances(
+                calibration_pts_file_path, calibration_quantities, extraction_quantities)
 
         self.asr_dir = os.path.join(res_dir,
                                     f"auto-saved-results-HydroBayesCal")
@@ -539,10 +540,11 @@ class HydroSimulations:
         print("Full-complexity simulation time: " + str(datetime.now() - start_time))
         pass
 
-    def set_observations_and_errors(self,
+    def set_observations_and_variances(self,
                                     calibration_pts_file_path,
                                     calibration_quantities,
-                                    extraction_quantities):
+                                    extraction_quantities,
+                                    surrogate_error = 0.1):
         """
         Reads and processes calibration point data, extracting observations and measurement errors.
 
@@ -564,14 +566,15 @@ class HydroSimulations:
             Example: WATER DEPTH_DATA means the name WATER DEPTH recognizes the variable WATER DEPTH in Telemac .slf files
         extraction_quantities : list of str
             List of all quantities required to be extracted from the model output file.
-
+        surrogate_error: int
+            Percentage of the measurement error associated to the surrogate model error.
 
         Returns
         -------
         observations : ndarray, shape (1, n_loc * n_calib_quantities)
             A 2D array containing the extracted observed values for all calibration points.
         measurement_errors : ndarray, shape (n_loc * n_calib_quantities,)
-            A 1D array containing the measurement errors associated with the observations.
+            A 1D array containing the measurement errors (standard deviation) associated with the observations.
         n_loc : int
             The number of unique calibration locations (data points).
         n_calib_quantities : int
@@ -594,10 +597,14 @@ class HydroSimulations:
         # Select the observation and error columns based on the list
         observations = calibration_pts_df[observation_columns].to_numpy()
         measurement_errors = calibration_pts_df[error_columns].to_numpy()
+        surrogate_errors=measurement_errors*surrogate_error
+
+
 
         # Reshape observations and errors to match the expected output format
         observations = observations.flatten().reshape(1, -1)
         measurement_errors = measurement_errors.flatten()
+        variances = ((measurement_errors.flatten())**2) + ((surrogate_errors.flatten())**2)
 
         # Calculate the number of unique locations or data points
         n_loc = len(calibration_pts_df)
@@ -609,7 +616,7 @@ class HydroSimulations:
         else:
             n_extraction_quantities = len(extraction_quantities)
 
-        return observations, measurement_errors, n_loc, n_calib_quantities, calibration_pts_df,n_extraction_quantities
+        return observations, variances,measurement_errors, n_loc, n_calib_quantities, calibration_pts_df,n_extraction_quantities
 
     @staticmethod
     def read_data(results_folder, file_name):

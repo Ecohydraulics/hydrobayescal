@@ -135,12 +135,6 @@ def run_complex_model(complex_model,
         except FileNotFoundError:
             logger.info('Saved collocation points or model results as numpy arrays not found. '
                         'Please run initial runs first to execute only Bayesian Active Learning.')
-    # Importing observations and erros at calibration points.
-    # observations = complex_model.observations
-    # errors = complex_model.measurement_errors
-    #
-    # # number of output locations (i.e., calibration points) / Surrogates to train. (One surrogate per calibration point)
-    # nloc = complex_model.nloc
 
     return collocation_points, model_outputs#, observations, errors, nloc
 
@@ -391,7 +385,7 @@ def run_bal_model(collocation_points,
             surrogate_output = sm.predict_(input_sets=prior,
                                            get_conf_int=True)
             model_predictions = surrogate_output['output']
-            total_error = complex_model.measurement_errors
+            total_error = complex_model.variances
             if it == 0 or it == n_iter:
                 try:
                     # Open the file and save the dictionary
@@ -404,7 +398,7 @@ def run_bal_model(collocation_points,
 
         else:
             surrogate_output = surrogate_object.predict_(input_sets=prior,get_conf_int=True)
-            total_error = complex_model.measurement_errors
+            total_error = complex_model.variances
             model_predictions = surrogate_output['output']
             if it == 0 or it == n_iter:
                 try:
@@ -578,17 +572,17 @@ if __name__ == "__main__":
             control_file="tel_ering_mu_restart.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-            calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/synthetic-data-run-R.csv",
+            calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=8,
-            init_runs=15,
+            init_runs=5,
             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
             param_values = [[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.060, 0.79]],
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
             calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
-            max_runs=150,
-            complete_bal_mode=False,
+            max_runs=10,
+            complete_bal_mode=True,
             only_bal_mode=False,
             delete_complex_outputs=True,
             validation=False
@@ -611,10 +605,10 @@ if __name__ == "__main__":
         model_outputs=model_evaluations,
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        eval_steps=20,
-        prior_samples=15000,
-        mc_samples_al=2000,
-        mc_exploration=1000,
+        eval_steps=1,
+        prior_samples=1000,
+        mc_samples_al=200,
+        mc_exploration=100,
         gp_library="gpy"
     )
 
