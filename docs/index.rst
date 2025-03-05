@@ -10,4 +10,5 @@ This is the documentation for the HydroBayesCal package. This package is a Bayes
 
    introduction
    background
+   uml
    gpe-bal-telemac
