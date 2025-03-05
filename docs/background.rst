@@ -36,10 +36,9 @@ calls the necessary instances of the classes that run the hydrodynamic model, cr
 
 
 .. _HydroSimulations_class:
---------------------------
 
 HydroSimulations Class (Global Full Complexity Model Parameters)
-------------------------
+----------------------------------------------------------------
 The **HydroSimulations** class manages and runs hydrodynamic simulations within the context of Bayesian Calibration using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup,
 execution, and result storage while managing calibration parameters and Bayesian Active Learning (BAL) iterations.
 
@@ -130,11 +129,10 @@ This class contains the general attributes that a hydrodynamic simulation requir
     If "user" is selected, a ``.csv`` file containing user-defined collocation points must be provided
     in the restart data folder. The file should follow this format:
 
-
 .. table:: User-Defined Collocation Points
 
    ================== ================== ================== ================== ==================
-   param1             param2              param3             param4             param5
+   **param1**          **param2**        **param3**         **param4**         **param5**
    ================== ================== ================== ================== ==================
    0.148              0.770               0.014              0.014              0.700
    0.066              0.066               0.066              0.066              0.066

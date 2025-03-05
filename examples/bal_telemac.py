@@ -578,7 +578,7 @@ if __name__ == "__main__":
             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
             param_values = [[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.060, 0.79]],
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-            calibration_quantities=["WATER DEPTH"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             dict_output_name="extraction-data",
             user_param_values = False,
             max_runs=10,
