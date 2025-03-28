@@ -7,6 +7,10 @@ import pickle
 import h5py
 import json
 import glob
+import matplotlib.tri as mtri
+from numpy import linspace, dtype
+
+
 import pdb
 import shutil
 
@@ -15,6 +19,7 @@ sys.path.insert(0, os.path.abspath('..'))
 from src.hydroBayesCal.utils.config_logging import *
 # TODO: re-instate config_physics - Done
 from src.hydroBayesCal.utils.config_physics import *
+from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
 
 
 def append_new_line(file_name, text_to_append):
@@ -460,3 +465,222 @@ def interpolate_values(coords, values, point):
     interpolated_values = _np.dot(weights, values)  # Dot product for weighted sum
 
     return interpolated_values.flatten()  # Return as a 1D array
+def rasterize(saving_folder, slf_file_name, desired_variables, spacing):
+    # Define the full path for the SLF file
+    slf_file = os.path.join(saving_folder, slf_file_name)
+    print("The input file being probed: " + slf_file)
+
+    # constructor for pp_SELAFIN class
+    slf = ppSELAFIN(slf_file)
+    slf.readHeader()
+    slf.readTimes()
+    times = slf.getTimes()
+    vnames = slf.getVarNames()
+    vunits = slf.getVarUnits()
+    ftype, fsize = slf.getPrecision()
+    nplan = slf.getNPLAN()
+    NELEM = slf.getNELEM()
+    NPOIN = slf.getNPOIN()
+    IPOBO = slf.getIPOBO()
+    DATE = slf.getDATE()
+
+    if nplan > 1:
+        slf_type = '3d'
+    else:
+        slf_type = '2d'
+
+    if ftype == 'f' and fsize == 4:
+        precision = 'single'
+    elif ftype == 'd' and fsize == 8:
+        precision = 'double'
+    else:
+        precision = 'unknown'
+
+    # prints variable names
+    print('Precision: ' + precision)
+    print('File type: ' + slf_type)
+    if slf_type == '3d':
+        print('Number of planes: ' + str(nplan))
+    print('Number of elements: ' + str(NELEM))
+    print('Number of nodes: ' + str(NPOIN))
+    print('Date: ' + str(DATE[0]) + '-' + str(DATE[1]).zfill(2) + '-'
+          + str(DATE[2]).zfill(2) + ' ' + str(DATE[3]).zfill(2) + ':'
+          + str(DATE[4]).zfill(2) + ':' + str(DATE[5]).zfill(2))
+    print(' ')
+    print('#################################')
+    print('Variables in ' + slf_file + ' are: ')
+    print('---------------------------------')
+    print('     v     variable        unit')
+    print('---------------------------------')
+
+    desired_var_indices = []  # Initialize to a default value, e.g., -1, to indicate that no variable has been found yet.
+
+    for var in desired_variables:
+        for i in range(len(vnames)):
+            print(f"    {i} --> {vnames[i]} [{vunits[i].strip()}]")
+
+            # Strip spaces from vnames[i] and check if it matches the current desired variable
+            if vnames[i].strip() == var:  # Checks if the stripped vnames[i] matches the current desired_var
+                desired_var_indices.append(i)  # Add the index to the list if there's a match
+
+    # Print out the desired variable indices in the order of desired_var
+    print("Desired variable indices in order:", desired_var_indices)
+    print(' ')
+    print('#################################')
+
+    # prints times
+    records = np.arange(len(times))
+    nrecs = len(times)
+
+    if len(times) < 2:
+        print("    t    time (s)")
+        print('---------------------------------')
+        print(str(records[0]) + " -->" + str("{:10.1f}".format(times[0])))
+    elif len(times) < 3:
+        print("    t    time (s)")
+        print('---------------------------------')
+        print(str(records[0]) + " -->" + str("{:10.1f}".format(times[0])))
+        print(str(records[1]) + " -->" + str("{:10.1f}".format(times[1])))
+    elif len(times) < 4:
+        print("    t    time (s)")
+        print('---------------------------------')
+        print(str(records[0]) + " -->" + str("{:10.1f}".format(times[0])))
+        print(str(records[1]) + " -->" + str("{:10.1f}".format(times[1])))
+        print(str(records[2]) + " -->" + str("{:10.1f}".format(times[2])))
+    else:
+        print("t        time (s)")
+        print('---------------------------------')
+        print(str(records[0]) + " -->" + str("{:10.1f}".format(times[0])))
+        print(str(records[1]) + " -->" + str("{:10.1f}".format(times[1])))
+        print(str(records[2]) + " -->" + str("{:10.1f}".format(times[2])))
+        print(str(records[3]) + " -->" + str("{:10.1f}".format(times[3])))
+        print('     ......')
+        print(str(records[nrecs - 1]) + "-->" + str("{:10.1f}".format(times[nrecs - 1])))
+
+    print('#################################')
+    last_time_step_index = nrecs - 1
+
+    # index number of grided output variable
+    t = last_time_step_index  # index of time record of the output to use in griding (integer, 0 to n)
+
+    # Read the header of the selafin result file and get geometry and
+    # variable names and units
+    slf.readVariables(t)
+
+    # gets some of the mesh properties from the *.slf file
+    NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+
+    # the IKLE array starts at element 1, but matplotlib needs it to start
+    # at zero
+    IKLE[:,:] = IKLE[:,:] - 1
+
+    # these are the results for all variables, for time step t
+    master_results = slf.getVarValues()
+
+    # creates a triangulation grid using matplotlib function Triangulation
+    triang = mtri.Triangulation(x, y, IKLE)
+
+    # determine the spacing of the regular grid
+    range_in_x = x.max() - x.min()
+    range_in_y = y.max() - y.min()
+
+    max_range = max(range_in_x, range_in_y)
+
+    # first index is integer divider, second is remainder
+    num_x_pts = divmod(range_in_x, spacing)
+    num_y_pts = divmod(range_in_y, spacing)
+
+    print("Size of output matrix is : " + str(int(num_x_pts[0])) + " x " + str(int(num_y_pts[0])))
+    print("Grid resolution is : " + str(spacing) + " m")
+
+    # creates the regular grid
+    xreg, yreg = np.meshgrid(np.linspace(x.min(), x.max(), int(num_x_pts[0])),
+                             np.linspace(y.min(), y.max(), int(num_y_pts[0])))
+    x_regs = xreg[1, :]
+    y_regs = yreg[:, 1]
+
+    raster_data = {}
+    # to interpolate to a reg grid
+    for var_index in desired_var_indices:
+        interpolator = mtri.LinearTriInterpolator(triang, master_results[var_index])
+        z = interpolator(xreg, yreg)
+
+        print("Shape of array z: " + str(z.shape[0]))
+        print("Shape of arrays xreg and yreg: " + str(x_regs.shape) + " " + str(y_regs.shape))
+
+        where_are_NaNs = np.isnan(z)
+        z[where_are_NaNs] = -999.0
+
+        # open the output *.asc file, and write the header info
+        header_str = "NCOLS " + str(z.shape[1]) + "\n"
+        header_str = header_str + "NROWS " + str(z.shape[0]) + "\n"
+        header_str = header_str + "XLLCORNER " + str(x_regs[0]) + "\n"
+        header_str = header_str + "YLLCORNER " + str(y_regs[0]) + "\n"
+        header_str = header_str + "CELLSIZE " + str(spacing) + "\n"
+        header_str = header_str + "NODATA_VALUE " + str(-999.00) + "\n"
+
+        # Save the output raster to a file
+        output_file = os.path.join(saving_folder, f"interpolated_{vnames[var_index]}.asc")
+        np.savetxt(output_file, np.flipud(z), fmt='%10.3f', header=header_str, comments='', delimiter='')
+
+        raster_data[vnames[var_index].strip()] = {
+            "data": np.flipud(z),
+            "x_regs": x_regs,
+            "y_regs": y_regs,
+            "spacing": spacing
+        }
+    return raster_data
+
+
+def classify_mu(raster_data, classification, output_folder, output_filename):
+    """
+    Classify the morphological units (MU) based on velocity and depth and save as a raster file.
+
+    Parameters:
+    raster_data (dict): Dictionary containing 'velocity' and 'depth' raster data as numpy arrays.
+    classification (dict): Dictionary of classification criteria for different MUs.
+    output_folder (str): Folder path where the output file will be saved.
+    output_filename (str): The filename for the output raster file (without extension).
+
+    Returns:
+    None: The function will save the classified MU raster as an ASCII file in the output folder.
+    """
+    # Extract velocity and depth data from the raster_data dictionary
+    velocity_data = raster_data['SCALAR VELOCITY']['data']  # Access 'data' if the raster data is a masked array
+    depth_data = raster_data['WATER DEPTH']['data']
+
+    # Ensure that both velocity and depth are numpy arrays, not dictionaries
+    assert isinstance(velocity_data, np.ndarray), f"Expected numpy array for velocity_data, but got {type(velocity_data)}"
+    assert isinstance(depth_data, np.ndarray), f"Expected numpy array for depth_data, but got {type(depth_data)}"
+
+    # Create an empty array for the output MU classification
+    mu_raster = np.zeros_like(velocity_data, dtype=int)  # Initialize with zeros (no classification)
+
+    # Iterate through each classification and assign values to the raster
+    for mu, criteria in classification.items():
+        velocity_range = criteria['velocity_range']
+        depth_range = criteria['depth_range']
+        velocity_masked = velocity_data.mask
+        depth_masked = depth_data.mask
+        # Classify cells where velocity and depth are within the specified ranges
+        mu_mask = (velocity_data >= velocity_range[0]) & (velocity_data <= velocity_range[1]) & \
+                  (depth_data >= depth_range[0]) & (depth_data <= depth_range[1])
+        mu_mask &= ~velocity_masked & ~depth_masked
+        # Assign the classification index (or any desired value) for the morphological unit
+        mu_raster[mu_mask] = mu  # Use the classification index directly from the dictionary (e.g., 0, 1, 2...)
+
+    # Save the classified MU raster as an ASCII file
+    header_str = f"NCOLS {mu_raster.shape[1]}\n"
+    header_str += f"NROWS {mu_raster.shape[0]}\n"
+    header_str += f"XLLCORNER {raster_data['SCALAR VELOCITY']['x_regs'].min()}\n"  # Assuming min x-coordinate for the corner
+    header_str += f"YLLCORNER {raster_data['WATER DEPTH']['y_regs'].min()}\n"  # Assuming min y-coordinate for the corner
+    header_str += f"CELLSIZE {raster_data['WATER DEPTH']['spacing']}\n"  # You can adjust the cell size depending on your data
+    header_str += "NODATA_VALUE -999\n"
+
+    # Construct output file path
+    output_file = os.path.join(output_folder, f"{output_filename}.asc")
+
+    # Save the classified MU raster as an ASCII file
+    np.savetxt(output_file, mu_raster, fmt='%d', header=header_str, comments='', delimiter=' ')
+
+    print(f"Classified MU raster saved to {output_file}")

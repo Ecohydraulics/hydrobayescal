@@ -28,19 +28,20 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 # Instance of Telemac Model for plotting results (calibration)
 full_complexity_model = TelemacModel(
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/synthetic-data-pool-R.csv",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     init_runs=30,
     calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.065], [0.0016, 0.065], [0.065, 0.79]],
-    calibration_quantities=["SCALAR VELOCITY"],
+    # param_values=[[0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79]],
+    param_values=[[0.010, 0.1], [0.050, 0.79], [0.0020, 0.1], [0.002, 0.1], [0.050, 0.79]],# coarse-coarse -fine -fine -coarse
+    calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     multitask_selection="variables",
     check_inputs=False,
 )
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot = 120
-surrogate_to_analyze = 150
+iterations_to_plot = 140
+surrogate_to_analyze = 170
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -94,11 +95,13 @@ for i in range(n_quantities):
     # plotter.plot_validation_results(obs_quantity, sm_output.reshape(1, -1), cm_output.reshape(1, -1))
     plotter.plot_model_outputs_vs_locations(
         observed_values=obs_quantity,
+        quantity_name=full_complexity_model.calibration_quantities[i],
         surrogate_outputs=sm_output[-1, :].reshape(1, -1),
         complex_model_outputs=cm_output[-1, :].reshape(1, -1),
+        selected_locations=[24,25,21,28,31,1,11,7,6,14,3],
         gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
         gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
-        measurement_error=err_quantity
+        measurement_error=err_quantity,
     )
 
 # Plot Bayesian results
@@ -112,8 +115,10 @@ plotter.plot_posterior_updates(
     bins=20,
     plot_prior=True,
 )
-
-
+plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)
+plotter.plot_posterior_iteration(posterior_samples=bayesian_data['posterior'][iterations_to_plot],
+                               parameter_names=full_complexity_model.calibration_parameters,param_values = full_complexity_model.param_values)
+plotter.plot_bme_3d(collocation_points=collocation_points,param_ranges=full_complexity_model.param_values,param_names=full_complexity_model.calibration_parameters,bme_values=bayesian_data['BME'],param_indices=(1,4),extra_param_index=2,iteration_range=(60,140))
 # if len(full_complexity_model.calibration_quantities)==2:
 #     num_simulations, num_columns = cm_outputs.shape
 #     # Separate the columns for each quantity

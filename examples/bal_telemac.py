@@ -520,14 +520,14 @@ def main():
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=8,
-            init_runs=20,
+            init_runs=30,
             calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-            param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.060, 0.79]],
+            param_values = [[0.010, 0.1], [0.050, 0.79], [0.0020, 0.1], [0.002, 0.1], [0.050, 0.79]], # coarse-coarse -fine -fine -coarse
             extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
             calibration_quantities=calibration_quantities,
             dict_output_name="extraction-data",
             user_param_values=False,
-            max_runs=150,
+            max_runs=170,
             complete_bal_mode=complete_bal_mode,
             only_bal_mode=only_bal_mode,
             delete_complex_outputs=True,
@@ -574,14 +574,15 @@ if __name__ == "__main__":
     #         res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
     #         calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     #         n_cpus=8,
-    #         init_runs=3,
-    #         calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    #         param_values = [[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.0016, 0.060], [0.060, 0.79]],
+    #         init_runs=30,
+    #         calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"], #pool-slackwater-glide-riffle-run
+    #         # param_values=[[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79]],
+    #         param_values = [[0.010, 0.1], [0.050, 0.79], [0.0020, 0.1], [0.002, 0.1], [0.060, 0.79]], # coarse-coarse -fine -fine -coarse
     #         extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-    #         calibration_quantities=["SCALAR VELOCITY"],
+    #         calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     #         dict_output_name="extraction-data",
-    #         user_param_values = True,
-    #         max_runs=4,
+    #         user_param_values = False,
+    #         max_runs=170,
     #         complete_bal_mode=True,
     #         only_bal_mode=False,
     #         delete_complex_outputs=True,
@@ -594,7 +595,7 @@ if __name__ == "__main__":
     #     complex_model=full_complexity_model,
     #     tp_selection_criteria='dkl',
     #     parameter_distribution='uniform',
-    #     parameter_sampling_method = 'user'
+    #     parameter_sampling_method = 'sobol'
     # )
     # init_collocation_points, model_evaluations= run_complex_model(
     #     complex_model=full_complexity_model,
@@ -605,10 +606,10 @@ if __name__ == "__main__":
     #     model_outputs=model_evaluations,
     #     complex_model=full_complexity_model,
     #     experiment_design=exp_design,
-    #     eval_steps=1,
-    #     prior_samples=1000,
-    #     mc_samples_al=200,
-    #     mc_exploration=100,
+    #     eval_steps=20,
+    #     prior_samples=20000,
+    #     mc_samples_al=2000,
+    #     mc_exploration=1000,
     #     gp_library="gpy"
     # )
 

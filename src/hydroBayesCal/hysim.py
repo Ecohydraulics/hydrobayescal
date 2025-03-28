@@ -287,10 +287,10 @@ class HydroSimulations:
         #     update_json_file(json_path=os.path.join(self.restart_data_folder, "initial-model-outputs.json"),save_dict=False,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
         if user_param_values:
             collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
-            self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1)
+            self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, ndmin=2)
         if only_bal_mode:
             collocation_path = os.path.join(self.restart_data_folder, 'initial-collocation-points.csv')
-            self.restart_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, max_rows=self.init_runs)
+            self.restart_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, max_rows=self.init_runs,ndmin=2)
 
     def check_inputs(
             self,
@@ -544,7 +544,7 @@ class HydroSimulations:
                                     calibration_pts_file_path,
                                     calibration_quantities,
                                     extraction_quantities,
-                                    surrogate_error = 0.1):
+                                    surrogate_error = 0.40):
         """
         Reads and processes calibration point data, extracting observations and measurement errors.
 
@@ -567,7 +567,7 @@ class HydroSimulations:
         extraction_quantities : list of str
             List of all quantities required to be extracted from the model output file.
         surrogate_error: int
-            Percentage of the measurement error associated to the surrogate model error.
+            Percentage of the measurements associated to the surrogate model error.
 
         Returns
         -------
@@ -597,7 +597,7 @@ class HydroSimulations:
         # Select the observation and error columns based on the list
         observations = calibration_pts_df[observation_columns].to_numpy()
         measurement_errors = calibration_pts_df[error_columns].to_numpy()
-        surrogate_errors=measurement_errors*surrogate_error
+        surrogate_errors=observations*surrogate_error
 
 
 

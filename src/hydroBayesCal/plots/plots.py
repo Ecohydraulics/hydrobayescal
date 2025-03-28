@@ -3,6 +3,15 @@ Code for plotting results in the context of Bayesian Calibration with GPE
 """
 
 import numpy as np
+import os
+import pandas as pd
+import seaborn as sns
+import corner
+import matplotlib.patches as mpatches
+import matplotlib.colors as mcolors
+
+from matplotlib.lines import Line2D
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde, norm, linregress
 import random
@@ -68,6 +77,187 @@ class BayesianPlotter:
         ax.spines['right'].set_linewidth(0.8)
         ax.spines['bottom'].set_linewidth(0.8)
         ax.spines['left'].set_linewidth(0.8)
+
+    def plot_prior_posterior_kde(self, bayesian_data, parameter_names, iterations_to_plot):
+        """
+        Generates and saves prior and posterior distribution plots using KDEs and histograms.
+
+        Parameters
+        ----------
+        bayesian_data : dict
+            Dictionary containing 'prior' and 'posterior' data.
+        """
+        prior_forplot = bayesian_data['prior']
+        posterior_forplot = bayesian_data['posterior'][iterations_to_plot]
+        columns = parameter_names
+        df_prior = pd.DataFrame(prior_forplot, columns=columns)
+        df_post = pd.DataFrame(posterior_forplot, columns=columns)
+
+        # Create a PairGrid for customized mapping
+        g = sns.PairGrid(df_prior, diag_sharey=False, corner=True)
+        cmap = mcolors.LinearSegmentedColormap.from_list(
+            "grey_blue", ["lightgrey", "blue"]
+        )
+        # Map the lower triangle to filled contour KDE plots
+        g.map_lower(sns.kdeplot, fill=True,
+                    cmap=cmap
+                    )
+
+        # Optionally, map the diagonal to filled KDE plots as well
+        g.map_diag(sns.kdeplot, fill=True, lw=2)
+
+        # #% Define the output directory and file paths
+        output_dir = self.save_folder  # change this to your desired path
+        os.makedirs(output_dir, exist_ok=True)
+        pdf_file = os.path.join(output_dir, 'pairplot_prior.pdf')
+        png_file = os.path.join(output_dir, 'pairplot_prior.png')
+
+        # # Save the figure as PDF and PNG
+        g.fig.savefig(pdf_file, bbox_inches='tight', dpi=300)
+        g.fig.savefig(png_file, bbox_inches='tight', dpi=300)
+
+        # Show the plot
+        plt.show()
+        # %%%%%%%%%%%%%%%%%%%%%%
+        # % posterior
+        # columns = ["zone3", "zone4", "zone10", "zone12", "zone13", "zone14", "zone15", "zone16", "zone17"]
+
+        df_post = pd.DataFrame(posterior_forplot, columns=columns)
+
+        # Create a PairGrid for customized mapping
+        g_post = sns.PairGrid(df_post, diag_sharey=False, corner=True)
+
+        # Map the lower triangle to filled contour KDE plots
+        g_post.map_lower(sns.kdeplot, fill=True,
+                         cmap="inferno"
+                         )
+
+        # Optionally, map the diagonal to filled KDE plots as well
+        g_post.map_diag(sns.kdeplot, fill=True, lw=2, color='red')
+
+        # #% Define the output directory and file paths
+        output_dir = self.save_folder  # change this to your desired path
+        os.makedirs(output_dir, exist_ok=True)
+        pdf_file = os.path.join(output_dir, 'pairplot_post.pdf')
+        png_file = os.path.join(output_dir, 'pairplot_post.png')
+
+        # Save the figure as PDF and PNG
+        g_post.fig.savefig(pdf_file, bbox_inches='tight', dpi=300)
+        g_post.fig.savefig(png_file, bbox_inches='tight', dpi=300)
+
+        # Show the plot
+        plt.show()
+
+        # %%%%%%%%%%%%%%%%%%%%%%%%%
+        # % plot prior and posterior together
+        # Custom function for the lower triangle: overlay filled contour KDE plots
+        def overlay_lower(x, y, **kwargs):
+            ax = plt.gca()
+            # Use the series name to get the corresponding column names
+            col_x = x.name
+            col_y = y.name
+            # Remove potential conflicting keyword 'color'
+            kwargs_lower = kwargs.copy()
+            kwargs_lower.pop('color', None)
+
+            # Plot prior joint KDE (filled)
+            sns.kdeplot(x=x, y=y, fill=True, cmap="viridis", ax=ax, **kwargs_lower)
+            # Overlay posterior joint KDE (filled) with transparency
+            sns.kdeplot(x=df_post[col_x], y=df_post[col_y], fill=True, cmap="inferno", ax=ax,
+                        # alpha=0.5
+                        )
+
+        # Custom function for the diagonal: overlay individual KDE plots
+        def overlay_diag(x, **kwargs):
+            ax = plt.gca()
+            # Remove potential conflicting keyword 'color'
+            kwargs_diag = kwargs.copy()
+            kwargs_diag.pop('color', None)
+
+            # Plot the prior KDE (green)
+            sns.kdeplot(x=x, fill=True, lw=2, color='green', ax=ax, **kwargs_diag)
+            # Overlay the posterior KDE (red with transparency)
+            sns.kdeplot(x=df_post[x.name], fill=True, lw=2, color='red', ax=ax, alpha=0.5)
+
+        # Create a PairGrid using df_prior as the layout basis
+        g = sns.PairGrid(df_prior, diag_sharey=False, corner=True)
+
+        # Map the custom functions to the lower triangle and diagonal
+        g.map_lower(overlay_lower)
+        g.map_diag(overlay_diag)
+
+        # Create proxy legend handles
+        prior_patch = mpatches.Patch(color='green', label='Prior')
+        posterior_patch = mpatches.Patch(color='red', label='Posterior')
+
+        # Add the legend to the figure; adjust bbox_to_anchor as needed
+        g.fig.legend(handles=[prior_patch, posterior_patch], loc='upper right', bbox_to_anchor=(0.95, 0.95))
+        plt.show()
+        # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        # % plot the measured velocity, surrogate velocity and complex model velocty at each location.
+        # Number of locations
+        # n_locations = 36
+        # nrows = 6
+        # ncols = 6
+        # obs_flat = obs.flatten()
+        #
+        # # Create a grid of subplots (6x6 for 36 locations)
+        # fig, axs = plt.subplots(nrows, ncols, figsize=(25, 25), sharex=False, sharey=False)
+        #
+        # for i in range(n_locations):
+        #     row = i // ncols
+        #     col = i % ncols
+        #     ax = axs[row, col]
+        #
+        #     # Extract simulation data for location i
+        #     cm_vals = cm_outputs[:, i]  # Complex model values (11 values)
+        #     sm_vals = sm_outputs[:, i]  # Surrogate model values (11 values)
+        #
+        #     # Plot KDE distributions using Seaborn.
+        #     sns.kdeplot(x=cm_vals, ax=ax, fill=True, color='blue', alpha=0.5, label='CM')
+        #     sns.kdeplot(x=sm_vals, ax=ax, fill=True, color='green', alpha=0.5, label='SM')
+        #
+        #     # Overlay the observation as a red marker and a dashed vertical line.
+        #     obs_val = obs_flat[i]  # Get a scalar from the flattened observations
+        #     ax.plot(obs_val, 0, 'ro', markersize=15)
+        #     ax.axvline(obs_val, color='red', linestyle='--', alpha=0.7)
+        #
+        #     ax.set_title(f'Location {i + 1}', fontsize=20)
+        #     # Remove the y-axis label for this subplot.
+        #     ax.set_ylabel('')
+        #     # ax.set_xlabel('Velocity')
+        #     ax.tick_params(labelsize=20)
+        #
+        # # Create custom legend handles.
+        # line_cm = Line2D([0], [0], color='blue', lw=2, label='Complex Model')
+        # line_sm = Line2D([0], [0], color='green', lw=2, label='Surrogate Model')
+        # # Set lw=1 (instead of 0) to avoid dash errors.
+        # line_obs = Line2D([0], [0], marker='o', color='red', lw=1, markersize=5, linestyle='--', label='Observation')
+        #
+        # # Place a common legend for all subplots at the top center.
+        # fig.legend(handles=[line_cm, line_sm, line_obs],
+        #            loc='upper center', ncol=3, fontsize=20,
+        #            # title_fontsize=10
+        #            )
+        #
+        # # Add a single overall y-axis label for density.
+        # fig.text(0.01, 0.5, 'Density', rotation='vertical', ha='center', va='center', fontsize=20
+        #          # 'small'
+        #          )
+        # fig.text(0.5, 0.005, 'Velocity [m s$^{-1}$]', ha='center', va='center', fontsize=20)
+        #
+        # # Adjust layout to ensure nothing is clipped, leaving space for the legend.
+        # plt.tight_layout(rect=[0, 0, 1, 0.95])
+        #
+        # # # Save the figure as PDF and PNG.
+        # output_dir = '/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/exercises_rw/bal/results/telemac2d_test/auto-saved-results-1-quantities_WATER DEPTH/plots/distributions'
+        # os.makedirs(output_dir, exist_ok=True)
+        # pdf_file = os.path.join(output_dir, 'subplots_by_location2.pdf')
+        # png_file = os.path.join(output_dir, 'subplots_by_location2.png')
+        # fig.savefig(pdf_file, bbox_inches='tight', dpi=300)
+        # fig.savefig(png_file, bbox_inches='tight', dpi=300)
+        #
+        # plt.show()
 
     def plot_posterior_updates(
             self,
@@ -193,6 +383,104 @@ class BayesianPlotter:
                     fig.savefig(
                         save_folder / f'combined_distribution_{parameter_names[col].replace(" ", "_")}_iteration_{iteration_idx + 1}.png')
                     plt.close(fig)
+
+    def plot_posterior_iteration(self, posterior_samples, parameter_names, param_values):
+        """
+        Generates a corner plot for the posterior distributions with custom axis limits.
+
+        Parameters
+        ----------
+        posterior_samples : array
+            2D array with posterior samples (N samples x D parameters).
+        parameter_names : list
+            Names of the parameters.
+        param_values : list of lists
+            Axis limits for each parameter in the form [[min1, max1], [min2, max2], ...]
+
+        Returns
+        -------
+        None
+            Saves the corner plot.
+        """
+        # Convert to DataFrame for easier handling
+        df_posterior = pd.DataFrame(posterior_samples, columns=parameter_names)
+
+        # Create a custom PairGrid with larger size
+        g = sns.PairGrid(df_posterior, diag_sharey=False, height=4.5, aspect=1.5, corner=True)
+
+        # Map scatter plot for posterior (small transparent dots)
+        g.map_lower(plt.scatter, alpha=0.1, s=1, color='blue')
+
+        # Add KDE contours for posterior
+        g.map_lower(sns.kdeplot, levels=5, color='blue', alpha=0.8, fill=True)
+
+        # Calculate the x-value where the highest density occurs for each histogram and store it for the legend
+        max_density_values = {}
+
+        # Plot histograms on diagonal for posterior (density values)
+        g.map_diag(sns.histplot, bins=30, color='grey', alpha=0.6, stat='density', kde=True)
+
+        # Set axis limits, modify grid lines, and add density labels
+        for i in range(len(parameter_names)):  # Loop over rows
+            for j in range(i + 1):  # Loop over columns (lower triangle + diagonal)
+                ax = g.axes[i, j]
+                if ax is None:
+                    continue  # Skip empty plots due to corner=True
+
+                # Get predefined limits
+                x_min, x_max = param_values[j]  # X-axis follows column parameter
+                ax.set_xlim(x_min, x_max)
+
+                # Y-axis limits (set to 0 and 1 for density plots)
+                if i == j:  # Diagonal plots
+                    ax.set_ylabel("Density", fontsize=10)  # Add density label
+                    ax.yaxis.set_major_formatter(
+                        plt.FuncFormatter(lambda val, pos: f'{val:.3f}'))  # Format density ticks
+
+                    # Calculate histogram density values
+                    counts, bin_edges = np.histogram(df_posterior[parameter_names[i]], bins=30, density=True)
+                    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])  # Get the center of the bins
+
+                    # Find the x value where density is maximum (mode of the histogram)
+                    max_density_index = np.argmax(counts)
+                    max_density_x_value = bin_centers[max_density_index]
+
+                    # Store this max density x-value for the legend
+                    max_density_values[parameter_names[i]] = max_density_x_value
+
+                # Set only min and max ticks (hidden but needed for grid alignment)
+                mid_tick = (x_min + x_max) / 2  # Calculate the midpoint for the x-axis
+
+                # Add min, max, and midpoint ticks
+                ax.set_xticks([x_min, mid_tick, x_max])  # Set ticks at min, middle, and max
+                # Add primary and secondary grid lines
+                ax.grid(True, linestyle='--', alpha=1, linewidth=1.5, which='major')  # Main grid
+                ax.grid(True, linestyle=':', alpha=1, linewidth=1, which='minor')  # Secondary grid
+                ax.minorticks_on()  # Enable minor ticks (without labels)
+                ax.axvline(x=x_min, linestyle='--', color='black', linewidth=1.5)  # Thicker vertical primary grid line
+                ax.axvline(x=x_max, linestyle='--', color='black', linewidth=1.5)  # Thicker vertical primary grid line
+
+                # Increase the width of the vertical secondary grid lines
+                ax.axvline(x=x_min, linestyle=':', color='black', linewidth=1.5)  # Thinner vertical secondary grid line
+                ax.axvline(x=x_max, linestyle=':', color='black', linewidth=1.5)  # Thinner vertical secondary grid line
+                # Format the tick labels to three decimal places
+                ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda val, pos: f'{val:.3f}'))
+
+        # Set the first vertical label for clarity
+        g.axes[0, 0].set_ylabel(parameter_names[0], fontsize=12)
+
+        # Add the legend with the x-value of the maximum density for each parameter
+        legend_labels = [f"{param}: {max_density:.3f}" for param, max_density in max_density_values.items()]
+        g.fig.legend(legend_labels, loc='upper right', fontsize=50, title="Max Density X-value", title_fontsize=60,
+                     frameon=True, fancybox=True, facecolor='white', edgecolor='black')
+
+        # Improve layout
+        plt.tight_layout()
+
+        # Save figure
+        save_path = self.save_folder / "plot_posterior.png"
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
     def plot_bme_re(
             self,
             bayesian_dict,
@@ -434,12 +722,12 @@ class BayesianPlotter:
 
     def plot_bme_3d(
             self,
-            param_sets,
+            collocation_points,
             param_ranges,
             param_names,
             bme_values,
-            param_indices=(0, 1),
-            extra_param_index=4,
+            param_indices=(1, 4),
+            extra_param_index=2,
             grid_size=100,
             iteration_range=(1, 20),  # Specify the range of iterations
             plot_criteria="metric"
@@ -484,7 +772,7 @@ class BayesianPlotter:
 
         # Extract BME values and corresponding parameters for the specified iteration range
         bme_values = bme_values[start_iter:end_iter ]
-        param_values = param_sets[start_iter:end_iter , :]
+        param_values = collocation_points[start_iter:end_iter , :]
 
         # Extract ranges for the selected parameters
         x_range = param_ranges[param_indices[0]]
@@ -563,7 +851,7 @@ class BayesianPlotter:
         fig2 = plt.figure(figsize=(8, 6))
         ax2 = fig2.add_subplot(111)
         levels = np.linspace(Z_min, Z_max, 100)
-        contour = ax2.contourf(X, Y, Z, cmap='plasma', levels=levels, alpha=0.8)  # Use 'plasma' for better visibility
+        contour = ax2.contourf(X, Y, Z, cmap='viridis', levels=levels, alpha=0.8)  # Use 'plasma' for better visibility
         ax2.set_title(f'2D - {plot_criteria} Values (Iterations {start_iter} to {end_iter})', fontsize=16,
                       weight='normal')
         ax2.set_xlabel(f'{x_name}', fontsize=12)
@@ -593,7 +881,7 @@ class BayesianPlotter:
         # 3D Surface Plot
         fig3 = plt.figure(figsize=(8, 6))
         ax3 = fig3.add_subplot(111, projection='3d')
-        surf = ax3.plot_surface(X, Y, Z, cmap='plasma', edgecolor='none', alpha=0.7)
+        surf = ax3.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.7)
         ax3.set_title(f'{plot_criteria} Surface Plot (Iterations {start_iter} to {end_iter})', fontsize=16,
                       weight='normal')
         ax3.set_xlabel(f'{x_name}', fontsize=12)
@@ -630,7 +918,7 @@ class BayesianPlotter:
             fig4 = plt.figure(figsize=(8, 6))
             ax4 = fig4.add_subplot(111, projection='3d')
             scatter4 = ax4.scatter(param_values[:, param_indices[0]], param_values[:, param_indices[1]],
-                                   param_values[:, extra_param_index], c=values, cmap='plasma', edgecolor='none',
+                                   param_values[:, extra_param_index], c=values, cmap='viridis', edgecolor='none',
                                    alpha=0.7)  # Changed colormap to 'plasma' for better visibility
             ax4.set_title(f'3D - Scatter Plot', fontsize=16,
                           weight='normal')
@@ -952,36 +1240,40 @@ class BayesianPlotter:
         plt.tight_layout()
         plt.show()
 
-    def plot_model_outputs_vs_locations(self, observed_values, surrogate_outputs, complex_model_outputs,
-                                        gpe_lower_ci=None, gpe_upper_ci=None, measurement_error=None, plot_ci=True):
+    def plot_model_outputs_vs_locations(self, observed_values, surrogate_outputs,quantity_name, complex_model_outputs,
+                                     selected_locations, gpe_lower_ci=None, gpe_upper_ci=None,
+                                     measurement_error=None, plot_ci=True, plot_error=False):
         """
-        Plots the outputs (velocities) of two models versus locations in a single figure,
-        including observed data, a confidence interval from GPE analysis (optional), and measurement error.
-
-        Also computes and displays MSE and R² for both surrogate and complex models compared to observed values.
+        Plots the outputs (velocities) of two models along a "Talweg" axis,
+        preserving the exact order of selected locations.
 
         Parameters
         ----------
         observed_values : numpy.ndarray
-            1D array of observed values.
+            2D array (or 1D) of observed values.
         surrogate_outputs : numpy.ndarray
-            1D array of outputs from the surrogate model.
+            2D array (or 1D) of outputs from the surrogate model.
         complex_model_outputs : numpy.ndarray
-            1D array of outputs from the complex model.
+            2D array (or 1D) of outputs from the complex model.
+        selected_locations : list
+            List of 1-based locations to be plotted (order is preserved).
         gpe_lower_ci : numpy.ndarray, optional
-            1D array of lower confidence intervals from GPE analysis. If None, the confidence interval will not be plotted.
+            2D array (or 1D) of lower confidence intervals from GPE analysis.
         gpe_upper_ci : numpy.ndarray, optional
-            1D array of upper confidence intervals from GPE analysis. If None, the confidence interval will not be plotted.
-        measurement_error : numpy.ndarray
-            1D array of measurement errors (standard deviations) for each observed value. If None, measurement error will not be plotted.
+            2D array (or 1D) of upper confidence intervals from GPE analysis.
+        measurement_error : numpy.ndarray, optional
+            2D array (or 1D) of measurement errors (standard deviations) for each observed value.
         plot_ci : bool, optional
-            Whether to plot the confidence interval from GPE analysis. Default is True.
+            Whether to plot the confidence interval from GPE analysis as a shaded area. Default is True.
+        plot_error : bool, optional
+            Whether to plot measurement error bars. Default is False.
 
         Returns
         -------
         None
         """
-        # Ensure all inputs are 1D arrays
+
+        # Flatten arrays to ensure they are 1D
         observed_values = observed_values.flatten()
         surrogate_outputs = surrogate_outputs.flatten()
         complex_model_outputs = complex_model_outputs.flatten()
@@ -990,56 +1282,85 @@ class BayesianPlotter:
             gpe_lower_ci = gpe_lower_ci.flatten()
             gpe_upper_ci = gpe_upper_ci.flatten()
         else:
-            plot_ci = False  # Disable plotting CI if not provided
+            plot_ci = False
 
         if measurement_error is not None:
             measurement_error = measurement_error.flatten()
 
-        if not (len(observed_values) == len(surrogate_outputs) == len(complex_model_outputs)):
-            raise ValueError("All input arrays must have the same length.")
+        # Convert 1-based locations to 0-based indices
+        selected_indices = np.array([loc - 1 for loc in selected_locations])
 
-        locations = np.arange(1, len(observed_values) + 1)
+        # Validate indices
+        max_index = len(observed_values) - 1
+        if np.any((selected_indices < 0) | (selected_indices > max_index)):
+            raise ValueError(f"Some selected locations are out of range. Valid range: 1 to {len(observed_values)}")
 
-        # Calculate the measurement confidence interval (2 standard deviations at each location)
-        obs_error = 2 * measurement_error if measurement_error is not None else None
+        # Extract values in the exact order given by the user
+        observed_selected = observed_values[selected_indices]
+        surrogate_selected = surrogate_outputs[selected_indices]
+        complex_selected = complex_model_outputs[selected_indices]
 
-        # Compute MSE and R² for both models
-        surrogate_rmse = mean_squared_error(observed_values, surrogate_outputs, squared=False)
-        complex_rmse = mean_squared_error(observed_values, complex_model_outputs, squared=False)
+        if plot_ci:
+            gpe_lower_selected = gpe_lower_ci[selected_indices]
+            gpe_upper_selected = gpe_upper_ci[selected_indices]
 
-        surrogate_r2 = r2_score(observed_values, surrogate_outputs)
-        complex_r2 = r2_score(observed_values, complex_model_outputs)
+        if measurement_error is not None and plot_error:
+            error_selected = 1 * measurement_error[selected_indices]
+        else:
+            error_selected = None
 
-        # Print the MSE and R² values
-        print(f"Surrogate Model RMSE: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f}")
-        print(f"Complex Model RMSE: {complex_rmse:.4f}, R²: {complex_r2:.4f}")
+        # Compute errors
+        surrogate_rmse = mean_squared_error(observed_selected, surrogate_selected, squared=False)
+        complex_rmse = mean_squared_error(observed_selected, complex_selected, squared=False)
+        surrogate_rmse_all = mean_squared_error(observed_values, surrogate_outputs, squared=False)
+        complex_rmse_all = mean_squared_error(observed_values, complex_model_outputs, squared=False)
+        surrogate_r2_all = r2_score(observed_values, surrogate_outputs)
+        complex_r2_all = r2_score(observed_values, complex_model_outputs)
+        surrogate_r2 = r2_score(observed_selected, surrogate_selected)
+        complex_r2 = r2_score(observed_selected, complex_selected)
+
+        print(f"Surrogate Model RMSE (selected points) {quantity_name}: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f}")
+        print(f"Complex Model RMSE (selected points) {quantity_name}: {complex_rmse:.4f}, R²: {complex_r2:.4f}")
+        print(f"Surrogate Model RMSE (all points) {quantity_name}: {surrogate_rmse_all:.4f}, R²: {surrogate_r2_all:.4f}")
+        print(f"Complex Model RMSE (all points) {quantity_name}: {complex_rmse_all:.4f}, R²: {complex_r2_all:.4f}")
+        # Define "Talweg" axis (1, 2, 3, ... in the order of input)
+        talweg_positions = np.arange(1, len(selected_locations) + 1)
 
         # Plot
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=(10, 6))
 
-        # Plot observed data with measurement error bars
-        plt.errorbar(locations, observed_values, yerr=obs_error, fmt='o', color='black', label='Observed Data',
-                     capsize=4, zorder=3)
+        # Plot confidence interval as shaded region
+        if plot_ci:
+            plt.fill_between(talweg_positions, gpe_lower_selected, gpe_upper_selected,
+                             color='gray', alpha=0.3, label='GPE Confidence Interval')
 
-        # Plot confidence interval from GPE analysis using vertical bars
-        if plot_ci and gpe_lower_ci is not None and gpe_upper_ci is not None:
-            plt.vlines(
-                x=locations, ymin=gpe_lower_ci, ymax=gpe_upper_ci,
-                colors='gray', alpha=0.6, linewidth=2, label='GPE Confidence Interval'
-            )
+        # Plot observed data with error bars
+        if plot_error and error_selected is not None:
+            plt.errorbar(talweg_positions, observed_selected, yerr=error_selected, fmt='o',
+                         color='black', label='Observed Data', capsize=4, zorder=3)
 
-        # Plot model outputs as independent points
-        plt.scatter(locations, surrogate_outputs, color='blue',
-                    label=f'Surrogate Model Outputs (MSE: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f})', zorder=3)
-        plt.scatter(locations, complex_model_outputs, color='green',
-                    label=f'Complex Model Outputs (MSE: {complex_rmse:.4f}, R²: {complex_r2:.4f})', zorder=3)
+        # Plot observed values as a line in exact input order
+        plt.plot(talweg_positions, observed_selected, '-o', color='black',
+                 label='Observed Values', markersize=6, zorder=4)
 
-        # Add labels, title, and legend
-        plt.xlabel('Location')
+        # Plot surrogate model outputs as a line in exact input order
+        plt.plot(talweg_positions, surrogate_selected, '-o', color='blue',
+                 label=f'Surrogate Model (RMSE: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f})',
+                 markersize=6, zorder=3)
+
+        # Plot complex model outputs as a line in exact input order
+        plt.plot(talweg_positions, complex_selected, '-o', color='green',
+                 label=f'Complex Model (RMSE: {complex_rmse:.4f}, R²: {complex_r2:.4f})',
+                 markersize=6, zorder=3)
+
+        # Labels, title, and legend
+        plt.xlabel('Talweg')
         plt.ylabel('Values')
-        plt.title('Model Outputs vs Observed Data')
+        plt.title('Model Outputs vs Observed Data (Talweg)')
+        plt.xticks(talweg_positions,
+                   labels=[str(loc) for loc in selected_locations])  # Keep original locations as labels
         plt.legend(fontsize=12, loc='upper left')
-        plt.grid(True, linestyle='--', color='gray', alpha=0.7)  # Secondary grid lines
+        plt.grid(True, linestyle='--', color='gray', alpha=0.7)
         plt.tight_layout()
         plt.show()
     def plot_correlation(self,

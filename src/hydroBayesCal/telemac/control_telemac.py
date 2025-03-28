@@ -340,7 +340,8 @@ class TelemacModel(HydroSimulations):
             bal_new_set_parameters=None,
             bal_iteration=int(),
             complete_bal_mode=True,
-            validation=False
+            validation=False,
+            kill_process = False
     ):
         """
         Runs multiple Telemac2d or Telemac3d simulations with a set of collocation points and a new set of
@@ -585,7 +586,8 @@ class TelemacModel(HydroSimulations):
                                                                     extraction_mode = True
                                                                     )#This option True extracts the data from the dictionary and populates the array with the values from the dictionary for the parameters in extraction_quantities.
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
-                exit()
+                if kill_process:
+                    exit()
 
         return self.model_evaluations
 
