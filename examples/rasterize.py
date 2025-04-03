@@ -11,12 +11,13 @@ sys.path.insert(0, hydroBayesCal_path)
 from src.hydroBayesCal.function_pool import *
 
 classification = {
-    0: {"name": "Banks", "velocity_range": (0, 1.30), "depth_range": (0, 1)},
-    1: {"name": "Pool", "velocity_range": (0.05, 0.50), "depth_range": (0.30, 1)},
-    2: {"name": "Slackwater", "velocity_range": (0.05, 0.30), "depth_range": (0.05, 0.30)},
-    3: {"name": "Glide", "velocity_range": (0.30, 1), "depth_range": (0.10, 0.60)},
-    4: {"name": "Riffle", "velocity_range": (0.30, 1.4), "depth_range": (0.05, 0.20)},
-    5: {"name": "Run", "velocity_range": (0.50, 1.4), "depth_range": (0.10, 1)}
+    0: {"name": "Banks", "velocity_range": (0, 1.2), "depth_range": (0, 0.05), "color": "grey", "alpha": 0.5},
+    1: {"name": "Banks", "velocity_range": (0, 0.05), "depth_range": (0.05, 1), "color": "grey", "alpha": 0.5},
+    2: {"name": "Pool", "velocity_range": (0.05, 0.50), "depth_range": (0.35, 1.0), "color": "blue", "alpha": 0.5},
+    3: {"name": "Slackwater", "velocity_range": (0.05, 0.15), "depth_range": (0.05, 0.35), "color": "green", "alpha": 0.5},
+    4: {"name": "Glide", "velocity_range": (0.15, 0.50), "depth_range": (0.05, 0.35), "color": "orange", "alpha": 1.0},
+    5: {"name": "Riffle", "velocity_range": (0.50, 1.2), "depth_range": (0.05, 0.35), "color": "red", "alpha": 0.5},
+    6: {"name": "Run", "velocity_range": (0.50, 1.2), "depth_range": (0.35, 1.0), "color": "purple", "alpha": 0.5}
 }
 saving_folder = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-folder-telemac-gaia/"
 raster_data = rasterize(
@@ -25,12 +26,6 @@ raster_data = rasterize(
     desired_variables=["SCALAR VELOCITY", "WATER DEPTH"],
     spacing=0.05
 )
-velocity_data = raster_data["SCALAR VELOCITY"]["data"]
-depth_data = raster_data["WATER DEPTH"]["data"]
-x_regs= raster_data["SCALAR VELOCITY"]["x_regs"]
-y_regs = raster_data["SCALAR VELOCITY"]["y_regs"]
-spacing = raster_data["SCALAR VELOCITY"]["spacing"]
-classify_mu(raster_data, classification, saving_folder, "mu_nf")
-# Now, `mu_raster` contains the classified morphological units as integer values
-# You can save it as an ASCII file, or process it further as needed
+classify_mu(raster_data, classification, saving_folder, "mu_beforeflush")
+
 

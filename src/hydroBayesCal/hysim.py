@@ -544,7 +544,7 @@ class HydroSimulations:
                                     calibration_pts_file_path,
                                     calibration_quantities,
                                     extraction_quantities,
-                                    surrogate_error = 0.40):
+                                    model_error = 0.50):
         """
         Reads and processes calibration point data, extracting observations and measurement errors.
 
@@ -566,7 +566,7 @@ class HydroSimulations:
             Example: WATER DEPTH_DATA means the name WATER DEPTH recognizes the variable WATER DEPTH in Telemac .slf files
         extraction_quantities : list of str
             List of all quantities required to be extracted from the model output file.
-        surrogate_error: int
+        model_error: int
             Percentage of the measurements associated to the surrogate model error.
 
         Returns
@@ -597,7 +597,7 @@ class HydroSimulations:
         # Select the observation and error columns based on the list
         observations = calibration_pts_df[observation_columns].to_numpy()
         measurement_errors = calibration_pts_df[error_columns].to_numpy()
-        surrogate_errors=observations*surrogate_error
+        surrogate_errors= observations * model_error
 
 
 

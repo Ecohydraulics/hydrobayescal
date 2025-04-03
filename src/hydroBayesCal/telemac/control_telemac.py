@@ -101,6 +101,7 @@ class TelemacModel(HydroSimulations):
         self.friction_file = friction_file
         self.tm_xd = tm_xd
         self.gaia_steering_file = gaia_steering_file
+        self.gaia_results_file = "bedload_flux_initial.slf"
         self.results_filename_base = results_filename_base
         self.python_shebang = python_shebang
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, self.control_file)
@@ -786,8 +787,11 @@ class TelemacModel(HydroSimulations):
 
             if delete_slf_files:
                 delete_slf(self.calibration_folder)
-
-
+                gaia_results_path = os.path.join(self.model_dir, self.gaia_results_file)
+                if os.path.isfile(gaia_results_path):
+                    os.remove(gaia_results_path)
+                else:
+                    print(f"Warning: {gaia_results_path} not found.")
 
         # If required, we can return also the whole matrix containing the model results for ALL extraction quantities.
         # To do it, return model_results_extraction

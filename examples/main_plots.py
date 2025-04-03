@@ -29,19 +29,21 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 full_complexity_model = TelemacModel(
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
     calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
-    init_runs=30,
-    calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
+    init_runs=20,
+    calibration_parameters=["zone2", "zone3", "zone4", "zone5", "zone6", "zone8", "zone9", "zone13"],
     # param_values=[[0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79]],
-    param_values=[[0.010, 0.1], [0.050, 0.79], [0.0020, 0.1], [0.002, 0.1], [0.050, 0.79]],# coarse-coarse -fine -fine -coarse
-    calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
+    # param_values = [[0.022, 0.035], [0.022, 0.035], [0.015, 0.021], [0.015, 0.021],[0.022, 0.035],[0.015, 0.022],[0.022, 0.035],[0.022, 0.035]],
+    param_values=[[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79], [0.0010, 0.79],
+                  [0.060, 0.79], [0.0010, 0.79]],
+    calibration_quantities=["SCALAR VELOCITY"],
     multitask_selection="variables",
     check_inputs=False,
 )
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot = 140
-surrogate_to_analyze = 170
+iterations_to_plot =1
+surrogate_to_analyze = 16
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -105,7 +107,7 @@ for i in range(n_quantities):
     )
 
 # Plot Bayesian results
-plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
+#plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
 plotter.plot_posterior_updates(
     posterior_arrays=bayesian_data['posterior'],
     parameter_names=full_complexity_model.calibration_parameters,
@@ -118,7 +120,7 @@ plotter.plot_posterior_updates(
 plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)
 plotter.plot_posterior_iteration(posterior_samples=bayesian_data['posterior'][iterations_to_plot],
                                parameter_names=full_complexity_model.calibration_parameters,param_values = full_complexity_model.param_values)
-plotter.plot_bme_3d(collocation_points=collocation_points,param_ranges=full_complexity_model.param_values,param_names=full_complexity_model.calibration_parameters,bme_values=bayesian_data['BME'],param_indices=(1,4),extra_param_index=2,iteration_range=(60,140))
+#plotter.plot_bme_3d(collocation_points=collocation_points,param_ranges=full_complexity_model.param_values,param_names=full_complexity_model.calibration_parameters,bme_values=bayesian_data['BME'],param_indices=(1,4),extra_param_index=2,iteration_range=(60,140))
 # if len(full_complexity_model.calibration_quantities)==2:
 #     num_simulations, num_columns = cm_outputs.shape
 #     # Separate the columns for each quantity
