@@ -29,7 +29,7 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 full_complexity_model = TelemacModel(
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
     calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
-    init_runs=20,
+    init_runs=15,
     calibration_parameters=["zone2", "zone3", "zone4", "zone5", "zone6", "zone8", "zone9", "zone13"],
     # param_values=[[0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79]],
     # param_values = [[0.022, 0.035], [0.022, 0.035], [0.015, 0.021], [0.015, 0.021],[0.022, 0.035],[0.015, 0.022],[0.022, 0.035],[0.022, 0.035]],
@@ -42,8 +42,8 @@ full_complexity_model = TelemacModel(
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot =1
-surrogate_to_analyze = 16
+iterations_to_plot =17
+surrogate_to_analyze = 30
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -107,14 +107,14 @@ for i in range(n_quantities):
     )
 
 # Plot Bayesian results
-#plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
+plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
 plotter.plot_posterior_updates(
     posterior_arrays=bayesian_data['posterior'],
     parameter_names=full_complexity_model.calibration_parameters,
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=20,
+    bins=15,
     plot_prior=True,
 )
 plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)

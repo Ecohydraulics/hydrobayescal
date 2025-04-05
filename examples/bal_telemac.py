@@ -365,7 +365,7 @@ def run_bal_model(collocation_points,
                 # Construct the save_name path for single quantity
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}.pkl')
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}.pkl')
                 sm.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(sm, file)
@@ -373,7 +373,7 @@ def run_bal_model(collocation_points,
                 # Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}_{complex_model.multitask_selection}.pkl')
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.multitask_selection}.pkl')
                 surrogate_object.exp_design = experiment_design
                 with open(save_name, "wb") as file:
                     pickle.dump(surrogate_object, file)
@@ -566,7 +566,7 @@ if __name__ == "__main__":
             # Telemac parameters
             friction_file="friction_ering_MU_initial_NIKU.tbl",
             tm_xd="1",
-            gaia_steering_file="",
+            gaia_steering_file="gaia_ering_initial_NIKU.cas",
             # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
@@ -574,11 +574,11 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=15,
-            calibration_parameters=["zone2", "zone3", "zone4", "zone5","zone6","zone8","zone9","zone13"], #pool-slackwater-glide-riffle-run
+            init_runs=20,
+            calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1","gaiaCLASSES SHIELDS PARAMETERS 2","gaiaCLASSES SHIELDS PARAMETERS 3","gaiaCLASSES SHIELDS PARAMETERS 4","gaiaCLASSES SHIELDS PARAMETERS 5","gaiaMPM COEFFICIENT","zone2", "zone3", "zone4", "zone5","zone6","zone8","zone9","zone13"], #pool-slackwater-glide-riffle-run
             # param_values=[[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79]],
             # param_values = [[0.022, 0.035], [0.022, 0.035], [0.015, 0.021], [0.015, 0.021],[0.022, 0.035],[0.015, 0.022],[0.022, 0.035],[0.022, 0.035]], # coarse-coarse -fine -fine -coarse
-            param_values=[[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79],[0.0010, 0.79], [0.060, 0.79],[0.0010, 0.79]],
+            param_values=[[0.040,0.060],[0.040,0.060],[0.040,0.060],[0.040,0.060],[0.040,0.060],[3,5],[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79],[0.0010, 0.79], [0.060, 0.79],[0.0010, 0.79]],
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
             calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",

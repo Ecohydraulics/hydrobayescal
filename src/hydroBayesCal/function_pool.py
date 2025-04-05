@@ -684,3 +684,44 @@ def classify_mu(raster_data, classification, output_folder, output_filename):
     np.savetxt(output_file, mu_raster, fmt='%d', header=header_str, comments='', delimiter=' ')
 
     print(f"Classified MU raster saved to {output_file}")
+
+def parse_classes_keyword(file_path, keyword):
+    with open(file_path, 'r') as file:
+        for line in file:
+            stripped = line.strip()
+            # Skip empty lines
+            if not stripped:
+                continue
+
+            # Check for ":" or "="
+            for symbol in [":", "="]:
+                if symbol in stripped:
+                    key_part = stripped.split(symbol, 1)[0].strip()
+                    if keyword in key_part:
+                        return stripped  #
+
+    return None  # If not found
+def update_gaia_class_line(line, index, new_value):
+    # Split at ":" or "="
+    if ':' in line:
+        key, values = line.split(':', 1)
+        separator = ':'
+    elif '=' in line:
+        key, values = line.split('=', 1)
+        separator = '='
+    else:
+        raise ValueError("Line must contain ':' or '='")
+
+    # Split values and remove extra spaces
+    values_list = [v.strip() for v in values.strip().split(';')]
+
+    # Check if index is valid
+    if index < 0 or index >= len(values_list):
+        raise IndexError("Index out of range")
+
+    # Update the value at the specified index
+    values_list[index] = f"{new_value:.3f}"  # Format with 3 decimals if you want
+
+    # Reconstruct the line
+    updated_line = f"{key.strip()} {separator} {';'.join(values_list)}"
+    return updated_line

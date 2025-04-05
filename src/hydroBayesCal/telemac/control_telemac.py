@@ -106,6 +106,8 @@ class TelemacModel(HydroSimulations):
         self.python_shebang = python_shebang
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, self.control_file)
         self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, self.friction_file)
+        self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
+        self.gaia_slf = "{}{}{}".format(self.model_dir, os.sep, self.gaia_results_file) # for later use to extract output files from gaia simulations
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
         self.shebang = python_shebang
         if tm_xd == '1':
@@ -129,6 +131,7 @@ class TelemacModel(HydroSimulations):
             collocation_point_values,
             calibration_parameters,
             auxiliary_file_path=None,
+            gaia_file_path=None,
             simulation_id=0,
     ):
         """
@@ -170,6 +173,21 @@ class TelemacModel(HydroSimulations):
                         veg_param_value = parts[1]  # Extracts the vegetation parameter number
                         # Process the extracted values as needed
                         self.tbl_creator(zone_identifier, value, friction_file_path,veg_param_number=veg_param_value,veg_indicator=True)
+                elif param.lower().startswith("gaia"):
+                    gaia_param_name = param[4:].strip()
+                    parts_gaia_name = gaia_param_name.rsplit(" ", 1)
+                    # Check if the last part is a number
+                    if parts_gaia_name[-1].isdigit():
+                        gaia_parameter_name = parts_gaia_name[0].strip()
+                        class_number = int(parts_gaia_name[1])
+                        # if self.original_gaia_string_for_classes is None:
+                        self.gaia_string_for_classes = parse_classes_keyword(self.gaia_cas,gaia_parameter_name)
+                        gaia_string=update_gaia_class_line(self.gaia_string_for_classes,class_number-1,value)
+                        self.rewrite_steering_file(gaia_parameter_name,gaia_string,steering_module="gaia")
+                    else:
+                        class_number = None
+                        gaia_string=self.create_cas_string(gaia_param_name, value)
+                        self.rewrite_steering_file(gaia_param_name,gaia_string, steering_module="gaia")
 
                 else:
                     cas_string = self.create_cas_string(param, value)
@@ -239,8 +257,8 @@ class TelemacModel(HydroSimulations):
         # check if telemac or gaia cas type
         if "telemac" in steering_module:
             steering_file_name = self.tm_cas
-        else:
-            steering_file_name = self.gaia_steering_file
+        elif "gaia" in steering_module:
+            steering_file_name = self.gaia_cas
 
         # save the variable of interest without unwanted spaces
         variable_interest = param_name.rstrip().lstrip()
