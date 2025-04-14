@@ -544,7 +544,8 @@ class HydroSimulations:
                                     calibration_pts_file_path,
                                     calibration_quantities,
                                     extraction_quantities,
-                                    model_error = 0.60):
+                                    model_error = 0.35,
+                                    measurement_error=0.10):
         """
         Reads and processes calibration point data, extracting observations and measurement errors.
 
@@ -596,15 +597,19 @@ class HydroSimulations:
 
         # Select the observation and error columns based on the list
         observations = calibration_pts_df[observation_columns].to_numpy()
-        measurement_errors = calibration_pts_df[error_columns].to_numpy()
+        site_specific_errors = calibration_pts_df[error_columns].to_numpy()
         surrogate_errors= observations * model_error
+        measurement_errors = observations * measurement_error
+
+
 
 
 
         # Reshape observations and errors to match the expected output format
         observations = observations.flatten().reshape(1, -1)
         measurement_errors = measurement_errors.flatten()
-        variances = ((measurement_errors.flatten())**2) + ((surrogate_errors.flatten())**2)
+        variances = (measurement_errors.flatten() ** 2) + (surrogate_errors.flatten() ** 2) + (
+                    site_specific_errors.flatten() ** 2)
 
         # Calculate the number of unique locations or data points
         n_loc = len(calibration_pts_df)

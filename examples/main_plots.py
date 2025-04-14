@@ -29,21 +29,54 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 full_complexity_model = TelemacModel(
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
     calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
-    init_runs=15,
-    calibration_parameters=["zone2", "zone3", "zone4", "zone5", "zone6", "zone8", "zone9", "zone13"],
+    init_runs=20,
+    # calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1", "gaiaCLASSES SHIELDS PARAMETERS 2",
+    #                         "gaiaCLASSES SHIELDS PARAMETERS 3", "gaiaCLASSES SHIELDS PARAMETERS 4",
+    #                         "gaiaCLASSES SHIELDS PARAMETERS 5", "gaiaMPM COEFFICIENT", "zone2", "zone3", "zone4",
+    #                         "zone5", "zone6", "zone8", "zone9", "zone13"],  # pool-slackwater-glide-riffle-run
+    calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+                            # "zone0",
+                            # "zone1",
+                            "zone2",
+                            "zone3",
+                            "zone4",
+                            "zone5",
+                            "zone6",
+                            # "zone7",
+                            "zone8",
+                            "zone9",
+                            "zone10",
+                            # "zone11",
+                            # "zone12",
+                            "zone13"],  # pool-sla
     # param_values=[[0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79]],
-    # param_values = [[0.022, 0.035], [0.022, 0.035], [0.015, 0.021], [0.015, 0.021],[0.022, 0.035],[0.015, 0.022],[0.022, 0.035],[0.022, 0.035]],
-    param_values=[[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79], [0.0010, 0.79],
-                  [0.060, 0.79], [0.0010, 0.79]],
-    calibration_quantities=["SCALAR VELOCITY"],
+    param_values=[[0.048, 0.070], [0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79],
+                  [0.0010, 0.79], [0.060, 0.79], [0.7, 2.4], [0.0010, 0.79]],  # coarse-coarse -fine -fine -coarse
+
+    # param_values=[[0.048, 0.070],  # critical shields parameter class 1
+    #               # [0.5,17.45], # zone0
+    #               # [0.5,17.45], # zone 1
+    #               [0.24, 17.45],  # zone 2
+    #               [0.24, 17.45],  # zone 3
+    #               [0.04, 31.86],  # zone 4
+    #               [0.04, 31.86],  # zone 5
+    #               [1.53, 17.45],  # zone 6
+    #               # [0.16,3.60], # zone 7
+    #               [0.04, 31.86],  # zone 8
+    #               [2.79, 31.86],  # zone 9
+    #               # [1.53, 32.80], # zone 10
+    #               # [1.5, 98],# zone 11
+    #               # [1.5, 98],  # zone 12
+    #               [0.02, 17.45]],  # zone 13
+    calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     multitask_selection="variables",
     check_inputs=False,
 )
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot =17
-surrogate_to_analyze = 30
+iterations_to_plot =  15
+surrogate_to_analyze = 35
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -53,9 +86,9 @@ bayesian_data=full_complexity_model.read_data(full_complexity_model.calibration_
 collocation_points = full_complexity_model.read_data(full_complexity_model.calibration_folder,f"collocation-points-{quantities_str}.csv")
 cm_outputs = full_complexity_model.read_data(full_complexity_model.calibration_folder,f"model-results-calibration-{quantities_str}.csv")
 if n_quantities==1:
-    sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}.pkl")
+    sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}.pkl")
 else:
-    sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}_{full_complexity_model.multitask_selection}.pkl")
+    sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.multitask_selection}.pkl")
 sm_predictions = (sm.predict_(input_sets=collocation_points,get_conf_int=True))
 sm_outputs=sm_predictions["output"]
 # Number of columns per quantity
@@ -114,7 +147,7 @@ plotter.plot_posterior_updates(
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=15,
+    bins=10,
     plot_prior=True,
 )
 plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)

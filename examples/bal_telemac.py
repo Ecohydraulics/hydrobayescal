@@ -574,16 +574,45 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=20,
-            calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1","gaiaCLASSES SHIELDS PARAMETERS 2","gaiaCLASSES SHIELDS PARAMETERS 3","gaiaCLASSES SHIELDS PARAMETERS 4","gaiaCLASSES SHIELDS PARAMETERS 5","gaiaMPM COEFFICIENT","zone2", "zone3", "zone4", "zone5","zone6","zone8","zone9","zone13"], #pool-slackwater-glide-riffle-run
+            init_runs=30,
+            calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+                                    "gaiaCLASSES SHIELDS PARAMETERS 3",
+                                    # "zone0",
+                                    # "zone1",
+                                    "zone2",
+                                    "zone3",
+                                    "zone4",
+                                    "zone5",
+                                    "zone6",
+                                    # "zone7",
+                                    "zone8",
+                                    "zone9",
+                                    "zone10",
+                                    # "zone11",
+                                    # "zone12",
+                                    "zone13"], #pool-slackwater-glide-riffle-run
             # param_values=[[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79]],
-            # param_values = [[0.022, 0.035], [0.022, 0.035], [0.015, 0.021], [0.015, 0.021],[0.022, 0.035],[0.015, 0.022],[0.022, 0.035],[0.022, 0.035]], # coarse-coarse -fine -fine -coarse
-            param_values=[[0.040,0.060],[0.040,0.060],[0.040,0.060],[0.040,0.060],[0.040,0.060],[3,5],[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79],[0.0010, 0.79], [0.060, 0.79],[0.0010, 0.79]],
+            param_values = [[0.048,0.070],[0.048,0.070],[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79],[0.0010, 0.79], [0.060, 0.79],[0.5,2],[0.0010, 0.79]], # coarse-coarse -fine -fine -coarse
+            # param_values=[[0.048,0.070], # critical shields parameter class 1
+            #               # [0.5,17.45], # zone0
+            #               # [0.5,17.45], # zone 1
+            #               [0.24,17.45], # zone 2
+            #               [0.24,17.45], # zone 3
+            #               [0.04, 31.86], # zone 4
+            #               [0.04, 31.86], # zone 5
+            #               [1.53,17.45], # zone 6
+            #               # [0.16,3.60], # zone 7
+            #               [0.04, 31.86],# zone 8
+            #               [2.79, 31.86], # zone 9
+            #               # [1.53, 32.80], # zone 10
+            #               # [1.5, 98],# zone 11
+            #               # [1.5, 98],  # zone 12
+            #               [0.02, 17.45]], #zone 13
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-            calibration_quantities=["WATER DEPTH"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             dict_output_name="extraction-data",
             user_param_values = False,
-            max_runs=60,
+            max_runs=80,
             complete_bal_mode=True,
             only_bal_mode=False,
             delete_complex_outputs=True,

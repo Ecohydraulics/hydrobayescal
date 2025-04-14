@@ -152,11 +152,14 @@ class TelemacModel(HydroSimulations):
         Returns
         -------
         None
-            Modified control files for Telemac simulations.
+            Modified control files telemac.cas and gaia.cas for Telemac simulations.
         """
         self.tm_results_filename = self.results_filename_base + '_' + str(simulation_id) + '.slf'
         params_with_results = calibration_parameters + ['RESULTS FILE']
-        values_with_results = collocation_point_values + [self.tm_results_filename]
+        values_with_results = [
+            round(val, 7) if isinstance(val, float) else val
+            for val in collocation_point_values + [self.tm_results_filename]
+        ]
         logger.info(f'Results file name for this simulation: {self.tm_results_filename}')
 
         friction_file_path = auxiliary_file_path
@@ -436,8 +439,8 @@ class TelemacModel(HydroSimulations):
                         writer.writerows(array_list)  # Write the array data
                         #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
 
-                # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                collocation_points=collocation_points#*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                collocation_points=collocation_points#*[[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
+                # collocation_points=collocation_points#*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
 
                 #-----------------------------------------------------------------------------------------------
                 for i in range(init_runs):
@@ -489,8 +492,9 @@ class TelemacModel(HydroSimulations):
                 # TODO: the following needs to be re-integrated
 
                     #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
-                # new_collocation_point=bal_new_set_parameters * [[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                new_collocation_point=bal_new_set_parameters #* [[0.00625,0.00625,0.0131,0.0131,0.0178]]
+
+
+                new_collocation_point=bal_new_set_parameters #* [[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
                 updated_collocation_points = np.vstack((collocation_points, new_collocation_point))
                 collocation_point_sim_list = updated_collocation_points[-1].tolist()
                 array_list = updated_collocation_points.tolist()
@@ -575,7 +579,7 @@ class TelemacModel(HydroSimulations):
                         writer.writerows(array_list)  # Write the array data
                 #collocation_points=collocation_points*[[0.5,0.001,0.073,0.02,0.00625,0.00625,0.0131,0.0131,0.0178]]
                 # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                collocation_points=collocation_points#*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                collocation_points=collocation_points #* [[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
                 #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.022, 0.022, 0.022, 0.022, 0.022]]
                 #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.0178, 0.0178, 0.0178, 0.0178, 0.0178]]
 
