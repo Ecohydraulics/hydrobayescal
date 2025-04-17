@@ -16,26 +16,41 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 # Initialize full complexity model
 full_complexity_model = TelemacModel(
-    control_file="tel_ering_mu_restart.cas",
-    model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
+    control_file="tel_ering_initial_NIKU.cas",
+    model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-folder-telemac-gaia",
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/synthetic-data-pool.csv",
-    n_cpus=8,
-    init_runs=30,
-    calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+    #n_cpus=16,
+    init_runs=10,
+    calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+                            "gaiaCLASSES SHIELDS PARAMETERS 3",
+                            # "zone0",
+                            # "zone1",
+                            "zone2",
+                            "zone3",
+                            "zone4",
+                            "zone5",
+                            "zone6",
+                            # "zone7",
+                            "zone8",
+                            "zone9",
+                            "zone10",
+                            # "zone11",
+                            # "zone12",
+                            "zone13"],  # pool-slackwater-glide-riffle-run
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
-    dict_output_name="model-outputs-valid",
-    parameter_sampling_method="sobol",
-    friction_file="friction_ering_MU.tbl",
-    tm_xd="1",
-    results_filename_base="results2m3_mu",
-    complete_bal_mode=False,
-    only_bal_mode=False,
-    check_inputs=False,
-    delete_complex_outputs=True,
-    multitask_selection="locations"
+    #dict_output_name="extraction-data",
+    #friction_file="friction_ering_MU.tbl",
+    #tm_xd="1",
+    #results_filename_base="results2m3_mu",
+    #complete_bal_mode=False,
+    #only_bal_mode=False,
+    #check_inputs=False,
+    #delete_complex_outputs=True,
+    #multitask_selection="variables"
 )
+surrogate_to_analyze = 60
 
 results_folder_path = full_complexity_model.asr_dir
 restart_data_folder = full_complexity_model.restart_data_folder
@@ -46,8 +61,10 @@ n_loc = full_complexity_model.nloc
 n_quantities = full_complexity_model.num_calibration_quantities
 
 # Import last trained surrogate model
-sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP30_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.calibration_parameters}_{full_complexity_model.multitask_selection}.pkl")
-
+if n_quantities==1:
+    sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}.pkl")
+else:
+    sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.multitask_selection}.pkl")
 # Load validation sets from CSV
 validation_sets = full_complexity_model.read_data(restart_data_folder, "collocation-points-validation.csv")
 
@@ -91,15 +108,15 @@ for i in range(n_quantities):
     err_quantity = err_split[f'err_{i + 1}']
 
     plotter.plot_validation_results(obs_quantity, sm_output, cm_output,gpe_lower_ci=sm_lower_ci ,gpe_upper_ci=sm_upper_ci,
-                                    measurement_error=err_quantity, plot_ci=True,N=2)
+                                    measurement_error=err_quantity, plot_ci=True,N=1)
     plotter.plot_validation_locations(sm_output, cm_output, sm_lower_ci, sm_upper_ci,selected_locations=[2,15,26,28])
-    plotter.plot_model_outputs_vs_locations(
-        observed_values=obs_quantity,
-        surrogate_outputs=sm_output[-1, :].reshape(1, -1),
-        complex_model_outputs=cm_output[-1, :].reshape(1, -1),
-        gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
-        gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
-        measurement_error=err_quantity)
+    # plotter.plot_model_outputs_vs_locations(
+    #     observed_values=obs_quantity,
+    #     surrogate_outputs=sm_output[-1, :].reshape(1, -1),
+    #     complex_model_outputs=cm_output[-1, :].reshape(1, -1),
+    #     gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
+    #     gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
+    #     measurement_error=err_quantity)
 
     # Plot Bayesian results
     # plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=35, plot_type='both')

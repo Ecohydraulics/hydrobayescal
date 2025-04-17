@@ -1422,7 +1422,8 @@ class BayesianPlotter:
         plt.subplots_adjust(top=0.9, bottom=0.15, wspace=0.2, hspace=0.5)
         plt.show()
 
-    def plot_validation_results(self,obs, surrogate_outputs, complex_model_outputs, gpe_lower_ci=None, gpe_upper_ci=None,
+    def plot_validation_results(self, obs, surrogate_outputs, complex_model_outputs,
+                                gpe_lower_ci=None, gpe_upper_ci=None,
                                 measurement_error=None, plot_ci=True, N=5):
         """
         Plots N randomly selected realizations of surrogate and complex model outputs versus observed values.
@@ -1462,28 +1463,43 @@ class BayesianPlotter:
             complex_mse = mean_squared_error(obs, complex_model_outputs[realization, :])
             surrogate_r2 = r2_score(obs, surrogate_outputs[realization, :])
             complex_r2 = r2_score(obs, complex_model_outputs[realization, :])
+            surrogate_vs_complex_mse = mean_squared_error(complex_model_outputs[realization, :],
+                                                          surrogate_outputs[realization, :])
 
-            # Plot observed data with measurement error bars
-            ax.errorbar(locations, obs, yerr=obs_error, fmt='o', color='black', label='Observed Data', capsize=4,
+            # Plot observed data
+            ax.errorbar(locations, obs, yerr=obs_error, fmt='o', color='black', capsize=4,
                         zorder=3)
 
-            # Plot confidence interval for the selected realization
+            # Plot confidence interval
             if plot_ci and gpe_lower is not None and gpe_upper is not None:
-                ax.fill_between(locations, gpe_lower, gpe_upper, color='gray', alpha=0.3,
-                                label='GPE Confidence Interval')
+                ax.fill_between(locations, gpe_lower, gpe_upper, color='gray', alpha=0.3)
 
-            # Plot surrogate and complex model outputs
-            ax.plot(locations, surrogate_outputs[realization, :], color='blue', alpha=0.8, linewidth=1.5,
-                    label='Surrogate Model')
-            ax.plot(locations, complex_model_outputs[realization, :], color='green', alpha=0.8, linewidth=1.5,
-                    label='Complex Model')
+            # Plot model outputs
+            surrogate_line, = ax.plot(locations, surrogate_outputs[realization, :], color='blue', alpha=0.8,
+                                      linewidth=1.5)
+            complex_line, = ax.plot(locations, complex_model_outputs[realization, :], color='green', alpha=0.8,
+                                    linewidth=1.5)
 
-            # Labels and legend
+            # Title
+            ax.set_title(f'Realization {realization + 1}')
             ax.set_ylabel('Values')
-            ax.set_title(
-                f'Realization {realization + 1}: MSE(SM)={surrogate_mse:.4f}, R²(SM)={surrogate_r2:.4f}, MSE(CM)={complex_mse:.4f}, R²(CM)={complex_r2:.4f}')
-            ax.legend()
             ax.grid(True, linestyle='--', color='gray', alpha=0.7)
+
+            # Only add legend once (on first subplot)
+            if idx == 0:
+                lines = [
+                    surrogate_line,
+                    complex_line,
+                    ax.errorbar([], [], yerr=[], fmt='o', color='black')[0],  # dummy observed
+                    plt.Line2D([0], [0], color='gray', lw=6, alpha=0.3)  # dummy CI
+                ]
+                labels = [
+                    f'Surrogate Model\nMSE={surrogate_mse:.4f}, R²={surrogate_r2:.4f}',
+                    f'Complex Model\nMSE={complex_mse:.4f}, R²={complex_r2:.4f}',
+                    'Observed Data',
+                    'GPE Confidence Interval\nMSE(SM vs CM)=' + f'{surrogate_vs_complex_mse:.4f}'
+                ]
+                ax.legend(lines, labels, loc='upper right', fontsize='small', frameon=True)
 
         axes[-1].set_xlabel('Location')
         plt.tight_layout()

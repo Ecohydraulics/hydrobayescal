@@ -363,7 +363,7 @@ class TelemacModel(HydroSimulations):
             bal_iteration=int(),
             complete_bal_mode=True,
             validation=False,
-            kill_process = False
+            kill_process = True
     ):
         """
         Runs multiple Telemac2d or Telemac3d simulations with a set of collocation points and a new set of
@@ -783,7 +783,7 @@ class TelemacModel(HydroSimulations):
                         model_results_extraction,
                         delimiter=',',
                         fmt='%.8f',
-                        header=','.join(column_headers_calibration),
+                        header=','.join(column_headers_extraction),
                     )
                 else:
                     quantities_str = '_'.join(calibration_quantities)
