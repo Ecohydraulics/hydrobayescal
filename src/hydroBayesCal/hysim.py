@@ -465,7 +465,8 @@ class HydroSimulations:
             bal_new_set_parameters=None,
             bal_iteration=0,
             complete_bal_mode=True,
-            validation=False
+            validation=False,
+            kill_process = True
     ):
         """
          Executes multiple hydrodynamic simulations in the context of Bayesian Active Learning (BAL) with a set of collocation points.
@@ -494,6 +495,9 @@ class HydroSimulations:
              False when only initial runs are required.
          validation : bool
              If `True`, the method runs a separate set of simulations for validation purposes.
+         kill_process : bool
+                If `True`, the process will exit after running the simulations, in particular if only runs are needed Default is True.
+                Use `False` if you want to keep the process running after the initial simulations according to init_runs.
 
          Returns
          -------
@@ -507,9 +511,134 @@ class HydroSimulations:
             - Columns 1 and 2 correspond to the outputs (2 quantities) of the first calibration location.
             - Columns 3 and 4 correspond to the outputs of the second location, and so on.
          """
-        self.model_evaluations = np.empty((2, 2))
+        calibration_parameters = self.calibration_parameters
+        res_dir = self.calibration_folder
+        restart_data_path = self.restart_data_folder
+        init_runs = self.init_runs
+
+        logger.info(">> Dummy mode: starting run_multiple_simulations")
+        start_time = datetime.now()
+        if complete_bal_mode:
+            if bal_new_set_parameters is None:
+                if not isinstance(collocation_points, np.ndarray):
+                    collocation_points = np.array(collocation_points)
+
+                if collocation_points.ndim == 1:
+                    collocation_points = collocation_points[:, np.newaxis]
+
+                array_list = collocation_points.tolist()
+
+                if validation:
+                    file_path = os.path.join(res_dir, "collocation-points-validation.csv")
+                else:
+                    quantities_str = '_'.join(self.calibration_quantities)
+                    file_path = os.path.join(res_dir, f"collocation-points-{quantities_str}.csv")
+                    restart_file = os.path.join(restart_data_path, "initial-collocation-points.csv")
+                    with open(restart_file, mode='w', newline='') as file:
+                        writer = csv.writer(file)
+                        writer.writerow(calibration_parameters)
+                        writer.writerows(array_list)
+
+                with open(file_path, mode='w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(calibration_parameters)
+                    writer.writerows(array_list)
+
+                for i in range(init_runs):
+                    self.num_run = i + 1
+                    collocation_point_sim_list = collocation_points[i].tolist()
+
+                    logger.info(f">> Dummy run #{self.num_run} with point {collocation_point_sim_list}")
+                    self.update_model_controls(collocation_point_values=collocation_point_sim_list,
+                                               calibration_parameters=calibration_parameters,
+                                               auxiliary_file_path=" ",
+                                               simulation_id=self.num_run)
+
+                    # Modify the functions accordingly to your model
+
+                    # run_single_simulation(self.control_file)
+                    # dummy_extract_data_point()
+                    # self.model_evaluations = dummy_output_processing(
+                    #     output_data_path=os.path.join(res_dir, 'dummy-output.json'),
+                    #     run_range_filtering=(1, init_runs + 1)
+                    # )
+
+            else:
+                if not isinstance(collocation_points, np.ndarray):
+                    collocation_points = np.array(collocation_points)
+
+                if collocation_points.ndim == 1:
+                    collocation_points = collocation_points[:, np.newaxis]
+
+                self.bal_iteration = bal_iteration
+                self.num_run = bal_iteration + init_runs
+                new_collocation_point = bal_new_set_parameters
+                updated_collocation_points = np.vstack((collocation_points, new_collocation_point))
+                collocation_point_sim_list = updated_collocation_points[-1].tolist()
+                array_list = updated_collocation_points.tolist()
+
+                quantities_str = '_'.join(self.calibration_quantities)
+                file_path = os.path.join(res_dir, f"collocation-points-{quantities_str}.csv")
+                with open(file_path, mode='w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(calibration_parameters)
+                    writer.writerows(array_list)
+
+                logger.info(f">> Dummy BAL run #{self.bal_iteration} with point {collocation_point_sim_list}")
+                # self.update_model_controls(collocation_point_values=collocation_point_sim_list,
+                #                            calibration_parameters=calibration_parameters,
+                #                            auxiliary_file_path=" ",
+                #                            simulation_id=self.num_run)
+                # run_single_simulation(self.control_file)
+                # dummy_extract_data_point()
+                # self.model_evaluations = dummy_output_processing(
+                #     output_data_path=os.path.join(res_dir, 'dummy-output.json'),
+                #     run_range_filtering=(1, init_runs + bal_iteration + 1)
+                # )
+
+        else:
+            if collocation_points is not None:
+                if not isinstance(collocation_points, np.ndarray):
+                    collocation_points = np.array(collocation_points)
+                if collocation_points.ndim == 1:
+                    collocation_points = collocation_points.reshape(1, -1)
+                array_list = collocation_points.tolist()
+
+                quantities_str = '_'.join(self.calibration_quantities)
+                file_path = os.path.join(res_dir, f"collocation-points-{quantities_str}.csv")
+                restart_file = os.path.join(restart_data_path, "initial-collocation-points.csv")
+                with open(file_path, mode='w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(calibration_parameters)
+                    writer.writerows(array_list)
+                with open(restart_file, mode='w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(calibration_parameters)
+                    writer.writerows(array_list)
+
+                for i in range(init_runs):
+                    self.num_run = i + 1
+                    collocation_point_sim_list = collocation_points[i].tolist()
+                    logger.info(f">> Dummy run #{self.num_run} with point {collocation_point_sim_list}")
+                    # self.update_model_controls(collocation_point_values=collocation_point_sim_list,
+                    #                            calibration_parameters=calibration_parameters,
+                    #                            auxiliary_file_path=" ",
+                    #                            simulation_id=self.num_run)
+                    # dummy_run_single_simulation(self.control_file)
+                    # dummy_extract_data_point()
+                    # self.model_evaluations = dummy_output_processing(
+                    #     output_data_path=os.path.join(res_dir, 'dummy-output.json'),
+                    #     run_range_filtering=(1, init_runs + 1)
+                    # )
+
+        logger.info(">> Dummy complex model simulations total time: " + str(datetime.now() - start_time))
+
+        if kill_process:
+            logger.info(">> Dummy mode: exiting after simulations")
+            exit()
 
         return self.model_evaluations
+
         pass
 
     def run_single_simulation(

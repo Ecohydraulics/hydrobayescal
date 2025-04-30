@@ -1319,6 +1319,10 @@ class BayesianPlotter:
         surrogate_r2 = r2_score(observed_selected, surrogate_selected)
         complex_r2 = r2_score(observed_selected, complex_selected)
 
+        # Compute MSE and RMSE between Surrogate and Complex Model
+        mse_sm_vs_cm = mean_squared_error(complex_selected, surrogate_selected)
+        rmse_sm_vs_cm = np.sqrt(mse_sm_vs_cm)
+
         print(f"Surrogate Model RMSE (selected points) {quantity_name}: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f}")
         print(f"Complex Model RMSE (selected points) {quantity_name}: {complex_rmse:.4f}, R²: {complex_r2:.4f}")
         print(f"Surrogate Model RMSE (all points) {quantity_name}: {surrogate_rmse_all:.4f}, R²: {surrogate_r2_all:.4f}")
@@ -1345,13 +1349,16 @@ class BayesianPlotter:
 
         # Plot surrogate model outputs as a line in exact input order
         plt.plot(talweg_positions, surrogate_selected, '-o', color='blue',
-                 label=f'Surrogate Model (RMSE: {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f})',
+                 label=(f'Surrogate Model\n'
+                        f'RMSE (obs): {surrogate_rmse:.4f}, R²: {surrogate_r2:.4f}\n'
+                        f'vs Complex: MSE: {mse_sm_vs_cm:.2e}, RMSE: {rmse_sm_vs_cm:.4f}'),
                  markersize=6, zorder=3)
 
         # Plot complex model outputs as a line in exact input order
         plt.plot(talweg_positions, complex_selected, '-o', color='green',
                  label=f'Complex Model (RMSE: {complex_rmse:.4f}, R²: {complex_r2:.4f})',
                  markersize=6, zorder=3)
+
 
         # Labels, title, and legend
         plt.xlabel('Talweg')
@@ -1505,115 +1512,156 @@ class BayesianPlotter:
         plt.tight_layout()
         plt.show()
 
-    def plot_validation_locations(self, surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci,
-                                  selected_locations, plot_residuals=False):
+    def compute_evolution_metrics(self, surrogate_outputs, complex_model_outputs, sm_ci_upper, sm_ci_lower,
+                                  selected_locations):
         """
-        Plots surrogate model confidence intervals and complex model realizations for multiple locations.
-        Adds surrogate model realization values as points along with hatch bars for the confidence intervals.
-        Computes and displays metrics between the complex model and surrogate model, including residuals in a separate plot.
+        Computes overall metrics (MSE, RMSE, MAE, Correlation) between the surrogate and complex model
+        across all selected locations, along with the evolution of the confidence interval range.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         surrogate_outputs : numpy.ndarray
             2D array of surrogate model outputs (rows = realizations, columns = locations).
         complex_model_outputs : numpy.ndarray
             2D array of complex model outputs (rows = realizations, columns = locations).
-        gpe_lower_ci : numpy.ndarray
-            2D array of lower confidence bounds from the surrogate model.
-        gpe_upper_ci : numpy.ndarray
-            2D array of upper confidence bounds from the surrogate model.
+        sm_ci_upper : numpy.ndarray
+            2D array of upper confidence bounds for surrogate model outputs (rows = realizations, columns = locations).
+        sm_ci_lower : numpy.ndarray
+            2D array of lower confidence bounds for surrogate model outputs (rows = realizations, columns = locations).
         selected_locations : list of int
-            List of location indices to visualize.
-        plot_residuals : bool
-            If True, plots residuals; if False, plots comparison (CM vs SM).
+            List of location indices to include in the metric computation.
 
-        Returns:
-        --------
-        None
+        Returns
+        -------
+        overall_mse : float
+        overall_rmse : float
+        overall_mae : float
+        overall_corr : float
+        ci_range_evolution : numpy.ndarray
+            Evolution of the confidence interval range (upper - lower) across selected locations.
         """
 
         def compute_metrics(cm_values, sm_values):
-            """Compute various metrics between complex model and surrogate model."""
             mse = mean_squared_error(cm_values, sm_values)
             rmse = np.sqrt(mse)
             mae = mean_absolute_error(cm_values, sm_values)
             correlation = np.corrcoef(cm_values, sm_values)[0, 1]
             return mse, rmse, mae, correlation
 
-        num_locations = len(selected_locations)
-        fig, axes = plt.subplots(1, num_locations, figsize=(5 * num_locations, 5), sharey=False)
-        if num_locations == 1:
-            axes = [axes]
+        # Collect predictions and true values across all selected locations
+        all_cm_values = []
+        all_sm_values = []
 
-        # Create a separate figure for residuals (if requested)
-        if plot_residuals:
-            fig_residuals, axes_residuals = plt.subplots(1, num_locations, figsize=(5 * num_locations, 5), sharey=False)
-            if num_locations == 1:
-                axes_residuals = [axes_residuals]
-        else:
-            axes_residuals = [None] * num_locations
+        ci_range_evolution = []  # List to track the evolution of the CI range
+
+        for loc in selected_locations:
+            sm_values = surrogate_outputs[:, loc]
+            cm_values = complex_model_outputs[:, loc]
+            ci_upper = sm_ci_upper[:, loc]
+            ci_lower = sm_ci_lower[:, loc]
+
+            all_cm_values.append(cm_values)
+            all_sm_values.append(sm_values)
+
+            # Normalized CI range: (upper - lower) / mean absolute prediction
+            ci_range = np.mean(ci_upper - ci_lower)
+
+            ci_range_evolution.append(ci_range)
 
 
-        for ax, selected_location, ax_residual in zip(axes, selected_locations, axes_residuals):
-            # Extract values at the selected location
-            sm_lower_ci = gpe_lower_ci[:, selected_location]  # CI lower bound per realization
-            sm_upper_ci = gpe_upper_ci[:, selected_location]  # CI upper bound per realization
-            sm_values = surrogate_outputs[:, selected_location]  # SM realizations
-            cm_values = complex_model_outputs[:, selected_location]  # CM realizations
+        all_cm = np.concatenate(all_cm_values)
+        all_sm = np.concatenate(all_sm_values)
 
-            # Compute residuals: the difference between complex model and surrogate model outputs
-            residuals = cm_values - sm_values
+        overall_mse, overall_rmse, overall_mae, overall_corr = compute_metrics(all_cm, all_sm)
 
-            if plot_residuals:
-                # Plot residuals in a separate plot
-                ax_residual.scatter(range(len(residuals)), residuals, color='red', alpha=0.6, label='Residuals')
-                ax_residual.set_title(f"Residuals - Location {selected_location}")
-                ax_residual.set_xlabel("Realization Index")
-                ax_residual.set_ylabel("Residual Value")
-                ax_residual.grid(True, linestyle="--", alpha=0.6)
-            else:
-                # Plot individual realizations of the complex model
-                ax.scatter(range(len(cm_values)), cm_values, color='green', alpha=0.6, label='CM Realizations')
+        print("\nOverall Metrics across all selected locations:")
+        print(f" - MSE       : {overall_mse:.4e}")
+        print(f" - RMSE      : {overall_rmse:.4e}")
+        print(f" - MAE       : {overall_mae:.4e}")
+        print(f" - Correlation: {overall_corr:.2f}")
+        print(f" - Confidence Interval Range Evolution: {np.mean(ci_range_evolution):.4e}")
 
-                # Plot hatch bars for the surrogate model confidence intervals
-                for i in range(len(sm_lower_ci)):
-                    ax.bar(i, sm_upper_ci[i] - sm_lower_ci[i], bottom=sm_lower_ci[i], width=0.8, color='gray',
-                           alpha=0.5, hatch='/')
+        # Convert list to numpy array for easy handling
+        ci_range_evolution = np.array(ci_range_evolution)
+        ci_range_evolution = np.mean(ci_range_evolution, axis=0)
 
-                    # Plot the surrogate model realization values as points
-                    ax.scatter(i, sm_values[i], color='blue', marker='x')
+        return overall_mse, overall_rmse, overall_mae, overall_corr, ci_range_evolution
+        # plt.tight_layout()
+        # plt.show()
 
-                # Compute metrics between complex model and surrogate model
-                mse, rmse, mae, correlation = compute_metrics(cm_values, sm_values)
+    def plot_metric_comparison(self, surrogate_metrics, quantities, metrics=["RMSE", "Correlation", "CI"]):
+        """
+        Plots selected metrics for each quantity with customized appearance and axis limits.
 
-                # Formatting for comparison plot
-                ax.set_title(f"Location {selected_location}")
-                ax.set_xlabel("Realization Index")
-                ax.set_ylabel("Output Value")
-                ax.grid(True, linestyle="--", alpha=0.6)
+        Parameters:
+        ------------
+        surrogate_metrics : dict
+            Dictionary with metrics.
+        quantities : list
+            List of calibration quantities (e.g., ["WATER DEPTH", "SCALAR VELOCITY"]).
+        metrics : list
+            List of metrics to plot (default=["RMSE", "Correlation", "CI"]).
+        """
+        # Extract arrays
+        train_points = np.array(surrogate_metrics["TrainPoints"])
+        quantity_names = np.array(surrogate_metrics["Quantity"])
+        surrogate_type = np.array(surrogate_metrics["SurrogateType"])
+        metric_values = {metric: np.array(surrogate_metrics[metric]) for metric in metrics}
 
-                # Prepare metrics for the legend and text box
-                metrics_text = (f"MSE: {mse:.2e}\n"
-                                f"RMSE: {rmse:.2e}\n"
-                                f"MAE: {mae:.2e}\n"
-                                f"Correlation: {correlation:.2f}")
+        # Custom y-limits
+        y_limits = {
+            "RMSE": (0.07, 0.16),
+            "Correlation": (0.75, 0.92),
+            "CI": (0.10, 0.55),
+        }
 
-                # Plot legend for comparison plot
-                ax.legend(loc='upper right', fontsize=4, bbox_to_anchor=(0.5, 0.5))
+        for quantity in quantities:
+            fig, axs = plt.subplots(len(metrics), 1, figsize=(8, 3.5 * len(metrics)), sharex=True)
+            fig.suptitle(f"Metric Comparison for {quantity}", fontsize=14)
 
-                # Display the metrics in the top-right corner as a text box
-                plt.figtext(0.95, 0.95, metrics_text, horizontalalignment='right', verticalalignment='top', fontsize=10,
-                            bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5'))
+            for idx, metric in enumerate(metrics):
+                ax = axs[idx]
 
-        # Adjust layout for both figures
-        plt.tight_layout()
-        plt.show()
+                # Filtering
+                mask_quantity = quantity_names == quantity
+                mask_so = mask_quantity & (surrogate_type == "SO")
+                mask_mo = mask_quantity & (surrogate_type == "MO")
 
-        if plot_residuals:
-            # Show residuals plots
-            fig_residuals.tight_layout()
+                so_tp = train_points[mask_so]
+                mo_tp = train_points[mask_mo]
+                so_metric = metric_values[metric][mask_so]
+                mo_metric = metric_values[metric][mask_mo]
+
+                # Plot lines
+                ax.plot(mo_tp, mo_metric, 'o-', color='firebrick', linewidth=2, markersize=5,
+                        label='MO (Multi-output GP)')
+                ax.plot(so_tp, so_metric, 'o--', color='royalblue', linewidth=2, markersize=5,
+                        label='SO (Single-output GP)')
+
+
+
+                # Set x-ticks every 5
+                min_tp, max_tp = train_points.min(), train_points.max()
+                ax.set_xticks(np.arange(min_tp, max_tp + 1, 5))
+
+                # Axes and limits
+                ax.set_title(metric, fontsize=14)
+                ax.set_ylabel(metric, fontsize=14)
+                ax.tick_params(axis='both', which='major', labelsize=9)
+                ax.grid(True, linestyle=':', alpha=0.7)
+
+                # Y-limits
+                if metric in y_limits:
+                    ax.set_ylim(y_limits[metric])
+
+                if idx == len(metrics) - 1:
+                    ax.set_xlabel("Number of Training Points", fontsize=14)
+
+                # Legend
+                ax.legend(fontsize=12, loc='best', frameon=False)
+
+            plt.tight_layout(rect=[0, 0.02, 1, 0.96])
             plt.show()
-
     def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
         """
         Plots selected realizations comparing the complex model and surrogate model outputs.

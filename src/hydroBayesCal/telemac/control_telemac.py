@@ -488,9 +488,6 @@ class TelemacModel(HydroSimulations):
 
                 self.bal_iteration = bal_iteration
                 self.num_run = bal_iteration + init_runs
-
-                # TODO: the following needs to be re-integrated
-
                     #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
 
 

@@ -611,6 +611,9 @@ class MultiGPyTraining:
         self.lr = lr
         self.parallel = parallelize
         self.noise_constraint = noise_constraint
+        self.losses = []  # To store loss values for tracking convergence
+        self.lengthscales = []
+        self.noise_values = []  # To track noise values
 
     def train_tasks_variables(self):#Training variables at each location separately
         """
@@ -652,6 +655,15 @@ class MultiGPyTraining:
 
             # Set MLL objective
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
+            converged = False
+            plateau_count = 0  # Counter for consecutive small changes in loss
+            threshold = 1e-3  # Convergence threshold for loss
+            required_plateau = 5  # Number of consecutive stable steps required for convergence
+
+            # For length scale tracking and convergence check
+            lengthscale_converged = False
+            lengthscale_plateau_count = 0
+            lengthscale_threshold = 1e-2  # Convergence threshold for length scale
 
             # Training loop
             for _ in range(self.training_iter):
@@ -661,6 +673,54 @@ class MultiGPyTraining:
                 loss.backward()
                 optimizer.step()
 
+                self.losses.append(loss.item())
+                noise = self.likelihood.noise.detach().cpu().numpy()
+                self.noise_values.append(noise)
+
+                # Track lengthscale
+                try:
+                    lengthscale = model.covar_module.data_covar_module.base_kernel.lengthscale.detach().cpu().numpy()
+                except AttributeError:
+                    lengthscale = None
+                self.lengthscales.append(lengthscale)
+
+                # Loss convergence check
+                if len(self.losses) > 1:
+                    loss_diff = abs(self.losses[-1] - self.losses[-2])
+                    if loss_diff < threshold:
+                        plateau_count += 1
+                    else:
+                        plateau_count = 0
+                    if plateau_count >= required_plateau:
+                        converged = True
+
+                # Length scale convergence check
+                if lengthscale is not None and len(self.lengthscales) > 1:
+                    prev_ls = self.lengthscales[-2]
+                    curr_ls = self.lengthscales[-1]
+                    ls_diff = np.abs(curr_ls - prev_ls)
+                    if np.all(ls_diff < lengthscale_threshold):
+                        lengthscale_plateau_count += 1
+                    else:
+                        lengthscale_plateau_count = 0
+                    if lengthscale_plateau_count >= required_plateau:
+                        lengthscale_converged = True
+
+            # Final summary
+            if converged:
+                print(f"Training converged. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
+            else:
+                print(
+                    f"Training did not fully converge. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
+
+            if self.lengthscales[-1] is not None:
+                #print("Final length scale(s):", self.lengthscales[-1])
+                if lengthscale_converged:
+                    print("Length scale convergence achieved.")
+                else:
+                    print("Length scale did not fully converge.")
+            else:
+                print("Length scale not available for this kernel setup.")
             # Store trained model
             self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std)})
 

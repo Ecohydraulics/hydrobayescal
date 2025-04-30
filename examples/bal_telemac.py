@@ -281,22 +281,26 @@ def run_bal_model(collocation_points,
                 # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
                 sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                                  likelihood=likelihood, kernel=kernel,
-                                 training_iter=100,
-                                 optimizer="adam",
+                                 training_iter=250,
+                                 optimizer="adam", lr=0.01,
                                  verbose=False)
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
-                                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
-                                        )
+                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim))
+                # *
+                #     gpytorch.kernels.RBFKernel(ard_num_dims=complex_model.ndim)
+                # )
+
                 if complex_model.multitask_selection == "variables":
                     multi_likelihood_var = gpytorch.likelihoods.MultitaskGaussianLikelihood(
                         num_tasks=complex_model.num_calibration_quantities,
-                        noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)  # Allow smaller noise
                     )
+                    multi_likelihood_var.noise = 1e-5
                     multi_sm_var = MultiGPyTraining(collocation_points,
                                                     model_outputs,
                                                     kernel,
-                                                    training_iter=150,
+                                                    training_iter=250,
                                                     likelihood=multi_likelihood_var,
                                                     optimizer="adam", lr=0.01,
                                                     number_quantities=complex_model.num_calibration_quantities,
@@ -574,9 +578,8 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=5,
+            init_runs=25,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                    "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     # "zone0",
                                     # "zone1",
                                     "zone2",
@@ -587,36 +590,28 @@ if __name__ == "__main__":
                                     # "zone7",
                                     "zone8",
                                     "zone9",
-                                    "zone10",
+                                    # "zone10",
                                     # "zone11",
-                                    # "zone12",
-                                    "zone13"], #pool-slackwater-glide-riffle-run
-            # param_values=[[0.010, 0.79], [0.010, 0.79], [0.0010, 0.79], [0.0010, 0.79], [0.060, 0.79]],
-            param_values = [[0.048,0.070],[0.048,0.070],[0.01, 0.6], [0.01, 0.6], [0.002, 0.6], [0.002, 0.6], [0.050, 0.6],[0.002, 0.6], [0.05, 0.6],[0.6,2],[0.0020, 0.79]], # coarse-coarse -fine -fine -coarse
-            # param_values=[[0.048,0.070], # critical shields parameter class 1
-            #               # [0.5,17.45], # zone0
-            #               # [0.5,17.45], # zone 1
-            #               [0.24,17.45], # zone 2
-            #               [0.24,17.45], # zone 3
-            #               [0.04, 31.86], # zone 4
-            #               [0.04, 31.86], # zone 5
-            #               [1.53,17.45], # zone 6
-            #               # [0.16,3.60], # zone 7
-            #               [0.04, 31.86],# zone 8
-            #               [2.79, 31.86], # zone 9
-            #               # [1.53, 32.80], # zone 10
-            #               # [1.5, 98],# zone 11
-            #               # [1.5, 98],  # zone 12
-            #               [0.02, 17.45]], #zone 13
+                                    #"zone12",
+                                    "zone13"],
+            param_values = [[0.048,0.070], # critical shields parameter class 1
+                            [0.01, 0.6], # zone2
+                            [0.01, 0.6], # zone3
+                            [0.002, 0.6],   # zone4
+                            [0.002, 0.6], # zone5
+                            [0.050, 0.6], # zone6
+                            [0.002, 0.6], # zone8
+                            [0.05, 0.6], # zone9
+                            [0.002, 1]], # zone 13
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-            calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH"],
+            calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
-            max_runs=60,
-            complete_bal_mode=False,
+            max_runs=100,
+            complete_bal_mode=True,
             only_bal_mode=False,
             delete_complex_outputs=True,
-            validation=True
+            validation=False
         )
     )
 
@@ -625,7 +620,7 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         tp_selection_criteria='dkl',
         parameter_distribution='uniform',
-        parameter_sampling_method = 'random'
+        parameter_sampling_method = 'sobol'
     )
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
@@ -637,7 +632,7 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         experiment_design=exp_design,
         eval_steps=5,
-        prior_samples=20000,
+        prior_samples=22000,
         mc_samples_al=2000,
         mc_exploration=1000,
         gp_library="gpy"

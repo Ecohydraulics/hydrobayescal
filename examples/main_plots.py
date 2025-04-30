@@ -34,27 +34,32 @@ full_complexity_model = TelemacModel(
     #                         "gaiaCLASSES SHIELDS PARAMETERS 3", "gaiaCLASSES SHIELDS PARAMETERS 4",
     #                         "gaiaCLASSES SHIELDS PARAMETERS 5", "gaiaMPM COEFFICIENT", "zone2", "zone3", "zone4",
     #                         "zone5", "zone6", "zone8", "zone9", "zone13"],  # pool-slackwater-glide-riffle-run
-    calibration_parameters=["SHIELDS PARAMETERS 1",
-                            "SHIELDS PARAMETERS 2",
+    calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                             # "zone0",
                             # "zone1",
-                            "Pools",
-                            "Slackwater",
-                            "Glide",
-                            "Riffle",
-                            "Run",
+                            "zone2",
+                            "zone3",
+                            "zone4",
+                            "zone5",
+                            "zone6",
                             # "zone7",
-                            "Backwater",
-                            "Wake",
-                            "Boulders",
+                            "zone8",
+                            "zone9",
+                            #"zone10",
                             # "zone11",
-                            # "zone12",
-                            "Large Wood"],  # pool-slackwater-glide-riffle-run
+                            "zone12",
+                            "zone13"], # pool-slackwater-glide-riffle-run
     # param_values=[[0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79]],
-    param_values=[[0.048, 0.070], [0.048, 0.070], [0.01, 0.6], [0.01, 0.6], [0.002, 0.6], [0.002, 0.6], [0.050, 0.6],
-                  [0.002, 0.6], [0.05, 0.6], [0.6, 2], [0.0020, 0.79]],  # coarse-coarse -fine -fine -coarse
-
-    # coarse-coarse -fine -fine -coarse
+    param_values=[[0.048, 0.070],  # critical shields parameter class 1
+                  [0.01, 0.6],  # zone2
+                  [0.01, 0.6],  # zone3
+                  [0.002, 0.6],  # zone4
+                  [0.002, 0.6],  # zone5
+                  [0.050, 0.6],  # zone6
+                  [0.002, 0.6],  # zone8
+                  [0.05, 0.6],  # zone9
+                  [0.01, 1],  # zone12
+                  [0.002, 1]],  # zone 13
 
     # param_values=[[0.048, 0.070],  # critical shields parameter class 1
     #               # [0.5,17.45], # zone0
@@ -71,15 +76,15 @@ full_complexity_model = TelemacModel(
     #               # [1.5, 98],# zone 11
     #               # [1.5, 98],  # zone 12
     #               [0.02, 17.45]],  # zone 13
-    calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH"],
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     multitask_selection="variables",
     check_inputs=False,
 )
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot =  35
-surrogate_to_analyze = 60
+iterations_to_plot =  75
+surrogate_to_analyze = 100
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -131,16 +136,16 @@ for i in range(n_quantities):
 
     # Plot comparisons for each quantity
     # plotter.plot_validation_results(obs_quantity, sm_output.reshape(1, -1), cm_output.reshape(1, -1))
-    plotter.plot_model_outputs_vs_locations(
-        observed_values=obs_quantity,
-        quantity_name=full_complexity_model.calibration_quantities[i],
-        surrogate_outputs=sm_output[-1, :].reshape(1, -1),
-        complex_model_outputs=cm_output[-1, :].reshape(1, -1),
-        selected_locations=[24,25,21,28,31,1,11,7,6,14,3],
-        gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
-        gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
-        measurement_error=err_quantity,
-    )
+    # plotter.plot_model_outputs_vs_locations(
+    #     observed_values=obs_quantity,
+    #     quantity_name=full_complexity_model.calibration_quantities[i],
+    #     surrogate_outputs=sm_output[-1, :].reshape(1, -1),
+    #     complex_model_outputs=cm_output[-1, :].reshape(1, -1),
+    #     selected_locations=list(range(1,36)),
+    #     gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
+    #     gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
+    #     measurement_error=err_quantity,
+    # )
 
 # Plot Bayesian results
 plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
@@ -150,8 +155,8 @@ plotter.plot_posterior_updates(
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=20,
-    plot_prior=True,
+    bins=10,
+    plot_prior=False,
 )
 plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)
 plotter.plot_posterior_iteration(posterior_samples=bayesian_data['posterior'][iterations_to_plot],
