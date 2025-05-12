@@ -706,21 +706,21 @@ class MultiGPyTraining:
                     if lengthscale_plateau_count >= required_plateau:
                         lengthscale_converged = True
 
-            # Final summary
-            if converged:
-                print(f"Training converged. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
-            else:
-                print(
-                    f"Training did not fully converge. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
-
-            if self.lengthscales[-1] is not None:
-                #print("Final length scale(s):", self.lengthscales[-1])
-                if lengthscale_converged:
-                    print("Length scale convergence achieved.")
-                else:
-                    print("Length scale did not fully converge.")
-            else:
-                print("Length scale not available for this kernel setup.")
+            # Uncomment this if you want to print the training convergence
+            # if converged:
+            #     print(f"Training converged. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
+            # else:
+            #     print(
+            #         f"Training did not fully converge. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
+            #
+            # if self.lengthscales[-1] is not None:
+            #     #print("Final length scale(s):", self.lengthscales[-1])
+            #     if lengthscale_converged:
+            #         print("Length scale convergence achieved.")
+            #     else:
+            #         print("Length scale did not fully converge.")
+            # else:
+            #     print("Length scale not available for this kernel setup.")
             # Store trained model
             self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std)})
 

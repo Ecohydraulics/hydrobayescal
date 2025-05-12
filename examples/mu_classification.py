@@ -29,10 +29,10 @@ for label, bounds in classification.items():
 # Customize the plot
 ax.set_xlabel("Velocity (m/s)", fontsize=14)
 ax.set_ylabel("Water Depth (m)", fontsize=14)
-ax.set_title("Velocity / Water Depth Classification", fontsize=14)
+ax.set_title("Velocity / Water Depth thresholds", fontsize=14)
 ax.grid(True, linestyle='--', alpha=0.5)
 
-ax.set_xticks(np.arange(0, 1.8 + 0.2, 0.2))
+ax.set_xticks(np.arange(0, 1.2 + 0.2, 0.2))
 ax.set_yticks(np.arange(0, 1.0 + 0.2, 0.2))
 
 # Place the legend outside the plot

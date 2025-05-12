@@ -281,8 +281,8 @@ def run_bal_model(collocation_points,
                 # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
                 sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                                  likelihood=likelihood, kernel=kernel,
-                                 training_iter=250,
-                                 optimizer="adam", lr=0.01,
+                                 training_iter=150,
+                                 optimizer="adam", lr=0.07,
                                  verbose=False)
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
@@ -300,9 +300,9 @@ def run_bal_model(collocation_points,
                     multi_sm_var = MultiGPyTraining(collocation_points,
                                                     model_outputs,
                                                     kernel,
-                                                    training_iter=250,
+                                                    training_iter=150,
                                                     likelihood=multi_likelihood_var,
-                                                    optimizer="adam", lr=0.01,
+                                                    optimizer="adam", lr=0.07,
                                                     number_quantities=complex_model.num_calibration_quantities,
                                                     )
                 if complex_model.multitask_selection == "locations":
@@ -604,12 +604,15 @@ if __name__ == "__main__":
                             [0.05, 0.6], # zone9
                             [0.002, 1]], # zone 13
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
+            # calibration_quantities=[ "SCALAR VELOCITY"],
+            # calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
             max_runs=100,
             complete_bal_mode=True,
-            only_bal_mode=False,
+            only_bal_mode=True,
             delete_complex_outputs=True,
             validation=False
         )

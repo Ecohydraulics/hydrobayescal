@@ -34,21 +34,21 @@ full_complexity_model = TelemacModel(
     #                         "gaiaCLASSES SHIELDS PARAMETERS 3", "gaiaCLASSES SHIELDS PARAMETERS 4",
     #                         "gaiaCLASSES SHIELDS PARAMETERS 5", "gaiaMPM COEFFICIENT", "zone2", "zone3", "zone4",
     #                         "zone5", "zone6", "zone8", "zone9", "zone13"],  # pool-slackwater-glide-riffle-run
-    calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+    calibration_parameters=["SHIELDS 1",
                             # "zone0",
                             # "zone1",
-                            "zone2",
-                            "zone3",
-                            "zone4",
-                            "zone5",
-                            "zone6",
+                            "Pool",
+                            "Slackwater",
+                            "Glide",
+                            "Riffle",
+                            "Run",
                             # "zone7",
-                            "zone8",
-                            "zone9",
+                            "Backwater",
+                            "Wake",
                             #"zone10",
                             # "zone11",
-                            "zone12",
-                            "zone13"], # pool-slackwater-glide-riffle-run
+                            # "zone12",
+                            "LW"], # pool-slackwater-glide-riffle-run
     # param_values=[[0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79], [0.0016, 0.79]],
     param_values=[[0.048, 0.070],  # critical shields parameter class 1
                   [0.01, 0.6],  # zone2
@@ -58,7 +58,6 @@ full_complexity_model = TelemacModel(
                   [0.050, 0.6],  # zone6
                   [0.002, 0.6],  # zone8
                   [0.05, 0.6],  # zone9
-                  [0.01, 1],  # zone12
                   [0.002, 1]],  # zone 13
 
     # param_values=[[0.048, 0.070],  # critical shields parameter class 1
@@ -76,7 +75,10 @@ full_complexity_model = TelemacModel(
     #               # [1.5, 98],# zone 11
     #               # [1.5, 98],  # zone 12
     #               [0.02, 17.45]],  # zone 13
-    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+    calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
+    #calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
+    #calibration_quantities = ["SCALAR VELOCITY"],
+    #calibration_quantities = ["WATER DEPTH","SCALAR VELOCITY"],
     multitask_selection="variables",
     check_inputs=False,
 )
@@ -148,6 +150,9 @@ for i in range(n_quantities):
     # )
 
 # Plot Bayesian results
+plotter.plot_combined_bal(collocation_points = collocation_points,
+                  n_init_tp = full_complexity_model.init_runs,
+                  bayesian_dict = bayesian_data)
 plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
 plotter.plot_posterior_updates(
     posterior_arrays=bayesian_data['posterior'],
@@ -155,8 +160,9 @@ plotter.plot_posterior_updates(
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=10,
+    bins=20,
     plot_prior=False,
+    parameter_units=['-','m','m','m','m','m','m','m','m']
 )
 plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)
 plotter.plot_posterior_iteration(posterior_samples=bayesian_data['posterior'][iterations_to_plot],

@@ -21,7 +21,7 @@ full_complexity_model = TelemacModel(
     res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
     calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     #n_cpus=16,
-    init_runs=20, # Number oF samples for validation
+    init_runs=25, # Number oF samples for validation
     calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                             # "zone0",
                             # "zone1",
@@ -35,10 +35,11 @@ full_complexity_model = TelemacModel(
                             "zone9",
                             # "zone10",
                             # "zone11",
-                            "zone12",
+                            # "zone12",
                             "zone13"], # pool-slackwater-glide-riffle-run
-    # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
+    #calibration_quantities=["WATER DEPTH"],
     # calibration_quantities = ["SCALAR VELOCITY"],
+    # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
     calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
     validation=True
@@ -54,7 +55,7 @@ full_complexity_model = TelemacModel(
     #multitask_selection="variables"
 )
 # surrogate_to_analyze = list(range(25, 61, 5))
-surrogate_to_analyze = [5,10,15,20,25,30,35,40,45,50,55,60]
+surrogate_to_analyze = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]
 
 # Define the desired order manually (you can also automate if needed)
 calibration_quantities = full_complexity_model.calibration_quantities

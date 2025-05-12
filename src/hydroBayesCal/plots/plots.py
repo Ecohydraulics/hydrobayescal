@@ -6,6 +6,7 @@ import numpy as np
 import os
 import pandas as pd
 import seaborn as sns
+import math
 import corner
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
@@ -45,6 +46,7 @@ class BayesianPlotter:
         save_folder : pathlib.Path
             A Path object representing the directory where plots will be saved.
         """
+        self.results_folder_path = Path(results_folder_path) / plots_subfolder
         self.save_folder = Path(results_folder_path) / plots_subfolder / variable_name
         plt.rcParams.update({
             'text.usetex': True,
@@ -268,39 +270,15 @@ class BayesianPlotter:
             iterations_to_plot=None,
             bins=40,
             density=True,
-            plot_prior=False
+            plot_prior=False,
+            parameter_units=None
     ):
-        """
-        Plots posterior distributions, highlighting the max density value for the considered iteration.
 
-        Parameters
-        ----------
-        posterior_arrays: list of arrays
-            List of 2D arrays with posterior samples for each update.
-        parameter_names: list of str
-            List of parameter names.
-        prior: array
-            2D array with prior samples.
-        param_values: list of arrays, optional
-            X-axis limits for each parameter.
-        iterations_to_plot: list of int or None
-            Iteration indices to plot.
-        bins: int
-            Number of bins for histograms.
-        density: bool
-            Normalize histograms to probability density.
-        plot_prior: bool
-            Whether to plot the prior distribution.
-
-        Returns
-        -------
-        None
-            Saves the plots.
-        """
         save_folder = self.save_folder
-        save_folder.mkdir(parents=True, exist_ok=True)
-
         parameter_num = len(parameter_names)
+
+        if parameter_units is None:
+            parameter_units = [''] * parameter_num
 
         # Define x-axis limits
         x_limits = np.zeros((parameter_num, 2))
@@ -311,7 +289,7 @@ class BayesianPlotter:
             for i in range(parameter_num):
                 x_limits[i] = param_values[i]
 
-        # Calculate y-axis limits for the selected iterations
+        # Calculate y-axis limits
         y_min_posterior = np.zeros(parameter_num)
         y_max_posterior = np.zeros(parameter_num)
 
@@ -323,66 +301,68 @@ class BayesianPlotter:
                         counts_posterior, _ = np.histogram(posterior_arrays[iteration_idx][:, i], bins=bins,
                                                            density=density)
                         y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior)) * 1.15
-                        y_min_posterior[i] = min(y_min_posterior[i], min(counts_posterior))
-                y_min_posterior[i] = 0  # Ensure the minimum is set to 0
+                        y_min_posterior[i] = 0
 
-        # Plot posterior distributions
-        if iterations_to_plot is not None:
-            for plot_index, iteration_idx in enumerate(iterations_to_plot):
-                for col in range(parameter_num):
-                    fig, ax = plt.subplots(figsize=(6, 8))
+        # Plot distributions for each iteration
+        for plot_index, iteration_idx in enumerate(iterations_to_plot):
+            num_rows = 3
+            num_cols = math.ceil(parameter_num / num_rows)
+            fig, axes = plt.subplots(num_rows, num_cols, figsize=(5 * num_cols, 5 * num_rows))
+            axes = axes.flatten()
 
-                    # Get the posterior samples for the current iteration
-                    posterior_vector = posterior_arrays[iteration_idx][:, col]
+            for col in range(parameter_num):
+                ax = axes[col]
+                posterior_vector = posterior_arrays[iteration_idx][:, col]
 
-                    # Compute histogram density
-                    counts_posterior, bin_edges = np.histogram(posterior_vector, bins=bins, density=density)
+                # Histogram
+                ax.hist(posterior_vector, bins=bins, density=density, alpha=0.5, color='grey',
+                        edgecolor='black', linewidth=0.8, label='Posterior')
 
-                    # Find the mode (max density value)
-                    max_density_idx = np.argmax(counts_posterior)
-                    mode_value = (bin_edges[max_density_idx] + bin_edges[max_density_idx + 1]) / 2
+                # KDE for posterior
+                kde_post = gaussian_kde(posterior_vector)
+                x_vals = np.linspace(x_limits[col][0], x_limits[col][1], 500)
+                ax.plot(x_vals, kde_post(x_vals), color='black', linewidth=0.8, label='Posterior KDE')
 
-                    # Plot posterior histogram
-                    ax.hist(posterior_vector, bins=bins, density=density, alpha=0.6, color='grey',
-                            edgecolor='black', linewidth=0.8, label='Posterior')
+                # Prior
+                if plot_prior:
+                    ax.hist(prior[:, col], bins=bins, density=density, alpha=0.2, color='#1E90FF',
+                            edgecolor='black', linewidth=0.8, label='Prior')
+                    # KDE for prior
+                    kde_prior = gaussian_kde(prior[:, col])
+                    ax.plot(x_vals, kde_prior(x_vals), color='blue', linestyle='-', linewidth=1.5, label='Prior KDE')
 
-                    # Optionally plot the prior
-                    if plot_prior:
-                        ax.hist(prior[:, col], bins=bins, density=density, alpha=0.2, color='#1E90FF',
-                                edgecolor='black', linewidth=0.8, label='Prior')
+                # Max density location (mode from KDE)
+                mode_value = x_vals[np.argmax(kde_post(x_vals))]
+                ax.axvline(mode_value, color='red', linestyle='--', linewidth=2,
+                           label=f'Max Density: {mode_value:.3f}')
 
-                    # Set axis labels
-                    ax.set_xlabel(f'{parameter_names[col]}')
-                    ax.set_ylabel('Density')
+                # Mean of param range
+                mean_value = np.mean([x_limits[col][0], x_limits[col][1]])
+                ax.axvline(mean_value, color='blue', linestyle='--', linewidth=1.5, label='Mean Value')
 
-                    # Apply LaTeX formatting
-                    self._set_latex_format(ax)
+                unit = f' ({parameter_units[col]})' if parameter_units[col] else ''
+                ax.set_xlabel(f'{parameter_names[col]}{unit}')
+                ax.set_ylabel('Density')
 
-                    # Set x and y limits
-                    ax.set_xticks(np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3))
-                    ax.set_ylim(y_min_posterior[col], y_max_posterior[col])
-                    ax.set_xlim(x_limits[col])
+                self._set_latex_format(ax)
 
-                    # Add vertical lines for mode and mean
-                    ax.axvline(mode_value, color='red', linestyle='--', linewidth=2,
-                               label=f'Max Density: {mode_value:.3f}')  # Show exact mode value
-                    mean_value = np.mean([x_limits[col][0], x_limits[col][1]])
-                    ax.axvline(mean_value, color='blue', linestyle='--', linewidth=1.5, label='Mean Value')
+                ax.set_xticks(np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3))
+                ax.set_ylim(y_min_posterior[col], y_max_posterior[col] * 1.5)
+                ax.set_xlim(x_limits[col])
 
-                    # Add grid
-                    ax.grid(True, which='both', linestyle='--', linewidth=0.7, color='lightgrey')
-                    ax.minorticks_on()
-                    ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')
+                ax.grid(True, which='both', linestyle='--', linewidth=0.7, color='lightgrey')
+                ax.minorticks_on()
+                ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')
 
-                    # Update legend
-                    ax.legend(fontsize=12)
+                ax.legend(fontsize=10)
 
-                    fig.tight_layout()
+            # Hide unused axes
+            for j in range(parameter_num, len(axes)):
+                fig.delaxes(axes[j])
 
-                    # Save the plot
-                    fig.savefig(
-                        save_folder / f'combined_distribution_{parameter_names[col].replace(" ", "_")}_iteration_{iteration_idx + 1}.png')
-                    plt.close(fig)
+            fig.tight_layout(rect=[0, 0.01, 1, 0.98])
+            fig.savefig(save_folder / f'posterior_distributions_iteration_{iteration_idx + 1}.png')
+            plt.close(fig)
 
     def plot_posterior_iteration(self, posterior_samples, parameter_names, param_values):
         """
@@ -1591,7 +1571,7 @@ class BayesianPlotter:
 
     def plot_metric_comparison(self, surrogate_metrics, quantities, metrics=["RMSE", "Correlation", "CI"]):
         """
-        Plots selected metrics for each quantity with customized appearance and axis limits.
+        Plots selected metrics for each quantity with customized appearance and dynamic axis limits.
 
         Parameters:
         ------------
@@ -1602,22 +1582,18 @@ class BayesianPlotter:
         metrics : list
             List of metrics to plot (default=["RMSE", "Correlation", "CI"]).
         """
-        # Extract arrays
+
+        save_folder = Path(self.results_folder_path)
+
         train_points = np.array(surrogate_metrics["TrainPoints"])
         quantity_names = np.array(surrogate_metrics["Quantity"])
         surrogate_type = np.array(surrogate_metrics["SurrogateType"])
         metric_values = {metric: np.array(surrogate_metrics[metric]) for metric in metrics}
 
-        # Custom y-limits
-        y_limits = {
-            "RMSE": (0.07, 0.16),
-            "Correlation": (0.75, 0.92),
-            "CI": (0.10, 0.55),
-        }
+        label_prefixes = ['a)', 'b)', 'c)', 'd)', 'e)', 'f)']  # Extend if needed
 
-        for quantity in quantities:
+        for q_idx, quantity in enumerate(quantities):
             fig, axs = plt.subplots(len(metrics), 1, figsize=(8, 3.5 * len(metrics)), sharex=True)
-            fig.suptitle(f"Metric Comparison for {quantity}", fontsize=14)
 
             for idx, metric in enumerate(metrics):
                 ax = axs[idx]
@@ -1632,36 +1608,44 @@ class BayesianPlotter:
                 so_metric = metric_values[metric][mask_so]
                 mo_metric = metric_values[metric][mask_mo]
 
-                # Plot lines
-                ax.plot(mo_tp, mo_metric, 'o-', color='firebrick', linewidth=2, markersize=5,
-                        label='MO (Multi-output GP)')
-                ax.plot(so_tp, so_metric, 'o--', color='royalblue', linewidth=2, markersize=5,
-                        label='SO (Single-output GP)')
+                # Plot lines with distinct styles
+                ax.plot(mo_tp, mo_metric, marker='o', linestyle='-', color='black',
+                        linewidth=1.5, markersize=5, label='MO (Multi-output GP)')
+                ax.plot(so_tp, so_metric, marker='s', linestyle='--', color='slategray',
+                        linewidth=1.5, markersize=5, label='SO (Single-output GP)')
 
+                # Vertical line for BAL starting at 25 training points
+                ax.axvline(x=25, color='lightgray', linestyle='--', linewidth=1)
+                ax.text(25.5, ax.get_ylim()[1] * 0.95, "BAL", color='gray',
+                        fontsize=9, verticalalignment='top', alpha=0.8)
 
-
-                # Set x-ticks every 5
+                # Set x-ticks
                 min_tp, max_tp = train_points.min(), train_points.max()
                 ax.set_xticks(np.arange(min_tp, max_tp + 1, 5))
 
-                # Axes and limits
-                ax.set_title(metric, fontsize=14)
+                # Dynamic y-limits with padding
+                all_vals = np.concatenate([so_metric, mo_metric])
+                ymin, ymax = np.min(all_vals), np.max(all_vals)
+                padding = 0.05 * (ymax - ymin) if ymax > ymin else 0.01
+                ax.set_ylim(ymin - padding, ymax + padding)
+
+                # Axis labels and grid
                 ax.set_ylabel(metric, fontsize=14)
                 ax.tick_params(axis='both', which='major', labelsize=9)
                 ax.grid(True, linestyle=':', alpha=0.7)
 
-                # Y-limits
-                if metric in y_limits:
-                    ax.set_ylim(y_limits[metric])
-
                 if idx == len(metrics) - 1:
-                    ax.set_xlabel("Number of Training Points", fontsize=14)
+                    ax.set_xlabel("Training Points", fontsize=14)
 
-                # Legend
                 ax.legend(fontsize=12, loc='best', frameon=False)
 
-            plt.tight_layout(rect=[0, 0.02, 1, 0.96])
-            plt.show()
+            # Figure title with letter prefix and quantity
+            figure_label = label_prefixes[q_idx] if q_idx < len(label_prefixes) else f"{chr(97 + q_idx)})"
+            fig.suptitle(f"{figure_label} Metrics for {quantity.title()}", fontsize=15, fontweight='bold')
+
+            plt.tight_layout(rect=[0, 0.04, 1, 0.94])
+            fig.savefig(save_folder / f"metrics_{quantity.replace(' ', '_').lower()}.png", dpi=300)
+            plt.close(fig)
     def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
         """
         Plots selected realizations comparing the complex model and surrogate model outputs.

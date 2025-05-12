@@ -27,7 +27,7 @@ full_complexity_model = TelemacModel(
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=2,
+            init_runs=5,
     calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                             # "zone0",
                             # "zone1",
@@ -41,7 +41,7 @@ full_complexity_model = TelemacModel(
                             "zone9",
                             # "zone10",
                             # "zone11",
-                            "zone12",
+                            # "zone12",
                             "zone13"],
             param_values=[[0.048, 0.070],  # critical shields parameter class 1
                   [0.01, 0.6],  # zone2
@@ -51,19 +51,18 @@ full_complexity_model = TelemacModel(
                   [0.050, 0.6],  # zone6
                   [0.002, 0.6],  # zone8
                   [0.05, 0.6],  # zone9
-                  [0.01, 1],  # zone12
                   [0.002, 1]],  # zone 13
             extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
             calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values=True,
-            max_runs=2,
+            max_runs=5,
             complete_bal_mode=False,
             only_bal_mode=False,
             delete_complex_outputs=True,
-            validation=True
+            validation=False
             )
-surrogate_to_analyze = 60
+surrogate_to_analyze = 100
 results_folder_path = full_complexity_model.asr_dir
 restart_data_folder = full_complexity_model.restart_data_folder
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
@@ -143,24 +142,34 @@ for i in range(n_quantities):
         measurement_error=err_quantity,
     )
 
-    # plotter.plot_model_outputs_vs_locations(
-    #     observed_values=obs_quantity,
-    #     quantity_name=full_complexity_model.calibration_quantities[i],
-    #     surrogate_outputs=sm_output[-3, :].reshape(1, -1),
-    #     complex_model_outputs=cm_output[-3, :].reshape(1, -1),
-    #     selected_locations=[24,25,21,27,29,31,1,13,9,8,6,14,3],
-    #     gpe_lower_ci=sm_lower_ci[-3, :].reshape(1, -1),
-    #     gpe_upper_ci=sm_upper_ci[-3, :].reshape(1, -1),
-    #     measurement_error=err_quantity,
-    # )
-    #
-    # plotter.plot_model_outputs_vs_locations(
-    #     observed_values=obs_quantity,
-    #     quantity_name=full_complexity_model.calibration_quantities[i],
-    #     surrogate_outputs=sm_output[-4, :].reshape(1, -1),
-    #     complex_model_outputs=cm_output[-4, :].reshape(1, -1),
-    #     selected_locations=[24,25,21,27,29,31,1,13,9,8,6,14,3],
-    #     gpe_lower_ci=sm_lower_ci[-4, :].reshape(1, -1),
-    #     gpe_upper_ci=sm_upper_ci[-4, :].reshape(1, -1),
-    #     measurement_error=err_quantity,
-    # )
+    plotter.plot_model_outputs_vs_locations(
+        observed_values=obs_quantity,
+        quantity_name=full_complexity_model.calibration_quantities[i],
+        surrogate_outputs=sm_output[-3, :].reshape(1, -1),
+        complex_model_outputs=cm_output[-3, :].reshape(1, -1),
+        selected_locations=list(range(1,37)),
+        gpe_lower_ci=sm_lower_ci[-3, :].reshape(1, -1),
+        gpe_upper_ci=sm_upper_ci[-3, :].reshape(1, -1),
+        measurement_error=err_quantity,
+    )
+
+    plotter.plot_model_outputs_vs_locations(
+        observed_values=obs_quantity,
+        quantity_name=full_complexity_model.calibration_quantities[i],
+        surrogate_outputs=sm_output[-4, :].reshape(1, -1),
+        complex_model_outputs=cm_output[-4, :].reshape(1, -1),
+        selected_locations=list(range(1,37)),
+        gpe_lower_ci=sm_lower_ci[-4, :].reshape(1, -1),
+        gpe_upper_ci=sm_upper_ci[-4, :].reshape(1, -1),
+        measurement_error=err_quantity,
+    )
+    plotter.plot_model_outputs_vs_locations(
+        observed_values=obs_quantity,
+        quantity_name=full_complexity_model.calibration_quantities[i],
+        surrogate_outputs=sm_output[-5, :].reshape(1, -1),
+        complex_model_outputs=cm_output[-5, :].reshape(1, -1),
+        selected_locations=list(range(1,37)),
+        gpe_lower_ci=sm_lower_ci[-5, :].reshape(1, -1),
+        gpe_upper_ci=sm_upper_ci[-5, :].reshape(1, -1),
+        measurement_error=err_quantity,
+    )
