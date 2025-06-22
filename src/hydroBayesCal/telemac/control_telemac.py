@@ -13,6 +13,7 @@ import pdb
 
 from scipy import spatial
 import numpy as np
+import config_telemac
 from mpi4py import MPI
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
@@ -27,6 +28,7 @@ except ImportError as e:
     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
 from src.hydroBayesCal.hysim import HydroSimulations
 from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
+ # provides TM2D_PARAMETERS, GAIA_PARAMETERS, TM_TEMPLATE_DIR
 
 class TelemacModel(HydroSimulations):
     def __init__(
@@ -35,6 +37,7 @@ class TelemacModel(HydroSimulations):
             tm_xd="",
             gaia_steering_file=None,
             results_filename_base="",
+            gaia_results_filename_base="",
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
             *args,
@@ -101,13 +104,12 @@ class TelemacModel(HydroSimulations):
         self.friction_file = friction_file
         self.tm_xd = tm_xd
         self.gaia_steering_file = gaia_steering_file
-        self.gaia_results_file = "bedload_flux_initial.slf"
+        self.gaia_results_filename_base = "bedload_flux_initial"
         self.results_filename_base = results_filename_base
         self.python_shebang = python_shebang
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, self.control_file)
         self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, self.friction_file)
         self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
-        self.gaia_slf = "{}{}{}".format(self.model_dir, os.sep, self.gaia_results_file) # for later use to extract output files from gaia simulations
         self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
         self.shebang = python_shebang
         if tm_xd == '1':
@@ -125,6 +127,7 @@ class TelemacModel(HydroSimulations):
         self.num_run = int()
         # Initializes the file where the output data from simulations will be stored
         self.tm_results_filename = ''
+        self.gaia_results_filename = ''
 
     def update_model_controls(
             self,
@@ -155,11 +158,19 @@ class TelemacModel(HydroSimulations):
             Modified control files telemac.cas and gaia.cas for Telemac simulations.
         """
         self.tm_results_filename = self.results_filename_base + '_' + str(simulation_id) + '.slf'
-        params_with_results = calibration_parameters + ['RESULTS FILE']
-        values_with_results = [
-            round(val, 7) if isinstance(val, float) else val
-            for val in collocation_point_values + [self.tm_results_filename]
-        ]
+        if self.gaia_cas:
+            self.gaia_results_filename = self.gaia_results_filename_base + '_' + str(simulation_id) + '.slf'
+            params_with_results = calibration_parameters + ['RESULTS FILE', 'gaiaRESULTS FILE']
+            values_with_results = [
+                round(val, 7) if isinstance(val, float) else val
+                for val in collocation_point_values + [self.tm_results_filename, self.gaia_results_filename]
+            ]
+        else:
+            params_with_results = calibration_parameters + ['RESULTS FILE']
+            values_with_results = [
+                round(val, 7) if isinstance(val, float) else val
+                for val in collocation_point_values + [self.tm_results_filename]
+            ]
         logger.info(f'Results file name for this simulation: {self.tm_results_filename}')
 
         friction_file_path = auxiliary_file_path
@@ -806,11 +817,11 @@ class TelemacModel(HydroSimulations):
 
             if delete_slf_files:
                 delete_slf(self.calibration_folder)
-                gaia_results_path = os.path.join(self.model_dir, self.gaia_results_file)
-                if os.path.isfile(gaia_results_path):
-                    os.remove(gaia_results_path)
-                else:
-                    print(f"Warning: {gaia_results_path} not found.")
+                # gaia_results_path = os.path.join(self.model_dir, self.gaia_results_filename)
+                # if os.path.isfile(gaia_results_path):
+                #     os.remove(gaia_results_path)
+                # else:
+                #     print(f"Warning: {gaia_results_path} not found.")
 
         # If required, we can return also the whole matrix containing the model results for ALL extraction quantities.
         # To do it, return model_results_extraction
@@ -882,127 +893,242 @@ class TelemacModel(HydroSimulations):
             - The detailed results file stores calibration quantities in a nested dictionary format, organized by variable name and point description.
         """
         extraction_quantity = extraction_quantity
-        input_file = os.path.join(model_directory, input_file)
+        classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
+
+        telemac_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "telemac"]
+        gaia_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "gaia"]
+
+        slf_files = {
+            "telemac": os.path.join(model_directory, self.tm_results_filename),
+            "gaia": os.path.join(model_directory, self.gaia_results_filename)
+        }
+
         json_path = os.path.join(results_folder_directory, f"{output_name}.json")
         json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
         json_path_restart_data = os.path.join(self.restart_data_folder, "initial-model-outputs.json")
+
         keys = list(calibration_pts_df.iloc[:, 0])
         modeled_values_dict = {}
         differentiated_dict = {}
-        logger.info(
-            f'Extracting {extraction_quantity} from results file {input_file} \n')
 
-        for key, h in zip(keys, range(len(calibration_pts_df))):
-            xu = calibration_pts_df.iloc[h, 1]
-            yu = calibration_pts_df.iloc[h, 2]
+        logger.info(f'Extracting from {input_file} using quantities: {extraction_quantity}')
 
-            # reads the *.slf file
-            slf = ppSELAFIN(input_file)
-            slf.readHeader()
+        for key_index, key in enumerate(keys):
+            xu = calibration_pts_df.iloc[key_index, 1]
+            yu = calibration_pts_df.iloc[key_index, 2]
 
-            slf.readTimes()
+            differentiated_values = {}
 
-            # gets times of the selafin file, and the variable names
-            #times = slf.getTimes()
-            variables = slf.getVarNames()
-            # pdb.set_trace()
-            units = slf.getVarUnits()
-            NVAR = len(variables)
+            for model_source, quantities in zip(['telemac', 'gaia'], [telemac_quantities, gaia_quantities]):
+                if not quantities:
+                    continue  # Skip if no quantities to extract from this model
 
-            # to remove duplicate spaces from variables and units
-            for i in range(NVAR):
-                variables[i] = ' '.join(variables[i].split())
-                units[i] = ' '.join(units[i].split())
+                slf_path = slf_files[model_source]
+                slf = ppSELAFIN(slf_path)
+                slf.readHeader()
+                slf.readTimes()
 
-            common_indices = []
+                variables = [' '.join(v.split()) for v in slf.getVarNames()]
+                units = [' '.join(u.split()) for u in slf.getVarUnits()]
+                NVAR = len(variables)
 
-            # Iterate over the secondary list
-            for value in extraction_quantity:
-                # Find the index of the value in the original list
-                index = variables.index(value)
-                # Add the index to the common_indices list
-                common_indices.append(index)
+                common_indices = [variables.index(q) for q in quantities]
 
-            # gets some of the mesh properties from the *.slf file
-            NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+                NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+                NPLAN = slf.getNPLAN()
 
-            # determine if the *.slf file is 2d or 3d by reading how many planes it has
-            NPLAN = slf.getNPLAN()
-            #fout.write('The file has ' + str(NPLAN) + ' planes' + '\n')
+                x2d = x[:len(x) // NPLAN]
+                y2d = y[:len(x) // NPLAN]
 
-            # store just the x and y coords
-            x2d = x[0:int(len(x) / NPLAN)]
-            y2d = y[0:int(len(x) / NPLAN)]
+                source = np.column_stack((x2d, y2d))
+                tree = spatial.cKDTree(source)
 
-            # create a KDTree object
-            source = np.column_stack((x2d, y2d))
-            tree = spatial.cKDTree(source)
+                if extraction_mode == "nearest":
+                    mode = "at nearest point"
+                    k_use = 1
+                    idx_all = np.zeros(NPLAN, dtype=np.int32)
+                elif extraction_mode == "interpolated":
+                    mode = f"through interpolation using {k} closest points"
+                    k_use = k
+                    idx_all = np.zeros((k, NPLAN), dtype=np.int32)
+                    idx_coord = np.zeros((k, 2), dtype=np.float64)
 
-            # find the index of the node the user is seeking
-            if extraction_mode=="nearest":
-                mode = "at nearest point"
-                k=1
-                idx_all = np.zeros(NPLAN, dtype=np.int32)
-            elif extraction_mode=="interpolated":
-                k=k
-                mode=f"though interpolation using {k} closest points "
-                idx_all = np.zeros((k,NPLAN), dtype=np.int32)
-                idx_coord = np.zeros((k, 2), dtype=np.float64)
-            d, idx = tree.query((xu, yu), k=k)
-            print(f'*** Extraction {key},{xu},{yu} performed {mode} for the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
+                d, idx = tree.query((xu, yu), k=k_use)
+                print(
+                    f'*** Extraction {key},{xu},{yu} performed {mode} in {model_source.upper()}!: {x2d[idx]} {y2d[idx]}\n')
 
-            if k==1:
-                idx_all[0] = idx
-            else:
-                idx_all[:, 0] = idx
-                idx_coord[:, 0] = x[idx]
-                idx_coord[:, 1] = y[idx]
-                interpolation_coordinate = (xu, yu)
-            # start at second plane and go to the end
-            for i in range(1, NPLAN, 1):
-                if k == 1:
-                    idx_all[i] = idx_all[i - 1] + (NPOIN // NPLAN)
+                if k_use == 1:
+                    idx_all[0] = idx
                 else:
-                    idx_all[:, i] = idx_all[:, i - 1] + (NPOIN // NPLAN)
-            # extract results for every plane (if there are multiple planes that is)
-            results_all = np.zeros((k, NVAR))
-            for p in range(NPLAN):# Loop over planes
-                for j in range(k):  # Loop over points
-                    slf.readVariablesAtNode(idx_all[j, p] if k > 1 else idx_all[p])
+                    idx_all[:, 0] = idx
+                    idx_coord[:, 0] = x2d[idx]
+                    idx_coord[:, 1] = y2d[idx]
+                    interpolation_coordinate = (xu, yu)
 
-                    # Extract results at all time steps for ALL model variables and chooses only for the last time step
-                    results = slf.getVarValuesAtNode()[-1]
-                    # Results_all stores the model outputs for each printout variable and at each nearest point (when nearest is selected)
-                    if k != 1:
-                        results_all[j, :] = results
-                if k != 1:
-                    results = interpolate_values(idx_coord,results_all,interpolation_coordinate)
+                for i in range(1, NPLAN):
+                    if k_use == 1:
+                        idx_all[i] = idx_all[i - 1] + (NPOIN // NPLAN)
+                    else:
+                        idx_all[:, i] = idx_all[:, i - 1] + (NPOIN // NPLAN)
 
-                #-------------------------------------------------------------------
-                # Initializes an empty list to store values (calibration qunatities) for every key (point description) for the
-                # current simulation
-                modeled_values_dict[key] = []
-                # Iterate over the common indices
-                for index in common_indices:
-                    # Extract value from the last row based on the index
-                    value = results[index]
-                    # Append the value to the list for the current key
-                    modeled_values_dict[key].append(value)
+                results_all = np.zeros((k_use, NVAR))
+                for p in range(NPLAN):
+                    for j in range(k_use):
+                        slf.readVariablesAtNode(idx_all[j, p] if k_use > 1 else idx_all[p])
+                        results = slf.getVarValuesAtNode()[-1]
+                        if k_use != 1:
+                            results_all[j, :] = results
 
-            # New dictionary that stores the values of the calibration quantities for each calibration point. Extra alternative for the
-            # Above-mentioned dictionary.
-            #differentiated_dict = {}
+                    if k_use != 1:
+                        results = interpolate_values(idx_coord, results_all, interpolation_coordinate)
 
-            # Iterate over the keys and values of the original dictionary
-            for key, values in modeled_values_dict.items():
-                # Create a dictionary to store the differentiated values for the current key
-                differentiated_values = {}
-                # Iterate over the titles and corresponding values
-                for title, value in zip(extraction_quantity, values):
-                    # Add the title and corresponding value to the dictionary
-                    differentiated_values[title] = value
-                # Add the differentiated values for the current key to the new dictionary
-                differentiated_dict[key] = differentiated_values
+                    for index in common_indices:
+                        value = results[index]
+                        var_name = variables[index]
+                        differentiated_values[var_name] = value
+
+            differentiated_dict[key] = differentiated_values
+
+        #
+        #
+        #
+
+
+
+        # ----------------------------------------------------------------------------------------
+        #
+        # extraction_quantity = extraction_quantity
+        # classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
+        # # Separate quantities
+        # telemac_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "telemac"]
+        # gaia_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "gaia"]
+        # slf_files = {
+        #     "telemac": self.tm_results_filename,
+        #     "gaia": self.gaia_results_filename
+        # }
+        # input_file = os.path.join(model_directory, input_file)
+        # json_path = os.path.join(results_folder_directory, f"{output_name}.json")
+        # json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
+        # json_path_restart_data = os.path.join(self.restart_data_folder, "initial-model-outputs.json")
+        # keys = list(calibration_pts_df.iloc[:, 0])
+        # modeled_values_dict = {}
+        # differentiated_dict = {}
+        # logger.info(
+        #     f'Extracting {extraction_quantity} from results file {input_file} \n')
+        # for key, h in zip(keys, range(len(calibration_pts_df))):
+        #     xu = calibration_pts_df.iloc[h, 1]
+        #     yu = calibration_pts_df.iloc[h, 2]
+        #
+        #     # reads the *.slf file
+        #     slf = ppSELAFIN(input_file)
+        #     slf.readHeader()
+        #
+        #     slf.readTimes()
+        #
+        #     # gets times of the selafin file, and the variable names
+        #     #times = slf.getTimes()
+        #     variables = slf.getVarNames()
+        #     # pdb.set_trace()
+        #     units = slf.getVarUnits()
+        #     NVAR = len(variables)
+        #
+        #     # to remove duplicate spaces from variables and units
+        #     for i in range(NVAR):
+        #         variables[i] = ' '.join(variables[i].split())
+        #         units[i] = ' '.join(units[i].split())
+        #
+        #     common_indices = []
+        #
+        #     # Iterate over the secondary list
+        #     for value in extraction_quantity:
+        #         # Find the index of the value in the original list
+        #         index = variables.index(value)
+        #         # Add the index to the common_indices list
+        #         common_indices.append(index)
+        #
+        #     # gets some of the mesh properties from the *.slf file
+        #     NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+        #
+        #     # determine if the *.slf file is 2d or 3d by reading how many planes it has
+        #     NPLAN = slf.getNPLAN()
+        #     #fout.write('The file has ' + str(NPLAN) + ' planes' + '\n')
+        #
+        #     # store just the x and y coords
+        #     x2d = x[0:int(len(x) / NPLAN)]
+        #     y2d = y[0:int(len(x) / NPLAN)]
+        #
+        #     # create a KDTree object
+        #     source = np.column_stack((x2d, y2d))
+        #     tree = spatial.cKDTree(source)
+        #
+        #     # find the index of the node the user is seeking
+        #     if extraction_mode=="nearest":
+        #         mode = "at nearest point"
+        #         k=1
+        #         idx_all = np.zeros(NPLAN, dtype=np.int32)
+        #     elif extraction_mode=="interpolated":
+        #         k=k
+        #         mode=f"though interpolation using {k} closest points "
+        #         idx_all = np.zeros((k,NPLAN), dtype=np.int32)
+        #         idx_coord = np.zeros((k, 2), dtype=np.float64)
+        #     d, idx = tree.query((xu, yu), k=k)
+        #     print(f'*** Extraction {key},{xu},{yu} performed {mode} for the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
+        #
+        #     if k==1:
+        #         idx_all[0] = idx
+        #     else:
+        #         idx_all[:, 0] = idx
+        #         idx_coord[:, 0] = x[idx]
+        #         idx_coord[:, 1] = y[idx]
+        #         interpolation_coordinate = (xu, yu)
+        #     # start at second plane and go to the end
+        #     for i in range(1, NPLAN, 1):
+        #         if k == 1:
+        #             idx_all[i] = idx_all[i - 1] + (NPOIN // NPLAN)
+        #         else:
+        #             idx_all[:, i] = idx_all[:, i - 1] + (NPOIN // NPLAN)
+        #     # extract results for every plane (if there are multiple planes that is)
+        #     results_all = np.zeros((k, NVAR))
+        #     for p in range(NPLAN):# Loop over planes
+        #         for j in range(k):  # Loop over points
+        #             slf.readVariablesAtNode(idx_all[j, p] if k > 1 else idx_all[p])
+        #
+        #             # Extract results at all time steps for ALL model variables and chooses only for the last time step
+        #             results = slf.getVarValuesAtNode()[-1]
+        #             # Results_all stores the model outputs for each printout variable and at each nearest point (when nearest is selected)
+        #             if k != 1:
+        #                 results_all[j, :] = results
+        #         if k != 1:
+        #             results = interpolate_values(idx_coord,results_all,interpolation_coordinate)
+        #
+        #         #-------------------------------------------------------------------
+        #         # Initializes an empty list to store values (calibration qunatities) for every key (point description) for the
+        #         # current simulation
+        #         modeled_values_dict[key] = []
+        #         # Iterate over the common indices
+        #         for index in common_indices:
+        #             # Extract value from the last row based on the index
+        #             value = results[index]
+        #             # Append the value to the list for the current key
+        #             modeled_values_dict[key].append(value)
+        #
+        #     # New dictionary that stores the values of the calibration quantities for each calibration point. Extra alternative for the
+        #     # Above-mentioned dictionary.
+        #     #differentiated_dict = {}
+        #
+        #     # Iterate over the keys and values of the original dictionary
+        #     for key, values in modeled_values_dict.items():
+        #         # Create a dictionary to store the differentiated values for the current key
+        #         differentiated_values = {}
+        #         # Iterate over the titles and corresponding values
+        #         for title, value in zip(extraction_quantity, values):
+        #             # Add the title and corresponding value to the dictionary
+        #             differentiated_values[title] = value
+        #         # Add the differentiated values for the current key to the new dictionary
+        #         differentiated_dict[key] = differentiated_values
+
+
+        # ----------------------------------------------------------------------------------------
         if simulation_number == 1:
             try:
                 # Removes the output_file.json when starting a new run of the code
@@ -1024,7 +1150,8 @@ class TelemacModel(HydroSimulations):
             update_json_file(json_path=json_path_detailed,modeled_values_dict=differentiated_dict, detailed_dict=True,save_dict=True,saving_path = json_path_restart_data)
 
         try:
-            shutil.move(os.path.join(model_directory, input_file), results_folder_directory)
+            shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
+            shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 

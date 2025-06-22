@@ -725,3 +725,18 @@ def update_gaia_class_line(line, index, new_value):
     # Reconstruct the line
     updated_line = f"{key.strip()} {separator} {';'.join(values_list)}"
     return updated_line
+
+def classify_parameters_tm_gaia(elements, classification_dict):
+    telemac_vars = []
+    gaia_vars = []
+
+    for element in elements:
+        source = classification_dict.get(element)
+        if source == "telemac":
+            telemac_vars.append(element)
+        elif source == "gaia":
+            gaia_vars.append(element)
+        else:
+            raise ValueError(f"Element '{element}' not recognized in CLASSIFICATION_DICT.")
+
+    return telemac_vars, gaia_vars

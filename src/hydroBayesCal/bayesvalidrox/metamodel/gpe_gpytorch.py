@@ -7,6 +7,7 @@ Author: Andres HEREDIA (2024)
 """
 import numpy as np
 import sys
+import scipy
 import sklearn
 import copy
 import pdb
@@ -614,6 +615,7 @@ class MultiGPyTraining:
         self.losses = []  # To store loss values for tracking convergence
         self.lengthscales = []
         self.noise_values = []  # To track noise values
+        self.multitask_cov = [] # To store multitask covariance matrices (Kronecker product of task kernel and input kernel)
 
     def train_tasks_variables(self):#Training variables at each location separately
         """
@@ -838,7 +840,7 @@ class MultiGPyTraining:
 
         # Store trained model
         self.gp_list = [{'gp': model, 'y_norm': (y_mean, y_std)}]
-    def predict_(self, input_sets, get_conf_int=False):
+    def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
         """
         Predict the outputs and their standard deviations for given input sets using the trained GP models.
         Automatically selects the appropriate method based on the structure of self.gp_list.
@@ -927,32 +929,48 @@ class MultiGPyTraining:
                             else:
                                 upper_ci[:, 2 * i + 1] = mean[:, i].numpy() + 2 * std[:, i].numpy()
                                 lower_ci[:, 2 * i + 1] = mean[:, i].numpy() - 2 * std[:, i].numpy()
+
+
         elif len(self.gp_list) == n_locations:
-            # Use logic from predict_
+            multitask_cov_list = [[None for _ in range(n_locations)] for _ in range(n_samples)]
             for i, model_info in enumerate(self.gp_list):
                 gp = model_info['gp']
                 y_mean, y_std = model_info['y_norm']
-
+                D = np.diag(y_std)
                 gp.eval()
                 self.likelihood.eval()
-
                 with torch.no_grad():
                     predictions = self.likelihood(gp(input_sets))
                     mean = predictions.mean.numpy()
                     std = predictions.stddev.numpy()
-
                     # Back-transform normalized predictions
+
                     mean = y_std * mean + y_mean
                     std = std * y_std
 
                     # Store predictions
+
                     surrogate_prediction[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean
                     surrogate_std[:, i * self.number_quantities:(i + 1) * self.number_quantities] = std
-
-                    # Calculate confidence intervals
                     if get_conf_int:
                         upper_ci[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean + 2 * std
                         lower_ci[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean - 2 * std
+
+                    if multitask_cov:
+
+                        # Now compute multitask covariance for all samples at this location
+                        task_covar_module = gp.covar_module.task_covar_module
+                        base_kernel = gp.covar_module.data_covar_module.base_kernel
+                        task_indices = torch.arange(self.number_quantities)
+                        for j in range(n_samples):
+                            x = input_sets[j].unsqueeze(0)  # (1, n_inputs)
+                            input_kernel = base_kernel(x, x).evaluate().squeeze()
+                            task_kernel = task_covar_module(task_indices).evaluate()
+                            full_cov = (input_kernel * task_kernel).detach().cpu().numpy()  # (Q, Q)
+                            # Back-transform covariance to original scale
+                            D = np.diag(y_std if isinstance(y_std, np.ndarray) else y_std.numpy())
+                            full_cov_orig = D @ full_cov @ D
+                            multitask_cov_list[j][i] = full_cov_orig  # j: sample, i: location
 
         else:
             raise ValueError(
@@ -960,10 +978,17 @@ class MultiGPyTraining:
             )
 
         # Prepare output dictionary
-        output_dic = {
-            'output': surrogate_prediction,
-            'std': surrogate_std,
-        }
+        if multitask_cov:
+            output_dic = {
+                'output': surrogate_prediction,
+                'std': surrogate_std,
+                'multitask_cov': multitask_cov_list
+            }
+        else:
+            output_dic = {
+                'output': surrogate_prediction,
+                'std': surrogate_std
+            }
         if get_conf_int:
             output_dic['upper_ci'] = upper_ci
             output_dic['lower_ci'] = lower_ci

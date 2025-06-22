@@ -673,8 +673,8 @@ class HydroSimulations:
                                     calibration_pts_file_path,
                                     calibration_quantities,
                                     extraction_quantities,
-                                    model_error = 0.35,
-                                    measurement_error=0.10):
+                                    model_error = 0.1,
+                                    measurement_error=0.20):
         """
         Reads and processes calibration point data, extracting observations and measurement errors.
 

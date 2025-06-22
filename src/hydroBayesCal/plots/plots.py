@@ -10,12 +10,13 @@ import math
 import corner
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
+import random
 
 from matplotlib.lines import Line2D
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde, norm, linregress
-import random
+from scipy.stats import gaussian_kde, norm, linregress, spearmanr
+
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import matplotlib.ticker as ticker
 from mpl_toolkits.mplot3d import Axes3D
@@ -1525,7 +1526,7 @@ class BayesianPlotter:
             mse = mean_squared_error(cm_values, sm_values)
             rmse = np.sqrt(mse)
             mae = mean_absolute_error(cm_values, sm_values)
-            correlation = np.corrcoef(cm_values, sm_values)[0, 1]
+            correlation, p_value = spearmanr(cm_values, sm_values)
             return mse, rmse, mae, correlation
 
         # Collect predictions and true values across all selected locations

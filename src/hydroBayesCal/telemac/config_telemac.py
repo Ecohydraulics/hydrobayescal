@@ -14,3 +14,22 @@ GAIA_PARAMETERS = _pd.read_csv(TM_TEMPLATE_DIR+"parameters-gaia.csv", names=["pa
 #print(GAIA_PARAMETERS)
 TM2D_PARAMETERS = _pd.read_csv(TM_TEMPLATE_DIR+"parameters-telemac2d.csv", names=["parameter", "type"])
 #print(TM2D_PARAMETERS)
+# Dictionary mapping each variable name to its source model
+classification_tm_gaia_dict = {
+    "WATER DEPTH": "telemac",
+    "SCALAR VELOCITY": "telemac",
+    "FREE SURFACE": "telemac",
+    "VELOCITY U": "telemac",
+    "VELOCITY V": "telemac",
+    "FROUDE NUMBER": "telemac",
+    "TURBULENT ENERG": "telemac",
+    "BOTTOM SHEAR STRESS": "telemac",
+
+    "BED ELEVATION": "gaia",
+    "CUMUL BED EVOL": "gaia",
+    "SUSPENDED LOAD CONC.": "gaia",
+    "BED LOAD": "gaia",
+    "TOTAL SEDIMENT DISCHARGE": "gaia",
+    "SEDIMENT DIAMETER": "gaia",
+    "CRITICAL SHEAR STRESS": "gaia"
+}

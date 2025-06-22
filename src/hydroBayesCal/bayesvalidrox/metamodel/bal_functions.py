@@ -4,6 +4,7 @@
 
 import numpy as np
 import scipy.stats as stats
+from scipy.linalg import block_diag
 import math
 from joblib import Parallel, delayed
 from tqdm import tqdm
@@ -372,6 +373,7 @@ class SequentialDesign:
                  gaussian_assumption=False,
                  mc_samples =  1000 ,
                  mc_exploration=10000,
+                 multitask=False
                  ):
 
         self.ExpDesign = exp_design
@@ -397,6 +399,7 @@ class SequentialDesign:
 
         self.mc_samples =  mc_samples# Number of parameter sets to sample and explore
         self.mc_exploration = mc_exploration   # number of output sets to sample during posterior exploration
+        self.multitask = multitask
 
         self.check_inputs()
 
@@ -548,13 +551,14 @@ class SequentialDesign:
             Score.
 
         """
-        obs_data = self.observations
-        n_obs_quantities = int(self.observations.shape[0])
-        n_obs_locations = int(self.observations.shape[1])
-
+          # number of surrogate model outputs
+        if hasattr(y_std[0], '__len__') and np.array(y_std[0]).shape[0] > 1:
+            n_multi_tasks = np.array(y_std[0]).shape[0]
+            cov=block_diag(*y_std)  # block diagonal covariance matrix
+        else:
+            cov = np.diag(y_std ** 2)
         # else:
-        cov = np.diag(y_std ** 2)
-        rv = stats.multivariate_normal(mean=y_mean, cov=cov)  # stats object with y_mean, y_var
+        rv = stats.multivariate_normal(mean=y_mean, cov=cov,allow_singular=True)  # stats object with y_mean, y_var
         y_mc = rv.rvs(size=self.mc_exploration)                 # sample from posterior space
         logPriorLikelihoods = rv.logpdf(y_mc)                   # get prior probability
 
@@ -684,9 +688,15 @@ class SequentialDesign:
                 y_cand = output['output']
                 std_cand = output['std']
             else:
-                output = self.SM.predict_(input_sets=candidates)
-                y_cand = output['output']
-                std_cand = output['std']
+                if self.multitask:
+                    output = self.SM.predict_(input_sets=candidates, multitask_cov=True)
+                    y_cand = output['output']
+                    std_cand = output['std']
+                    multi_cov = output['multitask_cov']
+                else:
+                    output = self.SM.predict_(input_sets=candidates)
+                    y_cand = output['output']
+                    std_cand = output['std']
             if self.EM is not None:
                 error_out = self.EM.predict_(input_sets=candidates)
 
@@ -698,7 +708,11 @@ class SequentialDesign:
                 # y_mean = {key: items[idx] for key, items in y_cand.items()}
                 # y_std = {key: items[idx] for key, items in std_cand.items()}
                 y_mean = y_cand[idx, :]
-                y_std = std_cand[idx, :]
+                if self.multitask:
+                    y_std = multi_cov[idx]
+                    # block_cov_matrix = block_diag(*cov_blocks)
+                else:
+                    y_std = std_cand[idx, :]
                 if utility_func.lower() == "bme" or not self.gaussian_assumption:
                     U_J_d[idx] = self.bayesian_active_learning(y_mean=y_mean, y_std=y_std,
                                                                observations=self.observations, error=m_error,

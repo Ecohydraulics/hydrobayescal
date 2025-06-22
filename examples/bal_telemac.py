@@ -385,7 +385,7 @@ def run_bal_model(collocation_points,
         # 3. Compute Bayesian scores in parameter space ----------------------------------------------------------
         # Surrogate outputs for prior samples
         if complex_model.num_calibration_quantities == 1:
-
+            multitask = False
             surrogate_output = sm.predict_(input_sets=prior,
                                            get_conf_int=True)
             model_predictions = surrogate_output['output']
@@ -401,6 +401,7 @@ def run_bal_model(collocation_points,
                     print(f"An error occurred while saving the dictionary: {e}")
 
         else:
+            multitask=True
             surrogate_output = surrogate_object.predict_(input_sets=prior,get_conf_int=True)
             total_error = complex_model.variances
             model_predictions = surrogate_output['output']
@@ -442,7 +443,8 @@ def run_bal_model(collocation_points,
                                   do_tradeoff=False,
                                   gaussian_assumption=False,
                                   mc_samples=mc_samples_al,
-                                  mc_exploration=mc_exploration)  # multiprocessing=parallelize
+                                  mc_exploration=mc_exploration,
+                                  multitask=multitask)  # multiprocessing=parallelize
 
             new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
             logger.info(f"The new collocation point after rejection sampling is {new_tp} obtained with {util_fun}")
@@ -571,6 +573,7 @@ if __name__ == "__main__":
             friction_file="friction_ering_MU_initial_NIKU.tbl",
             tm_xd="1",
             gaia_steering_file="gaia_ering_initial_NIKU.cas",
+            gaia_results_filename_base = "resultsGAIA",
             # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
@@ -580,6 +583,8 @@ if __name__ == "__main__":
             n_cpus=16,
             init_runs=25,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+                                    "gaiaCLASSES SHIELDS PARAMETERS 2",
+                                    "gaiaCLASSES SHIELDS PARAMETERS 3",
                                     # "zone0",
                                     # "zone1",
                                     "zone2",
@@ -590,22 +595,25 @@ if __name__ == "__main__":
                                     # "zone7",
                                     "zone8",
                                     "zone9",
-                                    # "zone10",
+                                    #"zone10",
                                     # "zone11",
                                     #"zone12",
                                     "zone13"],
-            param_values = [[0.048,0.070], # critical shields parameter class 1
-                            [0.01, 0.6], # zone2
-                            [0.01, 0.6], # zone3
-                            [0.002, 0.6],   # zone4
-                            [0.002, 0.6], # zone5
-                            [0.050, 0.6], # zone6
-                            [0.002, 0.6], # zone8
-                            [0.05, 0.6], # zone9
-                            [0.002, 1]], # zone 13
-            extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
+            param_values = [[0.047,0.070], # critical shields parameter class 1
+                            [0.047, 0.070], # critical shields parameter class 2
+                            [0.047, 0.070], # critical shields parameter class 3
+                            [0.008, 0.6], # zone2 Pool
+                            [0.008, 0.6], # zone3 Slackwater
+                            [0.002, 0.6], # zone4 Glide
+                            [0.002, 0.6], # zone5 Riffle
+                            [0.040, 0.6], # zone6 Run
+                            [0.002, 0.6], # zone8 Backwater
+                            [0.040, 0.6], # zone9 Wake
+                            [0.002, 2.8]], # zone 13 LW
+            extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH"
+            # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             # calibration_quantities=[ "SCALAR VELOCITY"],
             # calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
@@ -635,8 +643,8 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         experiment_design=exp_design,
         eval_steps=5,
-        prior_samples=22000,
-        mc_samples_al=2000,
+        prior_samples=15000,
+        mc_samples_al=1500,
         mc_exploration=1000,
         gp_library="gpy"
     )

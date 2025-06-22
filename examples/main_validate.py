@@ -23,24 +23,25 @@ full_complexity_model = TelemacModel(
     #n_cpus=16,
     init_runs=25, # Number oF samples for validation
     calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+                            "gaiaCLASSES SHIELDS PARAMETERS 3",
                             # "zone0",
                             # "zone1",
-                            "zone2",
-                            "zone3",
-                            "zone4",
-                            "zone5",
-                            "zone6",
+                            "Pool",
+                            "Slackwater",
+                            "Glide",
+                            "Riffle",
+                            "Run",
                             # "zone7",
-                            "zone8",
-                            "zone9",
+                            "Backwater",
+                            "Wake",
                             # "zone10",
                             # "zone11",
                             # "zone12",
-                            "zone13"], # pool-slackwater-glide-riffle-run
-    #calibration_quantities=["WATER DEPTH"],
+                            "LW"],
+    # calibration_quantities=["WATER DEPTH"],
     # calibration_quantities = ["SCALAR VELOCITY"],
-    # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-    calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+    # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
     validation=True
 
@@ -55,7 +56,7 @@ full_complexity_model = TelemacModel(
     #multitask_selection="variables"
 )
 # surrogate_to_analyze = list(range(25, 61, 5))
-surrogate_to_analyze = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]
+surrogate_to_analyze = [25,30,35,40,45]
 
 # Define the desired order manually (you can also automate if needed)
 calibration_quantities = full_complexity_model.calibration_quantities
