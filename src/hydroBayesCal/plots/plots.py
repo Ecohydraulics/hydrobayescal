@@ -1496,21 +1496,7 @@ class BayesianPlotter:
     def compute_evolution_metrics(self, surrogate_outputs, complex_model_outputs, sm_ci_upper, sm_ci_lower,
                                   selected_locations):
         """
-        Computes overall metrics (MSE, RMSE, MAE, Correlation) between the surrogate and complex model
-        across all selected locations, along with the evolution of the confidence interval range.
-
-        Parameters
-        ----------
-        surrogate_outputs : numpy.ndarray
-            2D array of surrogate model outputs (rows = realizations, columns = locations).
-        complex_model_outputs : numpy.ndarray
-            2D array of complex model outputs (rows = realizations, columns = locations).
-        sm_ci_upper : numpy.ndarray
-            2D array of upper confidence bounds for surrogate model outputs (rows = realizations, columns = locations).
-        sm_ci_lower : numpy.ndarray
-            2D array of lower confidence bounds for surrogate model outputs (rows = realizations, columns = locations).
-        selected_locations : list of int
-            List of location indices to include in the metric computation.
+        Computes overall and per-location metrics between surrogate and complex models.
 
         Returns
         -------
@@ -1518,22 +1504,23 @@ class BayesianPlotter:
         overall_rmse : float
         overall_mae : float
         overall_corr : float
-        ci_range_evolution : numpy.ndarray
-            Evolution of the confidence interval range (upper - lower) across selected locations.
+        ci_range_mean : float
+        location_metrics : numpy.ndarray, shape (n_locations, 5)
+            Each row: [mse, rmse, mae, correlation, p_value]
+        ci_range_per_location : numpy.ndarray, shape (n_locations,)
         """
-
         def compute_metrics(cm_values, sm_values):
             mse = mean_squared_error(cm_values, sm_values)
             rmse = np.sqrt(mse)
             mae = mean_absolute_error(cm_values, sm_values)
             correlation, p_value = spearmanr(cm_values, sm_values)
-            return mse, rmse, mae, correlation
+            return mse, rmse, mae, correlation, p_value
 
-        # Collect predictions and true values across all selected locations
         all_cm_values = []
         all_sm_values = []
 
-        ci_range_evolution = []  # List to track the evolution of the CI range
+        ci_range_evolution_location = []  # List of CI ranges per location
+        location_metrics = []  # List of [mse, rmse, mae, corr, p] per location
 
         for loc in selected_locations:
             sm_values = surrogate_outputs[:, loc]
@@ -1544,32 +1531,183 @@ class BayesianPlotter:
             all_cm_values.append(cm_values)
             all_sm_values.append(sm_values)
 
-            # Normalized CI range: (upper - lower) / mean absolute prediction
+            # Compute metrics for this location
+            mse, rmse, mae, corr, p_val = compute_metrics(cm_values, sm_values)
+            location_metrics.append([mse, rmse, mae, corr, p_val])
+
+            # CI range for this location
             ci_range = np.mean(ci_upper - ci_lower)
+            ci_range_evolution_location.append(ci_range)
 
-            ci_range_evolution.append(ci_range)
-
-
+        # Convert to arrays
         all_cm = np.concatenate(all_cm_values)
         all_sm = np.concatenate(all_sm_values)
+        locations_metrics = np.array(location_metrics)
+        ci_range_evolution = np.array(ci_range_evolution_location)
 
-        overall_mse, overall_rmse, overall_mae, overall_corr = compute_metrics(all_cm, all_sm)
+        # Compute overall metrics
+        overall_mse, overall_rmse, overall_mae, overall_corr, p_val = compute_metrics(all_cm, all_sm)
 
         print("\nOverall Metrics across all selected locations:")
         print(f" - MSE       : {overall_mse:.4e}")
         print(f" - RMSE      : {overall_rmse:.4e}")
         print(f" - MAE       : {overall_mae:.4e}")
         print(f" - Correlation: {overall_corr:.2f}")
-        print(f" - Confidence Interval Range Evolution: {np.mean(ci_range_evolution):.4e}")
+        print(f" - Confidence Interval Range (mean): {np.mean(ci_range_evolution_location):.4e}")
 
-        # Convert list to numpy array for easy handling
-        ci_range_evolution = np.array(ci_range_evolution)
-        ci_range_evolution = np.mean(ci_range_evolution, axis=0)
-
-        return overall_mse, overall_rmse, overall_mae, overall_corr, ci_range_evolution
+        return overall_mse, overall_rmse, overall_mae, overall_corr, np.mean(
+            ci_range_evolution), locations_metrics, ci_range_evolution_location
         # plt.tight_layout()
         # plt.show()
 
+    def location_metrics(self,
+            surrogate_metrics,
+            coordinates_df,
+    ):
+        """
+        Export per-location metrics (for all training points and quantities) to a long-format CSV,
+        using user-provided coordinate DataFrame.
+
+        Parameters
+        ----------
+        surrogate_metrics : dict
+            Dictionary with 'metrics_per_location' entries.
+        coordinates_df : pd.DataFrame
+            DataFrame containing at least "X" and "Y" columns (one row per location).
+        output_csv_path : str
+            Path to save the CSV file.
+        """
+        save_folder = self.save_folder
+
+        entries = surrogate_metrics.get("metrics_per_location", [])
+        if not entries:
+            print("❌ No metrics_per_location found.")
+            return
+
+
+        coordinates_df = coordinates_df.reset_index(drop=True)
+        n_locations = len(coordinates_df)
+
+        # Determine all metric keys (excluding non-metric fields)
+        sample = entries[0]
+        metric_keys = [k for k in sample if k not in {"Quantity", "TrainPoints"}]
+
+        rows = []
+        for entry in entries:
+            quantity = entry["Quantity"]
+            train_point = entry["TrainPoints"]
+
+            for loc_idx in range(n_locations):
+                row = {
+                    "Quantity": quantity,
+                    "TrainPoints": train_point,
+                    "LocationIndex": loc_idx,
+                    "X": coordinates_df.loc[loc_idx, "x"],
+                    "Y": coordinates_df.loc[loc_idx, "y"],
+                }
+                for key in metric_keys:
+                    value_list = entry.get(key, [])
+                    row[key] = value_list[loc_idx] if loc_idx < len(value_list) else None
+                rows.append(row)
+
+        df = pd.DataFrame(rows)
+        file_path = os.path.join(save_folder, "metrics-locations-tp.csv")
+        df.to_csv(file_path, index=False)
+        print(f"✅ Exported metrics to CSV: {file_path} ({len(df)} rows)")
+
+    def location_metric_heatmap(
+            self,
+            surrogate_metrics,
+            quantities=("SCALAR VELOCITY", "WATER DEPTH", "CUMUL BED EVOL"),
+            metric="RMSE",
+            ci_key="CI",
+            cmap="viridis",
+            vmax_metric=None,
+            max_xticks=10,
+            max_yticks=15
+    ):
+        """
+        Plots heatmaps showing a given metric and confidence interval (CI) per location, across training points,
+        for each quantity.
+
+        Parameters
+        ----------
+        surrogate_metrics : dict
+            Dictionary storing 'metrics_per_location' with per-training-point evaluation results.
+        quantities : tuple of str
+            Quantities to visualize (e.g., "SCALAR VELOCITY", "WATER DEPTH").
+        metric : str
+            Metric to visualize (e.g., "RMSE", "MAE").
+        ci_key : str
+            Key for CI metric (default: "CI").
+        cmap : str
+            Colormap for the metric heatmap.
+        vmax_metric : float or None
+            Optional upper bound for color scale of metric.
+        max_xticks : int
+            Max number of x-axis ticks (Training Points).
+        max_yticks : int
+            Max number of y-axis ticks (Locations).
+        """
+
+        n_quantities = len(quantities)
+        fig, axes = plt.subplots(n_quantities, 2, figsize=(15, 4 * n_quantities), constrained_layout=True)
+
+        if n_quantities == 1:
+            axes = np.array([axes])
+
+        for i, quantity in enumerate(quantities):
+            # Filter for this quantity
+            entries = [e for e in surrogate_metrics["metrics_per_location"] if e["Quantity"] == quantity]
+
+            if not entries:
+                print(f"No data found for quantity: {quantity}")
+                continue
+
+            # Sort entries by training points
+            entries.sort(key=lambda e: e["TrainPoints"])
+            train_points = [e["TrainPoints"] for e in entries]
+
+            # Build matrices: shape (n_training_pts, n_locations)
+            metric_matrix = np.array([e[metric] for e in entries])  # Each e[metric] is a list per location
+            ci_matrix = np.array([e[ci_key] for e in entries])
+
+            if metric_matrix.ndim != 2 or ci_matrix.ndim != 2:
+                print(f"Invalid shape for metric/CI data in {quantity}")
+                continue
+
+            # === Plot Metric ===
+            ax_metric = axes[i, 0]
+            sns.heatmap(
+                metric_matrix.T,
+                ax=ax_metric,
+                cmap=cmap,
+                vmin=0,
+                vmax=vmax_metric or np.percentile(metric_matrix, 98),
+                cbar_kws={'label': metric},
+                xticklabels=train_points if len(train_points) <= max_xticks else False,
+                yticklabels=np.arange(1, metric_matrix.shape[1] + 1) if metric_matrix.shape[1] <= max_yticks else False,
+            )
+            ax_metric.set_title(f"{metric} per Location ({quantity})", fontsize=14)
+            ax_metric.set_xlabel("Training Points")
+            ax_metric.set_ylabel("Location Index")
+
+            # === Plot CI ===
+            ax_ci = axes[i, 1]
+            sns.heatmap(
+                ci_matrix.T,
+                ax=ax_ci,
+                cmap="magma",
+                cbar_kws={'label': 'CI Range'},
+                xticklabels=train_points if len(train_points) <= max_xticks else False,
+                yticklabels=np.arange(ci_matrix.shape[1]) if ci_matrix.shape[1] <= max_yticks else False,
+            )
+            ax_ci.set_title(f"CI Range per Location ({quantity})", fontsize=14)
+            ax_ci.set_xlabel("Training Points")
+            ax_ci.set_ylabel("Location Index")
+
+        plt.suptitle("Metric and CI Evolution Across Locations", fontsize=16)
+        plt.show()
     def plot_metric_comparison(self, surrogate_metrics, quantities, metrics=["RMSE", "Correlation", "CI"]):
         """
         Plots selected metrics for each quantity with customized appearance and dynamic axis limits.
@@ -1644,7 +1782,7 @@ class BayesianPlotter:
             figure_label = label_prefixes[q_idx] if q_idx < len(label_prefixes) else f"{chr(97 + q_idx)})"
             fig.suptitle(f"{figure_label} Metrics for {quantity.title()}", fontsize=15, fontweight='bold')
 
-            plt.tight_layout(rect=[0, 0.04, 1, 0.94])
+            # plt.tight_layout(rect=[0, 0.04, 1, 0.94])
             fig.savefig(save_folder / f"metrics_{quantity.replace(' ', '_').lower()}.png", dpi=300)
             plt.close(fig)
     def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
@@ -1715,6 +1853,239 @@ class BayesianPlotter:
         plt.tight_layout()
         plt.show()
 
+    def evaluate_calibration(
+            self,
+            cm_outputs_split,
+            sm_outputs_split,
+            sm_upper_ci_split,
+            sm_lower_ci_split,
+            obs_split,
+            coordinates_df,
+            model_names=None,
+            quantity_names=None  # New parameter for quantity labels
+    ):
+        save_folder = self.save_folder
+
+        n_quantities = len(cm_outputs_split)
+        P = next(iter(cm_outputs_split.values())).shape[0]
+        N = next(iter(cm_outputs_split.values())).shape[1]
+
+        spatial_records = []
+        summary_records = []
+
+        spearman_cm_per_quantity = {f"Q{i + 1}": [] for i in range(n_quantities)}
+        spearman_sm_per_quantity = {f"Q{i + 1}": [] for i in range(n_quantities)}
+
+        if model_names is None or len(model_names) != P:
+            model_names = [f"M{i + 1}" for i in range(P)]
+
+        if quantity_names is None or len(quantity_names) != n_quantities:
+            quantity_names = [f"Q{i + 1}" for i in range(n_quantities)]
+
+        for p in range(P):
+            model_summary = {"model_id": p + 1, "model_name": model_names[p]}
+            total_rmse_cm = []
+            total_rmse_sm = []
+            total_nrmse_cm = []
+            total_nrmse_sm = []
+
+            all_cm_vals = []
+            all_sm_vals = []
+            all_obs_vals = []
+
+            for i in range(n_quantities):
+                cm_vals = cm_outputs_split[f'cm_outputs_{i + 1}'][p]
+                sm_vals = sm_outputs_split[f'sm_outputs_{i + 1}'][p]
+                upper_ci_vals = sm_upper_ci_split[f'sm_upper_ci_{i + 1}'][p]
+                lower_ci_vals = sm_lower_ci_split[f'sm_lower_ci_{i + 1}'][p]
+
+                obs_vals_raw = obs_split[f'obs_{i + 1}']
+                obs_vals = obs_vals_raw[0] if obs_vals_raw.ndim > 1 else obs_vals_raw
+
+                rmse_cm = np.sqrt((cm_vals - obs_vals) ** 2)
+                rmse_sm = np.sqrt((sm_vals - obs_vals) ** 2)
+                rmse_cm_total = np.sqrt(np.mean((cm_vals - obs_vals) ** 2))
+                rmse_sm_total = np.sqrt(np.mean((sm_vals - obs_vals) ** 2))
+
+                obs_range = np.max(obs_vals) - np.min(obs_vals)
+                if obs_range == 0:
+                    nrmse_cm_total = np.nan
+                    nrmse_sm_total = np.nan
+                else:
+                    nrmse_cm_total = rmse_cm_total / obs_range
+                    nrmse_sm_total = rmse_sm_total / obs_range
+
+                spearman_cm = spearmanr(cm_vals, obs_vals).correlation
+                spearman_sm = spearmanr(sm_vals, obs_vals).correlation
+
+                model_summary[f"RMSE_CM_Q{i + 1}"] = rmse_cm_total
+                model_summary[f"RMSE_SM_Q{i + 1}"] = rmse_sm_total
+                model_summary[f"NRMSE_CM_Q{i + 1}"] = nrmse_cm_total
+                model_summary[f"NRMSE_SM_Q{i + 1}"] = nrmse_sm_total
+                model_summary[f"Spearman_CM_Q{i + 1}"] = spearman_cm
+                model_summary[f"Spearman_SM_Q{i + 1}"] = spearman_sm
+
+                total_rmse_cm.append(rmse_cm_total)
+                total_rmse_sm.append(rmse_sm_total)
+                total_nrmse_cm.append(nrmse_cm_total)
+                total_nrmse_sm.append(nrmse_sm_total)
+
+                spearman_cm_per_quantity[f"Q{i + 1}"].append(spearman_cm)
+                spearman_sm_per_quantity[f"Q{i + 1}"].append(spearman_sm)
+
+                all_cm_vals.extend(cm_vals)
+                all_sm_vals.extend(sm_vals)
+                all_obs_vals.extend(obs_vals)
+
+                cm_ranks = pd.Series(cm_vals).rank().values
+                sm_ranks = pd.Series(sm_vals).rank().values
+                obs_ranks = pd.Series(obs_vals).rank().values
+
+                for j in range(N):
+                    ci_width = upper_ci_vals[j] - lower_ci_vals[j]
+                    spatial_records.append({
+                        "model_id": p + 1,
+                        "model_name": model_names[p],
+                        "quantity": f"Q{i + 1}",
+                        "x": coordinates_df.iloc[j]['x'],
+                        "y": coordinates_df.iloc[j]['y'],
+                        "rmse_cm": rmse_cm[j],
+                        "rmse_sm": rmse_sm[j],
+                        "ci_width": ci_width,
+                        "cm_rank": cm_ranks[j],
+                        "sm_rank": sm_ranks[j],
+                        "obs_rank": obs_ranks[j],
+                        "cm_output": cm_vals[j],
+                        "sm_output": sm_vals[j],
+                        "obs": obs_vals[j]
+                    })
+
+            model_summary["Overall_NRMSE_CM"] = np.nanmean(total_nrmse_cm)
+            model_summary["Overall_NRMSE_SM"] = np.nanmean(total_nrmse_sm)
+
+            overall_spearman_cm = spearmanr(all_cm_vals, all_obs_vals).correlation
+            overall_spearman_sm = spearmanr(all_sm_vals, all_obs_vals).correlation
+
+            model_summary["Overall_Spearman_CM"] = overall_spearman_cm
+            model_summary["Overall_Spearman_SM"] = overall_spearman_sm
+
+            summary_records.append(model_summary)
+
+        df_summary = pd.DataFrame(summary_records)
+
+        df_summary["Rank_NRMSE_CM"] = df_summary["Overall_NRMSE_CM"].rank(method="min")
+        df_summary["Rank_NRMSE_SM"] = df_summary["Overall_NRMSE_SM"].rank(method="min")
+        df_summary["Rank_Spearman_CM"] = df_summary["Overall_Spearman_CM"].rank(ascending=False, method="min")
+        df_summary["Rank_Spearman_SM"] = df_summary["Overall_Spearman_SM"].rank(ascending=False, method="min")
+
+        for i in range(n_quantities):
+            q = f"Q{i + 1}"
+            cm_ranks = pd.Series(spearman_cm_per_quantity[q]).rank(ascending=False, method="min")
+            sm_ranks = pd.Series(spearman_sm_per_quantity[q]).rank(ascending=False, method="min")
+            df_summary[f"Rank_Spearman_CM_{q}"] = cm_ranks.values
+            df_summary[f"Rank_Spearman_SM_{q}"] = sm_ranks.values
+
+        # ---------- Overall scatter plot ----------
+        plt.figure(figsize=(8, 6))
+        colors = plt.cm.get_cmap('tab10', len(df_summary))
+        size_marker = 150
+
+        for idx, row in df_summary.iterrows():
+            plt.scatter(row["Overall_NRMSE_CM"], row["Overall_Spearman_CM"],
+                        color=colors(idx), label=row["model_name"], s=size_marker, alpha=0.8, marker='o')
+
+        plt.xlabel("Normalized RMSE (NRMSE)")
+        plt.ylabel("Spearman Correlation ($\\rho$)")
+
+        x_ticks = np.round(
+            np.linspace(df_summary["Overall_NRMSE_CM"].min(), df_summary["Overall_NRMSE_CM"].max(), num=10), 2)
+        y_ticks = np.round(
+            np.linspace(df_summary["Overall_Spearman_CM"].min(), df_summary["Overall_Spearman_CM"].max(), num=10), 2)
+
+        for xtick in x_ticks:
+            plt.axvline(x=xtick, color='gray', linestyle='--', linewidth=0.5, zorder=0)
+        for ytick in y_ticks:
+            plt.axhline(y=ytick, color='gray', linestyle='--', linewidth=0.5, zorder=0)
+
+        plt.legend(loc='best', fontsize=10, frameon=True)
+        plt.grid(True)
+
+        min_nrmse = df_summary["Overall_NRMSE_CM"].min()
+        max_nrmse = df_summary["Overall_NRMSE_CM"].max()
+        x_margin = 0.1 * (max_nrmse - min_nrmse) if max_nrmse != min_nrmse else 0.1
+        plt.xlim(min_nrmse - x_margin, max_nrmse + x_margin)
+
+        min_spear = df_summary["Overall_Spearman_CM"].min()
+        max_spear = df_summary["Overall_Spearman_CM"].max()
+        y_margin = 0.1 * (max_spear - min_spear) if max_spear != min_spear else 0.1
+        plt.ylim(min_spear - y_margin, max_spear + y_margin)
+
+        plt.yticks(y_ticks)
+        plt.xticks(x_ticks)
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman.png"), dpi=300)
+        plt.show()
+
+        # ---------- Subplots for each quantity ----------
+        ncols = 2
+        nrows = math.ceil(n_quantities / ncols)
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=True)  # sharey only
+        axes = axes.flatten()
+
+        colors = plt.cm.get_cmap('tab10', len(df_summary))
+
+        # For y-axis limits (Spearman), calculate global limits (shared)
+        all_spearman = []
+        for i in range(n_quantities):
+            q = f"Q{i + 1}"
+            all_spearman.extend(df_summary[f"Spearman_CM_{q}"])
+
+        min_spear = min(all_spearman)
+        max_spear = max(all_spearman)
+        y_margin = 0.1 * (max_spear - min_spear) if max_spear != min_spear else 0.1
+        y_limits = (min_spear - y_margin, max_spear + y_margin)
+
+        for i in range(n_quantities):
+            ax = axes[i]
+            q = f"Q{i + 1}"
+
+            # Extract RMSE for current quantity
+            rmse_values = df_summary[f"RMSE_CM_{q}"]
+
+            # Compute x-axis limits for RMSE with 10% margin
+            min_rmse = rmse_values.min()
+            max_rmse = rmse_values.max()
+            x_margin = 0.1 * (max_rmse - min_rmse) if max_rmse != min_rmse else 0.1
+            x_limits = (min_rmse - x_margin, max_rmse + x_margin)
+
+            # Plot points
+            for idx, row in df_summary.iterrows():
+                ax.scatter(row[f"RMSE_CM_{q}"], row[f"Spearman_CM_{q}"],
+                           color=colors(idx), label=row["model_name"], s=100, alpha=0.8)
+
+            ax.set_title(quantity_names[i])
+            ax.set_xlim(x_limits)
+            ax.set_ylim(y_limits)
+            ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+            ax.set_xlabel("RMSE")
+            ax.set_ylabel("Spearman $\\rho$")
+            ax.tick_params(labelbottom=True)
+
+        # Remove unused axes if any
+        for j in range(n_quantities, len(axes)):
+            fig.delaxes(axes[j])
+
+        # Global legend
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper center', ncol=len(model_names), fontsize=10)
+
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
+        fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman.png"), dpi=300)
+        plt.show()
+
+        df_spatial = pd.DataFrame(spatial_records)
+        df_spatial.to_csv(os.path.join(save_folder, "location_metrics_models.csv"), index=False)
+        df_summary.to_csv(os.path.join(save_folder, "summary_metrics_models.csv"), index=False)
 # def plot_bme_concentration_last_iterations(param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,
 #                                            last_iterations=10, interval=1):
 #     """

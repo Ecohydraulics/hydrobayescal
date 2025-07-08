@@ -466,7 +466,7 @@ class TelemacModel(HydroSimulations):
                     self.run_single_simulation(self.control_file)
                     self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
                                             self.extraction_quantities, self.num_run, self.model_dir,
-                                            self.calibration_folder)
+                                            res_dir)
                     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
                                                                       f'{self.dict_output_name}-detailed.json'),
                                                                     delete_slf_files=self.delete_complex_outputs,
@@ -527,7 +527,7 @@ class TelemacModel(HydroSimulations):
                 output_name_calibration = f'{self.dict_output_name}{"_".join(self.calibration_quantities)}'
                 self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
                                         self.extraction_quantities, self.num_run, self.model_dir,
-                                        self.calibration_folder)
+                                        res_dir)
                 # In this first output processing, ALL the extraction quantities are saved as .csv file in the calibration folder.
                 self.output_processing(output_data_path=os.path.join(res_dir,f'{self.dict_output_name}-detailed.json'),
                                                                 delete_slf_files=self.delete_complex_outputs,
@@ -575,16 +575,30 @@ class TelemacModel(HydroSimulations):
                         writer.writerows(array_list)  # Write the array data
                 else:
                     quantities_str = '_'.join(self.calibration_quantities)
-                    with open(res_dir + os.sep + f"collocation-points-{quantities_str}.csv", mode='w',
-                              newline='') as file:
-                        writer = csv.writer(file)
-                        writer.writerow(calibration_parameters)
-                        writer.writerows(array_list)  # Write the array data
-                    with open(restart_data_path + os.sep + "initial-collocation-points.csv", mode='w',
-                              newline='') as file:
-                        writer = csv.writer(file)
-                        writer.writerow(calibration_parameters)
-                        writer.writerows(array_list)  # Write the array data
+                    if self.user_collocation_points is not None:
+                        self.calibration_folder = self.restart_data_folder
+                        self.dict_output_name = "user-" + self.dict_output_name
+                        # with open(res_dir + os.sep + f"user-collocation-points-{quantities_str}.csv", mode='w',
+                        #           newline='') as file:
+                        #     writer = csv.writer(file)
+                        #     writer.writerow(calibration_parameters)
+                        #     writer.writerows(array_list)  # Write the array data
+                        # with open(restart_data_path + os.sep + "initial-collocation-points.csv", mode='w',
+                        #           newline='') as file:
+                        #     writer = csv.writer(file)
+                        #     writer.writerow(calibration_parameters)
+                        #     writer.writerows(array_list)  # Write the array data
+                    else:
+                        with open(res_dir + os.sep + f"collocation-points-{quantities_str}.csv", mode='w',
+                                  newline='') as file:
+                            writer = csv.writer(file)
+                            writer.writerow(calibration_parameters)
+                            writer.writerows(array_list)  # Write the array data
+                        with open(restart_data_path + os.sep + "initial-collocation-points.csv", mode='w',
+                                  newline='') as file:
+                            writer = csv.writer(file)
+                            writer.writerow(calibration_parameters)
+                            writer.writerows(array_list)  # Write the array data
                 #collocation_points=collocation_points*[[0.5,0.001,0.073,0.02,0.00625,0.00625,0.0131,0.0131,0.0178]]
                 # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
                 collocation_points=collocation_points #* [[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
@@ -607,7 +621,7 @@ class TelemacModel(HydroSimulations):
                     if validation:
                         output_data_path = os.path.join(restart_data_path,'collocation-points-validation.json')
                     else:
-                        output_data_path = os.path.join(res_dir,f'{self.dict_output_name}-detailed.json')
+                        output_data_path = os.path.join(self.calibration_folder,f'{self.dict_output_name}-detailed.json')
 
                     self.model_evaluations = self.output_processing(output_data_path=output_data_path,
                                                                     delete_slf_files=self.delete_complex_outputs,
@@ -750,8 +764,12 @@ class TelemacModel(HydroSimulations):
                     )
                 else:
                     quantities_str = '_'.join(calibration_quantities)
+                    if self.user_param_values:
+                        extraction_csv_file_name = f"user-model-results-calibration-{quantities_str}.csv"
+                    else:
+                        extraction_csv_file_name = f"model-results-calibration-{quantities_str}.csv"
                     np.savetxt(
-                        os.path.join(self.calibration_folder, f"model-results-calibration-{quantities_str}.csv"),
+                        os.path.join(self.calibration_folder, extraction_csv_file_name),
                         model_results_calibration,
                         delimiter=',',
                         fmt='%.8f',
@@ -760,12 +778,16 @@ class TelemacModel(HydroSimulations):
 
                 if save_extraction_outputs and extraction_mode:
                     model_results_extraction = rearrange_array(model_results_extraction, num_quantities_extraction)
+                    if self.user_param_values:
+                        extraction_csv_file_name = 'user-model-results-extraction.csv'
+                    else:
+                        extraction_csv_file_name = 'model-results-extraction'
                     column_headers_extraction = []
                     for i in range(1, n_calibration_pts + 1):  # Calibration point indices
                         for quantity in extraction_quantities:
                             column_headers_extraction.append(f'PT{i}_{quantity}')
                     np.savetxt(
-                        os.path.join(self.calibration_folder, 'model-results-extraction.csv'),
+                        os.path.join(self.calibration_folder, extraction_csv_file_name),
                         model_results_extraction,
                         delimiter=',',
                         fmt='%.8f',
@@ -795,20 +817,28 @@ class TelemacModel(HydroSimulations):
                     )
                 else:
                     quantities_str = '_'.join(calibration_quantities)
+                    if self.user_param_values:
+                        extraction_csv_file_name = f"user-model-results-calibration-{quantities_str}.csv"
+                    else:
+                        extraction_csv_file_name = f"model-results-calibration-{quantities_str}.csv"
                     np.savetxt(
-                        os.path.join(self.calibration_folder, f"model-results-calibration-{quantities_str}.csv"),
+                        os.path.join(self.calibration_folder, extraction_csv_file_name),
                         model_results_calibration,
                         delimiter=',',
                         fmt='%.8f',
                         header=','.join(column_headers_calibration),
                     )
                 if save_extraction_outputs and extraction_mode:
+                    if self.user_param_values:
+                        extraction_csv_file_name = 'user-model-results-extraction.csv'
+                    else:
+                        extraction_csv_file_name = 'model-results-extraction'
                     column_headers_extraction = []
                     for i in range(1, n_calibration_pts + 1):  # Calibration point indices
                         for quantity in extraction_quantities:
                             column_headers_extraction.append(f'PT{i}_{quantity}')
                     np.savetxt(
-                        os.path.join(self.calibration_folder, 'model-results-extraction.csv'),
+                        os.path.join(self.calibration_folder, extraction_csv_file_name),
                         model_results_extraction,
                         delimiter=',',
                         fmt='%.8f',
@@ -1130,14 +1160,20 @@ class TelemacModel(HydroSimulations):
 
         # ----------------------------------------------------------------------------------------
         if simulation_number == 1:
-            try:
-                # Removes the output_file.json when starting a new run of the code
-                os.remove(json_path)
-            except FileNotFoundError:
+            # Handle json_path
+            if os.path.exists(json_path):
+                old_json_path = json_path.replace(".json", "_old.json")
+                os.rename(json_path, old_json_path)
+                print(f"Renamed existing file to: {old_json_path}")
+            else:
                 print("No nested result file found. Creating a new file.")
-            try:
-                os.remove(json_path_detailed)
-            except FileNotFoundError:
+
+            # Handle json_path_detailed
+            if os.path.exists(json_path_detailed):
+                old_json_path_detailed = json_path_detailed.replace(".json", "_old.json")
+                os.rename(json_path_detailed, old_json_path_detailed)
+                print(f"Renamed existing file to: {old_json_path_detailed}")
+            else:
                 print("No detailed result file found. Creating a new file.")
         # Updating json files for every run
         #update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)

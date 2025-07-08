@@ -1,7 +1,5 @@
 import sys
 import os
-import numpy as np
-import bayesvalidrox as bvr
 
 # Base directory of the project
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,6 +21,7 @@ full_complexity_model = TelemacModel(
     #n_cpus=16,
     init_runs=25, # Number oF samples for validation
     calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+                            "gaiaCLASSES SHIELDS PARAMETERS 2",
                             "gaiaCLASSES SHIELDS PARAMETERS 3",
                             # "zone0",
                             # "zone1",
@@ -40,23 +39,14 @@ full_complexity_model = TelemacModel(
                             "LW"],
     # calibration_quantities=["WATER DEPTH"],
     # calibration_quantities = ["SCALAR VELOCITY"],
-    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-    # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
-    extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG"],
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+    # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+    extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V",
+                           "CUMUL BED EVOL"],
     validation=True
-
-    #dict_output_name="extraction-data",
-    #friction_file="friction_ering_MU.tbl",
-    #tm_xd="1",
-    #results_filename_base="results2m3_mu",
-    #complete_bal_mode=False,
-    #only_bal_mode=False,
-    #check_inputs=False,
-    #delete_complex_outputs=True,
-    #multitask_selection="variables"
 )
-# surrogate_to_analyze = list(range(25, 61, 5))
-surrogate_to_analyze = [25,30,35,40,45]
+surrogate_to_analyze = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to analyze
+surrogates_to_evaluate = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]
 
 # Define the desired order manually (you can also automate if needed)
 calibration_quantities = full_complexity_model.calibration_quantities
@@ -69,6 +59,8 @@ else:
 # Load the surrogate model
 results_folder_path = full_complexity_model.asr_dir
 restart_data_folder = full_complexity_model.restart_data_folder
+coordinates = full_complexity_model.calibration_pts_df[["x", "y"]]
+
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
@@ -84,6 +76,7 @@ surrogate_metrics = {
     "MAE": [],
     "Correlation": [],
     "CI": [],
+    "metrics_per_location":[],
 }
 
 for train_points in surrogate_to_analyze:
@@ -122,11 +115,12 @@ for train_points in surrogate_to_analyze:
             sm_lower_ci = sm_predictions["lower_ci"][:, idx::n_quantities]
 
             # Compute metrics
-            overall_mse, overall_rmse, overall_mae, overall_corr, ci_range_evolution = plotter.compute_evolution_metrics(sm_output,
+            overall_mse, overall_rmse, overall_mae, overall_corr, ci_range_evolution,locations_metrics, ci_range_evolution_location = plotter.compute_evolution_metrics(sm_output,
                                                                                                                          cm_output,
                                                                                                                          sm_upper_ci,
                                                                                                                          sm_lower_ci,
-                                                                                                                         selected_locations=list(range(1,37)))
+                                                                                                                         selected_locations=list(range(0,37)))
+
 
             # Save metrics
             surrogate_metrics["TrainPoints"].append(train_points)
@@ -137,9 +131,23 @@ for train_points in surrogate_to_analyze:
             surrogate_metrics["MAE"].append(overall_mae)
             surrogate_metrics["Correlation"].append(overall_corr)
             surrogate_metrics["CI"].append(ci_range_evolution)
-
+            if train_points in surrogates_to_evaluate:
+                surrogate_type = "SO" if n_quantities == 1 else "MO"
+                per_loc_data = {
+                    "TrainPoints": train_points,
+                    "Quantity": quantity_name,
+                    "SurrogateType": [surrogate_type] * n_loc,
+                    "LocationIdx": list(range(locations_metrics.shape[0])),
+                    "MSE": locations_metrics[:, 0].tolist(),
+                    "RMSE": locations_metrics[:, 1].tolist(),
+                    "MAE": locations_metrics[:, 2].tolist(),
+                    "Correlation": locations_metrics[:, 3].tolist(),
+                    "CI": ci_range_evolution_location
+                }
+                surrogate_metrics["metrics_per_location"].append(per_loc_data)
 plotter.plot_metric_comparison(surrogate_metrics, calibration_quantities, metrics=["RMSE","Correlation", "CI"])
-
+plotter.location_metrics(surrogate_metrics,coordinates)
+# plotter.location_metric_heatmap(surrogate_metrics)
 # print(surrogate_metrics)
 # for surrogate_to_analyze in surrogate_to_analyze:
 #     # Load the surrogate model

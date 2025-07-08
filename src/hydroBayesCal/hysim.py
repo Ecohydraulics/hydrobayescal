@@ -244,6 +244,7 @@ class HydroSimulations:
         self.delete_complex_outputs=delete_complex_outputs
         self.validation=validation
         self.multitask_selection = multitask_selection
+        self.user_param_values = user_param_values
         if self.validation:
             self.dict_output_name = dict_output_name + "-validation"
         else:
@@ -275,7 +276,7 @@ class HydroSimulations:
         self.restart_data_folder = os.path.join(self.asr_dir,"restart_data")
         if not os.path.exists(self.asr_dir):
             os.makedirs(self.asr_dir)
-        if not os.path.exists(self.calibration_folder):
+        if not os.path.exists(self.calibration_folder) and not self.user_param_values:
             os.makedirs(self.calibration_folder)
         if not os.path.exists(self.restart_data_folder):
             os.makedirs(self.restart_data_folder)
@@ -285,10 +286,10 @@ class HydroSimulations:
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
         # if complete_bal_mode and only_bal_mode:
         #     update_json_file(json_path=os.path.join(self.restart_data_folder, "initial-model-outputs.json"),save_dict=False,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
-        if user_param_values:
+        if self.user_param_values:
             collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
             self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, ndmin=2)
-        if only_bal_mode:
+        if self.only_bal_mode:
             collocation_path = os.path.join(self.restart_data_folder, 'initial-collocation-points.csv')
             self.restart_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, max_rows=self.init_runs,ndmin=2)
 
