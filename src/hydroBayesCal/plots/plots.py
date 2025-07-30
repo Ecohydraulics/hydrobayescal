@@ -18,12 +18,13 @@ import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde, norm, linregress, spearmanr
 
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.preprocessing import StandardScaler
 import matplotlib.ticker as ticker
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from pathlib import Path
 from matplotlib import gridspec
-
+from matplotlib.ticker import MaxNLocator   # ➊ neuer Import
 
 class BayesianPlotter:
     def __init__(
@@ -53,14 +54,15 @@ class BayesianPlotter:
             'text.usetex': True,
             'font.family': 'serif',
             'font.serif': ['Times'],
-            'axes.labelsize': 14,
-            'axes.titlesize': 16,
-            'xtick.labelsize': 12,
-            'ytick.labelsize': 12,
-            'legend.fontsize': 12,
+            'axes.labelsize': 24,
+            'axes.titlesize': 24,
+            'xtick.labelsize': 24,
+            'ytick.labelsize': 24,
+            'legend.fontsize': 24,
             'lines.linewidth': 1.5,
             'lines.markersize': 8,
-            'axes.linewidth': 0.8
+            'axes.linewidth': 0.8,
+            'svg.fonttype': 'none'
         })
 
     def _set_latex_format(self, ax):
@@ -72,10 +74,10 @@ class BayesianPlotter:
         ax : matplotlib.axes.Axes
             The axes on which to set LaTeX formatting.
         """
-        ax.set_xlabel(ax.get_xlabel(), fontsize=14, family='serif')
-        ax.set_ylabel(ax.get_ylabel(), fontsize=14, family='serif')
-        ax.legend(fontsize=12)
-        ax.tick_params(axis='both', which='both', direction='in', labelsize=12)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=28, family='serif')
+        ax.set_ylabel(ax.get_ylabel(), fontsize=28, family='serif')
+        ax.legend(fontsize=28)
+        ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
         ax.spines['top'].set_linewidth(0.8)
         ax.spines['right'].set_linewidth(0.8)
         ax.spines['bottom'].set_linewidth(0.8)
@@ -281,7 +283,6 @@ class BayesianPlotter:
         if parameter_units is None:
             parameter_units = [''] * parameter_num
 
-        # Define x-axis limits
         x_limits = np.zeros((parameter_num, 2))
         if param_values is None:
             for i in range(parameter_num):
@@ -290,7 +291,6 @@ class BayesianPlotter:
             for i in range(parameter_num):
                 x_limits[i] = param_values[i]
 
-        # Calculate y-axis limits
         y_min_posterior = np.zeros(parameter_num)
         y_max_posterior = np.zeros(parameter_num)
 
@@ -304,7 +304,6 @@ class BayesianPlotter:
                         y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior)) * 1.15
                         y_min_posterior[i] = 0
 
-        # Plot distributions for each iteration
         for plot_index, iteration_idx in enumerate(iterations_to_plot):
             num_rows = 3
             num_cols = math.ceil(parameter_num / num_rows)
@@ -317,33 +316,24 @@ class BayesianPlotter:
 
                 # Histogram
                 ax.hist(posterior_vector, bins=bins, density=density, alpha=0.5, color='grey',
-                        edgecolor='black', linewidth=0.8, label='Posterior')
+                        edgecolor='black', linewidth=0.8)
 
                 # KDE for posterior
                 kde_post = gaussian_kde(posterior_vector)
                 x_vals = np.linspace(x_limits[col][0], x_limits[col][1], 500)
-                ax.plot(x_vals, kde_post(x_vals), color='black', linewidth=0.8, label='Posterior KDE')
+                ax.plot(x_vals, kde_post(x_vals), color='black', linewidth=1, label='Posterior KDE')
 
-                # Prior
-                if plot_prior:
-                    ax.hist(prior[:, col], bins=bins, density=density, alpha=0.2, color='#1E90FF',
-                            edgecolor='black', linewidth=0.8, label='Prior')
-                    # KDE for prior
-                    kde_prior = gaussian_kde(prior[:, col])
-                    ax.plot(x_vals, kde_prior(x_vals), color='blue', linestyle='-', linewidth=1.5, label='Prior KDE')
-
-                # Max density location (mode from KDE)
+                # MAP line
                 mode_value = x_vals[np.argmax(kde_post(x_vals))]
                 ax.axvline(mode_value, color='red', linestyle='--', linewidth=2,
-                           label=f'Max Density: {mode_value:.3f}')
+                           label=f'MAP: {mode_value:.3f}')
 
-                # Mean of param range
-                mean_value = np.mean([x_limits[col][0], x_limits[col][1]])
-                ax.axvline(mean_value, color='blue', linestyle='--', linewidth=1.5, label='Mean Value')
+                # Axis labels
+                unit = f' [{parameter_units[col]}]' if parameter_units[col] else ''
+                ax.set_xlabel(f'{parameter_names[col]}{unit}', fontsize=20)
+                ax.set_ylabel('Density', fontsize=20)
 
-                unit = f' ({parameter_units[col]})' if parameter_units[col] else ''
-                ax.set_xlabel(f'{parameter_names[col]}{unit}')
-                ax.set_ylabel('Density')
+                ax.tick_params(axis='both', which='major', labelsize=20)
 
                 self._set_latex_format(ax)
 
@@ -355,14 +345,13 @@ class BayesianPlotter:
                 ax.minorticks_on()
                 ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')
 
-                ax.legend(fontsize=10)
+                ax.legend(fontsize=18)
 
-            # Hide unused axes
             for j in range(parameter_num, len(axes)):
                 fig.delaxes(axes[j])
 
             fig.tight_layout(rect=[0, 0.01, 1, 0.98])
-            fig.savefig(save_folder / f'posterior_distributions_iteration_{iteration_idx + 1}.png')
+            fig.savefig(save_folder / f'posterior_distributions_iteration_{iteration_idx + 1}.png', dpi=300)
             plt.close(fig)
 
     def plot_posterior_iteration(self, posterior_samples, parameter_names, param_values):
@@ -462,6 +451,7 @@ class BayesianPlotter:
         save_path = self.save_folder / "plot_posterior.png"
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
+
     def plot_bme_re(
             self,
             bayesian_dict,
@@ -473,25 +463,22 @@ class BayesianPlotter:
 
         Parameters
         ----------
-            bayesian_dict: dict
-                Dictionary containing 'BME' and 'RE' values for each iteration.
-            num_bal_iterations: int
-                Number of iterations for which to plot data.
-            plot_type: str
-                Type of plot to generate, can be 'BME', 'RE', or 'both'.
+        bayesian_dict: dict
+            Dictionary containing 'BME' and 'RE' values for each iteration.
+        num_bal_iterations: int
+            Number of iterations for which to plot data.
+        plot_type: str
+            Type of plot to generate, can be 'BME', 'RE', or 'both'.
 
         Returns
         -------
-            None
-                The function creates plots of BME or RE values over iterations and are saved
-                as .png files in the /plots folder.
+        None
+            The function creates plots of BME or RE values over iterations and saves them
+            as .png files in the /plots folder.
         """
         save_folder = self.save_folder
-
-        # Ensure save_folder exists
         save_folder.mkdir(parents=True, exist_ok=True)
 
-        # Extract BME and RE for plotting
         iterations = list(range(num_bal_iterations))
         bme_values = [bayesian_dict['BME'][it] for it in iterations]
         re_values = [bayesian_dict['RE'][it] for it in iterations]
@@ -499,134 +486,101 @@ class BayesianPlotter:
         if plot_type == 'both':
             fig, axes = plt.subplots(1, 2, figsize=(15, 5))
 
-            # Plot BME
-            axes[0].plot(iterations, bme_values, marker='+', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                         label=r'BME')
-            axes[0].set_title(r'Bayesian Model Evidence (BME)', fontsize=16, weight='normal')
-            axes[0].set_xlabel(r'Iteration', fontsize=14)
-            axes[0].set_ylabel(r'BME', fontsize=14)
+            # --- BME plot ---
+            axes[0].plot(iterations, bme_values, marker='.', color='black',
+                         linestyle='-')
+            # axes[0].set_title(r'Bayesian Model Evidence (BME)')
+            axes[0].set_xlabel(r'Iteration')
+            axes[0].set_ylabel(r'BME')
             axes[0].grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
-            axes[0].legend(fontsize=12, loc='upper left')
 
-            # Add a dashed tendency line for BME
             slope_bme, intercept_bme, _, _, _ = linregress(iterations, bme_values)
             trend_bme = [slope_bme * x + intercept_bme for x in iterations]
-            axes[0].plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=0.8,
-                         label=r'Trend Line')
-            axes[0].legend(fontsize=12, loc='upper left')
-
-            # Set x-axis limits and tick parameters for BME plot
+            axes[0].plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=0.8
+                         )
+            # axes[0].legend(loc='upper left')
             axes[0].set_xlim(iterations[0], iterations[-1])
             axes[0].xaxis.set_major_locator(ticker.MultipleLocator(5))
-            axes[0].tick_params(axis='both', which='major', labelsize=12)
-            axes[0].yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
             axes[0].ticklabel_format(style='sci', axis='y', scilimits=(-3, 3))
-            axes[0].yaxis.get_offset_text().set_fontsize(12)
+            axes[0].yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+            axes[0].yaxis.get_offset_text().set_fontsize(20)
+            self._set_latex_format(axes[0])
 
-            # Reduce the thickness of the axes borders
-            for spine in axes[0].spines.values():
-                spine.set_linewidth(0.5)
-
-            # Plot RE
-            axes[1].plot(iterations, re_values, marker='x', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                         label=r'RE')
-            axes[1].set_title(r'Relative Entropy (RE)', fontsize=16, weight='normal')
-            axes[1].set_xlabel(r'Iteration', fontsize=14)
-            axes[1].set_ylabel(r'RE', fontsize=14)
+            # --- RE plot ---
+            axes[1].plot(iterations, re_values, marker='.', color='black',
+                         linestyle='-')
+            # axes[1].set_title(r'Relative Entropy (RE)')
+            axes[1].set_xlabel(r'Iteration')
+            axes[1].set_ylabel(r'RE')
             axes[1].grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
-            axes[1].legend(fontsize=12, loc='upper left')
 
-            # Add a dashed tendency line for RE
             slope_re, intercept_re, _, _, _ = linregress(iterations, re_values)
             trend_re = [slope_re * x + intercept_re for x in iterations]
-            axes[1].plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.8, label=r'Trend Line')
-            axes[1].legend(fontsize=12, loc='upper left')
-
-            # Set x-axis limits and tick parameters for RE plot
+            axes[1].plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.5
+                         )
+            # axes[1].legend(loc='upper left')
             axes[1].set_xlim(iterations[0], iterations[-1])
             axes[1].xaxis.set_major_locator(ticker.MultipleLocator(5))
-            axes[1].tick_params(axis='both', which='major', labelsize=12)
-            axes[1].yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
             axes[1].ticklabel_format(style='sci', axis='y', scilimits=(-3, 3))
-            axes[1].yaxis.get_offset_text().set_fontsize(12)
+            axes[1].yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+            axes[1].yaxis.get_offset_text().set_fontsize(20)
+            self._set_latex_format(axes[1])
 
-            # Reduce the thickness of the axes borders
-            for spine in axes[1].spines.values():
-                spine.set_linewidth(0.5)
-
-            # Adjust layout
             plt.tight_layout()
-            plt.savefig(save_folder / 'BME_RE_plots.png')
+            plt.savefig(save_folder / 'BME_RE_plots.svg', dpi=300)
+            plt.close()
 
         elif plot_type == 'BME':
-            plt.figure(figsize=(8, 6))
+            fig, ax = plt.subplots(figsize=(8, 6))
 
-            # Plot BME
-            plt.plot(iterations, bme_values, marker='+', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                     label=r'BME')
-            plt.title(r'Bayesian Model Evidence (BME)', fontsize=16, weight='normal')
-            plt.xlabel(r'Iteration', fontsize=14)
-            plt.ylabel(r'BME', fontsize=14)
-            plt.grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
-            plt.legend(fontsize=12, loc='upper left')
+            ax.plot(iterations, bme_values, marker='+', color='black',
+                    linestyle='-')
+            # ax.set_title(r'Bayesian Model Evidence (BME)')
+            ax.set_xlabel(r'Iteration')
+            ax.set_ylabel(r'BME')
+            ax.grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
 
-            # Add a dashed tendency line for BME
             slope_bme, intercept_bme, _, _, _ = linregress(iterations, bme_values)
             trend_bme = [slope_bme * x + intercept_bme for x in iterations]
-            plt.plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=0.8, label=r'Trend Line')
-            plt.legend(fontsize=12, loc='upper left')
+            ax.plot(iterations, trend_bme, color='darkslategray', linestyle='--', linewidth=0.5
+                    )
+            # ax.legend(loc='upper left')
+            ax.set_xlim(iterations[0], iterations[-1])
+            ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
+            ax.ticklabel_format(style='sci', axis='y', scilimits=(-3, 3))
+            ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+            ax.yaxis.get_offset_text().set_fontsize(20)
+            self._set_latex_format(ax)
 
-            # Set x-axis limits and tick parameters for BME plot
-            plt.xlim(iterations[0], iterations[-1])
-            plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(5))
-            plt.tick_params(axis='both', which='major', labelsize=12)
-            plt.gca().yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
-            plt.ticklabel_format(style='sci', axis='y', scilimits=(-3, 3))
-            plt.gca().yaxis.get_offset_text().set_fontsize(12)
-
-            # Reduce the thickness of the axes borders
-            for spine in plt.gca().spines.values():
-                spine.set_linewidth(0.5)
-
-            # Adjust layout
             plt.tight_layout()
-            plt.savefig(save_folder / 'BME_plot.png')
+            plt.savefig(save_folder / 'BME_plot.svg', dpi=300)
+            plt.close()
 
         elif plot_type == 'RE':
-            plt.figure(figsize=(8, 6))
+            fig, ax = plt.subplots(figsize=(8, 6))
 
-            # Plot RE
-            plt.plot(iterations, re_values, marker='x', markersize=10, color='black', linestyle='-', linewidth=0.8,
-                     label=r'RE')
-            plt.title(r'Relative Entropy (RE)', fontsize=16, weight='normal')
-            plt.xlabel(r'Iteration', fontsize=14)
-            plt.ylabel(r'RE', fontsize=14)
-            plt.grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
-            plt.legend(fontsize=12, loc='upper left')
+            ax.plot(iterations, re_values, marker='x', color='black',
+                    linestyle='-')
+            # ax.set_title(r'RE')
+            ax.set_xlabel(r'Iteration')
+            ax.set_ylabel(r'RE')
+            ax.grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
 
-            # Add a dashed tendency line for RE
             slope_re, intercept_re, _, _, _ = linregress(iterations, re_values)
             trend_re = [slope_re * x + intercept_re for x in iterations]
-            plt.plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.8, label=r'Trend Line')
-            plt.legend(fontsize=12, loc='upper left')
+            ax.plot(iterations, trend_re, color='dimgray', linestyle='--', linewidth=0.5
+                    )
+            # ax.legend(loc='upper left')
+            ax.set_xlim(iterations[0], iterations[-1])
+            ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
+            ax.ticklabel_format(style='sci', axis='y', scilimits=(-3, 3))
+            ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+            ax.yaxis.get_offset_text().set_fontsize(20)
+            self._set_latex_format(ax)
 
-            # Set x-axis limits and tick parameters for RE plot
-            plt.xlim(iterations[0], iterations[-1])
-            plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(5))
-            plt.tick_params(axis='both', which='major', labelsize=12)
-            plt.gca().yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
-            plt.ticklabel_format(style='sci', axis='y', scilimits=(-3, 3))
-            plt.gca().yaxis.get_offset_text().set_fontsize(12)
-
-            # Reduce the thickness of the axes borders
-            for spine in plt.gca().spines.values():
-                spine.set_linewidth(0.5)
-
-            # Adjust layout
             plt.tight_layout()
-            plt.savefig(save_folder / 'RE_plot.png')
-
-        plt.close()
+            plt.savefig(save_folder / 'RE_plot.svg', dpi=300)
+            plt.close()
 
     def plot_combined_bal(
             self,
@@ -785,8 +739,8 @@ class BayesianPlotter:
         Z = np.clip(Z, Z_min, Z_max)
 
         # Set universal font properties
-        plt.rcParams.update({'font.size': 12, 'font.family': 'sans-serif', 'font.weight': 'normal',
-                             'axes.labelsize': 12, 'xtick.labelsize': 12, 'ytick.labelsize': 12,
+        plt.rcParams.update({'font.size': 18, 'font.family': 'sans-serif', 'font.weight': 'normal',
+                             'axes.labelsize': 18, 'xtick.labelsize': 18, 'ytick.labelsize': 18,
                              'axes.linewidth': 0.8})  # Reduced axes line width
 
         # Helper function to set grid style
@@ -810,16 +764,16 @@ class BayesianPlotter:
         scatter = ax1.scatter(points[:, 0], points[:, 1], values, c=values, cmap='plasma', edgecolor='none', alpha=0.7)
         ax1.set_title(f'{plot_criteria} Scatter Plot (Iterations {start_iter} to {end_iter})', fontsize=16,
                       weight='normal')
-        ax1.set_xlabel(f'{x_name}', fontsize=12)
-        ax1.set_ylabel(f'{y_name}', fontsize=12)
-        ax1.set_zlabel(f'{plot_criteria}', fontsize=12, rotation=90)  # Make BME axis title vertical
+        ax1.set_xlabel(f'{x_name}', fontsize=18)
+        ax1.set_ylabel(f'{y_name}', fontsize=18)
+        ax1.set_zlabel(f'{plot_criteria}', fontsize=18, rotation=90)  # Make BME axis title vertical
         ax1.set_zlim(Z_min - margin, Z_max + margin)
         ax1.view_init(elev=30, azim=225)  # Adjust view angle
 
         # Add a color bar
         cbar1 = fig1.colorbar(scatter, orientation='vertical')
         cbar1.set_label(f'{plot_criteria} Value', fontsize=12)
-        cbar1.ax.tick_params(labelsize=12)  # Set font size for color bar ticks
+        cbar1.ax.tick_params(labelsize=18)  # Set font size for color bar ticks
 
         # Set grid style for 3D plot
         set_grid_style(ax1)
@@ -863,18 +817,18 @@ class BayesianPlotter:
         fig3 = plt.figure(figsize=(8, 6))
         ax3 = fig3.add_subplot(111, projection='3d')
         surf = ax3.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.7)
-        ax3.set_title(f'{plot_criteria} Surface Plot (Iterations {start_iter} to {end_iter})', fontsize=16,
+        ax3.set_title(f'{plot_criteria} Surface Plot (Iterations {start_iter} to {end_iter})', fontsize=18,
                       weight='normal')
-        ax3.set_xlabel(f'{x_name}', fontsize=12)
-        ax3.set_ylabel(f'{y_name}', fontsize=12)
-        ax3.set_zlabel(f'{plot_criteria}', fontsize=12, rotation=90)  # Make BME axis title vertical
+        ax3.set_xlabel(f'{x_name}', fontsize=18)
+        ax3.set_ylabel(f'{y_name}', fontsize=18)
+        ax3.set_zlabel(f'{plot_criteria}', fontsize=18, rotation=90)  # Make BME axis title vertical
         ax3.set_zlim(Z_min - margin, Z_max + margin)
         ax3.view_init(elev=30, azim=225)  # Adjust view angle
 
         # Add a color bar
         cbar3 = fig3.colorbar(surf, orientation='vertical')
-        cbar3.set_label(f'{plot_criteria}', fontsize=12)
-        cbar3.ax.tick_params(labelsize=12)  # Set font size for color bar ticks
+        cbar3.set_label(f'{plot_criteria}', fontsize=18)
+        cbar3.ax.tick_params(labelsize=18)  # Set font size for color bar ticks
 
         # Set grid style for 3D plot
         set_grid_style(ax3)
@@ -883,7 +837,7 @@ class BayesianPlotter:
         fig3.tight_layout()
         fig3.savefig(save_folder / f'3D_{plot_criteria}_surface_plot.png')  #
         # Show the plot to the user
-        #plt.show()
+        plt.show()
 
         if extra_param_index is not None:
             # Prepare data for interpolation with extra parameter
@@ -1547,7 +1501,6 @@ class BayesianPlotter:
 
         # Compute overall metrics
         overall_mse, overall_rmse, overall_mae, overall_corr, p_val = compute_metrics(all_cm, all_sm)
-
         print("\nOverall Metrics across all selected locations:")
         print(f" - MSE       : {overall_mse:.4e}")
         print(f" - RMSE      : {overall_rmse:.4e}")
@@ -1581,7 +1534,7 @@ class BayesianPlotter:
 
         entries = surrogate_metrics.get("metrics_per_location", [])
         if not entries:
-            print("❌ No metrics_per_location found.")
+            print(" No metrics_per_location found.")
             return
 
 
@@ -1708,83 +1661,157 @@ class BayesianPlotter:
 
         plt.suptitle("Metric and CI Evolution Across Locations", fontsize=16)
         plt.show()
-    def plot_metric_comparison(self, surrogate_metrics, quantities, metrics=["RMSE", "Correlation", "CI"]):
-        """
-        Plots selected metrics for each quantity with customized appearance and dynamic axis limits.
 
-        Parameters:
-        ------------
-        surrogate_metrics : dict
-            Dictionary with metrics.
-        quantities : list
-            List of calibration quantities (e.g., ["WATER DEPTH", "SCALAR VELOCITY"]).
-        metrics : list
-            List of metrics to plot (default=["RMSE", "Correlation", "CI"]).
+    def plot_metric_comparison(
+            self,
+            surrogate_metrics: dict,
+            quantities: list,
+            metrics: list = None,
+            metric_labels: list = None,
+    ):
         """
+        Parameters
+        ----------
+        surrogate_metrics : dict
+            Keys at a minimum:
+                - "TrainPoints"   : list/array of int
+                - "Quantity"      : list/array of str
+                - "SurrogateType" : list/array of str ("SO" or "MO")
+                - one entry per metric in *metrics*
+        quantities : list[str]
+            Quantities to plot (must be found in surrogate_metrics["Quantity"]).
+        metrics : list[str], optional
+            Metric keys to take from *surrogate_metrics* (default three).
+        metric_labels : list[str], optional
+            Display labels for the rows (same order/length as *metrics*).
+
+        Notes
+        -----
+        *   A vertical dashed line marks 25 training points (BAL).
+        *   Legend is collected once and placed above all subplots.
+        *   Uses black line with circles for MO and slate‑gray dashed line
+            with squares for SO.
+        """
+        # ------------------------------------------------------------------ set‑up
+        if metrics is None:
+            metrics = ["RMSE", "Correlation", "CI"]
+
+        if metric_labels is None:
+            metric_labels = ["RMSE", r"Spearman $\rho$", "CI"]
+
+        assert len(metric_labels) == len(metrics), \
+            "'metric_labels' must have same length as 'metrics'"
 
         save_folder = Path(self.results_folder_path)
+        save_folder.mkdir(parents=True, exist_ok=True)  # ensure path exists
 
-        train_points = np.array(surrogate_metrics["TrainPoints"])
-        quantity_names = np.array(surrogate_metrics["Quantity"])
-        surrogate_type = np.array(surrogate_metrics["SurrogateType"])
-        metric_values = {metric: np.array(surrogate_metrics[metric]) for metric in metrics}
+        train_points = np.asarray(surrogate_metrics["TrainPoints"])
+        quantity_names = np.asarray(surrogate_metrics["Quantity"])
+        surrogate_type = np.asarray(surrogate_metrics["SurrogateType"])
+        metric_values = {m: np.asarray(surrogate_metrics[m]) for m in metrics}
 
-        label_prefixes = ['a)', 'b)', 'c)', 'd)', 'e)', 'f)']  # Extend if needed
+        label_prefixes = ['a)', 'b)', 'c)', 'd)', 'e)', 'f)']
+        num_metrics = len(metrics)
+        num_quantities = len(quantities)
 
+        fig, axs = plt.subplots(
+            num_metrics, num_quantities,
+            figsize=(8 * num_quantities, 4 * num_metrics),
+            sharex='col'
+        )
+
+        # Make axs 2‑D for simpler indexing
+        if num_quantities == 1:
+            axs = np.expand_dims(axs, axis=1)
+        if num_metrics == 1:
+            axs = np.expand_dims(axs, axis=0)
+
+        # Leave space on the left for the big y‑labels
+        fig.subplots_adjust(left=0.12)
+
+        all_handles = []
+        all_labels = []
+
+        # --------------------------------------------------------- plotting loop
         for q_idx, quantity in enumerate(quantities):
-            fig, axs = plt.subplots(len(metrics), 1, figsize=(8, 3.5 * len(metrics)), sharex=True)
+            figure_label = (
+                label_prefixes[q_idx]
+                if q_idx < len(label_prefixes)
+                else f"{chr(97 + q_idx)})"
+            )
 
-            for idx, metric in enumerate(metrics):
-                ax = axs[idx]
+            for r_idx, metric in enumerate(metrics):
+                ax = axs[r_idx, q_idx]
 
-                # Filtering
-                mask_quantity = quantity_names == quantity
-                mask_so = mask_quantity & (surrogate_type == "SO")
-                mask_mo = mask_quantity & (surrogate_type == "MO")
+                # masks for this quantity and surrogate type
+                mask_q = quantity_names == quantity
+                mask_so = mask_q & (surrogate_type == "SO")
+                mask_mo = mask_q & (surrogate_type == "MO")
 
+                # data
                 so_tp = train_points[mask_so]
                 mo_tp = train_points[mask_mo]
-                so_metric = metric_values[metric][mask_so]
-                mo_metric = metric_values[metric][mask_mo]
+                so_val = metric_values[metric][mask_so]
+                mo_val = metric_values[metric][mask_mo]
 
-                # Plot lines with distinct styles
-                ax.plot(mo_tp, mo_metric, marker='o', linestyle='-', color='black',
-                        linewidth=1.5, markersize=5, label='MO (Multi-output GP)')
-                ax.plot(so_tp, so_metric, marker='s', linestyle='--', color='slategray',
-                        linewidth=1.5, markersize=5, label='SO (Single-output GP)')
+                # curves
+                line_mo, = ax.plot(
+                    mo_tp, mo_val, marker='o', linestyle='-', color='black',
+                    linewidth=1.5, markersize=6, label='MO (Multi‑output GP)'
+                )
+                line_so, = ax.plot(
+                    so_tp, so_val, marker='s', linestyle='--', color='slategray',
+                    linewidth=1.5, markersize=6, label='SO (Single‑output GP)'
+                )
 
-                # Vertical line for BAL starting at 25 training points
+                if q_idx == 0 and r_idx == 0:  # store legend items once
+                    all_handles = [line_mo, line_so]
+                    all_labels = [h.get_label() for h in all_handles]
+
+                # BAL reference
                 ax.axvline(x=25, color='lightgray', linestyle='--', linewidth=1)
-                ax.text(25.5, ax.get_ylim()[1] * 0.95, "BAL", color='gray',
-                        fontsize=9, verticalalignment='top', alpha=0.8)
+                ax.text(
+                    25.5, ax.get_ylim()[1] * 0.95, "BAL",
+                    color='gray', fontsize=20, va='top', alpha=0.8
+                )
 
-                # Set x-ticks
+                # x ticks
                 min_tp, max_tp = train_points.min(), train_points.max()
-                ax.set_xticks(np.arange(min_tp, max_tp + 1, 5))
+                ax.set_xticks(np.arange(min_tp, max_tp + 1, 10))
 
-                # Dynamic y-limits with padding
-                all_vals = np.concatenate([so_metric, mo_metric])
-                ymin, ymax = np.min(all_vals), np.max(all_vals)
-                padding = 0.05 * (ymax - ymin) if ymax > ymin else 0.01
-                ax.set_ylim(ymin - padding, ymax + padding)
+                # y limits with small padding
+                y_vals = np.concatenate([so_val, mo_val])
+                ymin, ymax = y_vals.min(), y_vals.max()
+                pad = 0.05 * (ymax - ymin) if ymax > ymin else 0.01
+                ax.set_ylim(ymin - pad, ymax + pad)
 
-                # Axis labels and grid
-                ax.set_ylabel(metric, fontsize=14)
-                ax.tick_params(axis='both', which='major', labelsize=9)
+                ax.tick_params(axis='both', which='major', labelsize=16)
                 ax.grid(True, linestyle=':', alpha=0.7)
 
-                if idx == len(metrics) - 1:
-                    ax.set_xlabel("Training Points", fontsize=14)
+                if r_idx == num_metrics - 1:  # bottom row
+                    ax.set_xlabel("Training Points", fontsize=20)
 
-                ax.legend(fontsize=12, loc='best', frameon=False)
+        # -------------------------------------------- one y‑label per metric row
+        for r_idx, row_label in enumerate(metric_labels):
+            pos = axs[r_idx, 0].get_position()
+            y_center = (pos.y0 + pos.y1) / 2
+            fig.text(
+                0.06, y_center, row_label,
+                ha='center', va='center', rotation='vertical', fontsize=20
+            )
 
-            # Figure title with letter prefix and quantity
-            figure_label = label_prefixes[q_idx] if q_idx < len(label_prefixes) else f"{chr(97 + q_idx)})"
-            fig.suptitle(f"{figure_label} Metrics for {quantity.title()}", fontsize=15, fontweight='bold')
+        # ------------------------------------------------ global legend & layout
+        fig.legend(
+            all_handles, all_labels,
+            loc='upper center', ncol=2, fontsize=20, frameon=False,
+            bbox_to_anchor=(0.5, 0.995)
+        )
 
-            # plt.tight_layout(rect=[0, 0.04, 1, 0.94])
-            fig.savefig(save_folder / f"metrics_{quantity.replace(' ', '_').lower()}.png", dpi=300)
-            plt.close(fig)
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+
+        fig.savefig(save_folder / "combined_metrics_all_quantities.pdf",
+                    format='pdf', bbox_inches='tight')
+        plt.close(fig)
     def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
         """
         Plots selected realizations comparing the complex model and surrogate model outputs.
@@ -1892,7 +1919,12 @@ class BayesianPlotter:
             all_cm_vals = []
             all_sm_vals = []
             all_obs_vals = []
-
+            per_quantity_cm_corr=[]
+            per_quantity_sm_corr=[]
+            # Collect all quantities data for composite score calculation
+            cm_quantities_matrix = []
+            sm_quantities_matrix = []
+            obs_quantities_matrix = []
             for i in range(n_quantities):
                 cm_vals = cm_outputs_split[f'cm_outputs_{i + 1}'][p]
                 sm_vals = sm_outputs_split[f'sm_outputs_{i + 1}'][p]
@@ -1901,22 +1933,29 @@ class BayesianPlotter:
 
                 obs_vals_raw = obs_split[f'obs_{i + 1}']
                 obs_vals = obs_vals_raw[0] if obs_vals_raw.ndim > 1 else obs_vals_raw
+                # Store for composite score calculation
+                cm_quantities_matrix.append(cm_vals)
+                sm_quantities_matrix.append(sm_vals)
+                obs_quantities_matrix.append(obs_vals)
 
-                rmse_cm = np.sqrt((cm_vals - obs_vals) ** 2)
-                rmse_sm = np.sqrt((sm_vals - obs_vals) ** 2)
+                residuals_cm = (cm_vals - obs_vals)
+                residuals_sm = (sm_vals - obs_vals)
                 rmse_cm_total = np.sqrt(np.mean((cm_vals - obs_vals) ** 2))
                 rmse_sm_total = np.sqrt(np.mean((sm_vals - obs_vals) ** 2))
 
-                obs_range = np.max(obs_vals) - np.min(obs_vals)
-                if obs_range == 0:
+                obs_std = np.std(obs_vals)
+
+                if obs_std == 0:
                     nrmse_cm_total = np.nan
                     nrmse_sm_total = np.nan
                 else:
-                    nrmse_cm_total = rmse_cm_total / obs_range
-                    nrmse_sm_total = rmse_sm_total / obs_range
+                    nrmse_cm_total = rmse_cm_total / obs_std
+                    nrmse_sm_total = rmse_sm_total / obs_std
 
                 spearman_cm = spearmanr(cm_vals, obs_vals).correlation
                 spearman_sm = spearmanr(sm_vals, obs_vals).correlation
+                per_quantity_cm_corr.append(spearman_cm)
+                per_quantity_sm_corr.append(spearman_sm)
 
                 model_summary[f"RMSE_CM_Q{i + 1}"] = rmse_cm_total
                 model_summary[f"RMSE_SM_Q{i + 1}"] = rmse_sm_total
@@ -1949,8 +1988,8 @@ class BayesianPlotter:
                         "quantity": f"Q{i + 1}",
                         "x": coordinates_df.iloc[j]['x'],
                         "y": coordinates_df.iloc[j]['y'],
-                        "rmse_cm": rmse_cm[j],
-                        "rmse_sm": rmse_sm[j],
+                        "residuals_cm": residuals_cm[j],
+                        "residuals_sm": residuals_sm[j],
                         "ci_width": ci_width,
                         "cm_rank": cm_ranks[j],
                         "sm_rank": sm_ranks[j],
@@ -1959,12 +1998,36 @@ class BayesianPlotter:
                         "sm_output": sm_vals[j],
                         "obs": obs_vals[j]
                     })
+            # COMPOSITE SCORE METHOD for Overall Spearman Correlation
+            # Convert to numpy arrays and transpose to have shape (N_points, N_quantities)
+            cm_matrix = np.array(cm_quantities_matrix).T  # Shape: (N, n_quantities)
+            sm_matrix = np.array(sm_quantities_matrix).T  # Shape: (N, n_quantities)
+            obs_matrix = np.array(obs_quantities_matrix).T  # Shape: (N, n_quantities)
+
+            # Standardize each quantity separately
+            scaler_cm = StandardScaler()
+            scaler_sm = StandardScaler()
+            scaler_obs = StandardScaler()
+
+            cm_standardized = scaler_cm.fit_transform(cm_matrix)
+            sm_standardized = scaler_sm.fit_transform(sm_matrix)
+            obs_standardized = scaler_obs.fit_transform(obs_matrix)
+
+            # Create composite scores (equal weighting across quantities)
+            cm_composite = np.mean(cm_standardized, axis=1)
+            sm_composite = np.mean(sm_standardized, axis=1)
+            obs_composite = np.mean(obs_standardized, axis=1)
+
+            # Calculate overall Spearman correlation using composite scores
+
+            overall_spearman_cm = spearmanr(cm_composite, obs_composite).correlation
+            overall_spearman_sm = spearmanr(sm_composite, obs_composite).correlation
 
             model_summary["Overall_NRMSE_CM"] = np.nanmean(total_nrmse_cm)
             model_summary["Overall_NRMSE_SM"] = np.nanmean(total_nrmse_sm)
 
-            overall_spearman_cm = spearmanr(all_cm_vals, all_obs_vals).correlation
-            overall_spearman_sm = spearmanr(all_sm_vals, all_obs_vals).correlation
+            # overall_spearman_cm = np.nanmean(per_quantity_cm_corr)
+            # overall_spearman_sm = np.nanmean(per_quantity_sm_corr)
 
             model_summary["Overall_Spearman_CM"] = overall_spearman_cm
             model_summary["Overall_Spearman_SM"] = overall_spearman_sm
@@ -1986,101 +2049,216 @@ class BayesianPlotter:
             df_summary[f"Rank_Spearman_SM_{q}"] = sm_ranks.values
 
         # ---------- Overall scatter plot ----------
-        plt.figure(figsize=(8, 6))
-        colors = plt.cm.get_cmap('tab10', len(df_summary))
-        size_marker = 150
+        # ========= COMPUTE LIMITS FOR ALL PLOTS =========
 
-        for idx, row in df_summary.iterrows():
-            plt.scatter(row["Overall_NRMSE_CM"], row["Overall_Spearman_CM"],
-                        color=colors(idx), label=row["model_name"], s=size_marker, alpha=0.8, marker='o')
+        # Global Spearman Y-limits (shared across all plots)
+        all_spearman_overall = pd.concat([df_summary["Overall_Spearman_CM"], df_summary["Overall_Spearman_SM"]])
+        all_spearman_per_quantity = []
 
-        plt.xlabel("Normalized RMSE (NRMSE)")
-        plt.ylabel("Spearman Correlation ($\\rho$)")
-
-        x_ticks = np.round(
-            np.linspace(df_summary["Overall_NRMSE_CM"].min(), df_summary["Overall_NRMSE_CM"].max(), num=10), 2)
-        y_ticks = np.round(
-            np.linspace(df_summary["Overall_Spearman_CM"].min(), df_summary["Overall_Spearman_CM"].max(), num=10), 2)
-
-        for xtick in x_ticks:
-            plt.axvline(x=xtick, color='gray', linestyle='--', linewidth=0.5, zorder=0)
-        for ytick in y_ticks:
-            plt.axhline(y=ytick, color='gray', linestyle='--', linewidth=0.5, zorder=0)
-
-        plt.legend(loc='best', fontsize=10, frameon=True)
-        plt.grid(True)
-
-        min_nrmse = df_summary["Overall_NRMSE_CM"].min()
-        max_nrmse = df_summary["Overall_NRMSE_CM"].max()
-        x_margin = 0.1 * (max_nrmse - min_nrmse) if max_nrmse != min_nrmse else 0.1
-        plt.xlim(min_nrmse - x_margin, max_nrmse + x_margin)
-
-        min_spear = df_summary["Overall_Spearman_CM"].min()
-        max_spear = df_summary["Overall_Spearman_CM"].max()
-        y_margin = 0.1 * (max_spear - min_spear) if max_spear != min_spear else 0.1
-        plt.ylim(min_spear - y_margin, max_spear + y_margin)
-
-        plt.yticks(y_ticks)
-        plt.xticks(x_ticks)
-        plt.tight_layout()
-        plt.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman.png"), dpi=300)
-        plt.show()
-
-        # ---------- Subplots for each quantity ----------
-        ncols = 2
-        nrows = math.ceil(n_quantities / ncols)
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=True)  # sharey only
-        axes = axes.flatten()
-
-        colors = plt.cm.get_cmap('tab10', len(df_summary))
-
-        # For y-axis limits (Spearman), calculate global limits (shared)
-        all_spearman = []
         for i in range(n_quantities):
             q = f"Q{i + 1}"
-            all_spearman.extend(df_summary[f"Spearman_CM_{q}"])
+            spearman_all = pd.concat([df_summary[f"Spearman_CM_{q}"], df_summary[f"Spearman_SM_{q}"]])
+            all_spearman_per_quantity.extend(spearman_all.values)
 
-        min_spear = min(all_spearman)
-        max_spear = max(all_spearman)
-        y_margin = 0.1 * (max_spear - min_spear) if max_spear != min_spear else 0.1
-        y_limits = (min_spear - y_margin, max_spear + y_margin)
+        # Combine all Spearman values for global Y limits
+        all_spearman_combined = list(all_spearman_overall.values) + all_spearman_per_quantity
+        min_spear_global = min(all_spearman_combined)
+        max_spear_global = max(all_spearman_combined)
+
+        spear_margin = 0.15 * (max_spear_global - min_spear_global)
+        shared_ylim_global = (0.35,0.75)
+        shared_limit_global_overall_plots = (0.60,0.72)
+        # Individual X-limits for overall plots (NRMSE)
+        all_nrmse_cm = df_summary["Overall_NRMSE_CM"]
+        all_nrmse_sm = df_summary["Overall_NRMSE_SM"]
+
+        nrmse_cm_margin = 0.15 * (all_nrmse_cm.max() - all_nrmse_cm.min())
+        nrmse_sm_margin = 0.15 * (all_nrmse_sm.max() - all_nrmse_sm.min())
+
+        xlim_cm_overall = (all_nrmse_cm.min() - nrmse_cm_margin, all_nrmse_cm.max() + nrmse_cm_margin)
+        xlim_sm_overall = (all_nrmse_sm.min() - nrmse_sm_margin, all_nrmse_sm.max() + nrmse_sm_margin)
+
+        # Individual X-limits for per-quantity plots (RMSE)
+        xlims_cm_quantity = []
+        xlims_sm_quantity = []
+
+        for i in range(n_quantities):
+            q = f"Q{i + 1}"
+            rmse_cm = df_summary[f"RMSE_CM_{q}"]
+            rmse_sm = df_summary[f"RMSE_SM_{q}"]
+
+            cm_margin = 0.15 * (
+                        rmse_cm.max() - rmse_cm.min()) if rmse_cm.max() != rmse_cm.min() else 0.1 * rmse_cm.mean()
+            sm_margin = 0.15 * (
+                        rmse_sm.max() - rmse_sm.min()) if rmse_sm.max() != rmse_sm.min() else 0.1 * rmse_sm.mean()
+
+            xlims_cm_quantity.append((rmse_cm.min() - cm_margin, rmse_cm.max() + cm_margin))
+            xlims_sm_quantity.append((rmse_sm.min() - sm_margin, rmse_sm.max() + sm_margin))
+
+        # Individual Y-limits for per-quantity plots (Spearman)
+        ylims_cm_quantity = []
+        ylims_sm_quantity = []
+
+        for i in range(n_quantities):
+            q = f"Q{i + 1}"
+
+            spearman_cm = df_summary[f"Spearman_CM_{q}"]
+            spearman_sm = df_summary[f"Spearman_SM_{q}"]
+
+            cm_min, cm_max = spearman_cm.min(), spearman_cm.max()
+            sm_min, sm_max = spearman_sm.min(), spearman_sm.max()
+
+            cm_margin = 0.15 * (cm_max - cm_min) if cm_max != cm_min else 0.1 * abs(cm_min)
+            sm_margin = 0.15 * (sm_max - sm_min) if sm_max != sm_min else 0.1 * abs(sm_min)
+
+            cm_ylim = (cm_min - cm_margin, cm_max + cm_margin)
+            sm_ylim = (sm_min - sm_margin, sm_max + sm_margin)
+
+            ylimit_cm = cm_ylim if cm_max < 0.25 else shared_ylim_global
+            ylimit_sm = sm_ylim if sm_max < 0.25 else shared_ylim_global
+
+            ylims_cm_quantity.append(ylimit_cm)
+            ylims_sm_quantity.append(ylimit_sm)
+
+        # ---------- Overall scatter plot (CM) ----------
+        fig, ax = plt.subplots(figsize=(8, 6))
+        colors = plt.cm.get_cmap('tab10', len(df_summary))
+
+        for idx, row in df_summary.iterrows():
+            ax.scatter(row["Overall_NRMSE_CM"], row["Overall_Spearman_CM"],
+                       color=colors(idx), label=row["model_name"],
+                       s=150, alpha=0.8, marker='o')
+
+        ax.set_title("NRMSE vs Spearman (CM)", fontsize=20)
+        ax.set_xlim(xlim_cm_overall)
+        ax.set_ylim(shared_limit_global_overall_plots)
+
+        ax.set_xlabel("Normalized RMSE (NRMSE)", fontsize=18)
+        ax.set_ylabel("Spearman Correlation ($\\rho$)", fontsize=18)
+
+        ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+        ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+
+        for spine in ax.spines.values():
+            spine.set_linewidth(1.5)
+
+        ax.legend(loc='best', fontsize=14, frameon=True)
+        fig.tight_layout()
+        fig.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman_CM.svg"), dpi=300)
+        plt.show()
+
+        # ---------- Overall scatter plot (SM) ----------
+        fig, ax = plt.subplots(figsize=(8, 6))
+        colors = plt.cm.get_cmap('tab10', len(df_summary))
+
+        for idx, row in df_summary.iterrows():
+            ax.scatter(row["Overall_NRMSE_SM"], row["Overall_Spearman_SM"],
+                       color=colors(idx), label=row["model_name"],
+                       s=150, alpha=0.8, marker='o')
+
+        ax.set_title("NRMSE vs Spearman (SM)", fontsize=20)
+        ax.set_xlim(xlim_sm_overall)
+        ax.set_ylim(shared_limit_global_overall_plots)
+
+        ax.set_xlabel("Normalized RMSE (NRMSE)", fontsize=18)
+        ax.set_ylabel("Spearman Correlation ($\\rho$)", fontsize=18)
+
+        ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+        ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+
+        for spine in ax.spines.values():
+            spine.set_linewidth(1.5)
+
+        ax.legend(loc='best', fontsize=14, frameon=True)
+        fig.tight_layout()
+        fig.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman_SM.svg"), dpi=300)
+        plt.show()
+
+        # ========= Subplots for CM =========
+        ncols = 2
+        nrows = math.ceil(n_quantities / ncols)
+
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
+        axes = axes.flatten()
+        colors = plt.cm.get_cmap('tab10', len(df_summary))
 
         for i in range(n_quantities):
             ax = axes[i]
             q = f"Q{i + 1}"
 
-            # Extract RMSE for current quantity
-            rmse_values = df_summary[f"RMSE_CM_{q}"]
-
-            # Compute x-axis limits for RMSE with 10% margin
-            min_rmse = rmse_values.min()
-            max_rmse = rmse_values.max()
-            x_margin = 0.1 * (max_rmse - min_rmse) if max_rmse != min_rmse else 0.1
-            x_limits = (min_rmse - x_margin, max_rmse + x_margin)
-
-            # Plot points
             for idx, row in df_summary.iterrows():
                 ax.scatter(row[f"RMSE_CM_{q}"], row[f"Spearman_CM_{q}"],
-                           color=colors(idx), label=row["model_name"], s=100, alpha=0.8)
+                           color=colors(idx), label=row["model_name"],
+                           s=100, alpha=0.8)
 
-            ax.set_title(quantity_names[i])
-            ax.set_xlim(x_limits)
-            ax.set_ylim(y_limits)
+            ax.set_title(quantity_names[i], fontsize=20)
+            ax.set_xlim(xlims_cm_quantity[i])
+            if i == 1:  # Replace 3 with the index of the outlier subplot
+                ax.set_ylim((0.10, 0.70))  # Your manually chosen limits
+            else:
+                ax.set_ylim(ylims_cm_quantity[i])
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-            ax.set_xlabel("RMSE")
-            ax.set_ylabel("Spearman $\\rho$")
-            ax.tick_params(labelbottom=True)
+            ax.set_xlabel("RMSE", fontsize=18)
+            ax.set_ylabel(r"Spearman $\rho$", fontsize=18)
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+            ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
 
-        # Remove unused axes if any
+            for spine in ax.spines.values():
+                spine.set_linewidth(1.5)
+
         for j in range(n_quantities, len(axes)):
             fig.delaxes(axes[j])
 
-        # Global legend
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', ncol=len(model_names), fontsize=10)
-
+        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.02),
+                   ncol=len(model_names), fontsize=16)
         fig.tight_layout(rect=[0, 0, 1, 0.93])
-        fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman.png"), dpi=300)
+        fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_CM.svg"), dpi=300)
+        plt.show()
+
+        # ========= Subplots for SM =========
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
+        axes = axes.flatten()
+        colors = plt.cm.get_cmap('tab10', len(df_summary))
+
+        for i in range(n_quantities):
+            ax = axes[i]
+            q = f"Q{i + 1}"
+
+            for idx, row in df_summary.iterrows():
+                ax.scatter(row[f"RMSE_SM_{q}"], row[f"Spearman_SM_{q}"],
+                           color=colors(idx), label=row["model_name"],
+                           s=100, alpha=0.8)
+
+            ax.set_title(quantity_names[i], fontsize=20)
+            ax.set_xlim(xlims_sm_quantity[i])
+            if i == 1:  # Replace 3 with the index of the outlier subplot
+                ax.set_ylim((0.20, 0.70))  # Your manually chosen limits
+            else:
+                ax.set_ylim(ylims_cm_quantity[i])
+            ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+            ax.set_xlabel("RMSE", fontsize=18)
+            ax.set_ylabel(r"Spearman $\rho$", fontsize=18)
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+            ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+
+            for spine in ax.spines.values():
+                spine.set_linewidth(1.5)
+
+        for j in range(n_quantities, len(axes)):
+            fig.delaxes(axes[j])
+
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.02),
+                   ncol=len(model_names), fontsize=16)
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
+        fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_SM.svg"), dpi=300)
         plt.show()
 
         df_spatial = pd.DataFrame(spatial_records)

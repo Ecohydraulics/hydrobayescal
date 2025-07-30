@@ -20,7 +20,7 @@ df = pd.DataFrame(data)
 df['T_hours'] = df['T'] / 3600
 
 # Identify constant Q = 9.7 region
-q97 = df[df["Q"] == 9.7]
+q97 = df[df["Q"] == 9.5]
 t_start = q97["T"].iloc[0]
 t_end = q97["T"].iloc[-1]
 
@@ -30,21 +30,21 @@ fig, ax1 = plt.subplots(figsize=(14, 6))
 # Primary y-axis: Q only
 ax1.plot(df["T"], df["Q"], label="Q (m³/s)", color="blue")
 ax1.set_ylabel("Q (m³/s)", color="black", fontsize=16)
-ax1.tick_params(axis='y', labelcolor='black', labelsize=14)
+ax1.tick_params(axis='y', labelcolor='black', labelsize=16)
 ax1.set_ylim(2, df["Q"].max() + 1)
 
 # Vertical lines for flood period
 q_mid = (df["Q"].max() + 2) / 2
 ax1.vlines([t_start, t_end], ymin=2, ymax=df["Q"].max(), colors="black", linestyles="--")
-ax1.text(t_start, q_mid, "Flood start", rotation=90, va='center', ha='right', fontsize=16)
-ax1.text(t_end, q_mid, "Flood end", rotation=90, va='center', ha='right', fontsize=16)
+ax1.text(t_start, q_mid, "Flood starts", rotation=90, va='center', ha='left', fontsize=16)
+ax1.text(t_end, q_mid, "Flood ends", rotation=90, va='center', ha='right', fontsize=16)
 
 # Secondary y-axis: QG and TR
 ax2 = ax1.twinx()
 ax2.plot(df["T"], df["QG"], label="QG (kg/s)", color="green", linestyle="--")
 ax2.plot(df["T"], df["TR"], label="TR (g/L)", color="red")
 ax2.set_ylabel("QG (kg/s) & TR (g/L)", fontsize=16)
-ax2.tick_params(axis='y', labelsize=14)
+ax2.tick_params(axis='y', labelsize=16)
 ax2.set_ylim(0, max(df["QG"].max(), df["TR"].max()) + 1)
 
 # Secondary x-axis in hours
@@ -52,15 +52,15 @@ def secax(x): return x / 3600
 def secax_inv(x): return x * 3600
 secax_obj = ax1.secondary_xaxis('top', functions=(secax, secax_inv))
 secax_obj.set_xlabel("Time [hours]", fontsize=16)
-secax_obj.tick_params(labelsize=14)
+secax_obj.tick_params(labelsize=16)
 
 # Legends
-ax1.legend(loc="upper left", fontsize=14)
-ax2.legend(loc="upper right", fontsize=14)
+ax1.legend(loc="upper left", fontsize=16)
+ax2.legend(loc="upper right", fontsize=16)
 
 # Axes labels
 ax1.set_xlabel("Time [s]", fontsize=16)
-ax1.tick_params(axis='x', labelsize=14)
+ax1.tick_params(axis='x', labelsize=16)
 # ax1.set_title("Simulated Hydrograph", fontsize=18)
 ax1.grid(True)
 

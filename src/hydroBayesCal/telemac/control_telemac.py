@@ -867,7 +867,7 @@ class TelemacModel(HydroSimulations):
             model_directory,
             results_folder_directory,
             validation=False,
-            extraction_mode="interpolated", #"nearest"  "interpolated"
+            extraction_mode="interpolated", # Choose "nearest" to get the outputs at the nearest node in mesh to the measurement coordinate
             k=3,
     ):
         """

@@ -8,6 +8,7 @@ Author: Andres Heredia Hidalgo MSc
 import pdb
 import sys
 import os
+import time
 import argparse
 import bayesvalidrox as bvr
 
@@ -386,8 +387,11 @@ def run_bal_model(collocation_points,
         # Surrogate outputs for prior samples
         if complex_model.num_calibration_quantities == 1:
             multitask = False
+            start_time_prediction = time.time()
             surrogate_output = sm.predict_(input_sets=prior,
                                            get_conf_int=True)
+            end_time_prediction = time.time()
+            print(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
             model_predictions = surrogate_output['output']
             total_error = complex_model.variances
             if it == 0 or it == n_iter:
@@ -402,7 +406,10 @@ def run_bal_model(collocation_points,
 
         else:
             multitask=True
+            start_time_prediction = time.time()
             surrogate_output = surrogate_object.predict_(input_sets=prior,get_conf_int=True)
+            end_time_prediction = time.time()
+            print(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
             total_error = complex_model.variances
             model_predictions = surrogate_output['output']
             if it == 0 or it == n_iter:
@@ -581,7 +588,7 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=5,
+            init_runs=25,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "gaiaCLASSES SHIELDS PARAMETERS 3",
@@ -611,14 +618,14 @@ if __name__ == "__main__":
                             [0.040, 0.6], # zone9 Wake
                             [0.002, 2.8]], # zone 13 LW
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
-            # calibration_quantities=["CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             # calibration_quantities=["SCALAR VELOCITY"],
             # calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
-            max_runs=5,
+            max_runs=25,
             complete_bal_mode=True,
             only_bal_mode=True,
             delete_complex_outputs=True,
@@ -642,7 +649,7 @@ if __name__ == "__main__":
         model_outputs=model_evaluations,
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        eval_steps=5,
+        eval_steps=1,
         prior_samples=15000,
         mc_samples_al=1500,
         mc_exploration=1000,

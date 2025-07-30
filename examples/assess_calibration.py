@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 import numpy as np
 import bayesvalidrox as bvr
 
@@ -31,19 +32,13 @@ full_complexity_model = TelemacModel(
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "gaiaCLASSES SHIELDS PARAMETERS 3",
-                                    # "zone0",
-                                    # "zone1",
                                     "zone2",
                                     "zone3",
                                     "zone4",
                                     "zone5",
                                     "zone6",
-                                    # "zone7",
                                     "zone8",
                                     "zone9",
-                                    # "zone10",
-                                    # "zone11",
-                                    # "zone12",
                                     "zone13"],
             param_values = [[0.047,0.070], # critical shields parameter class 1
                             [0.047, 0.070], # critical shields parameter class 2
@@ -77,22 +72,29 @@ calibration_names = full_complexity_model.calibration_quantities
 n_quantities = full_complexity_model.num_calibration_quantities
 num_simulations = full_complexity_model.init_runs
 
-collocation_points = full_complexity_model.user_collocation_points
+collocation_points = full_complexity_model.user_collocation_points # To be used for the surrogate model predictions.
 coordinates = full_complexity_model.calibration_pts_df[["x", "y"]]
+# The next block calls the metamodel to use for the predictions. The predictions are done in the collocation points.
+# -------------------------------------------------------------------------
+# Call the surrogate model
 if n_quantities==1:
     sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}.pkl")
 else:
     sm = full_complexity_model.read_data(results_folder_path, f"surrogate-gpe/bal_dkl/gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_{full_complexity_model.calibration_quantities}_{full_complexity_model.multitask_selection}.pkl")
-sm_predictions = (sm.predict_(input_sets=collocation_points,get_conf_int=True))
+start_time = time.time()
+sm_predictions = sm.predict_(input_sets=collocation_points, get_conf_int=True)
+end_time = time.time()
+print(f"Surrogate model predictions took {end_time - start_time:.2f} seconds.")
 sm_outputs=sm_predictions["output"]
-
+# -------------------------------------------------------------------------
+# This line filters the outputs according to the calibration_quantities.
 cm_outputs = full_complexity_model.output_processing(output_data_path=os.path.join(full_complexity_model.restart_data_folder,
                                                                                           f'user-extraction-data-detailed.json'),
-                                                            delete_slf_files=full_complexity_model.delete_complex_outputs,
-                                                            validation=full_complexity_model.validation,
-                                                            filter_outputs=True,
-                                                            save_extraction_outputs=True,
-                                                            run_range_filtering=(1, full_complexity_model.init_runs))
+                                                            validation=True, # Putting validation=True to avoid rewriting the full complex model outputs .json (extraction-data-detailed.json) in the original calibration-data according to calibration_quantities= ""..." folder.
+                                                            filter_outputs=True, # Filters from the .json file output_data_path the outputs according to the calibration_quantities.
+                                                            run_range_filtering=(1, full_complexity_model.init_runs)) # This is to filter the outputs according to the range of runs that we want to analyze accoring to init_runs.
+# --------------------------------------------------------------------------
+
 # Split columns dynamically for each quantity
 cm_outputs_split = {}
 sm_outputs_split = {}
@@ -124,97 +126,3 @@ plotter.evaluate_calibration(cm_outputs_split,
                                  r"SO-GPE: $\bar{U}$",
                                  r"SO-GPE: $\Delta Z_{\mathrm{DEM}}$"],
             quantity_names=calibration_names,)
-# for i in range(n_quantities):
-#     cm_output = cm_outputs_split[f'cm_outputs_{i+1}']
-#     sm_output = sm_outputs_split[f'sm_outputs_{i+1}']
-#     sm_upper_ci = sm_upper_ci_split[f'sm_upper_ci_{i+1}']
-#     sm_lower_ci = sm_lower_ci_split[f'sm_lower_ci_{i+1}']
-#     obs_quantity = obs_split[f'obs_{i+1}']
-#     err_quantity = err_split[f'err_{i+1}']
-#
-#     # Plot comparisons for each quantity
-#     # plotter.plot_validation_results(obs_quantity, sm_output.reshape(1, -1), cm_output.reshape(1, -1))
-#
-#     plotter.plot_model_outputs_vs_locations(
-#         observed_values=obs_quantity,
-#         quantity_name = full_complexity_model.calibration_quantities[i],
-#         surrogate_outputs=sm_output[-1, :].reshape(1, -1),
-#         complex_model_outputs=cm_output[-1, :].reshape(1, -1),
-#         selected_locations=list(range(1,37)),
-#         gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
-#         gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
-#         measurement_error=err_quantity,
-#     )
-#
-#     plotter.plot_model_outputs_vs_locations(
-#         observed_values=obs_quantity,
-#         quantity_name=full_complexity_model.calibration_quantities[i],
-#         surrogate_outputs=sm_output[-2, :].reshape(1, -1),
-#         complex_model_outputs=cm_output[-2, :].reshape(1, -1),
-#         selected_locations=list(range(1,37)),
-#         gpe_lower_ci=sm_lower_ci[-2, :].reshape(1, -1),
-#         gpe_upper_ci=sm_upper_ci[-2, :].reshape(1, -1),
-#         measurement_error=err_quantity,
-#     )
-#
-#     plotter.plot_model_outputs_vs_locations(
-#         observed_values=obs_quantity,
-#         quantity_name=full_complexity_model.calibration_quantities[i],
-#         surrogate_outputs=sm_output[-3, :].reshape(1, -1),
-#         complex_model_outputs=cm_output[-3, :].reshape(1, -1),
-#         selected_locations=list(range(1,37)),
-#         gpe_lower_ci=sm_lower_ci[-3, :].reshape(1, -1),
-#         gpe_upper_ci=sm_upper_ci[-3, :].reshape(1, -1),
-#         measurement_error=err_quantity,
-#     )
-#
-#     plotter.plot_model_outputs_vs_locations(
-#         observed_values=obs_quantity,
-#         quantity_name=full_complexity_model.calibration_quantities[i],
-#         surrogate_outputs=sm_output[-4, :].reshape(1, -1),
-#         complex_model_outputs=cm_output[-4, :].reshape(1, -1),
-#         selected_locations=list(range(1,37)),
-#         gpe_lower_ci=sm_lower_ci[-4, :].reshape(1, -1),
-#         gpe_upper_ci=sm_upper_ci[-4, :].reshape(1, -1),
-#         measurement_error=err_quantity,
-#     )
-#     plotter.plot_model_outputs_vs_locations(
-#         observed_values=obs_quantity,
-#         quantity_name=full_complexity_model.calibration_quantities[i],
-#         surrogate_outputs=sm_output[-5, :].reshape(1, -1),
-#         complex_model_outputs=cm_output[-5, :].reshape(1, -1),
-#         selected_locations=list(range(1,37)),
-#         gpe_lower_ci=sm_lower_ci[-5, :].reshape(1, -1),
-#         gpe_upper_ci=sm_upper_ci[-5, :].reshape(1, -1),
-#         measurement_error=err_quantity,
-#     )
-#     plotter.plot_model_outputs_vs_locations(
-#         observed_values=obs_quantity,
-#         quantity_name=full_complexity_model.calibration_quantities[i],
-#         surrogate_outputs=sm_output[-6, :].reshape(1, -1),
-#         complex_model_outputs=cm_output[-6, :].reshape(1, -1),
-#         selected_locations=list(range(1,37)),
-#         gpe_lower_ci=sm_lower_ci[-6, :].reshape(1, -1),
-#         gpe_upper_ci=sm_upper_ci[-6, :].reshape(1, -1),
-#         measurement_error=err_quantity,
-#     )
-#     plotter.plot_model_outputs_vs_locations(
-#         observed_values=obs_quantity,
-#         quantity_name=full_complexity_model.calibration_quantities[i],
-#         surrogate_outputs=sm_output[-7, :].reshape(1, -1),
-#         complex_model_outputs=cm_output[-7, :].reshape(1, -1),
-#         selected_locations=list(range(1,37)),
-#         gpe_lower_ci=sm_lower_ci[-7, :].reshape(1, -1),
-#         gpe_upper_ci=sm_upper_ci[-7, :].reshape(1, -1),
-#         measurement_error=err_quantity,
-#     )
-    # plotter.plot_model_outputs_vs_locations(
-    #     observed_values=obs_quantity,
-    #     quantity_name=full_complexity_model.calibration_quantities[i],
-    #     surrogate_outputs=sm_output[-5, :].reshape(1, -1),
-    #     complex_model_outputs=cm_output[-5, :].reshape(1, -1),
-    #     selected_locations=list(range(1,37)),
-    #     gpe_lower_ci=sm_lower_ci[-5, :].reshape(1, -1),
-    #     gpe_upper_ci=sm_upper_ci[-5, :].reshape(1, -1),
-    #     measurement_error=err_quantity,
-    # )
