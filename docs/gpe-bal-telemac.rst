@@ -1,7 +1,8 @@
 .. BAL Telemac
 
-Complete Bayesian Active Learning (BAL) for Gaussian Process Emulator (GPE) using Telemac
-=============================================================================================
+BAL with TELEMAC & OpenFOAM
+===========================
+
 A complete surrogate-assisted calibration using Gaussian Process and Bayesian Active Learning (BAL) is performed for a hydrodynamic model using Telemac and is launched with the main script as follows:
 
 .. image:: _static/UML-bal-reduced.png
@@ -9,8 +10,8 @@ A complete surrogate-assisted calibration using Gaussian Process and Bayesian Ac
    :width: 80%
    :align: center
 
-Telemac simulation folder
-------------------------------
+TELEMAC simulation folder
+-------------------------
 
 To run HydroBayesCal using Telemac, you need to have Telemac installed in your PC and all the necesary files to run a hydrodynamic model.
 First, create a folder called **telemac_simulation** and copy the necessary files for a Telemac simulation into it:
@@ -28,15 +29,20 @@ For example, for a hydrodynamic numerical model you might require:
     - *Please, before starting any BAL calibration, check that your hydrodynamic model runs properly.*
     - *Until now, the code cannot run sediment transport model with GAIA. Only hydrodynamic simulations are possible.*
 
-OpenFoam simulation folder
-------------------------------
+OpenFOAM simulation folder
+--------------------------
 
-Definition of HydroBayesCal parameters
----------------------------------------
+.. note::
+
+    Section under development by Federica Scolari.
+
+
+HydroBayesCal parameters
+-------------------------
 
 A complete surrogate assisted calibration of a hydrodynamic model requires the definition of some parameters corresponding to the complex model (e.g. Telemac or OpenFoam) and parameters for the metamodel construction based on Gaussian Process.
 
-complex_model instance:
+Example of a Telemac ``complex_model`` instance:
 
 .. code-block:: python
 
@@ -67,12 +73,14 @@ complex_model instance:
     )
 
 
-In this example, the **Telemac** files are saved in **telemac_simulation** folder. The path to this folder is defined in ``model_dir``.
+In this example, the **Telemac** files are saved in **telemac_simulation** folder. The path to this folder is defined in ``model_dir``:
+
 .. code::
 
     model_dir="/path/to/model_directory/telemac_simulation".
 
-The prior assumptions for these uncertain calibration parameters are defined as four ranges in ``param_values`` following a uniform distribution limited by the minimum and maximum limits. The model is calibrated for three roughness zones and the roughness coefficients of the boundaries.
+The prior assumptions for these uncertain calibration parameters are defined as four ranges in ``param_values`` following a uniform distribution limited by the minimum and maximum limits. The model is calibrated for three roughness zones and the roughness coefficients of the boundaries:
+
 .. code::
 
     param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.018, 0.028]].
@@ -95,7 +103,7 @@ To define the values of the input parameters, **HydroBayesCal** uses the classes
 If the uncertain parameters are defined as distribution types, they must be specified as follows:
 
 Example Usage
-^^^^^^^^^^^^^
++++++++++++++
 
 .. code-block:: python
 
@@ -145,22 +153,22 @@ Parameters
    * **"user"** - User-defined sampling. (Requires a user-defined .csv file with the sampling points.)
 
 Returns
-^^^^^^^^
+^^^^^^^
 
 **exp_design** : object
     An instance of the experiment design object configured with the specified model and selection criteria.
 
 .. autofunction:: bal.setup_experiment_design
 
-Run Complex Model with Experiment Design
------------------------------------------
+Run Numerical Model with Experiment Design
+-------------------------------------------
 
 This step executes the hydrodynamic model for a given experiment design and returns
 the collocation points (previously obtained in the experiment design) and the model outputs.
 The collocation points serve as the input parameters for the initial model runs.
 
 Example Usage
-^^^^^^^^^^^^^
++++++++++++++
 
 .. code-block:: python
 
@@ -192,8 +200,8 @@ Returns
     - **For 2 quantities**: ``[number of runs x 2 * number of locations]``
       *(Each pair of columns contains the two quantities for each location.)*
 
-Run Bayesian Active Learning Calibration
-----------------------------------------
+Run BAL Calibration
+-------------------
 
 This step performs **stochastic calibration** of the Telemac hydrodynamic model using
 **Surrogate-Assisted Bayesian Inversion**. The surrogate model is constructed with
@@ -208,7 +216,7 @@ This approach enables:
 - **Methods by:** `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
 
 Example Usage
-^^^^^^^^^^^^^
++++++++++++++
 
 .. code-block:: python
     run_bal_model(
@@ -261,7 +269,7 @@ Parameters
     Default is ``gpy``.
 
 Returns
-^^^^^^^^
+^^^^^^^
 
 **None**
 
@@ -276,7 +284,7 @@ the name **auto-saved-results-HydroBayesCal**:
 .. _outputs-folder: outputs-folder
 
 Surrogate-Assisted BAL Calibration Outputs
--------------------------------------------
+++++++++++++++++++++++++++++++++++++++++++
 
 The surrogate-assisted Bayesian Active Learning (BAL) calibration runs iteratively until the specified ``max_runs`` limit is reached.
 Once the calibration process is completed, the output files are generated and organized into separate folders based on the type of data.
@@ -354,7 +362,9 @@ These organized outputs ensure a structured post-processing workflow for analyzi
 
 Methods by:
 Oladyshkin, S., Mohammadi, F., Kroeker, I., & Nowak, W. (2020). Bayesian3 Active Learning for the Gaussian Process Emulator Using Information Theory. Entropy, 22(8), 890.
-----------------------
+
+---
+
 
 #external_libraries Folder:
 The library pputils-master by Pat Prodanovic (https://github.com/pprodano/pputils) is used to extract the results of the simulation file (.slf) into a .txt file, which is then stored in the results Folder.

@@ -7,5 +7,5 @@ UML diagram of HydroBayesCal
    :alt: Complete UML of HydroBayesCal
    :width: 100%
    :align: center
-   :scale: 10%
+   :scale: 15%
 

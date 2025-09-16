@@ -1,8 +1,8 @@
 .. Full complexity model
 
 
-Complex model - Metamodel Calibration Workflow
-================================================
+Bayesian Calibration Workflow
+=============================
 
 The workflow describes the use of Bayesian Model Evidence (BME) and Relative Entropy (RE) in conjunction with a Gaussian Process Emulator,
 as proposed by `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_, to iteratively improve the accuracy of a surrogate model applied
@@ -27,7 +27,7 @@ be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hyd
 
 
 Step 1: Assign user input parameters
--------------------------------
+-------------------------------------
 
 As it was mentioned before the calibration process involves two well defined parts in the code. Both processes depend on the user defined input parameters, which are essential
 to run the code properly.
@@ -36,9 +36,9 @@ calls the necessary instances of the classes that run the hydrodynamic model, cr
 
 
 .. _HydroSimulations_class:
+Functioning of the HydroSimulations Class
++++++++++++++++++++++++++++++++++++++++++
 
-HydroSimulations Class (Global Full Complexity Model Parameters)
-----------------------------------------------------------------
 The **HydroSimulations** class manages and runs hydrodynamic simulations within the context of Bayesian Calibration using a Gaussian Process Emulator (GPE). The class is designed to handle simulation setup,
 execution, and result storage while managing calibration parameters and Bayesian Active Learning (BAL) iterations.
 
@@ -175,7 +175,7 @@ This class contains the general attributes that a hydrodynamic simulation requir
 
 
 TelemacModel Class (Telemac specific parameters)
--------------------------------------------------
+++++++++++++++++++++++++++++++++++++++++++++++++
 
 For telemac simulations, the following parameters should be defined in the **TelemacModel** class if necesarry:
 
@@ -203,7 +203,7 @@ For telemac simulations, the following parameters should be defined in the **Tel
     results_filename_base="results"
 
 
-Step 2: Bayesian Model Optimization
+Step 2: Bayesian model optimization
 -----------------------------------
 
 With the initial model setup and the measurement points, the Bayesian model optimization process has everything it needs for its iterative score calculation. The number of iterations corresponds to the user-defined limit in **``max_runs``** and the following tasks are performed in every iteration:
@@ -233,10 +233,7 @@ With the initial model setup and the measurement points, the Bayesian model opti
 
 
 Step 3: Post-calibration data
-------------------------------------
-
-Bayesian Active Learning Iterations
------------------------------------
+------------------------------
 
 The Bayesian Active Learning (BAL) process runs iteratively until the specified ``max_runs`` limit is reached.
 After completion, the post-calibration data is automatically saved in a directory named
