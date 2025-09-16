@@ -11,8 +11,8 @@ for the calibration of full-complexity hydrodynamic models.
 The following steps outline the process for performing a GPE surrogate-assisted calibration of any hydrodynamic model using open-source
 hydrodynamic software. Currently, model calibration is supported only with Telemac.
 
-Step 0: Wet your TELEMAC Model
-------------------------------
+Step 0: Wet your (TELEMAC) Model
+--------------------------------
 
 Before the surrogate-assisted calibration can run, it needs an initial model run. The initial model needs to be fully functional with all the required simulation files.
 The first model run should start with `dry conditions (read more at hydro-informatics.com) <https://hydro-informatics.com/numerics/telemac2d-steady.html>`_ and

@@ -37,8 +37,11 @@ parameters.
 The package employs Bayesian Active Learning, or BAL, to iteratively add new training points (parameter combinations) that yielded the highest value of relative entropy,
 hence increasing the model's accuracy in the parameter space regions that are most crucial for Bayesian inference.
 
+Installation
+------------
+
 Prerequisites (requirements)
-----------------------------
+++++++++++++++++++++++++++++
 
 HydroBayesCal is a Python package, bound to the installation of a numerical model. Currently, only Telemac 2D/ 3D bindings are enabled. The package runs in Debian Linux platforms
 including Ubuntu and its derivatives. he package has not been tested in Windows yet. We recommended to install the package in a Linux Operating System because
@@ -50,7 +53,7 @@ and the Telemac system.
 
 
 Python
-++++++
+^^^^^^
 
 To get the code running, we strongly recommend creating a new conda or virtual environment as described in the `Anaconda Docs <https://docs.continuum.io/anaconda/install/windows/>`_ and
 at `hydro-informatics.com/python-basics <https://hydro-informatics.com/python-basics/pyinstall.html>`_ with Python 3.10. ``HydroBayesCal`` potentially also works with earlier Python3 versions,
@@ -66,7 +69,7 @@ and dive into the `Python tutorials <https://hydro-informatics.com/python-basics
 View the environment requirements for the package in the `HydroBayesCal-requirements.txt <https://github.com/Ecohydraulics/hydrobayescal>`_ file.
 
 Telemac
-+++++++
+^^^^^^^
 
 Telemac-Mascaret or typically known as only Telemac is a robust and versatile integrated modeling tool designed
 for simulating free-surface flows with a wide range of applications in both river and maritime hydraulics.
@@ -86,8 +89,9 @@ at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_
 at `https://hydro-informatics.com <https://hydro-informatics.com/get-started/install-telemac.html>`_ that
 is tweaked for HydroBayesCal. We recommend to install TELEMAC with ``pysource.gfortranHPC.sh``or with your preferred pysource file.
 
+
 Linux setup
------------
++++++++++++
 *Time requirement: <5 min.*
 To install HydroBayesCal via pip from PyPI
 
@@ -110,7 +114,7 @@ With the ``HydroBayesCal`` installed you are now ready to use it for running a s
 The `usage section <usage>` provides detailed explanations for running the optimization.
 
 Create Virtual environment in Linux
-+++++++++++++++++++++++++++++++++++
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The package needs access to system-wide libraries in Linux. The environment is called ``HBCenv``.
 
@@ -137,7 +141,7 @@ directory where you downloaded ``HydroBayesCal-requirements.txt`` to install the
     pip install -r HydroBayesCal-requirements.txt
 
 Load HBCenv for TELEMAC (Linux)
-+++++++++++++++++++++++++++++++
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The simultaneous activation of the *HydroBayesCal* environment and TELEMAC environment variables requires some tweaking,
 which can be achieved by source-ing the environment activation templates. To activate the environment specifically for your system,
@@ -177,7 +181,7 @@ If both environments are loaded without errors, you are good to go for running t
 
 
 Windows setup
--------------
++++++++++++++
 
 The `source` command is commonly used in Unix-based systems to execute shell scripts that set up environment variables and paths. In Windows, you can achieve similar functionality by using either PowerShell or a compatible shell environment (e.g., WSL, Git Bash). To run a `.sh` file in Windows, use `.\file_name.sh`. Thus, take the following actions:
 
