@@ -1,16 +1,9 @@
-# # coding: utf-8
-# """
-# Functional core for controlling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
-#
-# Authors: Andres Heredia, Sebastian Schwindt
-# """
+# coding: utf-8
+"""
+Functional core for controlling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
+Authors: Andres Heredia, Sebastian Schwindt
+"""
 import pdb
-
-# # TODO: Do you still use the global parameters from conf_telemac? -> this not anymore # Not anymore
-# # from config_telemac import *
-# # TODO: is pputils still relevant? # This is relevant to the code.
-
-
 from scipy import spatial
 import numpy as np
 import config_telemac
@@ -28,7 +21,7 @@ except ImportError as e:
     print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
 from src.hydroBayesCal.hysim import HydroSimulations
 from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
- # provides TM2D_PARAMETERS, GAIA_PARAMETERS, TM_TEMPLATE_DIR
+
 
 class TelemacModel(HydroSimulations):
     def __init__(
@@ -97,8 +90,6 @@ class TelemacModel(HydroSimulations):
         ----
         The attributes specific to Telemac are listed above. For attributes inherited from the `HydroSimulations` class, please refer to its documentation.
         """
-        # TODO: I started to separate parameters that every HydroSimulation inheritance should have - Done
-        # TODO: from those that are specific to Telemac. Please continue and merge. - done accordingly - Done
         super().__init__(*args, **kwargs)
         # Initialize subclass-specific attributes
         self.friction_file = friction_file
@@ -448,12 +439,10 @@ class TelemacModel(HydroSimulations):
                         writer = csv.writer(file)
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
-                        #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
 
-                collocation_points=collocation_points#*[[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
+                collocation_points=collocation_points  #*[[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]] - remove these numbers?
                 # collocation_points=collocation_points#*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
 
-                #-----------------------------------------------------------------------------------------------
                 for i in range(init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list = collocation_points[i].tolist()
@@ -499,8 +488,6 @@ class TelemacModel(HydroSimulations):
 
                 self.bal_iteration = bal_iteration
                 self.num_run = bal_iteration + init_runs
-                    #------------------------------------------------------------ Added to modify the mean D50 depending on the sampling----
-
 
                 new_collocation_point=bal_new_set_parameters #* [[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
                 updated_collocation_points = np.vstack((collocation_points, new_collocation_point))
@@ -518,7 +505,7 @@ class TelemacModel(HydroSimulations):
                         writer = csv.writer(file)
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)
-                    #-----------------------------------------------------------------------------
+
                 self.update_model_controls(collocation_point_values=collocation_point_sim_list,
                                            calibration_parameters=calibration_parameters,
                                            auxiliary_file_path=fr_tbl,
@@ -599,11 +586,7 @@ class TelemacModel(HydroSimulations):
                             writer = csv.writer(file)
                             writer.writerow(calibration_parameters)
                             writer.writerows(array_list)  # Write the array data
-                #collocation_points=collocation_points*[[0.5,0.001,0.073,0.02,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                # collocation_points=collocation_points*[[0.5,0.0033,0.073,0.023,0.00625,0.00625,0.0131,0.0131,0.0178]]
-                collocation_points=collocation_points #* [[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
-                #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.022, 0.022, 0.022, 0.022, 0.022]]
-                #collocation_points = collocation_points * [[0.5, 0.0033, 0.073, 0.023, 0.0178, 0.0178, 0.0178, 0.0178, 0.0178]]
+                collocation_points=collocation_points
 
                 for i in range(init_runs):
                     self.num_run = i + 1
@@ -626,10 +609,10 @@ class TelemacModel(HydroSimulations):
                     self.model_evaluations = self.output_processing(output_data_path=output_data_path,
                                                                     delete_slf_files=self.delete_complex_outputs,
                                                                     validation=validation,
-                                                                    save_extraction_outputs=True,# This option True saves ALL model outputs of ALL required quantities at ALL points as a .csv file
+                                                                    save_extraction_outputs=True,  # This option True saves ALL model outputs of ALL required quantities at ALL points as a .csv file
                                                                     calibration_mode=True,
-                                                                    extraction_mode = True
-                                                                    )#This option True extracts the data from the dictionary and populates the array with the values from the dictionary for the parameters in extraction_quantities.
+                                                                    extraction_mode = True, #This option True extracts the data from the dictionary and populates the array with the values from the dictionary for the parameters in extraction_quantities
+                                                                    )
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
                 if kill_process:
                     exit()
@@ -709,8 +692,6 @@ class TelemacModel(HydroSimulations):
                 with open(os.path.join(self.calibration_folder, f'{quantities_str}-detailed.json'),
                           'w') as json_file:
                     json.dump(filtered_output_data_calibration, json_file, indent=4)
-            # update_json_file(json_path=os.path.join(self.asr_dir,f'{quantities_str}-detailed.json'), modeled_values_dict=filtered_output_data, detailed_dict=True)
-            # pdb.set_trace()
             for i, (key, values) in enumerate(filtered_output_data_extraction.items()):  # Iterate over calibration points
                 for j, value_set in enumerate(values):  # Iterate over runs
                     for k, quantity in enumerate(calibration_quantities):  # Calibrate quantities
@@ -1019,146 +1000,6 @@ class TelemacModel(HydroSimulations):
 
             differentiated_dict[key] = differentiated_values
 
-        #
-        #
-        #
-
-
-
-        # ----------------------------------------------------------------------------------------
-        #
-        # extraction_quantity = extraction_quantity
-        # classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
-        # # Separate quantities
-        # telemac_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "telemac"]
-        # gaia_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "gaia"]
-        # slf_files = {
-        #     "telemac": self.tm_results_filename,
-        #     "gaia": self.gaia_results_filename
-        # }
-        # input_file = os.path.join(model_directory, input_file)
-        # json_path = os.path.join(results_folder_directory, f"{output_name}.json")
-        # json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
-        # json_path_restart_data = os.path.join(self.restart_data_folder, "initial-model-outputs.json")
-        # keys = list(calibration_pts_df.iloc[:, 0])
-        # modeled_values_dict = {}
-        # differentiated_dict = {}
-        # logger.info(
-        #     f'Extracting {extraction_quantity} from results file {input_file} \n')
-        # for key, h in zip(keys, range(len(calibration_pts_df))):
-        #     xu = calibration_pts_df.iloc[h, 1]
-        #     yu = calibration_pts_df.iloc[h, 2]
-        #
-        #     # reads the *.slf file
-        #     slf = ppSELAFIN(input_file)
-        #     slf.readHeader()
-        #
-        #     slf.readTimes()
-        #
-        #     # gets times of the selafin file, and the variable names
-        #     #times = slf.getTimes()
-        #     variables = slf.getVarNames()
-        #     # pdb.set_trace()
-        #     units = slf.getVarUnits()
-        #     NVAR = len(variables)
-        #
-        #     # to remove duplicate spaces from variables and units
-        #     for i in range(NVAR):
-        #         variables[i] = ' '.join(variables[i].split())
-        #         units[i] = ' '.join(units[i].split())
-        #
-        #     common_indices = []
-        #
-        #     # Iterate over the secondary list
-        #     for value in extraction_quantity:
-        #         # Find the index of the value in the original list
-        #         index = variables.index(value)
-        #         # Add the index to the common_indices list
-        #         common_indices.append(index)
-        #
-        #     # gets some of the mesh properties from the *.slf file
-        #     NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
-        #
-        #     # determine if the *.slf file is 2d or 3d by reading how many planes it has
-        #     NPLAN = slf.getNPLAN()
-        #     #fout.write('The file has ' + str(NPLAN) + ' planes' + '\n')
-        #
-        #     # store just the x and y coords
-        #     x2d = x[0:int(len(x) / NPLAN)]
-        #     y2d = y[0:int(len(x) / NPLAN)]
-        #
-        #     # create a KDTree object
-        #     source = np.column_stack((x2d, y2d))
-        #     tree = spatial.cKDTree(source)
-        #
-        #     # find the index of the node the user is seeking
-        #     if extraction_mode=="nearest":
-        #         mode = "at nearest point"
-        #         k=1
-        #         idx_all = np.zeros(NPLAN, dtype=np.int32)
-        #     elif extraction_mode=="interpolated":
-        #         k=k
-        #         mode=f"though interpolation using {k} closest points "
-        #         idx_all = np.zeros((k,NPLAN), dtype=np.int32)
-        #         idx_coord = np.zeros((k, 2), dtype=np.float64)
-        #     d, idx = tree.query((xu, yu), k=k)
-        #     print(f'*** Extraction {key},{xu},{yu} performed {mode} for the input coordinate!: ' + str(x[idx]) + ' ' + str(y[idx]) + '\n')
-        #
-        #     if k==1:
-        #         idx_all[0] = idx
-        #     else:
-        #         idx_all[:, 0] = idx
-        #         idx_coord[:, 0] = x[idx]
-        #         idx_coord[:, 1] = y[idx]
-        #         interpolation_coordinate = (xu, yu)
-        #     # start at second plane and go to the end
-        #     for i in range(1, NPLAN, 1):
-        #         if k == 1:
-        #             idx_all[i] = idx_all[i - 1] + (NPOIN // NPLAN)
-        #         else:
-        #             idx_all[:, i] = idx_all[:, i - 1] + (NPOIN // NPLAN)
-        #     # extract results for every plane (if there are multiple planes that is)
-        #     results_all = np.zeros((k, NVAR))
-        #     for p in range(NPLAN):# Loop over planes
-        #         for j in range(k):  # Loop over points
-        #             slf.readVariablesAtNode(idx_all[j, p] if k > 1 else idx_all[p])
-        #
-        #             # Extract results at all time steps for ALL model variables and chooses only for the last time step
-        #             results = slf.getVarValuesAtNode()[-1]
-        #             # Results_all stores the model outputs for each printout variable and at each nearest point (when nearest is selected)
-        #             if k != 1:
-        #                 results_all[j, :] = results
-        #         if k != 1:
-        #             results = interpolate_values(idx_coord,results_all,interpolation_coordinate)
-        #
-        #         #-------------------------------------------------------------------
-        #         # Initializes an empty list to store values (calibration qunatities) for every key (point description) for the
-        #         # current simulation
-        #         modeled_values_dict[key] = []
-        #         # Iterate over the common indices
-        #         for index in common_indices:
-        #             # Extract value from the last row based on the index
-        #             value = results[index]
-        #             # Append the value to the list for the current key
-        #             modeled_values_dict[key].append(value)
-        #
-        #     # New dictionary that stores the values of the calibration quantities for each calibration point. Extra alternative for the
-        #     # Above-mentioned dictionary.
-        #     #differentiated_dict = {}
-        #
-        #     # Iterate over the keys and values of the original dictionary
-        #     for key, values in modeled_values_dict.items():
-        #         # Create a dictionary to store the differentiated values for the current key
-        #         differentiated_values = {}
-        #         # Iterate over the titles and corresponding values
-        #         for title, value in zip(extraction_quantity, values):
-        #             # Add the title and corresponding value to the dictionary
-        #             differentiated_values[title] = value
-        #         # Add the differentiated values for the current key to the new dictionary
-        #         differentiated_dict[key] = differentiated_values
-
-
-        # ----------------------------------------------------------------------------------------
         if simulation_number == 1:
             # Handle json_path
             if os.path.exists(json_path):

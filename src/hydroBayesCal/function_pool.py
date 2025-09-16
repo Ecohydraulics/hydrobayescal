@@ -17,7 +17,6 @@ import shutil
 sys.path.insert(0, os.path.abspath('..'))
 
 from src.hydroBayesCal.utils.config_logging import *
-# TODO: re-instate config_physics - Done
 from src.hydroBayesCal.utils.config_physics import *
 from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
 
@@ -305,8 +304,6 @@ def rearrange_array(data, num_quantities):
     return rearranged_data
 
 
-
-#----------------------------------------------
 def update_json_file(json_path, modeled_values_dict=None, detailed_dict=False, save_dict=False, saving_path=None):
     """
     Updates the JSON file at `json_path` with data from `modeled_values_dict`.
@@ -366,6 +363,8 @@ def update_json_file(json_path, modeled_values_dict=None, detailed_dict=False, s
                     json.dump(output_data, file, indent=4)
         else:
             print(f"File at {json_path} does not exist. Cannot save to {saving_path}.")
+
+
 def delete_slf(folder_path):
     """
     Deletes all files with the .slf extension in the specified folder.
@@ -434,8 +433,6 @@ def filter_model_outputs(data_dict, quantities, run_range_filtering=None):
     return filtered_data
 
 
-
-
 def interpolate_values(coords, values, point):
     """
     Interpolates values at a given point using Inverse Distance Weighting.
@@ -465,6 +462,8 @@ def interpolate_values(coords, values, point):
     interpolated_values = _np.dot(weights, values)  # Dot product for weighted sum
 
     return interpolated_values.flatten()  # Return as a 1D array
+
+
 def rasterize(saving_folder, slf_file_name, desired_variables, spacing):
     # Define the full path for the SLF file
     slf_file = os.path.join(saving_folder, slf_file_name)
@@ -685,6 +684,7 @@ def classify_mu(raster_data, classification, output_folder, output_filename):
 
     print(f"Classified MU raster saved to {output_file}")
 
+
 def parse_classes_keyword(file_path, keyword):
     with open(file_path, 'r') as file:
         for line in file:
@@ -701,6 +701,8 @@ def parse_classes_keyword(file_path, keyword):
                         return stripped  #
 
     return None  # If not found
+
+
 def update_gaia_class_line(line, index, new_value):
     # Split at ":" or "="
     if ':' in line:
@@ -726,6 +728,7 @@ def update_gaia_class_line(line, index, new_value):
     updated_line = f"{key.strip()} {separator} {';'.join(values_list)}"
     return updated_line
 
+
 def classify_parameters_tm_gaia(elements, classification_dict):
     telemac_vars = []
     gaia_vars = []
@@ -738,5 +741,4 @@ def classify_parameters_tm_gaia(elements, classification_dict):
             gaia_vars.append(element)
         else:
             raise ValueError(f"Element '{element}' not recognized in CLASSIFICATION_DICT.")
-
     return telemac_vars, gaia_vars

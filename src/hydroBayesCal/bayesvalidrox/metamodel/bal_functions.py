@@ -1,5 +1,5 @@
 """
-
+TO DO: ADD DESCRIPTION
 """
 
 import numpy as np
@@ -58,8 +58,6 @@ class BayesianInference:
             relative entropy value between prior and posterior
         self.IE = float
             information entropy (not calculated currently)
-
-    Functions:
 
     Posterior sampling options:
 
@@ -132,24 +130,6 @@ class BayesianInference:
         self.likelihood = stats.multivariate_normal.pdf(self.model_predictions, cov=self.cov_mat,
                                                         mean=self.observations[0, :])
 
-        # try:
-        #     likelihood = stats.multivariate_normal.pdf(self.output, cov=self.measurement_data.cov_matrix,
-        #                                                mean=self.measurement_data.meas_values[0])  # ###########
-        # except ValueError as e:
-        #     logger.exception(e)
-        # else:
-        #     self.likelihood = likelihood
-
-        # Manual: to check results
-        # lh2 = np.full(self.output.shape[0], 0.0)
-        # for i in range(0, self.output.shape[0]):
-        #     det = np.linalg.det(self.Syn_Data.cov_matrix)  # Calculates det of the covariance matrix
-        #     inv = np.linalg.inv(self.Syn_Data.cov_matrix)  # inverse of covariance matrix
-        #     diff = self.Syn_Data.meas_data - self.output[i, :]  # Gets the difference between measured and
-        #                                                         # modeled value
-        #     term1 = 1 / np.sqrt((math.pow(2 * math.pi, 10)) * det)
-        #     term2 = -0.5 * np.dot(np.dot(diff, inv), diff.transpose())
-        #     lh2[i] = term1 * np.exp(term2)
 
     def calculate_likelihood_manual(self):
         """
@@ -252,7 +232,7 @@ class BayesianInference:
             *If max likelihood = 0, then there is no posterior distributions, or the posterior is the same as the
             prior.
         """
-        # Generate MC number of random values between 1 and 0 (uniform dist) ---------------------------------------- #
+        # Generate MC number of random values between 1 and 0 (uniform dist)
         rn = stats.uniform.rvs(size=self.model_predictions.shape[0])  # random numbers
 
         if self.log_likelihood is not None and self.use_log:
@@ -331,10 +311,14 @@ class BayesianInference:
             else:
                 self.IE = None
 
+
 class SequentialDesign:
     """
     Class runs the optimal design of experiments (sequential design) to select the new training points, to add to the
     existing training points for surrogate model training.
+
+    TO DO: DOUBLE-CHECK WITH DOEPY CLASSES AND FUNCTIONS
+
     Args:
         exp_design: ExpDesign object
             Used to sample from the prior distribution, and extract exploit and explore methods.
@@ -673,10 +657,6 @@ class SequentialDesign:
 
         if exploit_method.lower() == 'varoptdesign':
             print('Not yet implemented: method select TP based on surrogate model variance')
-            # U_J_d = np.zeros((candidates.shape[0]))
-            # for idx, X_can in tqdm(enumerate(candidates), ascii=True,
-            #                        desc="varoptdesign"):
-            #     U_J_d[idx] = self.util_VarBasedDesign(X_can, index, utility_func)
 
         elif exploit_method.lower() == 'bal':
             n_candidate = candidates.shape[0]   # number of candidates
@@ -807,7 +787,7 @@ class SequentialDesign:
         log_constant = samples.shape[1] * math.log(2 * math.pi) + math.log(det_R)
 
         # vectorize means:
-        means_vect = mean[:, np.newaxis]  # ############
+        means_vect = mean[:, np.newaxis]
 
         # Calculate differences and convert to 4D array (and its transpose):
         diff = means_vect - samples  # Shape: # means
@@ -853,3 +833,4 @@ class SequentialDesign:
         al_unique_index = al_unique_index[:self.mc_samples]
 
         return al_unique_index
+

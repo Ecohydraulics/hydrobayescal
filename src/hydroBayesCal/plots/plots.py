@@ -24,7 +24,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from pathlib import Path
 from matplotlib import gridspec
-from matplotlib.ticker import MaxNLocator   # ➊ neuer Import
+from matplotlib.ticker import MaxNLocator 
+
 
 class BayesianPlotter:
     def __init__(
@@ -198,71 +199,6 @@ class BayesianPlotter:
         # Add the legend to the figure; adjust bbox_to_anchor as needed
         g.fig.legend(handles=[prior_patch, posterior_patch], loc='upper right', bbox_to_anchor=(0.95, 0.95))
         plt.show()
-        # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        # % plot the measured velocity, surrogate velocity and complex model velocty at each location.
-        # Number of locations
-        # n_locations = 36
-        # nrows = 6
-        # ncols = 6
-        # obs_flat = obs.flatten()
-        #
-        # # Create a grid of subplots (6x6 for 36 locations)
-        # fig, axs = plt.subplots(nrows, ncols, figsize=(25, 25), sharex=False, sharey=False)
-        #
-        # for i in range(n_locations):
-        #     row = i // ncols
-        #     col = i % ncols
-        #     ax = axs[row, col]
-        #
-        #     # Extract simulation data for location i
-        #     cm_vals = cm_outputs[:, i]  # Complex model values (11 values)
-        #     sm_vals = sm_outputs[:, i]  # Surrogate model values (11 values)
-        #
-        #     # Plot KDE distributions using Seaborn.
-        #     sns.kdeplot(x=cm_vals, ax=ax, fill=True, color='blue', alpha=0.5, label='CM')
-        #     sns.kdeplot(x=sm_vals, ax=ax, fill=True, color='green', alpha=0.5, label='SM')
-        #
-        #     # Overlay the observation as a red marker and a dashed vertical line.
-        #     obs_val = obs_flat[i]  # Get a scalar from the flattened observations
-        #     ax.plot(obs_val, 0, 'ro', markersize=15)
-        #     ax.axvline(obs_val, color='red', linestyle='--', alpha=0.7)
-        #
-        #     ax.set_title(f'Location {i + 1}', fontsize=20)
-        #     # Remove the y-axis label for this subplot.
-        #     ax.set_ylabel('')
-        #     # ax.set_xlabel('Velocity')
-        #     ax.tick_params(labelsize=20)
-        #
-        # # Create custom legend handles.
-        # line_cm = Line2D([0], [0], color='blue', lw=2, label='Complex Model')
-        # line_sm = Line2D([0], [0], color='green', lw=2, label='Surrogate Model')
-        # # Set lw=1 (instead of 0) to avoid dash errors.
-        # line_obs = Line2D([0], [0], marker='o', color='red', lw=1, markersize=5, linestyle='--', label='Observation')
-        #
-        # # Place a common legend for all subplots at the top center.
-        # fig.legend(handles=[line_cm, line_sm, line_obs],
-        #            loc='upper center', ncol=3, fontsize=20,
-        #            # title_fontsize=10
-        #            )
-        #
-        # # Add a single overall y-axis label for density.
-        # fig.text(0.01, 0.5, 'Density', rotation='vertical', ha='center', va='center', fontsize=20
-        #          # 'small'
-        #          )
-        # fig.text(0.5, 0.005, 'Velocity [m s$^{-1}$]', ha='center', va='center', fontsize=20)
-        #
-        # # Adjust layout to ensure nothing is clipped, leaving space for the legend.
-        # plt.tight_layout(rect=[0, 0, 1, 0.95])
-        #
-        # # # Save the figure as PDF and PNG.
-        # output_dir = '/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/exercises_rw/bal/results/telemac2d_test/auto-saved-results-1-quantities_WATER DEPTH/plots/distributions'
-        # os.makedirs(output_dir, exist_ok=True)
-        # pdf_file = os.path.join(output_dir, 'subplots_by_location2.pdf')
-        # png_file = os.path.join(output_dir, 'subplots_by_location2.png')
-        # fig.savefig(pdf_file, bbox_inches='tight', dpi=300)
-        # fig.savefig(png_file, bbox_inches='tight', dpi=300)
-        #
-        # plt.show()
 
     def plot_posterior_updates(
             self,
@@ -1012,6 +948,7 @@ class BayesianPlotter:
         fig.tight_layout()
         fig.savefig(save_folder / f'{plot_criteria}_comparison.png')  # Save with .png extension
         plt.show()
+
     def plot_bme_surface_3d(
             self,
             collocation_points,
@@ -1692,7 +1629,6 @@ class BayesianPlotter:
         *   Uses black line with circles for MO and slate‑gray dashed line
             with squares for SO.
         """
-        # ------------------------------------------------------------------ set‑up
         if metrics is None:
             metrics = ["RMSE", "Correlation", "CI"]
 
@@ -1732,7 +1668,6 @@ class BayesianPlotter:
         all_handles = []
         all_labels = []
 
-        # --------------------------------------------------------- plotting loop
         for q_idx, quantity in enumerate(quantities):
             figure_label = (
                 label_prefixes[q_idx]
@@ -1791,7 +1726,6 @@ class BayesianPlotter:
                 if r_idx == num_metrics - 1:  # bottom row
                     ax.set_xlabel("Training Points", fontsize=20)
 
-        # -------------------------------------------- one y‑label per metric row
         for r_idx, row_label in enumerate(metric_labels):
             pos = axs[r_idx, 0].get_position()
             y_center = (pos.y0 + pos.y1) / 2
@@ -1800,7 +1734,6 @@ class BayesianPlotter:
                 ha='center', va='center', rotation='vertical', fontsize=20
             )
 
-        # ------------------------------------------------ global legend & layout
         fig.legend(
             all_handles, all_labels,
             loc='upper center', ncol=2, fontsize=20, frameon=False,
@@ -1812,6 +1745,7 @@ class BayesianPlotter:
         fig.savefig(save_folder / "combined_metrics_all_quantities.pdf",
                     format='pdf', bbox_inches='tight')
         plt.close(fig)
+
     def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
         """
         Plots selected realizations comparing the complex model and surrogate model outputs.
@@ -1889,7 +1823,7 @@ class BayesianPlotter:
             obs_split,
             coordinates_df,
             model_names=None,
-            quantity_names=None  # New parameter for quantity labels
+            quantity_names=None,  # New parameter for quantity labels
     ):
         save_folder = self.save_folder
 
@@ -1921,10 +1855,12 @@ class BayesianPlotter:
             all_obs_vals = []
             per_quantity_cm_corr=[]
             per_quantity_sm_corr=[]
+
             # Collect all quantities data for composite score calculation
             cm_quantities_matrix = []
             sm_quantities_matrix = []
             obs_quantities_matrix = []
+
             for i in range(n_quantities):
                 cm_vals = cm_outputs_split[f'cm_outputs_{i + 1}'][p]
                 sm_vals = sm_outputs_split[f'sm_outputs_{i + 1}'][p]
@@ -2120,7 +2056,7 @@ class BayesianPlotter:
             ylims_cm_quantity.append(ylimit_cm)
             ylims_sm_quantity.append(ylimit_sm)
 
-        # ---------- Overall scatter plot (CM) ----------
+        # Overall scatter plot (CM)
         fig, ax = plt.subplots(figsize=(8, 6))
         colors = plt.cm.get_cmap('tab10', len(df_summary))
 
@@ -2178,7 +2114,7 @@ class BayesianPlotter:
         fig.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman_SM.svg"), dpi=300)
         plt.show()
 
-        # ========= Subplots for CM =========
+        # Subplots for CM
         ncols = 2
         nrows = math.ceil(n_quantities / ncols)
 
@@ -2198,7 +2134,7 @@ class BayesianPlotter:
             ax.set_title(quantity_names[i], fontsize=20)
             ax.set_xlim(xlims_cm_quantity[i])
             if i == 1:  # Replace 3 with the index of the outlier subplot
-                ax.set_ylim((0.10, 0.70))  # Your manually chosen limits
+                ax.set_ylim((0.10, 0.70))  # manually chosen limits
             else:
                 ax.set_ylim(ylims_cm_quantity[i])
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
@@ -2221,7 +2157,7 @@ class BayesianPlotter:
         fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_CM.svg"), dpi=300)
         plt.show()
 
-        # ========= Subplots for SM =========
+        # Subplots for SM
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
         axes = axes.flatten()
         colors = plt.cm.get_cmap('tab10', len(df_summary))
@@ -2264,190 +2200,4 @@ class BayesianPlotter:
         df_spatial = pd.DataFrame(spatial_records)
         df_spatial.to_csv(os.path.join(save_folder, "location_metrics_models.csv"), index=False)
         df_summary.to_csv(os.path.join(save_folder, "summary_metrics_models.csv"), index=False)
-# def plot_bme_concentration_last_iterations(param_values, param_ranges, bme_values, param_indices=(0, 1), grid_size=100,
-#                                            last_iterations=10, interval=1):
-#     """
-#     Plots the BME concentration for the last specified iterations and adds 2D contour plots to show the evolution.
-#
-#     Args:
-#         param_values: np.array
-#             2D array where each row corresponds to parameter values for each iteration.
-#         param_ranges: list of lists
-#             List of [min, max] values for each parameter.
-#         bme_values: list of float
-#             List of BME values, one for each iteration.
-#         param_indices: tuple of int
-#             Indices of the two parameters to plot.
-#         grid_size: int
-#             Size of the grid for the contour plots.
-#         last_iterations: int
-#             Number of last iterations to consider for the plot.
-#         interval: int
-#             Interval at which to plot the evolution of BME values.
-#     """
-#     num_iterations = len(bme_values) - 1  # -1 because bme_values has iterations + 1 values
-#
-#     if num_iterations < last_iterations:
-#         raise ValueError("Number of iterations is less than the last iterations specified")
-#
-#     # Extract the last iterations + 1 BME values and corresponding parameters
-#     bme_values = bme_values[-(last_iterations + 1):]
-#     param_values = param_values[-(last_iterations + 1):, :]
-#
-#     # Extract ranges for the selected parameters
-#     x_range = param_ranges[param_indices[0]]
-#     y_range = param_ranges[param_indices[1]]
-#
-#     x = np.linspace(x_range[0], x_range[1], grid_size)
-#     y = np.linspace(y_range[0], y_range[1], grid_size)
-#     X, Y = np.meshgrid(x, y)
-#
-#     # Calculate number of subplots needed
-#     num_plots = last_iterations // interval
-#     if last_iterations % interval != 0:
-#         num_plots += 1
-#
-#     # Create subplots for the evolution of BME values
-#     fig, axes = plt.subplots(nrows=num_plots, ncols=1, figsize=(8, num_plots * 4))
-#     if num_plots == 1:
-#         axes = [axes]  # Ensure axes is iterable
-#
-#     for i in range(0, last_iterations, interval):
-#         ax = axes[i // interval]
-#
-#         # Prepare data for interpolation
-#         current_points = param_values[:i + 2, param_indices]
-#         current_values = bme_values[:i + 2]
-#
-#         # Check if there are enough points for interpolation
-#         if len(current_points) >= 4:
-#             try:
-#                 # Interpolate BME values onto the grid
-#                 Z = griddata(current_points, current_values, (X, Y), method='cubic')
-#             except Exception as e:
-#                 # If cubic interpolation fails, use linear interpolation
-#                 Z = griddata(current_points, current_values, (X, Y), method='linear')
-#                 print(f"Warning: {e}. Using linear interpolation instead.")
-#
-#             # Set Z-axis limits based on the min and max of BME values
-#             Z_min = min(current_values)
-#             Z_max = max(current_values)
-#             Z = np.clip(Z, Z_min, Z_max)
-#
-#             # 2D Contour Plot
-#             contour = ax.contourf(X, Y, Z, cmap='viridis', levels=np.linspace(Z_min, Z_max, 100), alpha=0.8)
-#             ax.set_title(f'BME Values (Iteration {num_iterations - last_iterations + i + 1})', fontsize=12)
-#             ax.set_xlabel(r'$\omega_{}$'.format(param_indices[0] + 1), fontsize=10)
-#             ax.set_ylabel(r'$\omega_{}$'.format(param_indices[1] + 1), fontsize=10)
-#             ax.set_aspect('equal', 'box')
-#
-#             # Optional: Plot high BME regions as scatter points
-#             high_bme_indices = np.where(Z > np.percentile(current_values, 95))  # Example threshold for high BME
-#             ax.scatter(X[high_bme_indices], Y[high_bme_indices], color='red', s=10, label='High BME Regions')
-#
-#             # Add a color bar for the contour plot
-#             cbar = fig.colorbar(contour, ax=ax, shrink=0.5, aspect=5)
-#             cbar.set_label('BME Value', fontsize=10)
-#             ax.legend(fontsize=8)
-#         else:
-#             ax.set_title(f'Not enough points (Iteration {num_iterations - last_iterations + i + 1})', fontsize=12)
-#             ax.text(0.5, 0.5, 'Insufficient points for interpolation', ha='center', va='center', fontsize=12)
-#
-#     plt.tight_layout()
-#     plt.show()
 
-# def plot_bme_surface_3d(num_iterations, param_ranges, bme_values, param_indices=(0, 1), grid_size=100):
-#     """
-#     Plots the BME surface for the last 5 selected iterations and adds a 2D contour plot to show high BME regions.
-#
-#     Args:
-#         num_iterations: int
-#             Total number of iterations (length of bme_values).
-#         param_ranges: list of lists
-#             List of [min, max] values for each parameter.
-#         bme_values: list of float
-#             List of BME values, one for each iteration.
-#         param_indices: tuple of int
-#             Indices of the two parameters to plot.
-#         grid_size: int
-#             Size of the grid for the surface and contour plots.
-#     """
-#     # Extract the last 5 BME values and corresponding parameters
-#     last_iterations = 10
-#     if num_iterations < last_iterations:
-#         raise ValueError("Number of iterations is less than the last iterations specified")
-#
-#     bme_values = bme_values[-last_iterations:]
-#
-#     # Extract ranges for the selected parameters
-#     x_range = param_ranges[param_indices[0]]
-#     y_range = param_ranges[param_indices[1]]
-#
-#     x = np.linspace(x_range[0], x_range[1], grid_size)
-#     y = np.linspace(y_range[0], y_range[1], grid_size)
-#     X, Y = np.meshgrid(x, y)
-#
-#     # Prepare data for interpolation
-#     points = []
-#     values = []
-#
-#     for i in range(last_iterations):
-#         # Generate or retrieve parameter values for this iteration (use your actual parameter values)
-#         param_x = np.random.uniform(x_range[0], x_range[1])
-#         param_y = np.random.uniform(y_range[0], y_range[1])
-#
-#         points.append((param_x, param_y))
-#         values.append(bme_values[i])
-#
-#     points = np.array(points)
-#     values = np.array(values)
-#
-#     # Ensure points and values have the same length
-#     if len(points) != len(values):
-#         raise ValueError("Mismatch between number of points and BME values")
-#
-#     # Interpolate BME values onto the grid
-#     Z = griddata(points, values, (X, Y), method='cubic')
-#
-#     # Set Z-axis limits based on the min and max of BME values
-#     Z_min = min(values)
-#     Z_max = max(values)
-#     Z = np.clip(Z, Z_min, Z_max)
-#
-#     # Plot the surface and contour
-#     fig = plt.figure(figsize=(16, 8))
-#
-#     # 3D Plot
-#     ax1 = fig.add_subplot(121, projection='3d')
-#     surf = ax1.plot_surface(X, Y, Z, cmap='viridis', edgecolor='none', alpha=0.7)
-#     ax1.set_title('BME Surface Plot (Last 5 Iterations)', fontsize=20)
-#     ax1.set_xlabel(r'$\omega_{}$'.format(param_indices[0] + 1), fontsize=18)
-#     ax1.set_ylabel(r'$\omega_{}$'.format(param_indices[1] + 1), fontsize=18)
-#     ax1.set_zlabel('BME', fontsize=18)
-#     ax1.set_zlim(Z_min, Z_max)
-#     ax1.view_init(elev=30, azim=225)  # Adjust view angle
-#
-#     # Add a color bar
-#     cbar = fig.colorbar(surf, ax=ax1, shrink=0.5, aspect=5)
-#     cbar.set_label('BME Value', fontsize=14)
-#
-#     # 2D Contour Plot
-#     ax2 = fig.add_subplot(122, aspect='equal')
-#     contour = ax2.contourf(X, Y, Z, cmap='viridis', levels=np.linspace(Z_min, Z_max, 100), alpha=0.8)
-#     ax2.set_title('Contour Plot of BME Values', fontsize=20)
-#     ax2.set_xlabel(r'$\omega_{}$'.format(param_indices[0] + 1), fontsize=18)
-#     ax2.set_ylabel(r'$\omega_{}$'.format(param_indices[1] + 1), fontsize=18)
-#
-#     # Optional: Plot high BME regions as scatter points
-#     high_bme_indices = np.where(Z > np.percentile(values, 95))  # Example threshold for high BME
-#     ax2.scatter(X[high_bme_indices], Y[high_bme_indices], color='red', s=10, label='High BME Regions')
-#
-#     # Add a color bar for the contour plot
-#     cbar2 = fig.colorbar(contour, ax=ax2, shrink=0.5, aspect=5)
-#     cbar2.set_label('BME Value', fontsize=14)
-#
-#     ax2.legend(fontsize=12)
-#
-#     plt.tight_layout()
-#     plt.show()
-#

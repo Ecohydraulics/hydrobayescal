@@ -9,7 +9,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-# TODO: there is a log_actions wrapper function in the function pool - use this instead!-Done
 from src.hydroBayesCal.function_pool import *
 
 
@@ -20,7 +19,7 @@ from src.hydroBayesCal.function_pool import *
 # TODO: Logging should be implemented as a wrapper that only wraps the head functions/methods; I exemplarily added a
 #           logging wrapper to the run() method. For example, check the log_actions wrapper for process_adv_files in
 #           https://github.com/sschwindt/TKEanalyst/blob/main/TKEanalyst/profile_analyst.py
-#           Use the log_actions wrapper from utils.function_pool!
+#           Use the log_actions wrapper from utils.function_pool
 
 
 class HydroSimulations:

@@ -3,7 +3,7 @@ This module inherits from the PyTorch library for training a Gaussian Process Em
 The module supersede the ExactGP base class from GPyTorch and extend the functionality by customizing the mean function,likelihoods and kernel (covariance function)
 The MultitaskGPModel class also extends the ExactGP base class to handle multitask (multiple outputs) learning scenarios. It is designed to model multiple related tasks simultaneously
 especially if they have similarities by sharing information across them using a common GP framework. (https://docs.gpytorch.ai/en/stable/examples/03_Multitask_Exact_GPs/Multitask_GP_Regression.html).
-Author: Andres HEREDIA (2024)
+Author: Andres Heredia (2024)
 """
 import numpy as np
 import sys
@@ -167,11 +167,6 @@ class GPyTraining:
         else:
             self.likelihood = np.full(self.n_obs, likelihood)
 
-        # if isinstance(kernel, list):
-        #     self.kernel = kernel
-        # else:
-        #     self.kernel = np.full(self.n_obs, kernel)
-
     @staticmethod
     def convert_to_tensor(array):
         """
@@ -250,7 +245,7 @@ class GPyTraining:
             and y_normalization parameters (if needed)
 
         """
-        # 0. Normalize, if needed, and transform model_evaluations at loc "i" to a tensor
+        # Normalize, if needed, and transform model_evaluations at loc "i" to a tensor
         if self.y_norm:
             train_y = self.normalize_tp(model_y)
         else:
@@ -368,7 +363,7 @@ class GPyTraining:
 
     def predict_(self, input_sets, get_conf_int=False):
         """
-        DESCRIPTION TO BE COMPLETED
+        TO DO: DESCRIPTION TO BE COMPLETED
 
         :param input_sets:
         :param get_conf_int:
@@ -377,13 +372,9 @@ class GPyTraining:
 
         prior_x = self.convert_to_tensor(input_sets)
 
-        # surrogate_prediction = np.zeros((len(self.gp_list), input_sets.shape[0]))  # GPE mean, for each obs
-        # surrogate_std = np.zeros((len(self.gp_list), input_sets.shape[0]))  # GPE mean, for each obs
         surrogate_prediction = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
         surrogate_std = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
         if get_conf_int:
-            # upper_ci = np.zeros((len(self.gp_list), input_sets.shape[0]))  # GPE mean, for each obs
-            # lower_ci = np.zeros((len(self.gp_list), input_sets.shape[0]))  # GPE mean, for each obs
             upper_ci = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
             lower_ci = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
 
@@ -452,10 +443,6 @@ def validation_error(true_y, sim_y, output_names, n_per_type):
          'std_error': dict()
     }
 
-    # criteria_dict = {'rmse': dict(),
-    #                  'valid_error': dict(),
-    #                  'nse': dict()}
-
     if isinstance(sim_y, dict):
         sm_out = sim_y['output']
         sm_std = sim_y['std']
@@ -490,9 +477,6 @@ def validation_error(true_y, sim_y, output_names, n_per_type):
             y_pred=sm_out[:, c:c+n_per_type],
             multioutput='raw_values'
         )
-        # # Validation error:
-        # criteria_dict['valid_error'][key] = criteria_dict['rmse'][key] ** 2 / np.var(true_y[:, c:c+n_per_type],
-        #                                                                              ddof=1, axis=0)
 
         # NSE
         criteria_dict['nse'][key] = sklearn.metrics.r2_score(
@@ -539,6 +523,8 @@ def validation_error(true_y, sim_y, output_names, n_per_type):
 
 def save_valid_criteria(new_dict, old_dict, n_tp):
     """
+    TO DO: IS THIS MEANT TO BE A CLASS METHOD OR A FUNCTION ON ITS OWN (ADJUST INDENTION?)
+
     Saves the validation criteria for the current iteration (n_tp) to an existing dictionary, so we can have the
     results for all iterations in the same file. Each dictionary has a dictionary for each validation criteria.
     Each validation criteria has a key for each output type, which corresponds to a vector with n_loc, one value for
@@ -708,22 +694,6 @@ class MultiGPyTraining:
                     if lengthscale_plateau_count >= required_plateau:
                         lengthscale_converged = True
 
-            # Uncomment this if you want to print the training convergence
-            # if converged:
-            #     print(f"Training converged. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
-            # else:
-            #     print(
-            #         f"Training did not fully converge. Final loss: {self.losses[-1]:.4f}, Final noise: {self.noise_values[-1]}")
-            #
-            # if self.lengthscales[-1] is not None:
-            #     #print("Final length scale(s):", self.lengthscales[-1])
-            #     if lengthscale_converged:
-            #         print("Length scale convergence achieved.")
-            #     else:
-            #         print("Length scale did not fully converge.")
-            # else:
-            #     print("Length scale not available for this kernel setup.")
-            # Store trained model
             self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std)})
 
     def train_tasks_locations(self):
@@ -804,9 +774,6 @@ class MultiGPyTraining:
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities  # Total number of locations
 
-        # Reshape Y into (N, num_locations, number_quantities)
-        # Y = Y.view(Y.shape[0], num_locations, self.number_quantities)  # (N, num_locations, 2)
-
         # Normalize Y
         y_mean = torch.mean(Y, dim=0)  # Compute mean per (location, quantity)
         y_std = torch.std(Y, dim=0)  # Compute std per (location, quantity)
@@ -840,6 +807,7 @@ class MultiGPyTraining:
 
         # Store trained model
         self.gp_list = [{'gp': model, 'y_norm': (y_mean, y_std)}]
+
     def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
         """
         Predict the outputs and their standard deviations for given input sets using the trained GP models.
@@ -930,7 +898,6 @@ class MultiGPyTraining:
                                 upper_ci[:, 2 * i + 1] = mean[:, i].numpy() + 2 * std[:, i].numpy()
                                 lower_ci[:, 2 * i + 1] = mean[:, i].numpy() - 2 * std[:, i].numpy()
 
-
         elif len(self.gp_list) == n_locations:
             multitask_cov_list = [[None for _ in range(n_locations)] for _ in range(n_samples)]
             for i, model_info in enumerate(self.gp_list):
@@ -939,6 +906,7 @@ class MultiGPyTraining:
                 D = np.diag(y_std)
                 gp.eval()
                 self.likelihood.eval()
+
                 with torch.no_grad():
                     predictions = self.likelihood(gp(input_sets))
                     mean = predictions.mean.numpy()
@@ -994,6 +962,8 @@ class MultiGPyTraining:
             output_dic['lower_ci'] = lower_ci
 
         return output_dic
+
+
 class MultitaskGPModel(ExactGP):
     """
     Gaussian Process model for multitask regression using the GPyTorch library. This model handles multiple tasks (or quantities) simultaneously by using a multitask kernel and multitask mean
@@ -1042,3 +1012,4 @@ class MultitaskGPModel(ExactGP):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
+
