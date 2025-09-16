@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.abspath('../src/hydroBayesCal'))
 # -- Project information -----------------------------------------------------
 
 project = "HydroBayesCal"
-copyright = "2024"
+copyright = "2025"
 author = "Andrés Heredia, Federica Scolari, Sebastian Schwindt"
 
 
