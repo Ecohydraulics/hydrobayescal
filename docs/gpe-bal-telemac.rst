@@ -1,6 +1,6 @@
 .. BAL Telemac
 
-BAL with TELEMAC & OpenFOAM
+TELEMAC & OpenFOAM Bindings
 ===========================
 
 A complete surrogate-assisted calibration using Gaussian Process and Bayesian Active Learning (BAL) is performed for a hydrodynamic model using Telemac and is launched with the main script as follows:

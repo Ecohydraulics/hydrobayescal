@@ -12,3 +12,4 @@ This is the documentation for the HydroBayesCal package. This package is a Bayes
    workflow
    uml
    gpe-bal-telemac
+   use-cases

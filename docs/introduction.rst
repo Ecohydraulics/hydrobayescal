@@ -86,7 +86,7 @@ at `http://opentelemac.org <http://www.opentelemac.org/index.php/installation>`_
 at `https://hydro-informatics.com <https://hydro-informatics.com/get-started/install-telemac.html>`_ that
 is tweaked for HydroBayesCal. We recommend to install TELEMAC with ``pysource.gfortranHPC.sh``or with your preferred pysource file.
 
-Linux Setup
+Linux setup
 -----------
 *Time requirement: <5 min.*
 To install HydroBayesCal via pip from PyPI
@@ -176,7 +176,7 @@ The steps to activate the Python and Telemac environments for your system are th
 If both environments are loaded without errors, you are good to go for running the codes.
 
 
-Windows Setup
+Windows setup
 -------------
 
 The `source` command is commonly used in Unix-based systems to execute shell scripts that set up environment variables and paths. In Windows, you can achieve similar functionality by using either PowerShell or a compatible shell environment (e.g., WSL, Git Bash). To run a `.sh` file in Windows, use `.\file_name.sh`. Thus, take the following actions:
