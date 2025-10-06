@@ -210,72 +210,93 @@ class BayesianPlotter:
             bins=40,
             density=True,
             plot_prior=False,
-            parameter_units=None
+            parameter_units=None,
+            parameter_indices=None,  # <-- indices instead of names
     ):
-
         save_folder = self.save_folder
-        parameter_num = len(parameter_names)
+
+        # Select indices of parameters to plot
+        if parameter_indices is None:
+            selected_indices = list(range(len(parameter_names)))
+        else:
+            selected_indices = parameter_indices
+
+        parameter_num = len(selected_indices)
 
         if parameter_units is None:
-            parameter_units = [''] * parameter_num
+            parameter_units = [''] * len(parameter_names)
 
+        # Determine x-axis limits
         x_limits = np.zeros((parameter_num, 2))
         if param_values is None:
-            for i in range(parameter_num):
-                x_limits[i] = (prior[:, i].min(), prior[:, i].max())
+            for idx, param_idx in enumerate(selected_indices):
+                x_limits[idx] = (prior[:, param_idx].min(), prior[:, param_idx].max())
         else:
-            for i in range(parameter_num):
-                x_limits[i] = param_values[i]
+            for idx, param_idx in enumerate(selected_indices):
+                x_limits[idx] = param_values[param_idx]
 
-        y_min_posterior = np.zeros(parameter_num)
-        y_max_posterior = np.zeros(parameter_num)
-
-        if iterations_to_plot is not None:
-            for i in range(parameter_num):
-                y_min_posterior[i] = np.inf
-                for iteration_idx in iterations_to_plot:
-                    if posterior_arrays[iteration_idx] is not None:
-                        counts_posterior, _ = np.histogram(posterior_arrays[iteration_idx][:, i], bins=bins,
-                                                           density=density)
-                        y_max_posterior[i] = max(y_max_posterior[i], max(counts_posterior)) * 1.15
-                        y_min_posterior[i] = 0
-
+        # Loop over iterations
         for plot_index, iteration_idx in enumerate(iterations_to_plot):
             num_rows = 3
             num_cols = math.ceil(parameter_num / num_rows)
-            fig, axes = plt.subplots(num_rows, num_cols, figsize=(5 * num_cols, 5 * num_rows))
+            fig, axes = plt.subplots(num_rows, num_cols, figsize=(6.5 * num_cols, 5 * num_rows))
             axes = axes.flatten()
 
-            for col in range(parameter_num):
+            for col, param_idx in enumerate(selected_indices):
                 ax = axes[col]
-                posterior_vector = posterior_arrays[iteration_idx][:, col]
+                posterior_vector = posterior_arrays[iteration_idx][:, param_idx]
 
-                # Histogram
-                ax.hist(posterior_vector, bins=bins, density=density, alpha=0.5, color='grey',
-                        edgecolor='black', linewidth=0.8)
+                # Histogram values for normalization
+                hist_values, _ = np.histogram(posterior_vector, bins=bins, density=density)
 
-                # KDE for posterior
+                # KDE
                 kde_post = gaussian_kde(posterior_vector)
                 x_vals = np.linspace(x_limits[col][0], x_limits[col][1], 500)
-                ax.plot(x_vals, kde_post(x_vals), color='black', linewidth=1, label='Posterior KDE')
+
+                # Compute max density for normalization (posterior + prior)
+                max_density = max(max(hist_values), max(kde_post(x_vals)))
+                if plot_prior:
+                    prior_vector = prior[:, param_idx]
+                    kde_prior = gaussian_kde(prior_vector)
+                    max_density = max(max_density, max(kde_prior(x_vals)))
+
+                # Histogram normalized
+                hist_values, bins_edges, patches = ax.hist(
+                    posterior_vector,
+                    bins=bins,
+                    density=density,
+                    alpha=0.5,
+                    color='grey',
+                    edgecolor='black',
+                    linewidth=0.8
+                )
+                if max_density > 0:
+                    for patch in patches:
+                        patch.set_height(patch.get_height() / max_density)
+
+                # Posterior KDE normalized
+                ax.plot(x_vals, kde_post(x_vals) / max_density, color='black', linewidth=1, label='Posterior KDE')
 
                 # MAP line
                 mode_value = x_vals[np.argmax(kde_post(x_vals))]
-                ax.axvline(mode_value, color='red', linestyle='--', linewidth=2,
-                           label=f'MAP: {mode_value:.3f}')
+                ax.axvline(mode_value, color='red', linestyle='--', linewidth=2, label=f'MAP: {mode_value:.3f}')
+
+                # Prior KDE normalized
+                if plot_prior:
+                    ax.plot(x_vals, kde_prior(x_vals) / max_density, color='blue', linestyle=':', linewidth=1.5,
+                            label='Prior KDE')
 
                 # Axis labels
-                unit = f' [{parameter_units[col]}]' if parameter_units[col] else ''
-                ax.set_xlabel(f'{parameter_names[col]}{unit}', fontsize=20)
-                ax.set_ylabel('Density', fontsize=20)
+                unit = f' [{parameter_units[param_idx]}]' if parameter_units[param_idx] else ''
+                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=20)
+                ax.set_ylabel('Probability', fontsize=20)
 
                 ax.tick_params(axis='both', which='major', labelsize=20)
-
                 self._set_latex_format(ax)
 
                 ax.set_xticks(np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3))
-                ax.set_ylim(y_min_posterior[col], y_max_posterior[col] * 1.5)
                 ax.set_xlim(x_limits[col])
+                ax.set_ylim(0, 1.2)  # Normalized y-axis
 
                 ax.grid(True, which='both', linestyle='--', linewidth=0.7, color='lightgrey')
                 ax.minorticks_on()
@@ -283,6 +304,7 @@ class BayesianPlotter:
 
                 ax.legend(fontsize=18)
 
+            # Remove unused axes
             for j in range(parameter_num, len(axes)):
                 fig.delaxes(axes[j])
 
@@ -518,14 +540,15 @@ class BayesianPlotter:
             plt.savefig(save_folder / 'RE_plot.svg', dpi=300)
             plt.close()
 
-    def plot_combined_bal(
+    def plot_combined_bal_3d(
             self,
             collocation_points,
             n_init_tp,
-            bayesian_dict
+            bayesian_dict,
+            param_indices=(0, 6, 10)
     ):
         """
-        Plots the initial training points and points selected using different utility functions.
+        Plots the initial training points and points selected using different utility functions in 3D.
 
         Parameters
         ----------
@@ -535,60 +558,65 @@ class BayesianPlotter:
                 Number of initial training points selected.
             bayesian_dict: dictionary
                 With keys 'util_func', detailing which utility function was used in each iteration.
-            save_folder: Path or None
-                Directory where to save the plot. If None, the plot is not saved.
+            param_indices: tuple of ints
+                Three column indices of collocation_points to plot in 3D.
 
         Returns
         -------
             None
-                The function creates a scattered plot of the collocation points differentiating them between initial collocation
+                The function creates a 3D scatter plot of the collocation points differentiating them between initial collocation
                 points and BAL-selected points, saved as .png files in the /plots folder.
         """
-        save_folder = self.save_folder
+        from mpl_toolkits.mplot3d import Axes3D  # Import for 3D plotting
 
-        # Ensure save_folder exists
+        save_folder = self.save_folder
         save_folder.mkdir(parents=True, exist_ok=True)
 
-        if collocation_points.shape[1] == 1:
-            collocation_points = np.hstack((collocation_points, collocation_points))
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
 
-        fig, ax = plt.subplots()
-
-        # Plot each initial training point individually for better visibility
+        # Plot initial training points
         for i in range(n_init_tp):
-            ax.scatter(collocation_points[i, 0], collocation_points[i, 1], label='Initial TP' if i == 0 else "",
-                       c='black', s=100, edgecolor='white', marker='o')
+            ax.scatter(
+                collocation_points[i, param_indices[0]],
+                collocation_points[i, param_indices[1]],
+                collocation_points[i, param_indices[2]],
+                label='Initial TP' if i == 0 else "",
+                c='black', s=100, edgecolor='white', marker='o'
+            )
 
         selected_tp = collocation_points[n_init_tp:, :]
 
-        # Get indexes for 'dkl'
-        dkl_ind = np.where(bayesian_dict['util_func'] == 'dkl')
-        ax.scatter(selected_tp[dkl_ind, 0], selected_tp[dkl_ind, 1], label='DKL', c='gold', s=200, alpha=0.5)
+        # Plot points by utility function
+        util_funcs = {
+            'dkl': 'gold',
+            'bme': 'blue',
+            'ie': 'green',
+            'global_mc': 'red'
+        }
 
-        # Get indexes for 'bme'
-        bme_ind = np.where(bayesian_dict['util_func'] == 'bme')
-        ax.scatter(selected_tp[bme_ind, 0], selected_tp[bme_ind, 1], label='BME', c='blue', s=200, alpha=0.5)
+        for uf, color in util_funcs.items():
+            ind = np.where(bayesian_dict['util_func'] == uf)
+            ax.scatter(
+                selected_tp[ind, param_indices[0]],
+                selected_tp[ind, param_indices[1]],
+                selected_tp[ind, param_indices[2]],
+                label=uf.upper(),
+                c=color, s=200, alpha=0.5
+            )
 
-        # Get indexes for 'ie'
-        ie_ind = np.where(bayesian_dict['util_func'] == 'ie')
-        ax.scatter(selected_tp[ie_ind, 0], selected_tp[ie_ind, 1], label='IE', c='green', s=200, alpha=0.5)
+        # Labels
+        ax.set_xlabel(f'Param {param_indices[0]}', fontsize=12)
+        ax.set_ylabel(f'Param {param_indices[1]}', fontsize=12)
+        ax.set_zlabel(f'Param {param_indices[2]}', fontsize=12)
 
-        # Global MC
-        mc_ind = np.where(bayesian_dict['util_func'] == 'global_mc')
-        ax.scatter(selected_tp[mc_ind, 0], selected_tp[mc_ind, 1], label='MC', c='red', s=200, alpha=0.5)
+        # Legend
+        ax.legend(loc='lower center', ncol=4, fontsize=10)
 
-        # LaTeX formatting for labels and legend
-        ax.set_xlabel(r'$K_{Zone \, 8}$', fontsize=14)
-        ax.set_ylabel(r'$K_{Zone \, 9}$', fontsize=14)
-
-        fig.legend(loc='lower center', ncol=5, fontsize=12)
-
-        # Adjust layout to make space for the legend
-        plt.subplots_adjust(top=0.95, bottom=0.15, wspace=0.25, hspace=0.55)
-
-        # Save the figure
+        # Save figure
         if save_folder:
-            plt.savefig(save_folder / 'collocation_points.png')  # Save with .png extension
+            plt.savefig(save_folder / 'collocation_points_3d.png')
+        plt.show()
         plt.close()
 
     def plot_bme_3d(

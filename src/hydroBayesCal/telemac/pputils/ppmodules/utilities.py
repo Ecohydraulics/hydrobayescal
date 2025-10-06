@@ -501,16 +501,18 @@ def getIPOBO_IKLE(adcirc_file):
     """
 
     try:
-        # this only works when the paths are sourced
-        pputils_path = os.environ["PPUTILS"]
-    except KeyError:
+        # this only works when the paths are sourced!
+        pputils_path = os.environ['PPUTILS']
+    except:
         pputils_path = os.getcwd()
-
     # reads the adcirc file (note the ikle here is zero based)
     n, e, x, y, z, ikle = readAdcirc(adcirc_file)
 
-    # make sure the elements are oriented CCW going through each element
+    # #######################
+    # make sure the elements are oriented in CCW fashion
+    # go through each element, and make sure it is oriented in CCW fashion
     for i in range(len(ikle)):
+
         # if the element is not CCW then must change its orientation
         if not CCW(x[ikle[i, 0]], y[ikle[i, 0]], x[ikle[i, 1]], y[ikle[i, 1]],
                    x[ikle[i, 2]], y[ikle[i, 2]]):
@@ -521,74 +523,89 @@ def getIPOBO_IKLE(adcirc_file):
             # switch orientation
             ikle[i, 0] = t2
             ikle[i, 2] = t0
+    # #######################
 
-    # the above returns ikle that is zero based, but telemac will need them to be
-    # one-based; conversion is done below
+    # the above returns ikle that is zero based, but
+    # telemac will need them to be one-based; conversion is done below
     ikle[:, 0] = ikle[:, 0] + 1
     ikle[:, 1] = ikle[:, 1] + 1
     ikle[:, 2] = ikle[:, 2] + 1
 
     # temporary ipobo.txt (this is the output from the bnd_extr_stbtel.f90)
-    temp_ipobo = "ipobo.txt"
+    temp_ipobo = 'ipobo.txt'
 
-    # generate the ppIPOB array by running a pre-compiled binary of bnd_extr_stbtel.f90
-    # determine if the system is 32 or 64 bit
-    archtype = struct.calcsize("P") * 8
-    # get the current directory
+    # now we are ready to generate the ppIPOB array by running a pre-compiled
+    # binary of bnd_extr_stbtel.f90
+
+    # to determine if the system is 32 or 64 bit
+    archtype = struct.calcsize('P') * 8
+
+    # gets the current directory
     curdir = os.getcwd()
 
-    if os.name == "posix":
-        # if OS is Linux, determine processor type (requires Linux!)
+    ########################################################################
+    if (os.name == 'posix'):
+        # to determine processor type
         proctype = os.uname()[4][:]
+        base_bin_path = os.path.dirname(os.path.dirname(__file__))
 
-        if proctype == "i686":
-            callstr = pputils_path + "/boundary/bin/bnd_extr_stbtel_32"
-        elif proctype == "x86_64":
-            callstr = pputils_path + "/boundary/bin/bnd_extr_stbtel_64"
-        elif proctype == "armv7l":
-            callstr = pputils_path + "/boundary/bin/bnd_extr_stbtel_pi32"
+        if (proctype == 'i686'):
+            callstr = base_bin_path + '/boundary/bin/bnd_extr_stbtel_32'
+        elif (proctype == 'x86_64'):
+            callstr = base_bin_path + '/boundary/bin/bnd_extr_stbtel_64'
+        elif (proctype == 'armv7l'):
+            callstr = base_bin_path + '/boundary/bin/bnd_extr_stbtel_pi32'
+
+        subprocess.call(['chmod', '+x', callstr])
+        subprocess.call([callstr, adcirc_file, temp_ipobo])
 
         # make sure the binary is allowed to be executed
-        subprocess.call(["chmod", "+x", callstr])
+        subprocess.call(['chmod', '+x', callstr])
 
         # execute the binary
-        # print("Executing bnd_extr_stbtel program ...")
+        # print('Executing bnd_extr_stbtel program ...')
         subprocess.call([callstr, adcirc_file, temp_ipobo])
 
-    if os.name == "nt":
-        # nt corresponds to windows [still to update]
+    if (os.name == 'nt'):
+        # nt is for windows [still to update]
         callstr = ".\\boundary\\bin\\bnd_extr_stbtel_32.exe"
         subprocess.call([callstr, adcirc_file, temp_ipobo])
+        ########################################################################
 
-    # read the ipobo.txt file, populate the ppIPOB variable, and write the *.cli file
+    # now we can read in the ipobo.txt file, and populate the ppIPOB variable
+    # as well as write the *.cli file
+
     # read the ipobo.txt file as a master list
     line = list()
-    with open("ipobo.txt", "r") as f1:
+    with open('ipobo.txt', 'r') as f1:
         for i in f1:
             line.append(i)
 
-    # write temp.cli file
-    fcli = open("temp.cli", "w")
-    cli_base = str("2 2 2 0.000 0.000 0.000 0.000 2 0.000 0.000 0.000 ")
+    # now we can write the temp.cli file
+    fcli = open('temp.cli', 'w')
+    cli_base = str('2 2 2 0.000 0.000 0.000 0.000 2 0.000 0.000 0.000 ')
 
-    # write final *.cli file
+    # write the *.cli file
     for i in range(len(line)):
-        fcli.write(cli_base + str(int(line[i])) + " " + str(i + 1) + "\n")
+        fcli.write(cli_base + str(int(line[i])) + ' ' + str(i + 1) + '\n')
 
     # close the *.cli file
     fcli.close()
 
-    # note the temp.cli gets renamed in the main script
+    # note the temp.cli gets renamed in the master script
+
     # now store the ppIPOB array
     ppIPOB = np.zeros(n, dtype=np.int32)
+
     ipob_count = 0
 
-    # return the ppIPOB array that is one-based
+    # returns the ppIPOB array that is one based
     for i in range(len(line)):
         ipob_count = ipob_count + 1
         ppIPOB[int(line[i]) - 1] = ipob_count
 
-    # remove the ipobo.txt file
-    os.remove("ipobo.txt")
+    # now we can remove the ipobo.txt file
+    os.remove('ipobo.txt')
 
     return n, e, x, y, z, ikle, ppIPOB
+

@@ -590,12 +590,12 @@ if __name__ == "__main__":
             n_cpus=16,
             init_runs=25,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                    "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                    "gaiaCLASSES SHIELDS PARAMETERS 3",
+                                    # "gaiaCLASSES SHIELDS PARAMETERS 2",
+                                    # "gaiaCLASSES SHIELDS PARAMETERS 3",
                                     # "zone0",
                                     # "zone1",
                                     "zone2",
-                                    "zone3",
+                                    # "zone3",
                                     "zone4",
                                     "zone5",
                                     "zone6",
@@ -607,10 +607,10 @@ if __name__ == "__main__":
                                     #"zone12",
                                     "zone13"],
             param_values = [[0.047,0.070], # critical shields parameter class 1
-                            [0.047, 0.070], # critical shields parameter class 2
-                            [0.047, 0.070], # critical shields parameter class 3
+                            # [0.047, 0.070], # critical shields parameter class 2
+                            # [0.047, 0.070], # critical shields parameter class 3
                             [0.008, 0.6], # zone2 Pool
-                            [0.008, 0.6], # zone3 Slackwater
+                            # [0.008, 0.6], # zone3 Slackwater
                             [0.002, 0.6], # zone4 Glide
                             [0.002, 0.6], # zone5 Riffle
                             [0.040, 0.6], # zone6 Run
@@ -618,16 +618,18 @@ if __name__ == "__main__":
                             [0.040, 0.6], # zone9 Wake
                             [0.002, 2.8]], # zone 13 LW
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
-            calibration_quantities=["CUMUL BED EVOL"],
+
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+
+            # calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             # calibration_quantities=["SCALAR VELOCITY"],
             # calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
-            max_runs=25,
+            max_runs=100,
             complete_bal_mode=True,
-            only_bal_mode=True,
+            only_bal_mode=False,
             delete_complex_outputs=True,
             validation=False
         )
@@ -649,9 +651,9 @@ if __name__ == "__main__":
         model_outputs=model_evaluations,
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        eval_steps=1,
-        prior_samples=15000,
-        mc_samples_al=1500,
+        eval_steps=10,
+        prior_samples=20000,
+        mc_samples_al=2000,
         mc_exploration=1000,
         gp_library="gpy"
     )

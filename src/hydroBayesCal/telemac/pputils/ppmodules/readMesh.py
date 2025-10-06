@@ -117,7 +117,7 @@ def read2dm(two_dm_file):
     ele_count = 0
 
     # now to fill in x,y,z and ikle arrays
-    for i in range(n_plus_e):
+    for i in range(n_plus_e+1):
         f_string = fin.readline()
         three_chars = f_string[0:3]
         two_chars = f_string[0:2]

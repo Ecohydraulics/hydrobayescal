@@ -7,6 +7,7 @@ __pycache__/
 examples/donau/
 examples/ering-data/
 examples/yuba
+examples/munichFishpass
 HBCenv*/
 examples/*.csv
 

@@ -8,15 +8,20 @@ import h5py
 import json
 import glob
 import matplotlib.tri as mtri
-from numpy import linspace, dtype
-
-
+import pyvista as pv
 import pdb
 import shutil
+from numpy import linspace, dtype
+from telemac.pputils.ppmodules.readMesh import *
+from telemac.pputils.ppmodules.writeMesh import *
+from telemac.pputils.ppmodules.utilities import *
+
+
 
 sys.path.insert(0, os.path.abspath('..'))
 
 from src.hydroBayesCal.utils.config_logging import *
+# TODO: re-instate config_physics - Done
 from src.hydroBayesCal.utils.config_physics import *
 from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
 
@@ -304,6 +309,8 @@ def rearrange_array(data, num_quantities):
     return rearranged_data
 
 
+
+#----------------------------------------------
 def update_json_file(json_path, modeled_values_dict=None, detailed_dict=False, save_dict=False, saving_path=None):
     """
     Updates the JSON file at `json_path` with data from `modeled_values_dict`.
@@ -363,8 +370,6 @@ def update_json_file(json_path, modeled_values_dict=None, detailed_dict=False, s
                     json.dump(output_data, file, indent=4)
         else:
             print(f"File at {json_path} does not exist. Cannot save to {saving_path}.")
-
-
 def delete_slf(folder_path):
     """
     Deletes all files with the .slf extension in the specified folder.
@@ -433,6 +438,8 @@ def filter_model_outputs(data_dict, quantities, run_range_filtering=None):
     return filtered_data
 
 
+
+
 def interpolate_values(coords, values, point):
     """
     Interpolates values at a given point using Inverse Distance Weighting.
@@ -462,8 +469,6 @@ def interpolate_values(coords, values, point):
     interpolated_values = _np.dot(weights, values)  # Dot product for weighted sum
 
     return interpolated_values.flatten()  # Return as a 1D array
-
-
 def rasterize(saving_folder, slf_file_name, desired_variables, spacing):
     # Define the full path for the SLF file
     slf_file = os.path.join(saving_folder, slf_file_name)
@@ -684,7 +689,6 @@ def classify_mu(raster_data, classification, output_folder, output_filename):
 
     print(f"Classified MU raster saved to {output_file}")
 
-
 def parse_classes_keyword(file_path, keyword):
     with open(file_path, 'r') as file:
         for line in file:
@@ -701,8 +705,6 @@ def parse_classes_keyword(file_path, keyword):
                         return stripped  #
 
     return None  # If not found
-
-
 def update_gaia_class_line(line, index, new_value):
     # Split at ":" or "="
     if ':' in line:
@@ -728,7 +730,6 @@ def update_gaia_class_line(line, index, new_value):
     updated_line = f"{key.strip()} {separator} {';'.join(values_list)}"
     return updated_line
 
-
 def classify_parameters_tm_gaia(elements, classification_dict):
     telemac_vars = []
     gaia_vars = []
@@ -741,4 +742,139 @@ def classify_parameters_tm_gaia(elements, classification_dict):
             gaia_vars.append(element)
         else:
             raise ValueError(f"Element '{element}' not recognized in CLASSIFICATION_DICT.")
+
     return telemac_vars, gaia_vars
+
+def vtk_to_2dm(input_file, output_file):
+    """
+    Convert a VTK/VTP mesh to a 2DM file.
+
+    Parameters
+    ----------
+    input_file : str
+        Path to the input VTK or VTP file (ASCII, Binary, or Compressed).
+    output_file : str
+        Path to the output 2DM file.
+    """
+    input_file = os.path.abspath(input_file)
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"File not found: {input_file}")
+
+    mesh = pv.read(input_file)
+
+    # Get node coordinates
+    nodes = mesh.points
+
+    # Handle cells/faces depending on mesh type
+    tris = []
+    if hasattr(mesh, "faces") and len(mesh.faces) > 0:  # PolyData
+        faces = mesh.faces
+        offset = 0
+        while offset < len(faces):
+            n = faces[offset]  # number of vertices in this face
+            if n == 3:
+                tris.append(faces[offset+1:offset+4])
+            elif n == 4:  # quad → split into 2 triangles
+                quad = faces[offset+1:offset+5]
+                tris.append([quad[0], quad[1], quad[2]])
+                tris.append([quad[0], quad[2], quad[3]])
+            offset += n + 1
+    elif hasattr(mesh, "cells") and len(mesh.cells) > 0:  # UnstructuredGrid
+        cells = mesh.cells
+        offset = 0
+        while offset < len(cells):
+            n = cells[offset]
+            if n == 3:
+                tris.append(cells[offset+1:offset+4])
+            elif n == 4:
+                quad = cells[offset+1:offset+5]
+                tris.append([quad[0], quad[1], quad[2]])
+                tris.append([quad[0], quad[2], quad[3]])
+            offset += n + 1
+    else:
+        raise ValueError("Mesh has no faces or cells to export.")
+
+    tris = np.array(tris)
+
+    # Ensure output folder exists
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+    # Write to 2DM
+    with open(output_file, "w") as f:
+        # Header
+        f.write("MESH2D\n")
+        # Elements
+        for i, tri in enumerate(tris):
+            f.write(f"E3T {i+1} {tri[0]+1} {tri[1]+1} {tri[2]+1}\n")
+        # Nodes
+        for i, (x, y, z) in enumerate(nodes):
+            f.write(f"ND {i+1} {x:.6f} {y:.6f} {z:.6f}\n")
+
+
+    print(f"✅ 2DM file saved: {output_file}")
+    print(f"   Nodes: {len(nodes)}, Elements: {len(tris)}")
+
+
+def twodm2SLF(input_file_2dm, output_file_adcirc, output_file_slf):
+    # read the 2dm file
+    n, e, x, y, z, ikle = read2dm(input_file_2dm)
+    print(f"Length of x: {len(x)}, y: {len(y)}, z: {len(z)}, expected n: {n}")
+    print(f"Last node index: {n - 1}")
+    print(f"Last node values: x={x[n - 1]}, y={y[n - 1]}, z={z[n - 1]}")
+
+    # write the adcirc file (in the original location)
+    writeAdcirc(n, e, x, y, z, ikle, output_file_adcirc)
+
+    # --- Create a temporary copy in the main working directory ---
+    cwd = os.getcwd()
+    temp_adcirc = os.path.join(cwd, os.path.basename(output_file_adcirc))
+    shutil.copy(output_file_adcirc, temp_adcirc)
+
+    precision = "double"
+
+    # use the temporary adcirc file instead of the original
+    n, e, x, y, z, ikle, ppIPOB = getIPOBO_IKLE(temp_adcirc)
+
+    # the above method generates a file called temp.cli, which we rename here
+    cli_file = output_file_slf.split('.', 1)[0] + '.cli'
+    os.rename('temp.cli', cli_file)
+
+    # now we can write the *.slf file
+    #######################################################################
+    if precision == 'single':
+        ftype = 'f'
+        fsize = 4
+    elif precision == 'double':
+        ftype = 'd'
+        fsize = 8
+    else:
+        print('Precision unknown! Exiting!')
+        sys.exit(0)
+
+    NELEM = e
+    NPOIN = n
+    NDP = 3  # always 3 for triangular elements
+    IKLE = ikle
+    IPOBO = ppIPOB
+
+    slf = ppSELAFIN(output_file_slf)
+    slf.setPrecision(ftype, fsize)
+    slf.setTitle('created with pputils')
+    slf.setVarNames(['BOTTOM          ', 'BOTTOM FRICTION       '])
+    slf.setVarUnits(['M               ', '                '])  # ND = nondimensional
+    slf.setIPARAM([1, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+    slf.setMesh(NELEM, NPOIN, NDP, IKLE, IPOBO, x, y)
+    slf.writeHeader()
+
+    # --- Define variables ---
+    zz = np.zeros((2, NPOIN))  # two variables now
+    zz[0, :] = z  # bottom elevation
+    zz[1, :] = 0.03  # roughness example (constant value)
+    # You can also load roughness from file → e.g. np.loadtxt(...)
+
+    # --- Write variables ---
+    slf.writeVariables(0.0, zz)
+
+    # --- Cleanup: remove the temporary adcirc file ---
+    if os.path.exists(temp_adcirc):
+        os.remove(temp_adcirc)

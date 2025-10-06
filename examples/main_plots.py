@@ -75,7 +75,8 @@ full_complexity_model = TelemacModel(
     #               [0.02, 17.45]],  # zone 13
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     # calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
-    calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"],
+    # calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"],
+    calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
     # calibration_quantities = ["SCALAR VELOCITY"],
     # calibration_quantities = ["WATER DEPTH"],
     # calibration_quantities=["CUMUL BED EVOL"],
@@ -85,8 +86,8 @@ full_complexity_model = TelemacModel(
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot =75
-surrogate_to_analyze = 100
+iterations_to_plot =40
+surrogate_to_analyze = 65
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -150,10 +151,10 @@ for i in range(n_quantities):
     # )
 
 # Plot Bayesian results
-plotter.plot_combined_bal(collocation_points = collocation_points,
-                  n_init_tp = full_complexity_model.init_runs,
-                  bayesian_dict = bayesian_data)
-plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
+# plotter.plot_combined_bal_3d(collocation_points = collocation_points,
+#                   n_init_tp = full_complexity_model.init_runs,
+#                   bayesian_dict = bayesian_data)
+# plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
 plotter.plot_posterior_updates(
     posterior_arrays=bayesian_data['posterior'],
     parameter_names=full_complexity_model.calibration_parameters,
@@ -162,12 +163,14 @@ plotter.plot_posterior_updates(
     iterations_to_plot=[iterations_to_plot],
     bins=20,
     plot_prior=False,
-    parameter_units=['-','-','-','m','m','m','m','m','m','m','m']
+    parameter_units=['-','-','-','m','m','m','m','m','m','m','m'],
+    # parameter_indices=[0,9,10,6,7,8]
+    parameter_indices=[0,1,2,3,4,5,6,7,8,9,10]
 )
 # plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)
 # plotter.plot_posterior_iteration(posterior_samples=bayesian_data['posterior'][iterations_to_plot],
 #                                parameter_names=full_complexity_model.calibration_parameters,param_values = full_complexity_model.param_values)
-plotter.plot_bme_3d(collocation_points=collocation_points,param_ranges=full_complexity_model.param_values,param_names=full_complexity_model.calibration_parameters,bme_values=bayesian_data['BME'],param_indices=(8,9),extra_param_index=0,iteration_range=(35,75),plot_criteria="BME")
+# plotter.plot_bme_3d(collocation_points=collocation_points,param_ranges=full_complexity_model.param_values,param_names=full_complexity_model.calibration_parameters,bme_values=bayesian_data['BME'],param_indices=(8,9),extra_param_index=0,iteration_range=(35,75),plot_criteria="BME")
 # if len(full_complexity_model.calibration_quantities)==2:
 #     num_simulations, num_columns = cm_outputs.shape
 #     # Separate the columns for each quantity
