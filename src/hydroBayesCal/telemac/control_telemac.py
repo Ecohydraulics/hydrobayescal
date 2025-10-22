@@ -7,18 +7,10 @@ import pdb
 from scipy import spatial
 import numpy as np
 import config_telemac
-from mpi4py import MPI
 from datetime import datetime
 from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 from collections import OrderedDict
-try:
-    from telapy.api.t2d import Telemac2d
-    from telapy.api.t3d import Telemac3d
-    from telapy.tools.driven_utils import mpirun_cmd
-    from data_manip.extraction.telemac_file import TelemacFile
-except ImportError as e:
-    print("%s\n\nERROR: load (source) pysource.X.sh Telemac before running HydroBayesCal.telemac" % e)
 from src.hydroBayesCal.hysim import HydroSimulations
 from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
 
@@ -30,7 +22,7 @@ class TelemacModel(HydroSimulations):
             tm_xd="",
             gaia_steering_file=None,
             results_filename_base="",
-            gaia_results_filename_base="",
+            gaia_results_filename_base=None,
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
             *args,
@@ -95,13 +87,15 @@ class TelemacModel(HydroSimulations):
         self.friction_file = friction_file
         self.tm_xd = tm_xd
         self.gaia_steering_file = gaia_steering_file
-        self.gaia_results_filename_base = "bedload_flux_initial"
+        self.gaia_results_filename_base = gaia_results_filename_base
         self.results_filename_base = results_filename_base
         self.python_shebang = python_shebang
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, self.control_file)
         self.fr_tbl = "{}{}{}".format(self.model_dir, os.sep, self.friction_file)
-        self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
-        self.comm = MPI.Comm(comm=MPI.COMM_WORLD)
+        if self.gaia_steering_file is not None:
+            self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
+        else:
+            self.gaia_cas = None
         self.shebang = python_shebang
         if tm_xd == '1':
             self.tm_xd = 'Telemac2d'
@@ -149,7 +143,7 @@ class TelemacModel(HydroSimulations):
             Modified control files telemac.cas and gaia.cas for Telemac simulations.
         """
         self.tm_results_filename = self.results_filename_base + '_' + str(simulation_id) + '.slf'
-        if self.gaia_cas:
+        if self.gaia_cas is not None:
             self.gaia_results_filename = self.gaia_results_filename_base + '_' + str(simulation_id) + '.slf'
             params_with_results = calibration_parameters + ['RESULTS FILE', 'gaiaRESULTS FILE']
             values_with_results = [
@@ -540,53 +534,67 @@ class TelemacModel(HydroSimulations):
         # This part of the code only runs iterative runs without performing BAL
         else:
             if collocation_points is not None:
-                # Convert collocation_points to a numpy array if it is not already
+                # Ensure collocation_points is a 2D NumPy array
                 if not isinstance(collocation_points, np.ndarray):
                     collocation_points = np.array(collocation_points)
 
-                # Ensure collocation_points is a 2D array
                 if collocation_points.ndim == 1:
                     if collocation_points.size == 1:
-                        # If there's only one element, convert it to a column vector
                         collocation_points = collocation_points[:, np.newaxis]
                     else:
-                        # If there are multiple elements, reshape it to a horizontal 2D array
                         collocation_points = collocation_points.reshape(1, -1)
 
-                # Convert collocation_points to a list for saving to CSV
+                # Convert to list for CSV writing
                 array_list = collocation_points.tolist()
+
                 if validation:
-                    with open(restart_data_path + os.sep + "/collocation-points-validation.csv", mode='w', newline='') as file:
+                    # Validation case — always write validation CSV
+                    with open(os.path.join(restart_data_path, "collocation-points-validation.csv"), mode='w',
+                              newline='') as file:
                         writer = csv.writer(file)
                         writer.writerow(calibration_parameters)
-                        writer.writerows(array_list)  # Write the array data
+                        writer.writerows(array_list)
+
                 else:
                     quantities_str = '_'.join(self.calibration_quantities)
+
                     if self.user_collocation_points is not None:
+                        # USER case — create a separate CSV for user collocation points
                         self.calibration_folder = self.restart_data_folder
                         self.dict_output_name = "user-" + self.dict_output_name
-                        # with open(res_dir + os.sep + f"user-collocation-points-{quantities_str}.csv", mode='w',
-                        #           newline='') as file:
-                        #     writer = csv.writer(file)
-                        #     writer.writerow(calibration_parameters)
-                        #     writer.writerows(array_list)  # Write the array data
-                        # with open(restart_data_path + os.sep + "initial-collocation-points.csv", mode='w',
-                        #           newline='') as file:
-                        #     writer = csv.writer(file)
-                        #     writer.writerow(calibration_parameters)
-                        #     writer.writerows(array_list)  # Write the array data
+
+                        user_csv_path = os.path.join(
+                            res_dir, f"user-collocation-points-{quantities_str}.csv"
+                        )
+
+                        with open(user_csv_path, mode='w', newline='') as file:
+                            writer = csv.writer(file)
+                            writer.writerow(calibration_parameters)
+                            writer.writerows(array_list)
+
+                        # Do NOT create or overwrite the default collocation-points.csv here
+
                     else:
-                        with open(res_dir + os.sep + f"collocation-points-{quantities_str}.csv", mode='w',
-                                  newline='') as file:
+                        # DEFAULT case — create standard collocation CSVs
+                        default_csv_path = os.path.join(
+                            res_dir, f"collocation-points-{quantities_str}.csv"
+                        )
+                        with open(default_csv_path, mode='w', newline='') as file:
                             writer = csv.writer(file)
                             writer.writerow(calibration_parameters)
-                            writer.writerows(array_list)  # Write the array data
-                        with open(restart_data_path + os.sep + "initial-collocation-points.csv", mode='w',
-                                  newline='') as file:
+                            writer.writerows(array_list)
+
+                        # Also create the initial-collocation-points.csv
+                        init_csv_path = os.path.join(
+                            restart_data_path, "initial-collocation-points.csv"
+                        )
+                        with open(init_csv_path, mode='w', newline='') as file:
                             writer = csv.writer(file)
                             writer.writerow(calibration_parameters)
-                            writer.writerows(array_list)  # Write the array data
-                collocation_points=collocation_points
+                            writer.writerows(array_list)
+
+                # Keep reference if needed later
+                collocation_points = collocation_points
 
                 for i in range(init_runs):
                     self.num_run = i + 1
@@ -600,11 +608,12 @@ class TelemacModel(HydroSimulations):
                     self.run_single_simulation(self.control_file)
                     self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
                                             self.extraction_quantities, self.num_run, self.model_dir,
-                                            self.calibration_folder, self.validation)
+                                            self.calibration_folder, self.validation, self.user_param_values)
                     if validation:
-                        output_data_path = os.path.join(restart_data_path,'collocation-points-validation.json')
+                        output_data_path = os.path.join(restart_data_path, 'model-results-validation.json')
                     else:
-                        output_data_path = os.path.join(self.calibration_folder,f'{self.dict_output_name}-detailed.json')
+                        output_data_path = os.path.join(self.calibration_folder,
+                                                        f'{self.dict_output_name}-detailed.json')
 
                     self.model_evaluations = self.output_processing(output_data_path=output_data_path,
                                                                     delete_slf_files=self.delete_complex_outputs,
@@ -762,7 +771,7 @@ class TelemacModel(HydroSimulations):
                     if self.user_param_values:
                         extraction_csv_file_name = 'user-model-results-extraction.csv'
                     else:
-                        extraction_csv_file_name = 'model-results-extraction'
+                        extraction_csv_file_name = 'model-results-extraction.csv'
                     column_headers_extraction = []
                     for i in range(1, n_calibration_pts + 1):  # Calibration point indices
                         for quantity in extraction_quantities:
@@ -810,21 +819,24 @@ class TelemacModel(HydroSimulations):
                         header=','.join(column_headers_calibration),
                     )
                 if save_extraction_outputs and extraction_mode:
-                    if self.user_param_values:
-                        extraction_csv_file_name = 'user-model-results-extraction.csv'
+                    if validation:
+                        pass
                     else:
-                        extraction_csv_file_name = 'model-results-extraction'
-                    column_headers_extraction = []
-                    for i in range(1, n_calibration_pts + 1):  # Calibration point indices
-                        for quantity in extraction_quantities:
-                            column_headers_extraction.append(f'PT{i}_{quantity}')
-                    np.savetxt(
-                        os.path.join(self.calibration_folder, extraction_csv_file_name),
-                        model_results_extraction,
-                        delimiter=',',
-                        fmt='%.8f',
-                        header=','.join(column_headers_extraction),
-                    )
+                        if self.user_param_values:
+                            extraction_csv_file_name = 'user-model-results-extraction.csv'
+                        else:
+                            extraction_csv_file_name = 'model-results-extraction.csv'
+                        column_headers_extraction = []
+                        for i in range(1, n_calibration_pts + 1):  # Calibration point indices
+                            for quantity in extraction_quantities:
+                                column_headers_extraction.append(f'PT{i}_{quantity}')
+                        np.savetxt(
+                            os.path.join(self.calibration_folder, extraction_csv_file_name),
+                            model_results_extraction,
+                            delimiter=',',
+                            fmt='%.8f',
+                            header=','.join(column_headers_extraction),
+                        )
 
             if delete_slf_files:
                 delete_slf(self.calibration_folder)
@@ -848,6 +860,7 @@ class TelemacModel(HydroSimulations):
             model_directory,
             results_folder_directory,
             validation=False,
+            user_param_values=False,
             extraction_mode="interpolated", # Choose "nearest" to get the outputs at the nearest node in mesh to the measurement coordinate
             k=3,
     ):
@@ -1019,16 +1032,20 @@ class TelemacModel(HydroSimulations):
         # Updating json files for every run
         #update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
         if validation:
-            update_json_file(json_path=os.path.join(self.restart_data_folder, "collocation-points-validation.json"), modeled_values_dict=differentiated_dict, detailed_dict=True)
+            json_target = os.path.join(self.restart_data_folder, "model-results-validation.json")
         else:
-            update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict,
-                             detailed_dict=True)
-        if simulation_number == self.init_runs and not validation:
+            json_target = json_path_detailed
+
+        # Always update the primary results file
+        update_json_file(json_path=json_target, modeled_values_dict=differentiated_dict, detailed_dict=True)
+
+        if simulation_number == self.init_runs and not validation and not user_param_values:
             update_json_file(json_path=json_path_detailed,modeled_values_dict=differentiated_dict, detailed_dict=True,save_dict=True,saving_path = json_path_restart_data)
 
         try:
             shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
-            shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
+            if self.gaia_cas is not None:
+                shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
         except Exception as error:
             print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 

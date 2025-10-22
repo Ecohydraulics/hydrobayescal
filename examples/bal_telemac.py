@@ -616,19 +616,19 @@ if __name__ == "__main__":
                             [0.040, 0.6], # zone6 Run
                             [0.002, 0.6], # zone8 Backwater
                             [0.040, 0.6], # zone9 Wake
-                            [0.002, 2.8]], # zone 13 LW
+                            [0.040, 2.8]], # zone 13 LW
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
 
             # calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            # calibration_quantities=["SCALAR VELOCITY"],
+            calibration_quantities=["SCALAR VELOCITY"],
             # calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
-            user_param_values = False,
+            user_param_values = True,
             max_runs=100,
-            complete_bal_mode=True,
+            complete_bal_mode=False,
             only_bal_mode=False,
             delete_complex_outputs=True,
             validation=False
@@ -651,8 +651,8 @@ if __name__ == "__main__":
         model_outputs=model_evaluations,
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        eval_steps=10,
-        prior_samples=20000,
+        eval_steps=5,
+        prior_samples=22000,
         mc_samples_al=2000,
         mc_exploration=1000,
         gp_library="gpy"

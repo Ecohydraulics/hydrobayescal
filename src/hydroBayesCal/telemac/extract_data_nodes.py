@@ -7,10 +7,10 @@ from pputils.ppmodules.selafin_io_pp import ppSELAFIN  # Ensure this module is a
 
 def main():
     # Define the input parameters
-    file_name = '/home/IWS/hidalgo/Documents/EringFishPass/QGIS_BaseMesh/Telemac0.6/geometry_friction.slf'  # Replace with the path to your SELEFIN file
+    file_name = '/home/IWS/hidalgo/Documents/QGIS_Ering_final_2025/constant-NKU/simulation/geometry-constantNKU.slf'  # Replace with the path to your SELEFIN file
     calibration_variable = 'FRIC_ID'  # Replace with the variable name you are interested in
     specific_nodes = None # Replace with the specific nodes you want to analyze (or set to None to analyze all nodes)
-    save_name = '/home/IWS/hidalgo/Documents/EringFishPass/QGIS_BaseMesh/Telemac0.6/friction_ID.bfr.txt'  # Replace with the desired output file name (or leave empty if you don't want to save)
+    save_name = '/home/IWS/hidalgo/Documents/QGIS_Ering_final_2025/constant-NKU/simulation/friction_ID.bfr.txt'  # Replace with the desired output file name (or leave empty if you don't want to save)
 
     # Call the function
     results = get_variable_value(file_name, calibration_variable, specific_nodes, save_name)

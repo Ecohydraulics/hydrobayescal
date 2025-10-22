@@ -32,7 +32,7 @@ class BayesianPlotter:
             self,
             results_folder_path='',
             plots_subfolder='plots',
-            variable_name = ''
+            variable_name=''
     ):
         """
         Constructor of BayesianPlotter class, which is used to create and save various plots related to Bayesian calibration.
@@ -40,26 +40,29 @@ class BayesianPlotter:
         Parameters
         ----------
         results_folder_path : str
-            Path to the folder where results (including plots) will be saved. Usually auto-saved-results.
+            Path to the folder where results (including plots) will be saved. Usually 'auto-saved-results'.
         plots_subfolder : str, optional
-            Name of the subfolder within the results folder where plots will be saved. Default folder name is 'plots'.
-
-        Attributes
-        ----------
-        save_folder : pathlib.Path
-            A Path object representing the directory where plots will be saved.
+            Name of the subfolder within the results folder where plots will be saved. Default: 'plots'.
+        variable_name : str, optional
+            Name of the variable for which plots will be saved (used as a subfolder name).
         """
-        self.results_folder_path = Path(results_folder_path) / plots_subfolder
-        self.save_folder = Path(results_folder_path) / plots_subfolder / variable_name
+        # Define paths
+        self.results_folder_path = Path(results_folder_path)
+        self.save_folder = self.results_folder_path / plots_subfolder / variable_name
+
+        # Create folder if it doesn’t exist
+        self.save_folder.mkdir(parents=True, exist_ok=True)
+
+        # Matplotlib LaTeX style
         plt.rcParams.update({
             'text.usetex': True,
             'font.family': 'serif',
             'font.serif': ['Times'],
             'axes.labelsize': 24,
             'axes.titlesize': 24,
-            'xtick.labelsize': 24,
-            'ytick.labelsize': 24,
-            'legend.fontsize': 24,
+            'xtick.labelsize': 20,
+            'ytick.labelsize': 20,
+            'legend.fontsize': 30,
             'lines.linewidth': 1.5,
             'lines.markersize': 8,
             'axes.linewidth': 0.8,
@@ -75,9 +78,9 @@ class BayesianPlotter:
         ax : matplotlib.axes.Axes
             The axes on which to set LaTeX formatting.
         """
-        ax.set_xlabel(ax.get_xlabel(), fontsize=28, family='serif')
-        ax.set_ylabel(ax.get_ylabel(), fontsize=28, family='serif')
-        ax.legend(fontsize=28)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=20, family='serif')
+        ax.set_ylabel(ax.get_ylabel(), fontsize=20, family='serif')
+        ax.legend(fontsize=20)
         ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
         ax.spines['top'].set_linewidth(0.8)
         ax.spines['right'].set_linewidth(0.8)
@@ -288,11 +291,10 @@ class BayesianPlotter:
 
                 # Axis labels
                 unit = f' [{parameter_units[param_idx]}]' if parameter_units[param_idx] else ''
-                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=20)
-                ax.set_ylabel('Probability', fontsize=20)
+                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=30)
+                ax.set_ylabel('Probability', fontsize=30)
 
-                ax.tick_params(axis='both', which='major', labelsize=20)
-                self._set_latex_format(ax)
+                ax.tick_params(axis='both', which='major', labelsize=30)
 
                 ax.set_xticks(np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3))
                 ax.set_xlim(x_limits[col])
