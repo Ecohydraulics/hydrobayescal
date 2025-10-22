@@ -10,6 +10,7 @@ examples/yuba
 examples/munichFishpass
 HBCenv*/
 examples/*.csv
+examples/ering_plotting.py
 
 *.slf
 *.pickle
