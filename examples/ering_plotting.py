@@ -26,7 +26,7 @@ full_complexity_model = TelemacModel(
          #r"$\tau_{*,cr,d_{10}}$",
          #r"$\tau_{*,cr,d_{16}}$",
          #r"$\tau_{*,cr,d_{m}}$",
-        r"$k_{\mathrm{Channel}}$",
+        r"$k_{\mathrm{channel}}$",
          #r"$k_{\mathrm{slackwater}}$",
          #r"$k_{\mathrm{glide}}$",
          #r"$k_{\mathrm{riffle}}$",
@@ -43,9 +43,9 @@ full_complexity_model = TelemacModel(
         # [0.002, 0.6], # zone4 Glide
         # [0.002, 0.6], # zone5 Riffle
         # [0.040, 0.6], # zone6 Run
-        [0.02, 0.6],  # zone8 Backwater
-        [0.002, 0.3],  # zone9 Wake
-        [0.002, 2]],  # zone 13 LW
+        [0.002, 0.6],  # zone8 Backwater
+        [0.002, 0.6],  # zone9 Wake
+        [0.002, 1.5]],  # zone 13 LW
     # param_values=[[0.048, 0.070],  # critical shields parameter class 1
     #               # [0.5,17.45], # zone0
     #               # [0.5,17.45], # zone 1
@@ -149,7 +149,7 @@ plotter.plot_posterior_updates(
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=30,
+    bins=20,
     plot_prior=True,
     parameter_units=['m','m','m','m'],
     # parameter_indices=[0,9,10,6,7,8]

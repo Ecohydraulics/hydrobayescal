@@ -58,11 +58,11 @@ class BayesianPlotter:
             'text.usetex': True,
             'font.family': 'serif',
             'font.serif': ['Times'],
-            'axes.labelsize': 24,
-            'axes.titlesize': 24,
-            'xtick.labelsize': 20,
-            'ytick.labelsize': 20,
-            'legend.fontsize': 30,
+            'axes.labelsize': 30,
+            'axes.titlesize': 30,
+            'xtick.labelsize': 30,
+            'ytick.labelsize': 30,
+            'legend.fontsize': 50,
             'lines.linewidth': 1.5,
             'lines.markersize': 8,
             'axes.linewidth': 0.8,
@@ -78,10 +78,10 @@ class BayesianPlotter:
         ax : matplotlib.axes.Axes
             The axes on which to set LaTeX formatting.
         """
-        ax.set_xlabel(ax.get_xlabel(), fontsize=20, family='serif')
-        ax.set_ylabel(ax.get_ylabel(), fontsize=20, family='serif')
-        ax.legend(fontsize=20)
-        ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=35, family='serif')
+        ax.set_ylabel(ax.get_ylabel(), fontsize=35, family='serif')
+        ax.legend(fontsize=35)
+        ax.tick_params(axis='both', which='both', direction='in', labelsize=35)
         ax.spines['top'].set_linewidth(0.8)
         ax.spines['right'].set_linewidth(0.8)
         ax.spines['bottom'].set_linewidth(0.8)
@@ -291,10 +291,10 @@ class BayesianPlotter:
 
                 # Axis labels
                 unit = f' [{parameter_units[param_idx]}]' if parameter_units[param_idx] else ''
-                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=30)
-                ax.set_ylabel('Probability', fontsize=30)
+                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=50)
+                ax.set_ylabel('Probability', fontsize=50)
 
-                ax.tick_params(axis='both', which='major', labelsize=30)
+                ax.tick_params(axis='both', which='major', labelsize=35)
 
                 ax.set_xticks(np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3))
                 ax.set_xlim(x_limits[col])
@@ -304,14 +304,19 @@ class BayesianPlotter:
                 ax.minorticks_on()
                 ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')
 
-                ax.legend(fontsize=18)
+                ax.legend(fontsize=20)
 
             # Remove unused axes
             for j in range(parameter_num, len(axes)):
                 fig.delaxes(axes[j])
 
             fig.tight_layout(rect=[0, 0.01, 1, 0.98])
-            fig.savefig(save_folder / f'posterior_distributions_iteration_{iteration_idx + 1}.png', dpi=300)
+            fig.savefig(
+                save_folder / f'posterior_distributions_iteration_{iteration_idx + 1}.svg',
+                format='svg',
+                bbox_inches='tight',
+                transparent=True,
+            )
             plt.close(fig)
 
     def plot_posterior_iteration(self, posterior_samples, parameter_names, param_values):

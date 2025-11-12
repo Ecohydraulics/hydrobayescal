@@ -75,14 +75,13 @@ def setup_experiment_design(
     # 6) chebyshev(FT) 7) grid(FT) 8) User
     exp_design.sampling_method = parameter_sampling_method
     exp_design.n_new_samples = 1
-    exp_design.X=complex_model.user_collocation_points
+    exp_design.X = complex_model.user_collocation_points
     exp_design.n_max_samples = complex_model.max_runs
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
     exp_design.exploit_method = 'bal'
     exp_design.util_func = tp_selection_criteria
     exp_design.generate_ED(n_samples=exp_design.n_init_samples)
-
     return exp_design
 
 
@@ -588,9 +587,9 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=25,
+            init_runs=30,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                    # "gaiaCLASSES SHIELDS PARAMETERS 2",
+                                    "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     # "gaiaCLASSES SHIELDS PARAMETERS 3",
                                     # "zone0",
                                     # "zone1",
@@ -607,28 +606,28 @@ if __name__ == "__main__":
                                     #"zone12",
                                     "zone13"],
             param_values = [[0.047,0.070], # critical shields parameter class 1
-                            # [0.047, 0.070], # critical shields parameter class 2
+                            [0.047, 0.070], # critical shields parameter class 2
                             # [0.047, 0.070], # critical shields parameter class 3
-                            [0.008, 0.6], # zone2 Pool
+                            [0.008, 0.4], # zone2 Pool
                             # [0.008, 0.6], # zone3 Slackwater
-                            [0.002, 0.6], # zone4 Glide
-                            [0.002, 0.6], # zone5 Riffle
-                            [0.040, 0.6], # zone6 Run
-                            [0.002, 0.6], # zone8 Backwater
-                            [0.040, 0.6], # zone9 Wake
-                            [0.040, 2.8]], # zone 13 LW
+                            [0.002, 0.4], # zone4 Glide
+                            [0.002, 0.4], # zone5 Riffle
+                            [0.030, 0.4], # zone6 Run
+                            [0.002, 0.4], # zone8 Backwater
+                            [0.030, 0.4], # zone9 Wake
+                            [0.040, 1.8]], # zone 13 LW
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
-
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
             # calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            calibration_quantities=["SCALAR VELOCITY"],
+            # calibration_quantities=["WATER DEPTH"],
             # calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
-            user_param_values = True,
+            user_param_values = False,
             max_runs=100,
-            complete_bal_mode=False,
+            complete_bal_mode=True,
             only_bal_mode=False,
             delete_complex_outputs=True,
             validation=False

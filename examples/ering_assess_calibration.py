@@ -18,56 +18,35 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 # Initialize full complexity model
 full_complexity_model = TelemacModel(
             # Telemac parameters
-            friction_file="friction_ering_MU_initial_NIKU.tbl",
+            friction_file="friction_ering_MU_restart_NIKU.tbl",
             tm_xd="1",
-            gaia_steering_file="gaia_ering_initial_NIKU.cas",
             # General hydrosimulation parameters
-            results_filename_base="results2m3",
-            control_file="tel_ering_initial_NIKU.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-folder-telemac-gaia",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+            results_filename_base="results_restart",
+            control_file="tel_ering_restart_NIKU.cas",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/eringHydrodynamics/simulation/hotstart/",
+            res_dir="/home/IWS/hidalgo/Documents/calibration/",
             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=8,
-            calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                    # "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                    # "gaiaCLASSES SHIELDS PARAMETERS 3",
-                                    # "zone0",
-                                    # "zone1",
-                                    "zone2",
-                                    # "zone3",
-                                    "zone4",
-                                    "zone5",
-                                    "zone6",
-                                    # "zone7",
+            init_runs=2,
+            calibration_parameters=["zone2",
                                     "zone8",
                                     "zone9",
-                                    #"zone10",
-                                    # "zone11",
-                                    #"zone12",
                                     "zone13"],
-            param_values = [[0.047,0.070], # critical shields parameter class 1
-                            # [0.047, 0.070], # critical shields parameter class 2
-                            # [0.047, 0.070], # critical shields parameter class 3
-                            [0.008, 0.6], # zone2 Pool
-                            # [0.008, 0.6], # zone3 Slackwater
-                            [0.002, 0.6], # zone4 Glide
-                            [0.002, 0.6], # zone5 Riffle
-                            [0.040, 0.6], # zone6 Run
-                            [0.002, 0.6], # zone8 Backwater
-                            [0.040, 0.6], # zone9 Wake
-                            [0.040, 2.8]], # zone 13 LW
-            extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            param_values=[[0.002, 0.1],  # zone2 Pool
+                          [0.002, 0.6],  # zone8 Backwater
+                          [0.002, 0.6],  # zone9 Wake
+                          [0.002, 1.5]],  # zone 13 LW
+            extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY"],
+            calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY"],
             dict_output_name="extraction-data",
             user_param_values=True,
-            # max_runs=8,
-            # complete_bal_mode=False,
+            # max_runs=2,
+            # complete_bal_mode=True,
             # only_bal_mode=False,
             # delete_complex_outputs=True,
             # validation=False
             )
-surrogate_to_analyze = 100
+surrogate_to_analyze = 75
 results_folder_path = full_complexity_model.asr_dir
 restart_data_folder = full_complexity_model.restart_data_folder
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
@@ -124,14 +103,6 @@ plotter.evaluate_calibration(cm_outputs_split,
             sm_lower_ci_split,
             obs_split,
             coordinates,
-            model_names=[
-                                 r"MO-GPE: $h, \bar{U}, \Delta Z_{\mathrm{DEM}}$",
-                                 r"MO-GPE: $\bar{U}, h, \Delta Z_{\mathrm{DEM}}$",
-                                 r"MO-GPE: $h, \bar{U}$",
-                                 r"SO-GPE: $h$",
-                                 r"SO-GPE: $\bar{U}$",
-                                 r"SO-GPE: $\Delta Z_{\mathrm{DEM}}$",
-                                 r"$K_{NKU} = \mathrm{Const}$",
-                                 r"Deterministic: $K_{NKU} = 3 \times d_{50}$"
-                             ],
+            model_names=[r"MO-GPE: $h, \bar{U}$",
+                         r"$K_{NKU} = Const$"],
             quantity_names=calibration_names,)
