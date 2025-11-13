@@ -63,9 +63,9 @@ def setup_experiment_design(
     # # One "Marginal" for each parameter.
     for i in range(complex_model.ndim):
         Inputs.add_marginals()  # Create marginal for parameter "i"
-        Inputs.Marginals[i].name = complex_model.calibration_parameters[i]  # Parameter name
-        Inputs.Marginals[i].dist_type = parameter_distribution  # Parameter distribution (see exp_design.py --> build_dist()
-        Inputs.Marginals[i].parameters = complex_model.param_values[i]  # Inputs needed for distribution
+        Inputs.marginals[i].name = complex_model.calibration_parameters[i]  # Parameter name
+        Inputs.marginals[i].dist_type = parameter_distribution  # Parameter distribution (see exp_design.py --> build_dist()
+        Inputs.marginals[i].parameters = complex_model.param_values[i]  # Inputs needed for distribution
 
     # # Experimental design: ....................................................................
     exp_design = bvr.ExpDesigns(Inputs)
@@ -80,8 +80,7 @@ def setup_experiment_design(
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
     exp_design.exploit_method = 'bal'
-    exp_design.util_func = tp_selection_criteria
-    exp_design.generate_ED(n_samples=exp_design.n_init_samples)
+    samples = exp_design.generate_ed()
     return exp_design
 
 
@@ -116,7 +115,7 @@ def run_complex_model(complex_model,
     if not complex_model.only_bal_mode:
         logger.info(
             f"Sampling {complex_model.init_runs} collocation points for the selected calibration parameters with {experiment_design.sampling_method} sampling method.")
-        collocation_points = experiment_design.X
+        collocation_points = experiment_design.x
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                complete_bal_mode=complex_model.complete_bal_mode,
                                                validation=complex_model.validation)
@@ -194,7 +193,6 @@ def run_bal_model(collocation_points,
 
     #Prior sampling
     prior = experiment_design.generate_samples(prior_samples)
-    prior_logpdf = np.log(experiment_design.JDist.pdf(prior.T)).reshape(-1)
     # Number of BAL (Bayesian Active Learning iterations)
     n_iter = experiment_design.n_max_samples - experiment_design.n_init_samples
     # Number of evaluations:
@@ -587,7 +585,7 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=30,
+            init_runs=3,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     # "gaiaCLASSES SHIELDS PARAMETERS 3",
@@ -618,16 +616,16 @@ if __name__ == "__main__":
                             [0.040, 1.8]], # zone 13 LW
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
             # calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             # calibration_quantities=["WATER DEPTH"],
-            # calibration_quantities=["WATER DEPTH"],
+            calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
             max_runs=100,
-            complete_bal_mode=True,
+            complete_bal_mode=False,
             only_bal_mode=False,
             delete_complex_outputs=True,
             validation=False

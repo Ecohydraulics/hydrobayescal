@@ -20,7 +20,15 @@ import joblib
 import emcee
 import argparse
 import bayesvalidrox as bvr
-
+from bayesvalidrox import PyLinkForwardModel  # InputSpace, ExpDesigns, Engine
+from bayesvalidrox import Input #InputSpace
+from bayesvalidrox import ExpDesigns
+from bayesvalidrox import Engine
+from bayesvalidrox import GPESkl
+from bayesvalidrox import Discrepancy, PostProcessing
+from bayesvalidrox.bayes_inference.bayes_inference import BayesInference
+from src.hydroBayesCal.telemac.control_telemac import TelemacModel
+from src.hydroBayesCal.function_pool import *
 # Base directory of the project
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src_path = os.path.join(base_dir, 'src')
@@ -28,39 +36,101 @@ hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
 sys.path.insert(0, base_dir)
 sys.path.insert(0, src_path)
 sys.path.insert(0, hydroBayesCal_path)
-
-from src.hydroBayesCal.telemac.control_telemac import TelemacModel
-from src.hydroBayesCal.function_pool import *
+sys.modules['bal_telemac_bvr'] = sys.modules[__name__]
 
 
+def initialize_model(collocation_points_runs):
+    full_complexity_model = initialize_model(
+        TelemacModel(
+            # Telemac parameters
+            friction_file="friction_ering_MU_initial_NIKU.tbl",
+            tm_xd="1",
+            gaia_steering_file="gaia_ering_initial_NIKU.cas",
+            gaia_results_filename_base="resultsGAIA",
+            # General hydrosimulation parameters
+            results_filename_base="results2m3",
+            control_file="tel_ering_initial_NIKU.cas",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-folder-telemac-gaia",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+            n_cpus=16,
+            init_runs=30,
+            calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
+                                    "gaiaCLASSES SHIELDS PARAMETERS 2",
+                                    # "gaiaCLASSES SHIELDS PARAMETERS 3",
+                                    # "zone0",
+                                    # "zone1",
+                                    "zone2",
+                                    # "zone3",
+                                    "zone4",
+                                    "zone5",
+                                    "zone6",
+                                    # "zone7",
+                                    "zone8",
+                                    "zone9",
+                                    # "zone10",
+                                    # "zone11",
+                                    # "zone12",
+                                    "zone13"],
+            param_values=[[0.047, 0.070],  # critical shields parameter class 1
+                          [0.047, 0.070],  # critical shields parameter class 2
+                          # [0.047, 0.070], # critical shields parameter class 3
+                          [0.008, 0.4],  # zone2 Pool
+                          # [0.008, 0.6], # zone3 Slackwater
+                          [0.002, 0.4],  # zone4 Glide
+                          [0.002, 0.4],  # zone5 Riffle
+                          [0.030, 0.4],  # zone6 Run
+                          [0.002, 0.4],  # zone8 Backwater
+                          [0.030, 0.4],  # zone9 Wake
+                          [0.040, 1.8]],  # zone 13 LW
+            extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V",
+                                   "CUMUL BED EVOL"],
 
+            # calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"],
+            # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
+            # calibration_quantities=["CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+            calibration_quantities=["WATER DEPTH"],
+            # calibration_quantities=["WATER DEPTH"],
+            dict_output_name="extraction-data",
+            user_param_values=False,
+            max_runs=100,
+            complete_bal_mode=False,
+            only_bal_mode=False,
+            delete_complex_outputs=True,
+            validation=False
+        )
+    )
+    # !%%
+    init_collocation_points, model_evaluations, obs, error_pp, n_loc = run_complex_model_rw(
+        complex_model=full_complexity_model,
+        input_parameters=collocation_points_runs
+    )
+    model_evaluations_dic = {
+        'x_values': np.arange(model_evaluations.shape[0]),
+        'H': model_evaluations.flatten()
+    }
+    return model_evaluations_dic
 
-# %%
+    # Add one "marginal" for each calibration parameter
+def bal_telemac_bvr(collocation_points_runs):
+    """
+    Wrapper that BayesValidRox will call.
+    """
+    print(f"Running Telemac model with parameters: {collocation_points_runs}")
+    return initialize_model(collocation_points_runs)
+
 if __name__ == "__main__":
     start_time = time.time()  # Record the start time
     #####################################################
 
-    # !%%
-    base_dir = '/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/initiation_bayevalidrox'
-    sys.path.insert(0, base_dir)
-    calibration_parameters = ["zone3", "zone4", "zone10", "zone12", "zone13", "zone14", "zone15", "zone16", "zone17"]
 
-    # from bayesvalidrox import Input
-    inputs = bvr.Input()
-    inputs.add_marginals(name=calibration_parameters[0], dist_type='unif', parameters=[.8, 1.5])
-    inputs.add_marginals(name=calibration_parameters[1], dist_type='unif', parameters=[0.005, 0.01])
-    inputs.add_marginals(name=calibration_parameters[2], dist_type='unif', parameters=[0.04, 0.1])
-    inputs.add_marginals(name=calibration_parameters[3], dist_type='unif', parameters=[0.04, 0.1])
-    inputs.add_marginals(name=calibration_parameters[4], dist_type='unif', parameters=[0.04, 0.1])
-    inputs.add_marginals(name=calibration_parameters[5], dist_type='unif', parameters=[0.04, 0.1])
-    inputs.add_marginals(name=calibration_parameters[6], dist_type='unif', parameters=[0.04, 0.1])
-    inputs.add_marginals(name=calibration_parameters[7], dist_type='unif', parameters=[0.04, 0.1])
-    inputs.add_marginals(name=calibration_parameters[8], dist_type='unif', parameters=[0.04, 0.1])
-    # %% Step 2 make the model that calleable for bayesvalidrox
-    model = PyLinkForwardModel()
+        # %% Step 2 make the model that calleable for bayesvalidrox
+
+    model = bvr.PyLinkForwardModel()
     model.link_type = 'Function'
-    model.py_file = 'forward_wrapper_WD2d'
-    model.name = 'forward_wrapper_WD2d'
+    model.py_file = 'bal_telemac_bvr'
+    model.name = 'bal_telemac_bvr'
     model.output.names = ['H']
     calibration_pts_file_path = '/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/observations/telemac2d_test/measurementsWDEPTH_filtered.csv'
     test_Data = pd.read_csv(calibration_pts_file_path)

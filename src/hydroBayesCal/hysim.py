@@ -37,7 +37,7 @@ class HydroSimulations:
             extraction_quantities=None,
             dict_output_name='output-dictionary',
             user_param_values=False,
-            max_runs=int(),
+            max_runs=1,
             complete_bal_mode=True,
             only_bal_mode=False,
             check_inputs=False,

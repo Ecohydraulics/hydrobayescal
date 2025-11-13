@@ -86,8 +86,8 @@ full_complexity_model = TelemacModel(
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot =55
-surrogate_to_analyze = 85
+iterations_to_plot =70
+surrogate_to_analyze = 100
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -161,7 +161,7 @@ plotter.plot_posterior_updates(
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=15,
+    bins=60,
     plot_prior=True,
     parameter_units=['-','-','m','m','m','m','m','m','m'],
     # parameter_indices=[0,9,10,6,7,8]
