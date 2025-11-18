@@ -17,7 +17,7 @@ examples/ering_plotting.py
 *.pkl
 *.json
 *.csv
-
+*.hdf5
 
 # pycharm
 .idea/
