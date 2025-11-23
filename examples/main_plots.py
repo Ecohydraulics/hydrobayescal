@@ -35,29 +35,24 @@ full_complexity_model = TelemacModel(
     #                         "gaiaCLASSES SHIELDS PARAMETERS 5", "gaiaMPM COEFFICIENT", "zone2", "zone3", "zone4",
     #                         "zone5", "zone6", "zone8", "zone9", "zone13"],  # pool-slackwater-glide-riffle-run
     calibration_parameters=[
-        r"$\tau_{*,cr,d_{10}}$",
-        r"$\tau_{*,cr,d_{16}}$",
-        # r"$\tau_{*,cr,d_{m}}$",
-        r"$k_{\mathrm{pool}}$",
-        # r"$k_{\mathrm{slackwater}}$",
-        r"$k_{\mathrm{glide}}$",
-        r"$k_{\mathrm{riffle}}$",
-        r"$k_{\mathrm{run}}$",
+         r"$\tau_{*,cr,d_{10}}$",
+         r"$\tau_{*,cr,d_{16}}$",
+         #r"$\tau_{*,cr,d_{m}}$",
+        r"$k_{\mathrm{channel}}$",
+         #r"$k_{\mathrm{slackwater}}$",
+         #r"$k_{\mathrm{glide}}$",
+         #r"$k_{\mathrm{riffle}}$",
+         #r"$k_{\mathrm{run}}$",
         r"$k_{\mathrm{backwater}}$",
         r"$k_{\mathrm{wake}}$",
         r"$k_{\mathrm{LW}}$"
     ],
-    param_values=[[0.047, 0.070],  # critical shields parameter class 1
-                  [0.047, 0.070],  # critical shields parameter class 2
-                  # [0.047, 0.070], # critical shields parameter class 3
-                  [0.008, 0.4],  # zone2 Pool
-                  # [0.008, 0.6], # zone3 Slackwater
-                  [0.002, 0.4],  # zone4 Glide
-                  [0.002, 0.4],  # zone5 Riffle
-                  [0.030, 0.4],  # zone6 Run
-                  [0.002, 0.4],  # zone8 Backwater
-                  [0.030, 0.4],  # zone9 Wake
-                  [0.040, 1.8]],  # zone 13 LW
+    param_values=[[0.05, 0.070],  # critical shields parameter class 1
+                  [0.05, 0.070],  # critical shields parameter class 2
+                  [0.01, 0.6],  # zone2 Riverbed
+                  [0.002, 0.4],  # zone4 Backwater
+                  [0.01, 0.6],  # zone5 Wake
+                  [0.5, 2.0]],  # zone 13 LW
     # param_values=[[0.048, 0.070],  # critical shields parameter class 1
     #               # [0.5,17.45], # zone0
     #               # [0.5,17.45], # zone 1
@@ -74,8 +69,8 @@ full_complexity_model = TelemacModel(
     #               # [1.5, 98],  # zone 12
     #               [0.02, 17.45]],  # zone 13
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
-    # calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
-    calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"],
+    calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
+    # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
     # calibration_quantities = ["SCALAR VELOCITY"],
     # calibration_quantities = ["WATER DEPTH"],
@@ -86,8 +81,8 @@ full_complexity_model = TelemacModel(
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot =70
-surrogate_to_analyze = 100
+iterations_to_plot =9
+surrogate_to_analyze = 40
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -161,11 +156,11 @@ plotter.plot_posterior_updates(
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=60,
+    bins=20,
     plot_prior=True,
-    parameter_units=['-','-','m','m','m','m','m','m','m'],
+    parameter_units=['-','-','m','m','m','m'],
     # parameter_indices=[0,9,10,6,7,8]
-    parameter_indices=[0,1,2,3,4,5,6,7,8]
+    parameter_indices=[0,1,2,3,4,5]
 )
 # plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)
 # plotter.plot_posterior_iteration(posterior_samples=bayesian_data['posterior'][iterations_to_plot],

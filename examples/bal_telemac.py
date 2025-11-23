@@ -79,6 +79,7 @@ def setup_experiment_design(
     exp_design.n_max_samples = complex_model.max_runs
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
+    exp_design.util_func = tp_selection_criteria  # 'bme' 'dkl'
     exp_design.exploit_method = 'bal'
     samples = exp_design.generate_ed()
     return exp_design
@@ -424,7 +425,7 @@ def run_bal_model(collocation_points,
                                    error=total_error,
                                    sampling_method='rejection_sampling',
                                    prior=prior,
-                                   prior_log_pdf=prior_logpdf)
+                                   ) #prior_log_pdf=prior_logpdf This was here
         bi_gpe.estimate_bme()
         bayesian_dict['N_tp'][it] = collocation_points.shape[0]
         bayesian_dict['BME'][it], bayesian_dict['RE'][it] = bi_gpe.BME, bi_gpe.RE
@@ -581,52 +582,36 @@ if __name__ == "__main__":
             # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-folder-telemac-gaia",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-telemac-gaia",
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=3,
+            init_runs=30,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                    # "gaiaCLASSES SHIELDS PARAMETERS 3",
-                                    # "zone0",
-                                    # "zone1",
                                     "zone2",
-                                    # "zone3",
-                                    "zone4",
-                                    "zone5",
-                                    "zone6",
-                                    # "zone7",
                                     "zone8",
                                     "zone9",
-                                    #"zone10",
-                                    # "zone11",
-                                    #"zone12",
                                     "zone13"],
-            param_values = [[0.047,0.070], # critical shields parameter class 1
-                            [0.047, 0.070], # critical shields parameter class 2
-                            # [0.047, 0.070], # critical shields parameter class 3
-                            [0.008, 0.4], # zone2 Pool
-                            # [0.008, 0.6], # zone3 Slackwater
-                            [0.002, 0.4], # zone4 Glide
-                            [0.002, 0.4], # zone5 Riffle
-                            [0.030, 0.4], # zone6 Run
-                            [0.002, 0.4], # zone8 Backwater
-                            [0.030, 0.4], # zone9 Wake
-                            [0.040, 1.8]], # zone 13 LW
+            param_values=[[0.05, 0.070],  # critical shields parameter class 1
+                          [0.05, 0.070],  # critical shields parameter class 2
+                          [0.01, 0.6],  # zone2 Riverbed
+                          [0.002, 0.4],  # zone4 Backwater
+                          [0.01, 0.6],  # zone5 Wake
+                          [0.5, 2.0]],  # zone 13 LW
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
             # calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             # calibration_quantities=["WATER DEPTH"],
-            calibration_quantities=["WATER DEPTH"],
+            # calibration_quantities=["WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
             max_runs=100,
-            complete_bal_mode=False,
-            only_bal_mode=False,
+            complete_bal_mode=True,
+            only_bal_mode=True,
             delete_complex_outputs=True,
             validation=False
         )

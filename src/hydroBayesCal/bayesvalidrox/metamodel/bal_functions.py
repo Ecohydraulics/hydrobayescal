@@ -484,8 +484,8 @@ class SequentialDesign:
             sorted_idx = np.argsort(temp)[::-1]  # order from largest to smallest
 
             # Select new TP(s)
-            new_tp = all_candidates[sorted_idx[:exp_design.n_canddidate]]
-            self.selected_criteria = self.total_score[sorted_idx[:exp_design.n_canddidate]]
+            new_tp = all_candidates[sorted_idx[:exp_design.n_new_samples]]
+            self.selected_criteria = self.total_score[sorted_idx[:exp_design.n_new_samples]]
 
         elif 'space_filling' in exp_design.exploit_method.lower():
             self.total_score = score_exploration
@@ -494,12 +494,12 @@ class SequentialDesign:
             sorted_idx = np.argsort(temp)[::-1]                  # order from largest to smallest
 
             # select the requested number of samples
-            new_tp = all_candidates[sorted_idx[:exp_design.n_canddidate]]
-            self.selected_criteria = self.total_score[sorted_idx[:exp_design.n_canddidate]]
+            new_tp = all_candidates[sorted_idx[:exp_design.n_new_samples]]
+            self.selected_criteria = self.total_score[sorted_idx[:exp_design.n_new_samples]]
             util_fun = 'global_mc'
 
         elif 'sobol' in exp_design.exploit_method.lower():
-            new_tp_size = self.SM.training_points.shape[0] + exp_design.n_canddidate
+            new_tp_size = self.SM.training_points.shape[0] + exp_design.n_new_samples
             # Sample new TPs
             new_tp = exp_design.generate_samples(n_samples=new_tp_size, sampling_method='sobol')
             self.selected_criteria = 0

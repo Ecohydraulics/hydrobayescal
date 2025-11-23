@@ -2,142 +2,179 @@
 # import pandas as pd
 # import joblib
 # import emcee
-# !%% bayesvalidrox toolbox
-# from bayesvalidrox import PyLinkForwardModel  # InputSpace, ExpDesigns, Engine
-# from bayesvalidrox import Input  # InputSpace
-# from bayesvalidrox import ExpDesigns
-# from bayesvalidrox import Engine
-# from bayesvalidrox import GPESkl
-# from bayesvalidrox import Discrepancy, PostProcessing
-# from bayesvalidrox.bayes_inference.bayes_inference import BayesInference
-# import time
-
-import pdb
 import sys
 import os
 import time
-import joblib
 import emcee
-import argparse
+import numpy as np
+import pandas as pd
+import logging
 import bayesvalidrox as bvr
-from bayesvalidrox import PyLinkForwardModel  # InputSpace, ExpDesigns, Engine
-from bayesvalidrox import Input #InputSpace
-from bayesvalidrox import ExpDesigns
-from bayesvalidrox import Engine
-from bayesvalidrox import GPESkl
-from bayesvalidrox import Discrepancy, PostProcessing
-from bayesvalidrox.bayes_inference.bayes_inference import BayesInference
-from src.hydroBayesCal.telemac.control_telemac import TelemacModel
-from src.hydroBayesCal.function_pool import *
-# Base directory of the project
+
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src_path = os.path.join(base_dir, 'src')
 hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
 sys.path.insert(0, base_dir)
 sys.path.insert(0, src_path)
 sys.path.insert(0, hydroBayesCal_path)
+
+# from bayesvalidrox import PyLinkForwardModel
+from src.hydroBayesCal.telemac.control_telemac import TelemacModel
+from src.hydroBayesCal.function_pool import *
+
+# --- Configure logging ---
+# logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+
+# --- Setup paths ---
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_path = os.path.join(base_dir, 'src')
+hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
+
+sys.path.insert(0, base_dir)
+sys.path.insert(0, src_path)
+sys.path.insert(0, hydroBayesCal_path)
+
+# Trick BayesValidRox into recognizing this as an importable module
 sys.modules['bal_telemac_bvr'] = sys.modules[__name__]
 
+# -------------------------------------------------------------------------
+# Helper function to run Telemac model and return results
+# -------------------------------------------------------------------------
+def run_complex_model(complex_model, input_parameters):
+    """
+    Runs the Telemac model for a given set of input parameters and returns results.
+    """
+    collocation_points = None
+    model_outputs = None
 
-def initialize_model(collocation_points_runs):
-    full_complexity_model = initialize_model(
-        TelemacModel(
-            # Telemac parameters
+    if not complex_model.only_bal_mode:
+        logger.info(
+            f"Sampling {complex_model.init_runs} collocation points for the selected "
+        )
+        collocation_points = input_parameters
+        complex_model.run_multiple_simulations(
+            collocation_points=collocation_points,
+            complete_bal_mode=complex_model.complete_bal_mode,
+            validation=complex_model.validation
+        )
+        model_outputs = complex_model.model_evaluations
+    else:
+        try:
+            path_np_collocation_points = os.path.join(complex_model.asr_dir, 'collocation-points.csv')
+            path_np_model_results = os.path.join(complex_model.asr_dir, 'model-results.csv')
+            collocation_points = np.loadtxt(path_np_collocation_points, delimiter=',', skiprows=1)
+            model_outputs = np.loadtxt(path_np_model_results, delimiter=',', skiprows=1)
+        except FileNotFoundError:
+            logger.warning(
+                'Saved collocation points or model results not found. '
+                'Please run initial simulations first to use only Bayesian Active Learning.'
+            )
+
+    observations = complex_model.observations
+    errors = complex_model.measurement_errors
+    nloc = complex_model.nloc
+
+    return collocation_points, model_outputs, observations, errors, nloc
+
+
+# -------------------------------------------------------------------------
+# Function to initialize and run Telemac
+# -------------------------------------------------------------------------
+def bal_telemac_bvr(collocation_points_runs=None, complex_model=None):
+    """
+    Flexible wrapper for Telemac simulations.
+
+    Modes:
+    -------
+    1. Instance-only mode: collocation_points_runs=None and complex_model=None
+       -> returns only the model instance.
+    2. BayesValidRox mode: collocation_points_runs provided
+       -> runs simulation and returns model evaluations dict only.
+    """
+    # --- Instantiate model if needed ---
+    if complex_model is None:
+        complex_model = TelemacModel(
             friction_file="friction_ering_MU_initial_NIKU.tbl",
             tm_xd="1",
             gaia_steering_file="gaia_ering_initial_NIKU.cas",
             gaia_results_filename_base="resultsGAIA",
-            # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-folder-telemac-gaia",
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=30,
-            calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                    "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                    # "gaiaCLASSES SHIELDS PARAMETERS 3",
-                                    # "zone0",
-                                    # "zone1",
-                                    "zone2",
-                                    # "zone3",
-                                    "zone4",
-                                    "zone5",
-                                    "zone6",
-                                    # "zone7",
-                                    "zone8",
-                                    "zone9",
-                                    # "zone10",
-                                    # "zone11",
-                                    # "zone12",
-                                    "zone13"],
-            param_values=[[0.047, 0.070],  # critical shields parameter class 1
-                          [0.047, 0.070],  # critical shields parameter class 2
-                          # [0.047, 0.070], # critical shields parameter class 3
-                          [0.008, 0.4],  # zone2 Pool
-                          # [0.008, 0.6], # zone3 Slackwater
-                          [0.002, 0.4],  # zone4 Glide
-                          [0.002, 0.4],  # zone5 Riffle
-                          [0.030, 0.4],  # zone6 Run
-                          [0.002, 0.4],  # zone8 Backwater
-                          [0.030, 0.4],  # zone9 Wake
-                          [0.040, 1.8]],  # zone 13 LW
-            extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V",
-                                   "CUMUL BED EVOL"],
-
-            # calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"],
-            # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
-            # calibration_quantities=["CUMUL BED EVOL"],
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+            calibration_parameters=[
+                "gaiaCLASSES SHIELDS PARAMETERS 1",
+                "gaiaCLASSES SHIELDS PARAMETERS 2",
+                "zone2", "zone4", "zone5", "zone6", "zone8", "zone9", "zone13"
+            ],
+            param_values=[
+                [0.047, 0.070],
+                [0.047, 0.070],
+                [0.008, 0.4],
+                [0.002, 0.4],
+                [0.002, 0.4],
+                [0.030, 0.4],
+                [0.002, 0.4],
+                [0.030, 0.4],
+                [0.040, 1.8],
+            ],
+            extraction_quantities=[
+                "WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG",
+                "VELOCITY U", "VELOCITY V", "CUMUL BED EVOL"
+            ],
             calibration_quantities=["WATER DEPTH"],
-            # calibration_quantities=["WATER DEPTH"],
-            dict_output_name="extraction-data",
-            user_param_values=False,
-            max_runs=100,
-            complete_bal_mode=False,
-            only_bal_mode=False,
+            complete_bal_mode=True,
             delete_complex_outputs=True,
-            validation=False
         )
-    )
-    # !%%
-    init_collocation_points, model_evaluations, obs, error_pp, n_loc = run_complex_model_rw(
-        complex_model=full_complexity_model,
+
+    # --- Instance-only mode ---
+    if collocation_points_runs is None:
+        return complex_model  # only return the instance
+
+    # --- BayesValidRox mode: run simulations ---
+    collocation_points, model_evaluations, _, _, _ = run_complex_model(
+        complex_model=complex_model,
         input_parameters=collocation_points_runs
     )
+
     model_evaluations_dic = {
         'x_values': np.arange(model_evaluations.shape[0]),
         'H': model_evaluations.flatten()
     }
-    return model_evaluations_dic
 
-    # Add one "marginal" for each calibration parameter
-def bal_telemac_bvr(collocation_points_runs):
-    """
-    Wrapper that BayesValidRox will call.
-    """
-    print(f"Running Telemac model with parameters: {collocation_points_runs}")
-    return initialize_model(collocation_points_runs)
+    return model_evaluations_dic  # only return the evaluations
 
+
+# -------------------------------------------------------------------------
+# Entry point for manual testing or BayesValidRox linkage
+# -------------------------------------------------------------------------
 if __name__ == "__main__":
-    start_time = time.time()  # Record the start time
-    #####################################################
+    start_time = time.time()
+    complex_model = bal_telemac_bvr()
+    inputs = bvr.Input()
+    # # One "Marginal" for each parameter.
+    for i in range(complex_model.ndim):
+        inputs.add_marginals()  # Create marginal for parameter "i"
+        inputs.marginals[i].name = complex_model.calibration_parameters[i]  # Parameter name
+        inputs.marginals[i].dist_type = 'unif' # Parameter distribution (see exp_design.py --> build_dist()
+        inputs.marginals[i].parameters = complex_model.param_values[i]  # Inputs needed for distribution
 
-
-        # %% Step 2 make the model that calleable for bayesvalidrox
-
+    # Create BayesValidRox-compatible callable
     model = bvr.PyLinkForwardModel()
-    model.link_type = 'Function'
-    model.py_file = 'bal_telemac_bvr'
+    model.link_type = 'Function'  # This file acts as an external function
+    model.py_file = 'bal_telemac_bvr'  # So BayesValidRox imports this as module
     model.name = 'bal_telemac_bvr'
-    model.output.names = ['H']
-    calibration_pts_file_path = '/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/observations/telemac2d_test/measurementsWDEPTH_filtered.csv'
+    model.output.names = ['H']  # Output variable name
+    calibration_pts_file_path = complex_model.calibration_pts_file_path
     test_Data = pd.read_csv(calibration_pts_file_path)
     model.observations = {}
     # ✅ Make sure it's a DataFrame with shape (36, 1)
-    fuck = test_Data[['H']].copy()
-    model.observations = fuck  # test_Data[['U_scalar']].copy()
+    model.observations = {
+        'H': test_Data['WATER DEPTH_DATA'].values  # or .to_numpy()
+    }
     # model.observations['U_scalar'] = test_Data['U_scalar']
     # %% test forward run from the bayesvalidrox if necessary
     # Step 3: Create the experimental design
@@ -150,7 +187,7 @@ if __name__ == "__main__":
     # =====================================================
     # ==========  DEFINITION OF THE METAMODEL  ============
     # =====================================================
-    meta_model = GPESkl(inputs)
+    meta_model = bvr.GPESkl(inputs)
     # !%%
     # #------------------------------------------------
     # # ------------- GPE Specification ----------------
@@ -186,10 +223,10 @@ if __name__ == "__main__":
     # ------------------------------------------------
     # ------ Experimental Design Configuration -------
     # ------------------------------------------------
-    exp_design = ExpDesigns(inputs)
+    exp_design = bvr.ExpDesigns(inputs)
 
     # Number of initial (static) training samples
-    exp_design.n_init_samples = 50
+    exp_design.n_init_samples = 5
 
     # Sampling methods
     # 1) random 2) latin_hypercube 3) sobol 4) halton 5) hammersley
@@ -201,12 +238,12 @@ if __name__ == "__main__":
 
     # Set the sampling parameters
     exp_design.n_new_samples = 1
-    exp_design.n_max_samples = 120  # sum of init + sequential
+    exp_design.n_max_samples = 6  # sum of init + sequential
     exp_design.mod_loo_threshold = 1e-16
 
     # Tradeoff scheme
     # 1) None 2) 'equal' 3)'epsilon-decreasing' 4) 'adaptive'
-    exp_design.tradeoff_scheme = None
+    exp_design.tradeoff_scheme = 'explore_only'
     # exp_design.n_replication = 5
 
     # -------- Exploration ------
@@ -251,11 +288,11 @@ if __name__ == "__main__":
     # Defining the measurement error, if it's known a priori
 
     # obs_uncert =  pd.DataFrame(model.observations, columns=model.output.names) ** 2
-    obs_uncert = test_Data[['H_err']].copy()  # test_Data['U_scalar_error']
+    obs_uncert = test_Data[['WATER DEPTH_ERROR']].copy()  # test_Data['U_scalar_error']
     obs_uncert.columns = model.output.names
     # obs_uncert2.columns=model.output.names #pd.DataFrame(model.observations, columns=model.output.names) ** 2
 
-    discrepancy = Discrepancy(parameters=obs_uncert, disc_type="Gaussian")
+    discrepancy = bvr.Discrepancy(parameters=obs_uncert, disc_type="Gaussian")
 
     # Plot the posterior snapshots for SeqDesign
     # exp_design.max_a_post = [0] * NDIM
@@ -270,7 +307,7 @@ if __name__ == "__main__":
     # exp_design.valid_model_runs = {"Z": prior_outputs[:500]}
 
     # Run using the engine
-    engine = Engine(meta_model, model, exp_design, discrepancy=discrepancy)
+    engine = bvr.Engine(meta_model, model, exp_design, discrepancy=discrepancy)
     # %%
     engine.train_sequential()
     print('Surrogate has been trained')
@@ -281,15 +318,26 @@ if __name__ == "__main__":
     print(f"BAL is finished after {run_time:.6f} seconds.")
     # engine.train_normal()
     # %%
-    with open(
-            "/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/results_bayesvalidrox/GP_WD_longRun/engine.pkl",
-            "wb") as output:
-        joblib.dump(engine, output, 2)
 
-    with open(
-            "/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/results_bayesvalidrox/GP_WD_longRun/runTime.pkl",
-            "wb") as output:
-        joblib.dump(run_time, output, 2)
+    # Base folder for GPE results
+    gpe_results_folder = os.path.join(complex_model.asr_dir, "surrogate-gpe")
+    # Create subfolder based on calibration parameters
+    subfolder_name = f"gpe_bvr_{complex_model.calibration_parameters}"
+    output_folder = os.path.join(gpe_results_folder, subfolder_name)
+
+    # Create subfolder
+    os.makedirs(output_folder, exist_ok=True)
+    # Paths for saving
+    engine_path = os.path.join(output_folder, "engine.pkl")
+    runtime_path = os.path.join(output_folder, "runTime.pkl")
+
+    # Save engine
+    with open(engine_path, "wb") as f:
+        pickle.dump(engine, f, protocol=2)
+
+    # Save runtime
+    with open(runtime_path, "wb") as f:
+        pickle.dump(run_time, f, protocol=2)
 
     # %%
     # with open("/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/results_bayesvalidrox/GP_WD_longRun/engine.pkl", "rb") as input_:
@@ -298,7 +346,7 @@ if __name__ == "__main__":
     # =====================================================
     # =========  POST PROCESSING OF METAMODELS  ===========
     # =====================================================
-    post = PostProcessing(engine)
+    post = bvr.PostProcessing(engine)
     # %%
     # # Plot to check validation visually.
     # post.valid_metamodel(n_samples=1)
@@ -316,7 +364,8 @@ if __name__ == "__main__":
     # # # ========  Bayesian inference with Emulator ==========
     # # # =====================================================
     # engine.model.observations_valid = model.observations
-    bayes = BayesInference(engine)
+    bayes_path = os.path.join(output_folder, f"Bayes_{model.name}.pkl")
+    bayes = bvr.BayesInference(engine)
 
     # # Basic settings
     # bayes.use_emulator = False
@@ -370,17 +419,17 @@ if __name__ == "__main__":
     # log_bme = bayes.run_validation()
     # %%
     # Select the inference method - either 'rejection' or 'MCMC'
-    # bayes.inference_method = "rejection"
-    bayes.inference_method = "MCMC"
+    bayes.inference_method = "rejection"
+    # bayes.inference_method = "MCMC"
 
     # Set the MCMC parameters passed to self.mcmc_params
-    bayes.mcmc_params = {
-        "n_steps": 1e4,
-        "n_walkers": 30,
-        "moves": emcee.moves.KDEMove(),
-        "multiprocessing": False,
-        "verbose": False,
-    }
+    # bayes.mcmc_params = {
+    #     "n_steps": 1e4,
+    #     "n_walkers": 30,
+    #     "moves": emcee.moves.KDEMove(),
+    #     "multiprocessing": False,
+    #     "verbose": False,
+    # }
 
     # Perform inference<
     bayesInference_result = bayes.run_inference()
@@ -389,10 +438,8 @@ if __name__ == "__main__":
     # posterior = bayes.create_inference()
     # %%
     # Save BayesInference object
-    with open(
-            f"/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/results_bayesvalidrox/GP_WD_longRun/Bayes_{model.name}.pkl",
-            "wb") as output:
-        joblib.dump(bayes, output)
+    with open(bayes_path, "wb") as f:
+        pickle.dump(bayes, f, protocol=2)
 
     # with open(f"/home/ran-wei/Documents/coding2025/hydrodynamic_model_surrogate/hydrobayesian_2dhydrodynamic/coupling_bayesvalidrox/bal/results_bayesvalidrox/GP_WD_longRun/Bayes_{model.name}.pkl", "wb") as output:
     #     joblib.dump(bayesInference_result, output)

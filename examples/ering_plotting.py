@@ -23,8 +23,8 @@ full_complexity_model = TelemacModel(
     #                         "gaiaCLASSES SHIELDS PARAMETERS 5", "gaiaMPM COEFFICIENT", "zone2", "zone3", "zone4",
     #                         "zone5", "zone6", "zone8", "zone9", "zone13"],  # pool-slackwater-glide-riffle-run
     calibration_parameters=[
-         #r"$\tau_{*,cr,d_{10}}$",
-         #r"$\tau_{*,cr,d_{16}}$",
+         r"$\tau_{*,cr,d_{10}}$",
+         r"$\tau_{*,cr,d_{16}}$",
          #r"$\tau_{*,cr,d_{m}}$",
         r"$k_{\mathrm{channel}}$",
          #r"$k_{\mathrm{slackwater}}$",
@@ -35,17 +35,12 @@ full_complexity_model = TelemacModel(
         r"$k_{\mathrm{wake}}$",
         r"$k_{\mathrm{LW}}$"
     ],
-    param_values=[  # [0.047,0.070], # critical shields parameter class 1
-        # [0.047, 0.070], # critical shields parameter class 2
-        # [0.047, 0.070], # critical shields parameter class 3
-        [0.002, 0.1],  # zone2 Pool
-        # [0.008, 0.6], # zone3 Slackwater
-        # [0.002, 0.6], # zone4 Glide
-        # [0.002, 0.6], # zone5 Riffle
-        # [0.040, 0.6], # zone6 Run
-        [0.002, 0.6],  # zone8 Backwater
-        [0.002, 0.6],  # zone9 Wake
-        [0.002, 1.5]],  # zone 13 LW
+    param_values=[[0.050, 0.070],  # critical shields parameter class 1
+                  [0.050, 0.070],  # critical shields parameter class 2
+                  [0.002, 0.1],  # zone2 Riverbed
+                  [0.002, 0.6],  # zone4 Backwater
+                  [0.002, 0.6],  # zone5 Wake
+                  [0.002, 1.5]],  # zone 13 LW
     # param_values=[[0.048, 0.070],  # critical shields parameter class 1
     #               # [0.5,17.45], # zone0
     #               # [0.5,17.45], # zone 1
