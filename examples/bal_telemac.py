@@ -75,7 +75,7 @@ def setup_experiment_design(
     # 6) chebyshev(FT) 7) grid(FT) 8) User
     exp_design.sampling_method = parameter_sampling_method
     exp_design.n_new_samples = 1
-    exp_design.X = complex_model.user_collocation_points
+    exp_design.x = complex_model.user_collocation_points
     exp_design.n_max_samples = complex_model.max_runs
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
@@ -586,7 +586,7 @@ if __name__ == "__main__":
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=30,
+            init_runs=15,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "zone2",
@@ -594,22 +594,23 @@ if __name__ == "__main__":
                                     "zone9",
                                     "zone13"],
             param_values=[[0.05, 0.070],  # critical shields parameter class 1
-                          [0.05, 0.070],  # critical shields parameter class 2
+                          [0.03, 0.070],  # critical shields parameter class 2
                           [0.01, 0.6],  # zone2 Riverbed
                           [0.002, 0.4],  # zone4 Backwater
                           [0.01, 0.6],  # zone5 Wake
-                          [0.5, 2.0]],  # zone 13 LW
+                          [0.01, 2.0]],  # zone 13 LW
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
-            # calibration_quantities=["CUMUL BED EVOL"],
+            calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            # calibration_quantities=["WATER DEPTH"],
-            # calibration_quantities=["WATER DEPTH"],
+            #  calibration_quantities=["WATER DEPTH"],
+            # calibration_quantities=["SCALAR VELOCITY"],
+            # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             dict_output_name="extraction-data",
             user_param_values = False,
-            max_runs=100,
+            max_runs=15,
             complete_bal_mode=True,
             only_bal_mode=True,
             delete_complex_outputs=True,

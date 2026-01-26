@@ -48,11 +48,11 @@ full_complexity_model = TelemacModel(
         r"$k_{\mathrm{LW}}$"
     ],
     param_values=[[0.05, 0.070],  # critical shields parameter class 1
-                  [0.05, 0.070],  # critical shields parameter class 2
+                  [0.03, 0.070],  # critical shields parameter class 2
                   [0.01, 0.6],  # zone2 Riverbed
                   [0.002, 0.4],  # zone4 Backwater
                   [0.01, 0.6],  # zone5 Wake
-                  [0.5, 2.0]],  # zone 13 LW
+                  [0.01, 2.0]],  # zone 13 LW
     # param_values=[[0.048, 0.070],  # critical shields parameter class 1
     #               # [0.5,17.45], # zone0
     #               # [0.5,17.45], # zone 1
@@ -81,8 +81,8 @@ full_complexity_model = TelemacModel(
 results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
-iterations_to_plot =9
-surrogate_to_analyze = 40
+iterations_to_plot =70
+surrogate_to_analyze =100
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -156,7 +156,7 @@ plotter.plot_posterior_updates(
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=20,
+    bins=15,
     plot_prior=True,
     parameter_units=['-','-','m','m','m','m'],
     # parameter_indices=[0,9,10,6,7,8]
