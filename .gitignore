@@ -11,6 +11,7 @@ examples/munichFishpass
 HBCenv*/
 examples/*.csv
 examples/ering_plotting.py
+examples/inn/
 
 *.slf
 *.pickle
