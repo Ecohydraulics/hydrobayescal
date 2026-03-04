@@ -24,7 +24,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from pathlib import Path
 from matplotlib import gridspec
-from matplotlib.ticker import MaxNLocator 
+from matplotlib.ticker import MaxNLocator, FormatStrFormatter
 
 
 class BayesianPlotter:
@@ -58,10 +58,10 @@ class BayesianPlotter:
             'text.usetex': True,
             'font.family': 'serif',
             'font.serif': ['Times'],
-            'axes.labelsize': 30,
-            'axes.titlesize': 30,
-            'xtick.labelsize': 30,
-            'ytick.labelsize': 30,
+            'axes.labelsize': 26,
+            'axes.titlesize': 26,
+            'xtick.labelsize': 14,
+            'ytick.labelsize': 14,
             'legend.fontsize': 50,
             'lines.linewidth': 1.5,
             'lines.markersize': 8,
@@ -78,10 +78,10 @@ class BayesianPlotter:
         ax : matplotlib.axes.Axes
             The axes on which to set LaTeX formatting.
         """
-        ax.set_xlabel(ax.get_xlabel(), fontsize=35, family='serif')
-        ax.set_ylabel(ax.get_ylabel(), fontsize=35, family='serif')
-        ax.legend(fontsize=35)
-        ax.tick_params(axis='both', which='both', direction='in', labelsize=35)
+        ax.set_xlabel(ax.get_xlabel(), fontsize=28, family='serif')
+        ax.set_ylabel(ax.get_ylabel(), fontsize=28, family='serif')
+        ax.legend(fontsize=28)
+        ax.tick_params(axis='both', which='both', direction='in', labelsize=28)
         ax.spines['top'].set_linewidth(0.8)
         ax.spines['right'].set_linewidth(0.8)
         ax.spines['bottom'].set_linewidth(0.8)
@@ -214,8 +214,10 @@ class BayesianPlotter:
             density=True,
             plot_prior=False,
             parameter_units=None,
-            parameter_indices=None,  # <-- indices instead of names
+            parameter_indices=None,
+            best_estimate_value="posterior_mean" #"posterior_MAP"
     ):
+
         save_folder = self.save_folder
 
         # Select indices of parameters to plot
@@ -240,83 +242,189 @@ class BayesianPlotter:
 
         # Loop over iterations
         for plot_index, iteration_idx in enumerate(iterations_to_plot):
+
             num_rows = 3
             num_cols = math.ceil(parameter_num / num_rows)
-            fig, axes = plt.subplots(num_rows, num_cols, figsize=(6.5 * num_cols, 5 * num_rows))
+
+            fig, axes = plt.subplots(
+                num_rows,
+                num_cols,
+                figsize=(6.5 * num_cols, 5 * num_rows)
+            )
+
             axes = axes.flatten()
 
             for col, param_idx in enumerate(selected_indices):
+
                 ax = axes[col]
                 posterior_vector = posterior_arrays[iteration_idx][:, param_idx]
 
                 # Histogram values for normalization
-                hist_values, _ = np.histogram(posterior_vector, bins=bins, density=density)
+                hist_values, _ = np.histogram(
+                    posterior_vector,
+                    bins=bins,
+                    density=density
+                )
 
                 # KDE
                 kde_post = gaussian_kde(posterior_vector)
-                x_vals = np.linspace(x_limits[col][0], x_limits[col][1], 500)
+                x_vals = np.linspace(x_limits[col][0], x_limits[col][1], 1000)
 
-                # Compute max density for normalization (posterior + prior)
-                max_density = max(max(hist_values), max(kde_post(x_vals)))
+                # Compute max density for normalization
+                max_density = max(
+                    max(hist_values),
+                    max(kde_post(x_vals))
+                )
+
                 if plot_prior:
                     prior_vector = prior[:, param_idx]
-                    kde_prior = gaussian_kde(prior_vector)
-                    max_density = max(max_density, max(kde_prior(x_vals)))
+                    prior_hist_values, _ = np.histogram(
+                        prior_vector,
+                        bins=bins,
+                        density=density
+                    )
+                    max_density = max(max_density, max(prior_hist_values))
 
-                # Histogram normalized
+                # -------------------------
+                # Posterior histogram
+                # -------------------------
                 hist_values, bins_edges, patches = ax.hist(
                     posterior_vector,
                     bins=bins,
                     density=density,
-                    alpha=0.5,
-                    color='grey',
+                    alpha=0.75,
+                    color='0.35',
                     edgecolor='black',
                     linewidth=0.8
                 )
+
                 if max_density > 0:
                     for patch in patches:
                         patch.set_height(patch.get_height() / max_density)
 
-                # Posterior KDE normalized
-                ax.plot(x_vals, kde_post(x_vals) / max_density, color='black', linewidth=1, label='Posterior KDE')
+                # -------------------------
+                # Posterior KDE
+                # -------------------------
+                ax.plot(
+                    x_vals,
+                    kde_post(x_vals) / max_density,
+                    color='black',
+                    linewidth=1
+                )
 
-                # MAP line
-                mode_value = x_vals[np.argmax(kde_post(x_vals))]
-                ax.axvline(mode_value, color='red', linestyle='--', linewidth=2, label=f'MAP: {mode_value:.3f}')
+                # -------------------------
+                # MAP line + value
+                # -------------------------
+                mean_value = np.mean(posterior_vector)
+                post_values=kde_post(x_vals)
+                map_value = x_vals[np.argmax(post_values)]
+                if best_estimate_value == "posterior_mean":
+                    value = mean_value
+                elif best_estimate_value == "posterior_MAP":
+                    value = map_value
+                ax.axvline(
+                    value,
+                    color='red',
+                    linestyle='--',
+                    linewidth=2
+                )
 
-                # Prior KDE normalized
+                ax.text(
+                    value,#mean_value,
+                    1.05,
+                    f'{value:.3f}',
+                    color='black',
+                    fontsize=28,
+                    rotation=90,
+                    verticalalignment='bottom',
+                    horizontalalignment='right'
+                )
+
+                # -------------------------
+                # Prior histogram (optional)
+                # -------------------------
                 if plot_prior:
-                    ax.plot(x_vals, kde_prior(x_vals) / max_density, color='blue', linestyle=':', linewidth=1.5,
-                            label='Prior KDE')
+                    prior_hist_values, prior_bins_edges, prior_patches = ax.hist(
+                        prior_vector,
+                        bins=bins,
+                        density=density,
+                        alpha=0.35,
+                        color='0.75',
+                        edgecolor='0.6',
+                        linewidth=0.8
+                    )
 
-                # Axis labels
+                    if max_density > 0:
+                        for patch in prior_patches:
+                            patch.set_height(patch.get_height() / max_density)
+
+                # -------------------------
+                # Axis labels (RESTORED)
+                # -------------------------
                 unit = f' [{parameter_units[param_idx]}]' if parameter_units[param_idx] else ''
                 ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=50)
-                ax.set_ylabel('Probability', fontsize=50)
+                ax.set_ylabel('Density', fontsize=50)
 
                 ax.tick_params(axis='both', which='major', labelsize=35)
 
-                ax.set_xticks(np.round(np.linspace(x_limits[col][0], x_limits[col][1], 4), 3))
+                ax.set_xticks(
+                    np.round(
+                        np.linspace(
+                            x_limits[col][0],
+                            x_limits[col][1],
+                            4
+                        ),
+                        3
+                    )
+                )
+
                 ax.set_xlim(x_limits[col])
-                ax.set_ylim(0, 1.2)  # Normalized y-axis
+                ax.set_ylim(0, 1.2)
 
-                ax.grid(True, which='both', linestyle='--', linewidth=0.7, color='lightgrey')
+                ax.grid(True, which='both',
+                        linestyle='--',
+                        linewidth=0.7,
+                        color='lightgrey')
+
                 ax.minorticks_on()
-                ax.grid(True, which='minor', linestyle=':', linewidth=0.5, color='grey')
 
-                ax.legend(fontsize=20)
+                ax.grid(True, which='minor',
+                        linestyle=':',
+                        linewidth=0.5,
+                        color='grey')
 
             # Remove unused axes
             for j in range(parameter_num, len(axes)):
                 fig.delaxes(axes[j])
 
-            fig.tight_layout(rect=[0, 0.01, 1, 0.98])
+            # -------------------------
+            # Global horizontal legend
+            # -------------------------
+            legend_elements = [
+                mpatches.Patch(facecolor='0.75', edgecolor='0.6', alpha=0.35, label='Prior'),
+                mpatches.Patch(facecolor='0.35', edgecolor='black', alpha=0.75, label='Posterior'),
+                Line2D([0], [0], color='black', lw=1, label='Posterior KDE'),
+                Line2D([0], [0], color='red', lw=2, linestyle='--', label='MAP')
+            ]
+
+            fig.legend(
+                handles=legend_elements,
+                loc='upper center',
+                ncol=4,
+                fontsize=28,
+                frameon=False,
+                bbox_to_anchor=(0.5, 1.02)
+            )
+
+            fig.tight_layout(rect=[0, 0.01, 1, 0.95])
+
             fig.savefig(
                 save_folder / f'posterior_distributions_iteration_{iteration_idx + 1}.svg',
                 format='svg',
                 bbox_inches='tight',
                 transparent=True,
             )
+
             plt.close(fig)
 
     def plot_posterior_iteration(self, posterior_samples, parameter_names, param_values):
@@ -1739,7 +1847,7 @@ class BayesianPlotter:
                     all_labels = [h.get_label() for h in all_handles]
 
                 # BAL reference
-                ax.axvline(x=25, color='lightgray', linestyle='--', linewidth=1)
+                ax.axvline(x=30, color='lightgray', linestyle='--', linewidth=1)
                 ax.text(
                     25.5, ax.get_ylim()[1] * 0.95, "BAL",
                     color='gray', fontsize=20, va='top', alpha=0.8
@@ -2091,7 +2199,15 @@ class BayesianPlotter:
             ylims_cm_quantity.append(ylimit_cm)
             ylims_sm_quantity.append(ylimit_sm)
 
+        plt.rcParams.update({'xtick.labelsize': 20, 'ytick.labelsize': 20})
+
         # Overall scatter plot (CM)
+        def padded_limits(values, pad=0.08):
+            vmin = np.nanmin(values)
+            vmax = np.nanmax(values)
+            dv = vmax - vmin if vmax > vmin else 1.0
+            return vmin - pad * dv, vmax + pad * dv
+
         fig, ax = plt.subplots(figsize=(8, 6))
         colors = plt.cm.get_cmap('tab10', len(df_summary))
 
@@ -2101,16 +2217,28 @@ class BayesianPlotter:
                        s=150, alpha=0.8, marker='o')
 
         ax.set_title("NRMSE vs Spearman (CM)", fontsize=20)
-        ax.set_xlim(xlim_cm_overall)
-        ax.set_ylim(shared_limit_global_overall_plots)
+
+        # Dynamic axis limits
+        xlim = padded_limits(df_summary["Overall_NRMSE_CM"].values)
+        ylim = padded_limits(df_summary["Overall_Spearman_CM"].values)
+
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
 
         ax.set_xlabel("Normalized RMSE (NRMSE)", fontsize=18)
         ax.set_ylabel("Spearman Correlation ($\\rho$)", fontsize=18)
 
         ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-        ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+        # ----- X axis: exactly 6 ticks, 2 decimals -----
+        xmin, xmax = ax.get_xlim()
+        ax.set_xticks(np.linspace(xmin, xmax, 6))
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+        # ----- Y axis: exactly 5 ticks, 2 decimals -----
+        ymin, ymax = ax.get_ylim()
+        ax.set_yticks(np.linspace(ymin, ymax, 5))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
 
         for spine in ax.spines.values():
             spine.set_linewidth(1.5)
@@ -2118,7 +2246,7 @@ class BayesianPlotter:
         ax.legend(loc='best', fontsize=14, frameon=True)
         fig.tight_layout()
         fig.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman_CM.svg"), dpi=300)
-        plt.show()
+        # plt.show()
 
         # ---------- Overall scatter plot (SM) ----------
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -2130,16 +2258,27 @@ class BayesianPlotter:
                        s=150, alpha=0.8, marker='o')
 
         ax.set_title("NRMSE vs Spearman (SM)", fontsize=20)
-        ax.set_xlim(xlim_sm_overall)
-        ax.set_ylim(shared_limit_global_overall_plots)
+
+        #  Dynamic axis limits
+        xlim = padded_limits(df_summary["Overall_NRMSE_SM"].values)
+        ylim = padded_limits(df_summary["Overall_Spearman_SM"].values)
+
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
 
         ax.set_xlabel("Normalized RMSE (NRMSE)", fontsize=18)
         ax.set_ylabel("Spearman Correlation ($\\rho$)", fontsize=18)
 
         ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-        ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-        ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+        # ----- X axis: exactly 6 ticks, 2 decimals -----
+        xmin, xmax = ax.get_xlim()
+        ax.set_xticks(np.linspace(xmin, xmax, 6))
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+        # ----- Y axis: exactly 5 ticks, 2 decimals -----
+        ymin, ymax = ax.get_ylim()
+        ax.set_yticks(np.linspace(ymin, ymax, 5))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
         for spine in ax.spines.values():
             spine.set_linewidth(1.5)
@@ -2147,7 +2286,7 @@ class BayesianPlotter:
         ax.legend(loc='best', fontsize=14, frameon=True)
         fig.tight_layout()
         fig.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman_SM.svg"), dpi=300)
-        plt.show()
+        # plt.show()
 
         # Subplots for CM
         ncols = 2
@@ -2173,11 +2312,17 @@ class BayesianPlotter:
             else:
                 ax.set_ylim(ylims_cm_quantity[i])
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-            ax.set_xlabel("RMSE", fontsize=18)
-            ax.set_ylabel(r"Spearman $\rho$", fontsize=18)
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-            ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+            ax.set_xlabel("RMSE", fontsize=16)
+            ax.set_ylabel(r"Spearman $\rho$", fontsize=16)
+            # ----- X axis: exactly 6 ticks, 2 decimals -----
+            xmin, xmax = ax.get_xlim()
+            ax.set_xticks(np.linspace(xmin, xmax, 6))
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+            # ----- Y axis: exactly 5 ticks, 2 decimals -----
+            ymin, ymax = ax.get_ylim()
+            ax.set_yticks(np.linspace(ymin, ymax, 5))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -2190,7 +2335,7 @@ class BayesianPlotter:
                    ncol=len(model_names), fontsize=16)
         fig.tight_layout(rect=[0, 0, 1, 0.93])
         fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_CM.svg"), dpi=300)
-        plt.show()
+        # plt.show()
 
         # Subplots for SM
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
@@ -2209,15 +2354,21 @@ class BayesianPlotter:
             ax.set_title(quantity_names[i], fontsize=20)
             ax.set_xlim(xlims_sm_quantity[i])
             if i == 1:  # Replace 3 with the index of the outlier subplot
-                ax.set_ylim((0.20, 0.70))  # Your manually chosen limits
+                ax.set_ylim((0.10, 0.70))  # Your manually chosen limits
             else:
                 ax.set_ylim(ylims_cm_quantity[i])
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
             ax.set_xlabel("RMSE", fontsize=18)
             ax.set_ylabel(r"Spearman $\rho$", fontsize=18)
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-            ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+            # ----- X axis: exactly 6 ticks, 2 decimals -----
+            xmin, xmax = ax.get_xlim()
+            ax.set_xticks(np.linspace(xmin, xmax, 6))
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+            # ----- Y axis: exactly 5 ticks, 2 decimals -----
+            ymin, ymax = ax.get_ylim()
+            ax.set_yticks(np.linspace(ymin, ymax, 5))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -2230,9 +2381,903 @@ class BayesianPlotter:
                    ncol=len(model_names), fontsize=16)
         fig.tight_layout(rect=[0, 0, 1, 0.93])
         fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_SM.svg"), dpi=300)
-        plt.show()
+        # plt.show()
 
         df_spatial = pd.DataFrame(spatial_records)
         df_spatial.to_csv(os.path.join(save_folder, "location_metrics_models.csv"), index=False)
         df_summary.to_csv(os.path.join(save_folder, "summary_metrics_models.csv"), index=False)
 
+        # ==========================================================
+        # Measured vs Modeled scatter plots
+        # One figure per model, 3 subplots (Q1, Q2, Q3)
+        # ==========================================================
+
+        #
+        # model_id_1 = 3  # replace with the actual best model ID
+        # model_id_2 = 4  # replace with your manual calibration model ID
+        #
+        # # Get model names dynamically from df_summary
+        # model_name_best = df_summary[df_summary["model_id"] == model_id_1]["model_name"].values[0]
+        # model_name_manual = df_summary[df_summary["model_id"] == model_id_2]["model_name"].values[0]
+        #
+        # # Filter the spatial dataframe
+        # df_best = df_spatial[df_spatial["model_id"] == model_id_1]
+        # df_manual = df_spatial[df_spatial["model_id"] == model_id_2]
+        #
+        # # Create subplots (one per quantity)
+        # fig, axes = plt.subplots(
+        #     1, n_quantities,
+        #     figsize=(5 * n_quantities, 5),
+        #     sharey=False
+        # )
+        # if n_quantities == 1:
+        #     axes = [axes]
+        #
+        # for i, ax in enumerate(axes):
+        #     q = f"Q{i + 1}"
+        #
+        #     df_q_best = df_best[df_best["quantity"] == q]
+        #     df_q_manual = df_manual[df_manual["quantity"] == q]
+        #
+        #     obs = df_q_best["obs"].values
+        #     cm_best = df_q_best["cm_output"].values
+        #     cm_manual = df_q_manual["cm_output"].values
+        #
+        #     # Scatter plots — same color, different markers
+        #     ax.scatter(
+        #         obs, cm_best,
+        #         s=70,
+        #         marker="o",
+        #         color="tab:blue",
+        #         edgecolor="k",
+        #         alpha=0.85
+        #     )
+        #
+        #     ax.scatter(
+        #         obs, cm_manual,
+        #         s=70,
+        #         marker="s",
+        #         facecolors="none",
+        #         edgecolor="tab:blue",
+        #         linewidth=1.6,
+        #         alpha=0.9
+        #     )
+        #
+        #     # 1:1 line
+        #     vmin = min(obs.min(), cm_best.min(), cm_manual.min())
+        #     vmax = max(obs.max(), cm_best.max(), cm_manual.max())
+        #     margin = 0.05 * (vmax - vmin)
+        #     lims = (vmin - margin, vmax + margin)
+        #     ax.plot(lims, lims, "k--", lw=1)
+        #     ax.set_xlim(lims)
+        #     ax.set_ylim(lims)
+        #
+        #     ax.set_aspect("equal", adjustable="box")
+        #     ax.set_title(quantity_names[i], fontsize=18)
+        #     ax.set_xlabel("Observed", fontsize=16)
+        #     if i == 0:
+        #         ax.set_ylabel("Modeled (CM)", fontsize=16)
+        #
+        #     ax.grid(True, linestyle="--", linewidth=0.5)
+        #     ax.tick_params(axis="both", which="both", direction="in", labelsize=14)
+        #     for spine in ax.spines.values():
+        #         spine.set_linewidth(1.4)
+        #
+        #     # Metrics
+        #     rmse_best = np.sqrt(np.mean((cm_best - obs) ** 2))
+        #     rho_best = spearmanr(cm_best, obs).correlation
+        #     rmse_manual = np.sqrt(np.mean((cm_manual - obs) ** 2))
+        #     rho_manual = spearmanr(cm_manual, obs).correlation
+        #
+        #     # Legend with dynamic model names and metrics
+        #     legend_elements = [
+        #         Line2D(
+        #             [0], [0], marker='o', color='tab:blue',
+        #             linestyle='None', markersize=8,
+        #             label=f"{model_name_best} (RMSE={rmse_best:.3f}, $\\rho$={rho_best:.2f})"
+        #         ),
+        #         Line2D(
+        #             [0], [0], marker='s', color='tab:blue',
+        #             markerfacecolor='none', linestyle='None',
+        #             markersize=8,
+        #             label=f"{model_name_manual} (RMSE={rmse_manual:.3f}, $\\rho$={rho_manual:.2f})"
+        #         )
+        #     ]
+        #
+        #     ax.legend(
+        #         handles=legend_elements,
+        #         fontsize=12,
+        #         loc="lower right",
+        #         frameon=True
+        #     )
+        #
+        # # Overall figure title
+        # fig.suptitle(
+        #     "Measured vs Modeled (CM)\nMO-GPE vs Manual calibration",
+        #     fontsize=20
+        # )
+        #
+        # fig.tight_layout(rect=[0, 0, 1, 0.92])
+        #
+        # # Save figure
+        # fig.savefig(
+        #     os.path.join(
+        #         save_folder,
+        #         "scatter_measured_vs_modeled_CM_best_vs_manual.svg"
+        #     ),
+        #     dpi=300
+        # )
+        #
+        # plt.show()
+
+        return df_spatial, df_summary
+
+    def plot_residuals(self, df_spatial, df_summary, model_ids, quantity_names):
+        """
+        Plots residuals (Modeled - Observed) vs Observed for each model in separate columns.
+        Rows = quantities, Columns = models.
+        Each variable (quantity) has its own X and Y limits across all models.
+        Supports 2 or more models.
+        Saves as 'scatter_measured_vs_modeled_individual_models.svg'.
+        """
+
+        save_folder = self.save_folder
+        n_models = len(model_ids)
+        n_quantities = len(quantity_names)
+
+        # Arrange subplots: rows = quantities, cols = models
+        fig, axes = plt.subplots(nrows=n_quantities, ncols=n_models,
+                                 figsize=(6 * n_models, 4 * n_quantities),
+                                 sharey=False)
+
+        # Ensure axes is 2D array even if n_models or n_quantities = 1
+        if n_quantities == 1:
+            axes = axes[np.newaxis, :]
+        if n_models == 1:
+            axes = axes[:, np.newaxis]
+
+        colors = plt.cm.get_cmap('tab10', n_models)
+
+        for i, qname in enumerate(quantity_names):
+            # ======= Compute per-variable limits =======
+            all_obs_q = []
+            all_residuals_q = []
+
+            for model_id in model_ids:
+                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
+                obs = df_model["obs"].values
+                cm = df_model["cm_output"].values
+                residuals = cm - obs
+
+                all_obs_q.append(obs)
+                all_residuals_q.append(residuals)
+
+            all_obs_q = np.concatenate(all_obs_q)
+            all_residuals_q = np.concatenate(all_residuals_q)
+
+            # X-axis limits (Observed for this quantity)
+            x_min = all_obs_q.min()
+            x_max = all_obs_q.max()
+            x_margin = 0.05 * (x_max - x_min)
+            xlims = (x_min - x_margin, x_max + x_margin)
+
+            # Y-axis limits (Residuals for this quantity)
+            y_min = all_residuals_q.min()
+            y_max = all_residuals_q.max()
+            y_margin = 0.15 * (y_max - y_min)
+            ylims = (y_min - y_margin, y_max + y_margin)
+            # ======= End per-variable limits =======
+
+            for j, model_id in enumerate(model_ids):
+                ax = axes[i, j]
+
+                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
+                model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
+
+                obs = df_model["obs"].values
+                cm = df_model["cm_output"].values
+                residuals = cm - obs
+
+                # Scatter plot
+                ax.scatter(obs, residuals,
+                           s=80,
+                           color='black',
+                           alpha=0.8,
+                           edgecolor='k',
+                           marker='*')
+
+                # Horizontal zero line
+                ax.axhline(0, color='k', linestyle='--', lw=1)
+
+                # Per-variable limits
+                ax.set_xlim(xlims)
+                ax.set_ylim(ylims)
+
+                # Titles and labels
+                ax.set_title(f"{model_name}", fontsize=18)
+                ax.set_xlabel(f"Observed {qname}", fontsize=18)
+                ax.set_ylabel("Residuals", fontsize=18)
+
+                # Tick formatting
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+                ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+
+                # Grid and spines
+                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+                ax.minorticks_on()
+                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+                for spine in ax.spines.values():
+                    spine.set_linewidth(1.5)
+
+                # Metrics box: RMSE and Spearman
+                rmse = np.sqrt(np.mean(residuals ** 2))
+                rho = spearmanr(cm, obs).correlation
+                x_box = np.percentile(obs, 100)  # 90% of x-axis
+                y_box = np.percentile(residuals, 100)  # 90% of y-axis
+
+                ax.text(x_box, y_box,
+                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\n$\\rho$={rho:.2f}",
+                        va='top', ha='right',
+                        fontsize=12,
+                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        save_path = os.path.join(save_folder, "scatter_measured_vs_modeled_individual_models.svg")
+        fig.savefig(save_path, dpi=300)
+        plt.show()
+
+        print(f"Individual model residual plots saved to {save_path}")
+
+    def observed_vs_modeled_compare(self, df_spatial, df_summary, model_ids, quantity_names,
+                                    points_group_1=None, points_group_2=None):
+        """
+        Plots Modeled vs Observed for each model in separate columns.
+        Rows = quantities, Columns = models.
+        X and Y axes are identical per row (variable) to ensure 45° line is correct.
+
+        Parameters:
+        -----------
+        df_spatial : DataFrame
+            Spatial data with observations and model outputs
+        df_summary : DataFrame
+            Summary data with model names
+        model_ids : list
+            List of model IDs to plot
+        quantity_names : list
+            List of quantity names to plot
+        points_group_1 : list or range, optional
+            Node positions to color as downstream (gray).
+            Example: range(1, 18) or [1, 2, 3, ..., 17]
+            Default: None (no grouping - all points will be black)
+        points_group_2 : list or range, optional
+            Node positions to color as upstream (black).
+            Example: range(18, 38) or [18, 19, ..., 37]
+            Default: None (no grouping - all points will be black)
+
+        Node colors:
+        - If both downstream_nodes and upstream_nodes are None: All points are black
+        - If grouping specified:
+            - Downstream nodes: Gray
+            - Upstream nodes: Black
+            - Other nodes: Blue (if outside specified ranges)
+        """
+
+        save_folder = self.save_folder
+        n_models = len(model_ids)
+        n_quantities = len(quantity_names)
+
+        # Convert to sets for faster lookup (only if provided)
+        downstream_set = set(points_group_1) if points_group_1 is not None else None
+        upstream_set = set(points_group_2) if points_group_2 is not None else None
+
+        # Arrange subplots: rows = quantities, cols = models
+        fig, axes = plt.subplots(nrows=n_quantities, ncols=n_models,
+                                 figsize=(6 * n_models, 4 * n_quantities),
+                                 sharey=False)
+
+        # Ensure axes is 2D array even if n_models or n_quantities = 1
+        if n_quantities == 1:
+            axes = axes[np.newaxis, :]
+        if n_models == 1:
+            axes = axes[:, np.newaxis]
+
+        # Track if we need to create legend (only when grouping is specified)
+        legend_handles = []
+        legend_labels = []
+        has_downstream = False
+        has_upstream = False
+        has_other = False
+
+        for i, qname in enumerate(quantity_names):
+            # ----- Compute per-variable global limits across all models -----
+            all_obs_q = []
+            all_cm_q = []
+            for model_id in model_ids:
+                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
+                all_obs_q.append(df_model["obs"].values)
+                all_cm_q.append(df_model["cm_output"].values)
+
+            all_obs_q = np.concatenate(all_obs_q)
+            all_cm_q = np.concatenate(all_cm_q)
+
+            # Limits must cover both observed and modeled
+            min_val = min(all_obs_q.min(), all_cm_q.min())
+            max_val = max(all_obs_q.max(), all_cm_q.max())
+            margin = 0.05 * (max_val - min_val)
+
+            axis_limits = (min_val - margin, max_val + margin)
+
+            # ----- Plot each model in this row -----
+            for j, model_id in enumerate(model_ids):
+                ax = axes[i, j]
+
+                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
+                model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
+
+                obs = df_model["obs"].values
+                cm = df_model["cm_output"].values
+                n_points = len(obs)
+
+                # Check if node grouping is specified
+                if downstream_set is None and upstream_set is None:
+                    # No grouping specified - plot all points in black
+                    ax.scatter(obs, cm,
+                               s=60,
+                               color='black',
+                               alpha=0.8,
+                               marker='*')
+
+                    # 1:1 line (no label)
+                    ax.plot(axis_limits, axis_limits, color='red', linestyle='--', lw=1)
+
+                else:
+                    # Scatter plot with color-coded points
+                    # Separate downstream and upstream for legend
+                    downstream_mask = [node_position in downstream_set for node_position in
+                                       range(1, n_points + 1)] if downstream_set is not None else [False] * n_points
+                    upstream_mask = [node_position in upstream_set for node_position in
+                                     range(1, n_points + 1)] if upstream_set is not None else [False] * n_points
+
+                    # Plot downstream nodes
+                    if downstream_set is not None and any(downstream_mask):
+                        scatter_down = ax.scatter(obs[downstream_mask], cm[downstream_mask],
+                                                  s=60,
+                                                  color='gray',
+                                                  alpha=0.8,
+                                                  marker='*')
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_down)
+                            legend_labels.append('Downstream nodes')
+                            has_downstream = True
+
+                    # Plot upstream nodes
+                    if upstream_set is not None and any(upstream_mask):
+                        scatter_up = ax.scatter(obs[upstream_mask], cm[upstream_mask],
+                                                s=60,
+                                                color='black',
+                                                alpha=0.8,
+                                                marker='*')
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_up)
+                            legend_labels.append('Upstream nodes')
+                            has_upstream = True
+
+                    # Plot any other nodes (if exist)
+                    other_mask = [not (downstream_mask[idx] or upstream_mask[idx]) for idx in range(n_points)]
+                    if any(other_mask):
+                        scatter_other = ax.scatter(obs[other_mask], cm[other_mask],
+                                                   s=60,
+                                                   color='blue',
+                                                   alpha=0.8,
+                                                   marker='*')
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_other)
+                            legend_labels.append('Other nodes')
+                            has_other = True
+
+                    # 1:1 line (no label)
+                    ax.plot(axis_limits, axis_limits, color='red', linestyle='--', lw=1)
+
+                # Apply identical X and Y limits
+                ax.set_xlim(axis_limits)
+                ax.set_ylim(axis_limits)
+
+                # Titles and labels
+                ax.set_title(f"{model_name} — {qname}", fontsize=18)
+                ax.set_xlabel(f"Observed {qname}", fontsize=16)
+                if j == 0:  # first column
+                    ax.set_ylabel(f"Modeled {qname}", fontsize=16)
+
+                # Tick formatting
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+                ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+
+                # Grid and spines
+                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+                ax.minorticks_on()
+                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+                for spine in ax.spines.values():
+                    spine.set_linewidth(1.5)
+
+                # Metrics box: RMSE and Spearman
+                residuals = cm - obs
+                rmse = np.sqrt(np.mean(residuals ** 2))
+                rho = spearmanr(cm, obs).correlation
+
+                ax.text(axis_limits[1], axis_limits[1],
+                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\n$\\rho$={rho:.2f}",
+                        va='top', ha='right',
+                        fontsize=12,
+                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+
+        # Add general horizontal legend at the top if grouping was specified
+        if legend_handles:
+            fig.legend(legend_handles, legend_labels,
+                       loc='upper center',
+                       ncol=len(legend_handles),
+                       fontsize=14,
+                       framealpha=0.9,
+                       bbox_to_anchor=(0.5, 0.98))
+            fig.tight_layout(rect=[0, 0, 1, 0.96])
+        else:
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+        save_path = os.path.join(save_folder, "scatter_observed_vs_modeled_individual_models.svg")
+        fig.savefig(save_path, dpi=300)
+        print(f"Individual model observed vs modeled plots saved to {save_path}")
+
+    def surrogate_vs_deterministic_compare(
+            self,
+            df_spatial,
+            df_summary,
+            model_ids,
+            quantity_names,
+            points_group_1=None,
+            points_group_2=None,
+    ):
+        """
+        Surrogate Model (X-axis) vs Deterministic/Complex Model (Y-axis)
+
+        • Rows = quantities
+        • Columns = surrogate models
+        • Wider subplots
+        • Red dashed 1:1 line
+        • Star markers
+
+        Parameters
+        ----------
+        points_group_1 : list or range, optional
+            Node positions to color as downstream (gray).
+        points_group_2 : list or range, optional
+            Node positions to color as upstream (black).
+        """
+
+        save_folder = self.save_folder
+        n_models = len(model_ids)
+        n_quantities = len(quantity_names)
+
+        # Convert to sets for faster lookup (only if provided)
+        downstream_set = set(points_group_1) if points_group_1 is not None else None
+        upstream_set = set(points_group_2) if points_group_2 is not None else None
+
+        # ---- Wider figure ----
+        fig, axes = plt.subplots(
+            nrows=n_quantities,
+            ncols=n_models,
+            figsize=(7.5 * n_models, 6 * n_quantities),  # widened
+            sharey=False
+        )
+
+        if n_quantities == 1:
+            axes = axes[np.newaxis, :]
+        if n_models == 1:
+            axes = axes[:, np.newaxis]
+
+        colors = plt.cm.get_cmap('tab10', n_models)
+
+        # Track if we need to create legend (only when grouping is specified)
+        legend_handles = []
+        legend_labels = []
+
+        for i, qname in enumerate(quantity_names):
+
+            # ===================================
+            # Collect all outputs for this quantity
+            # ===================================
+            all_surrogate = []
+            all_complex = []
+
+            for model_id in model_ids:
+                df_q = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == f"Q{i + 1}")
+                    ]
+
+                all_surrogate.append(df_q["sm_output"].values)
+                all_complex.append(df_q["cm_output"].values)
+
+            all_surrogate = np.concatenate(all_surrogate)
+            all_complex = np.concatenate(all_complex)
+
+            vmin = min(all_surrogate.min(), all_complex.min())
+            vmax = max(all_surrogate.max(), all_complex.max())
+            margin = 0.05 * (vmax - vmin)
+            lims = (vmin - margin, vmax + margin)
+
+            # ===================================
+            # Plot per surrogate model
+            # ===================================
+            for j, model_id in enumerate(model_ids):
+
+                ax = axes[i, j]
+
+                df_q = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == f"Q{i + 1}")
+                    ]
+
+                model_name = df_summary[
+                    df_summary["model_id"] == model_id
+                    ]["model_name"].values[0]
+
+                surrogate = df_q["sm_output"].values
+                complex_m = df_q["cm_output"].values
+                n_points = len(surrogate)
+
+                # Check if node grouping is specified
+                if downstream_set is None and upstream_set is None:
+                    # No grouping specified - plot all points in black
+                    ax.scatter(
+                        surrogate,
+                        complex_m,
+                        s=110,
+                        marker='*',
+                        color='black',
+                        alpha=0.9,
+                        edgecolor='k',
+                        linewidth=0.6
+                    )
+                else:
+                    # Scatter plot with color-coded points
+                    downstream_mask = [node_position in downstream_set for node_position in
+                                       range(1, n_points + 1)] if downstream_set is not None else [False] * n_points
+                    upstream_mask = [node_position in upstream_set for node_position in
+                                     range(1, n_points + 1)] if upstream_set is not None else [False] * n_points
+
+                    # Plot downstream nodes
+                    if downstream_set is not None and any(downstream_mask):
+                        scatter_down = ax.scatter(
+                            surrogate[downstream_mask],
+                            complex_m[downstream_mask],
+                            s=110,
+                            marker='*',
+                            color='gray',
+                            alpha=0.9,
+                            edgecolor='k',
+                            linewidth=0.6
+                        )
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_down)
+                            legend_labels.append('Downstream nodes')
+
+                    # Plot upstream nodes
+                    if upstream_set is not None and any(upstream_mask):
+                        scatter_up = ax.scatter(
+                            surrogate[upstream_mask],
+                            complex_m[upstream_mask],
+                            s=110,
+                            marker='*',
+                            color='black',
+                            alpha=0.9,
+                            edgecolor='k',
+                            linewidth=0.6
+                        )
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_up)
+                            legend_labels.append('Upstream nodes')
+
+                    # Plot any other nodes (if exist)
+                    other_mask = [not (downstream_mask[idx] or upstream_mask[idx]) for idx in range(n_points)]
+                    if any(other_mask):
+                        scatter_other = ax.scatter(
+                            surrogate[other_mask],
+                            complex_m[other_mask],
+                            s=110,
+                            marker='*',
+                            color='blue',
+                            alpha=0.9,
+                            edgecolor='k',
+                            linewidth=0.6
+                        )
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_other)
+                            legend_labels.append('Other nodes')
+
+                # ---- Red dashed 1:1 line (no label) ----
+                ax.plot(
+                    lims,
+                    lims,
+                    linestyle='--',
+                    color='red',
+                    linewidth=1.5
+                )
+
+                # ===================================
+                # Statistics
+                # ===================================
+                rmse = np.sqrt(np.mean((complex_m - surrogate) ** 2))
+                rho = spearmanr(complex_m, surrogate).correlation
+
+                # Axis limits
+                ax.set_xlim(lims)
+                ax.set_ylim(lims)
+                ax.set_aspect("equal", adjustable="box")
+
+                ax.set_title(f"{model_name} — {qname}", fontsize=20)
+                ax.set_xlabel("Surrogate Model", fontsize=18)
+                ax.set_ylabel("Deterministic Model", fontsize=18)
+
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+                ax.tick_params(axis='both', direction='in', labelsize=20)
+
+                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+                ax.minorticks_on()
+                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+
+                for spine in ax.spines.values():
+                    spine.set_linewidth(1.5)
+
+                # ---- Metrics box ----
+                textstr = (
+                    f"RMSE = {rmse:.3f}\n"
+                    f"$\\rho$ = {rho:.2f}"
+                )
+
+                ax.text(
+                    0.05,
+                    0.95,
+                    textstr,
+                    transform=ax.transAxes,
+                    va='top',
+                    ha='left',
+                    fontsize=14,
+                    bbox=dict(facecolor="white", alpha=0.85, edgecolor="none")
+                )
+
+        # Add general horizontal legend at the top if grouping was specified
+        if legend_handles:
+            fig.legend(legend_handles, legend_labels,
+                       loc='upper center',
+                       ncol=len(legend_handles),
+                       fontsize=14,
+                       framealpha=0.9,
+                       bbox_to_anchor=(0.5, 0.98))
+            fig.tight_layout(rect=[0, 0, 1, 0.96])
+        else:
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+        save_path = os.path.join(
+            save_folder,
+            "scatter_surrogate_vs_complex.svg"
+        )
+
+        fig.savefig(save_path, dpi=300)
+
+        print(f"Surrogate vs deterministic plots saved to {save_path}")
+
+    def plot_residuals(
+            self,
+            df_spatial,
+            df_summary,
+            model_ids,
+            quantity_names,
+            points_group_1=None,
+            points_group_2=None,
+            mm_col="sm_output",
+            cm_col="cm_output",
+            figsize_per_panel=(6, 4)
+    ):
+        """
+        Residuals (Complex Model - Metamodel) vs Location Index for multiple models and quantities.
+        Rows    -> quantities
+        Columns -> models
+
+        Parameters
+        ----------
+        df_spatial : pd.DataFrame
+            Must contain: model_id, quantity, mm_output, cm_output
+        df_summary : pd.DataFrame
+            Must contain: model_id, model_name
+        model_ids : list[int]
+            Model IDs to visualize
+        quantity_names : list[str]
+            Names for subplot titles (ordered as Q1, Q2, ...)
+        points_group_1 : list or range, optional
+            Node positions to color as downstream (gray).
+        points_group_2 : list or range, optional
+            Node positions to color as upstream (black).
+        mm_col : str
+            Column name of metamodel output
+        cm_col : str
+            Column name of complex model output
+        figsize_per_panel : tuple
+            Size per subplot (width, height)
+        """
+        save_folder = self.save_folder
+        n_models = len(model_ids)
+        n_quantities = len(quantity_names)
+
+        # Convert to sets for faster lookup (only if provided)
+        downstream_set = set(points_group_1) if points_group_1 is not None else None
+        upstream_set = set(points_group_2) if points_group_2 is not None else None
+
+        # Arrange subplots: rows = quantities, cols = models
+        fig, axes = plt.subplots(
+            nrows=n_quantities,
+            ncols=n_models,
+            figsize=(figsize_per_panel[0] * n_models,
+                     figsize_per_panel[1] * n_quantities),
+            sharex=False,
+            sharey=False
+        )
+
+        # Ensure axes is 2D array even if n_models or n_quantities = 1
+        if n_quantities == 1:
+            axes = axes[np.newaxis, :]
+        if n_models == 1:
+            axes = axes[:, np.newaxis]
+
+        # Track if we need to create legend (only when grouping is specified)
+        legend_handles = []
+        legend_labels = []
+
+        for i, qname in enumerate(quantity_names):
+            # ----- Compute per-variable global limits across all models -----
+            max_points = 0
+            all_residuals_q = []
+
+            for model_id in model_ids:
+                df_model = df_spatial[(df_spatial["model_id"] == model_id) &
+                                      (df_spatial["quantity"] == f"Q{i + 1}")]
+                cm = df_model[cm_col].values
+                mm = df_model[mm_col].values
+                residuals = cm - mm
+                all_residuals_q.append(residuals)
+                max_points = max(max_points, len(df_model))
+
+            # Concatenate all residuals for this quantity
+            all_residuals_q = np.concatenate(all_residuals_q)
+
+            # X-axis limits based on location indices (1 to n_points)
+            x_limits = (0.5, max_points + 0.5)
+
+            # Y-axis limits based on all residuals for this quantity
+            min_residual = all_residuals_q.min()
+            max_residual = all_residuals_q.max()
+            margin = 0.05 * (max_residual - min_residual)
+            y_limits = (min_residual - margin, max_residual + margin)
+
+            # ----- Plot each model in this row -----
+            for j, model_id in enumerate(model_ids):
+                ax = axes[i, j]
+
+                df_model = df_spatial[(df_spatial["model_id"] == model_id) &
+                                      (df_spatial["quantity"] == f"Q{i + 1}")]
+                model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
+
+                cm = df_model[cm_col].values
+                mm = df_model[mm_col].values
+                residuals = cm - mm
+                n_points = len(cm)
+
+                # Create location indices (1, 2, 3, ..., n_points)
+                location_indices = np.arange(1, n_points + 1)
+
+                # Check if node grouping is specified
+                if downstream_set is None and upstream_set is None:
+                    # No grouping specified - plot all points in black
+                    ax.scatter(location_indices, residuals,
+                               s=60,
+                               color='black',
+                               alpha=0.8,
+                               marker='*')
+                else:
+                    # Scatter plot with color-coded points
+                    downstream_mask = [node_position in downstream_set for node_position in
+                                       range(1, n_points + 1)] if downstream_set is not None else [False] * n_points
+                    upstream_mask = [node_position in upstream_set for node_position in
+                                     range(1, n_points + 1)] if upstream_set is not None else [False] * n_points
+
+                    # Plot downstream nodes
+                    if downstream_set is not None and any(downstream_mask):
+                        scatter_down = ax.scatter(location_indices[downstream_mask], residuals[downstream_mask],
+                                                  s=60,
+                                                  color='gray',
+                                                  alpha=0.8,
+                                                  marker='*')
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_down)
+                            legend_labels.append('Downstream nodes')
+
+                    # Plot upstream nodes
+                    if upstream_set is not None and any(upstream_mask):
+                        scatter_up = ax.scatter(location_indices[upstream_mask], residuals[upstream_mask],
+                                                s=60,
+                                                color='black',
+                                                alpha=0.8,
+                                                marker='*')
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_up)
+                            legend_labels.append('Upstream nodes')
+
+                    # Plot any other nodes (if exist)
+                    other_mask = [not (downstream_mask[idx] or upstream_mask[idx]) for idx in range(n_points)]
+                    if any(other_mask):
+                        scatter_other = ax.scatter(location_indices[other_mask], residuals[other_mask],
+                                                   s=60,
+                                                   color='blue',
+                                                   alpha=0.8,
+                                                   marker='*')
+                        if i == 0 and j == 0:  # Only collect handles once
+                            legend_handles.append(scatter_other)
+                            legend_labels.append('Other nodes')
+
+                # Zero reference line
+                ax.axhline(0.0, color='red', linestyle='--', linewidth=1)
+
+                # Apply identical X and Y axis limits for all models in this row
+                ax.set_xlim(x_limits)
+                ax.set_ylim(y_limits)
+
+                # Titles and labels
+                ax.set_title(f"{model_name} — {qname}", fontsize=18)
+                ax.set_xlabel(f"Location Index", fontsize=16)
+                if j == 0:  # first column
+                    ax.set_ylabel(f"Residuals", fontsize=16)
+
+                # Tick formatting - synchronized across row
+                ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=10))
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+                ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+
+                # Grid and spines
+                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+                ax.minorticks_on()
+                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+                for spine in ax.spines.values():
+                    spine.set_linewidth(1.5)
+
+                # Metrics box: RMSE and Mean residual
+                rmse = np.sqrt(np.mean(residuals ** 2))
+                mean_res = np.mean(residuals)
+
+                # Position text box at top right
+                ax.text(0.98, 0.98,
+                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\nMean={mean_res:.3f} $\\mathrm{{m/s}}$",
+                        transform=ax.transAxes,
+                        va='top', ha='right',
+                        fontsize=12,
+                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+
+        # Add general horizontal legend at the top if grouping was specified
+        if legend_handles:
+            fig.legend(legend_handles, legend_labels,
+                       loc='upper center',
+                       ncol=len(legend_handles),
+                       fontsize=14,
+                       framealpha=0.9,
+                       bbox_to_anchor=(0.5, 0.98))
+            fig.tight_layout(rect=[0, 0, 1, 0.96])
+        else:
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+        if save_folder is not None:
+            save_path = os.path.join(
+                save_folder,
+                "residuals_CM_vs_MM_individual_models.svg"
+            )
+            fig.savefig(save_path, dpi=300)
+            print(f"Residuals plot saved to {save_path}")
