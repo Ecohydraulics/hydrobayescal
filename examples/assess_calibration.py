@@ -1,8 +1,6 @@
 import sys
 import os
 import time
-import numpy as np
-import bayesvalidrox as bvr
 
 # Base directory of the project
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,25 +22,27 @@ full_complexity_model = TelemacModel(
             # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-telemac-gaia",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-            calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation2026MU",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026",
+            calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=7,
+            init_runs=2,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                    "zone2",
-                                    "zone8",
-                                    "zone9",
-                                    "zone13"],
+                                    "zone2", # Pool
+                                    "zone3", # Slackwater
+                                    "zone4", # Glide
+                                    "zone5", # Riffle
+                                    "zone6"], # Run
             param_values=[[0.05, 0.070],  # critical shields parameter class 1
-                          [0.03, 0.070],  # critical shields parameter class 2
-                          [0.01, 0.6],  # zone2 Riverbed
-                          [0.002, 0.4],  # zone4 Backwater
-                          [0.01, 0.6],  # zone5 Wake
-                          [0.01, 2.0]],  # zone 13 LW
+                  [0.03, 0.070],  # critical shields parameter class 2
+                  [0.002, 0.6],  # zone2
+                  [0.002, 0.6],  # zone3
+                  [0.002, 0.6],  # zone4
+                  [0.002, 0.6],  # zone5
+                  [0.002, 0.6]],  # zone6
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             dict_output_name="extraction-data",
             user_param_values=True,
             # max_runs=8,
@@ -51,7 +51,7 @@ full_complexity_model = TelemacModel(
             # delete_complex_outputs=True,
             # validation=False
             )
-surrogate_to_analyze = 100
+surrogate_to_analyze = 75
 results_folder_path = full_complexity_model.asr_dir
 restart_data_folder = full_complexity_model.restart_data_folder
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
@@ -102,19 +102,38 @@ for i in range(n_quantities):
     obs_split[f'obs_{i+1}'] = obs[:, i::n_quantities]
     err_split[f'err_{i+1}'] = err[i::n_quantities]
 
-plotter.evaluate_calibration(cm_outputs_split,
+df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
             sm_outputs_split,
             sm_upper_ci_split,
             sm_lower_ci_split,
             obs_split,
             coordinates,
             model_names=[
-                                 r"MO-GPE: $h, \bar{U}, \Delta Z_{\mathrm{DEM}}$",
+                                 # r"MO-GPE: $h, \bar{U}, \Delta_{z}$",
                                  r"MO-GPE: $h, \bar{U}$",
                                  r"SO-GPE: $h$",
-                                 r"SO-GPE: $\bar{U}$",
-                                 r"SO-GPE: $\Delta Z_{\mathrm{DEM}}$",
-                                 r"$K_{NKU} = \mathrm{Const}$",
-                                 r"Deterministic: $K_{NKU} = 3 \times d_{50}$"
+                                # r"SO-GPE: $\bar{U}$",
+                                 # r"SO-GPE: $\Delta_{z}$",
+                                 #r"$k_{s} = \mathrm{Const}$",
+                                 #r"Deterministic: $k_{s} = 3 \times d_{50}$"
                              ],
             quantity_names=calibration_names,)
+plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1, 2],
+                                    quantity_names=[
+                                        r"$h$",
+                                        r"$\bar{U}$",
+                                        # r"$\Delta_z$"
+                                    ],
+                                    points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+                                    points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                                                    35, 36, 37]
+                                    )
+# plotter.compare_complex_surrogate(df_spatial=df_spatial,
+#                                   df_summary=df_summary,
+#                                   model_ids=[1,2,3,4,5,6,7],  # Best MO-GPE vs Manual
+#                                   quantity_names=calibration_names,
+#                                   highlight_indices=[0,1,2,3,4,5])  # Highlight first 6 locations
+# plotter.plot_residuals(df_spatial=df_spatial,
+#                                   df_summary=df_summary,
+#                                   model_ids=[2, 3],  # Best MO-GPE vs Manual
+#                                   quantity_names=calibration_names,)

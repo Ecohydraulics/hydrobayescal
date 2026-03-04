@@ -27,7 +27,7 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 # Instance of Telemac Model for plotting results (calibration)
 full_complexity_model = TelemacModel(
-    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026",
     calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     init_runs=30,
     # calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1", "gaiaCLASSES SHIELDS PARAMETERS 2",
@@ -35,24 +35,26 @@ full_complexity_model = TelemacModel(
     #                         "gaiaCLASSES SHIELDS PARAMETERS 5", "gaiaMPM COEFFICIENT", "zone2", "zone3", "zone4",
     #                         "zone5", "zone6", "zone8", "zone9", "zone13"],  # pool-slackwater-glide-riffle-run
     calibration_parameters=[
-         r"$\tau_{*,cr,d_{10}}$",
-         r"$\tau_{*,cr,d_{16}}$",
+         r"$\tau_{*,\mathrm{cr},d_{10}}$",
+         r"$\tau_{*,\mathrm{cr},d_{16}}$",
          #r"$\tau_{*,cr,d_{m}}$",
-        r"$k_{\mathrm{channel}}$",
+        r"$k_{s_{pool}}$",
          #r"$k_{\mathrm{slackwater}}$",
          #r"$k_{\mathrm{glide}}$",
          #r"$k_{\mathrm{riffle}}$",
          #r"$k_{\mathrm{run}}$",
-        r"$k_{\mathrm{backwater}}$",
-        r"$k_{\mathrm{wake}}$",
-        r"$k_{\mathrm{LW}}$"
+        r"$k_{s_{slackwater}}$",
+        r"$k_{s_{glide}}$",
+        r"$k_{s_{riffle}}$",
+        r"$k_{s_{run}}$"
     ],
     param_values=[[0.05, 0.070],  # critical shields parameter class 1
                   [0.03, 0.070],  # critical shields parameter class 2
-                  [0.01, 0.6],  # zone2 Riverbed
-                  [0.002, 0.4],  # zone4 Backwater
-                  [0.01, 0.6],  # zone5 Wake
-                  [0.01, 2.0]],  # zone 13 LW
+                  [0.002, 0.4],  # zone2
+                  [0.002, 0.4],  # zone3
+                  [0.002, 0.4],  # zone4
+                  [0.01, 0.6],  # zone5
+                  [0.01, 0.6]],  # zone6
     # param_values=[[0.048, 0.070],  # critical shields parameter class 1
     #               # [0.5,17.45], # zone0
     #               # [0.5,17.45], # zone 1
@@ -149,7 +151,7 @@ for i in range(n_quantities):
 # plotter.plot_combined_bal_3d(collocation_points = collocation_points,
 #                   n_init_tp = full_complexity_model.init_runs,
 #                   bayesian_dict = bayesian_data)
-# plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
+plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
 plotter.plot_posterior_updates(
     posterior_arrays=bayesian_data['posterior'],
     parameter_names=full_complexity_model.calibration_parameters,
@@ -158,9 +160,9 @@ plotter.plot_posterior_updates(
     iterations_to_plot=[iterations_to_plot],
     bins=15,
     plot_prior=True,
-    parameter_units=['-','-','m','m','m','m'],
+    parameter_units=['-','-','m','m','m','m','m'],
     # parameter_indices=[0,9,10,6,7,8]
-    parameter_indices=[0,1,2,3,4,5]
+    parameter_indices=[0,1,2,3,4,5,6]
 )
 # plotter.plot_prior_posterior_kde(bayesian_data=bayesian_data,parameter_names=full_complexity_model.calibration_parameters,iterations_to_plot=iterations_to_plot)
 # plotter.plot_posterior_iteration(posterior_samples=bayesian_data['posterior'][iterations_to_plot],

@@ -1,3 +1,15 @@
+"""
+Code that plots results for 1 quantity calibration.
+Plots:
+Histograms of uncertain parameters for the last iteration
+BME evolution over iterations
+Interpolation of BME over iterations. Plots regions with the highest BME
+Plots of initial training points and selected during BAL.
+Plots model comparison between surrogate model , complex model and measured data.
+Model outputs at locations (sm, complex model, observed)
+
+Author: Andres Heredia Hidalgo MSc
+"""
 import os
 import sys
 import numpy as np
@@ -15,54 +27,18 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 # Instance of Telemac Model for plotting results (calibration)
 full_complexity_model = TelemacModel(
-    res_dir="/home/IWS/hidalgo/Documents/calibration/",
-    calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/HICHydrodynamicsEring50it/",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     init_runs=25,
-    # calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1", "gaiaCLASSES SHIELDS PARAMETERS 2",
-    #                         "gaiaCLASSES SHIELDS PARAMETERS 3", "gaiaCLASSES SHIELDS PARAMETERS 4",
-    #                         "gaiaCLASSES SHIELDS PARAMETERS 5", "gaiaMPM COEFFICIENT", "zone2", "zone3", "zone4",
-    #                         "zone5", "zone6", "zone8", "zone9", "zone13"],  # pool-slackwater-glide-riffle-run
-    calibration_parameters=[
-         r"$\tau_{*,cr,d_{10}}$",
-         r"$\tau_{*,cr,d_{16}}$",
-         #r"$\tau_{*,cr,d_{m}}$",
-        r"$k_{\mathrm{channel}}$",
-         #r"$k_{\mathrm{slackwater}}$",
-         #r"$k_{\mathrm{glide}}$",
-         #r"$k_{\mathrm{riffle}}$",
-         #r"$k_{\mathrm{run}}$",
-        r"$k_{\mathrm{backwater}}$",
-        r"$k_{\mathrm{wake}}$",
-        r"$k_{\mathrm{LW}}$"
-    ],
-    param_values=[[0.050, 0.070],  # critical shields parameter class 1
-                  [0.050, 0.070],  # critical shields parameter class 2
-                  [0.002, 0.1],  # zone2 Riverbed
-                  [0.002, 0.6],  # zone4 Backwater
-                  [0.002, 0.6],  # zone5 Wake
+    calibration_parameters=[r"$k_{s_{chn}}$",
+        r"$k_{s_{back}}$",
+        r"$k_{s_{wake}}$",
+        r"$k_{s_{LW}}$"],
+    param_values=[[0.002, 0.1],  # zone2 Channel
+                  [0.002, 0.6],  # zone8 Backwater
+                  [0.002, 0.6],  # zone9 Wake
                   [0.002, 1.5]],  # zone 13 LW
-    # param_values=[[0.048, 0.070],  # critical shields parameter class 1
-    #               # [0.5,17.45], # zone0
-    #               # [0.5,17.45], # zone 1
-    #               [0.24, 17.45],  # zone 2
-    #               [0.24, 17.45],  # zone 3
-    #               [0.04, 31.86],  # zone 4
-    #               [0.04, 31.86],  # zone 5
-    #               [1.53, 17.45],  # zone 6
-    #               # [0.16,3.60], # zone 7
-    #               [0.04, 31.86],  # zone 8
-    #               [2.79, 31.86],  # zone 9
-    #               # [1.53, 32.80], # zone 10
-    #               # [1.5, 98],# zone 11
-    #               # [1.5, 98],  # zone 12
-    #               [0.02, 17.45]],  # zone 13
-    # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
-    # calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"],
-    #calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
-    # calibration_quantities = ["SCALAR VELOCITY"],
-    # calibration_quantities = ["WATER DEPTH"],
-    # calibration_quantities=["CUMUL BED EVOL"],
     multitask_selection="variables",
     check_inputs=False,
 )
@@ -70,7 +46,7 @@ results_folder_path = full_complexity_model.asr_dir
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
 plotter = BayesianPlotter(results_folder_path=results_folder_path,variable_name = quantities_str)
 iterations_to_plot =50
-surrogate_to_analyze = 75
+surrogate_to_analyze =75
 obs = full_complexity_model.observations
 err = full_complexity_model.measurement_errors
 quantities_str = '_'.join(full_complexity_model.calibration_quantities)
@@ -119,20 +95,6 @@ for i in range(n_quantities):
     sm_lower_ci = sm_lower_ci_split[f'sm_lower_ci_{i+1}']
     obs_quantity = obs_split[f'obs_{i+1}']
     err_quantity = err_split[f'err_{i+1}']
-
-    # Plot comparisons for each quantity
-    # plotter.plot_validation_results(obs_quantity, sm_output.reshape(1, -1), cm_output.reshape(1, -1))
-    # plotter.plot_model_outputs_vs_locations(
-    #     observed_values=obs_quantity,
-    #     quantity_name=full_complexity_model.calibration_quantities[i],
-    #     surrogate_outputs=sm_output[-1, :].reshape(1, -1),
-    #     complex_model_outputs=cm_output[-1, :].reshape(1, -1),
-    #     selected_locations=list(range(1,36)),
-    #     gpe_lower_ci=sm_lower_ci[-1, :].reshape(1, -1),
-    #     gpe_upper_ci=sm_upper_ci[-1, :].reshape(1, -1),
-    #     measurement_error=err_quantity,
-    # )
-
 # Plot Bayesian results
 # plotter.plot_combined_bal_3d(collocation_points = collocation_points,
 #                   n_init_tp = full_complexity_model.init_runs,

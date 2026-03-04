@@ -1,8 +1,6 @@
 import sys
 import os
 import time
-import numpy as np
-import bayesvalidrox as bvr
 
 # Base directory of the project
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,8 +21,8 @@ full_complexity_model = TelemacModel(
             # General hydrosimulation parameters
             results_filename_base="results_restart",
             control_file="tel_ering_restart_NIKU.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/eringHydrodynamics/simulation/hotstart/",
-            res_dir="/home/IWS/hidalgo/Documents/calibration/",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/HICHydrodynamicsEring/hotstart/",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/HICHydrodynamicsEring50it/",
             calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
             init_runs=2,
@@ -32,16 +30,16 @@ full_complexity_model = TelemacModel(
                                     "zone8",
                                     "zone9",
                                     "zone13"],
-            param_values=[[0.002, 0.1],  # zone2 Pool
-                          [0.002, 0.6],  # zone8 Backwater
-                          [0.002, 0.6],  # zone9 Wake
-                          [0.002, 1.5]],  # zone 13 LW
-            extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY"],
-            calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY"],
+            param_values = [[0.002, 0.1], # zone2 Pool
+                            [0.002, 0.6], # zone8 Backwater
+                            [0.002, 0.6], # zone9 Wake
+                            [0.002, 1.5]], # zone 13 LW
+            extraction_quantities = ["WATER DEPTH","SCALAR VELOCITY"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             dict_output_name="extraction-data",
-            user_param_values=True,
-            # max_runs=2,
-            # complete_bal_mode=True,
+            user_param_values = True,
+            # max_runs=8,
+            # complete_bal_mode=False,
             # only_bal_mode=False,
             # delete_complex_outputs=True,
             # validation=False
@@ -97,12 +95,47 @@ for i in range(n_quantities):
     obs_split[f'obs_{i+1}'] = obs[:, i::n_quantities]
     err_split[f'err_{i+1}'] = err[i::n_quantities]
 
-plotter.evaluate_calibration(cm_outputs_split,
+df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
             sm_outputs_split,
             sm_upper_ci_split,
             sm_lower_ci_split,
             obs_split,
             coordinates,
-            model_names=[r"MO-GPE: $h, \bar{U}$",
-                         r"$K_{NKU} = Const$"],
-            quantity_names=calibration_names,)
+            model_names=[r"$k_{s_{chn}}$",
+                r"$k_{s_{back}}$",
+                r"$k_{s_{wake}}$",
+                r"$k_{s_{LW}}$"],
+            quantity_names=[r"$h$",
+                            r"$\bar{U}$",
+                                    ],)
+plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1, 2],
+                                    quantity_names=[
+                                        r"$h$",
+                                        r"$\bar{U}$",
+                                    ],
+                                    points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+                                    points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                                                    35, 36, 37]
+                                    )
+plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1, 2],
+                                    quantity_names=[
+                                        r"$h$",
+                                        r"$\bar{U}$",
+                                    ],
+                                    points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+                                    points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                                                    35, 36, 37]
+                                    )
+
+
+plotter.plot_residuals(
+        df_spatial,
+        df_summary,
+        model_ids = [1,2],
+        quantity_names = [
+                                        r"$h$",
+                                        r"$\bar{U}$",
+                                    ],
+                                    points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+                                    points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                                                    35, 36, 37])

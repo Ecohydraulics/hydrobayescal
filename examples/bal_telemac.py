@@ -582,38 +582,40 @@ if __name__ == "__main__":
             # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-telemac-gaia",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
+            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation2026MU",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=15,
+            init_runs=3,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                    "zone2",
-                                    "zone8",
-                                    "zone9",
-                                    "zone13"],
+                                    "zone2", # Pool
+                                    "zone3", # Slackwater
+                                    "zone4", # Glide
+                                    "zone5", # Riffle
+                                    "zone6"], # Run
             param_values=[[0.05, 0.070],  # critical shields parameter class 1
                           [0.03, 0.070],  # critical shields parameter class 2
-                          [0.01, 0.6],  # zone2 Riverbed
-                          [0.002, 0.4],  # zone4 Backwater
-                          [0.01, 0.6],  # zone5 Wake
-                          [0.01, 2.0]],  # zone 13 LW
+                          [0.002, 0.4],  # zone2
+                          [0.002, 0.4],  # zone3
+                          [0.002, 0.4],  # zone4
+                          [0.01, 0.6],  # zone5
+                          [0.01, 0.6]],  # zone6
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
-            calibration_quantities=["CUMUL BED EVOL"],
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            #  calibration_quantities=["WATER DEPTH"],
-            # calibration_quantities=["SCALAR VELOCITY"],
+            # calibration_quantities=["CUMUL BED EVOL"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+            #calibration_quantities=["WATER DEPTH"],
+            #calibration_quantities=["SCALAR VELOCITY"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             dict_output_name="extraction-data",
-            user_param_values = False,
-            max_runs=15,
-            complete_bal_mode=True,
-            only_bal_mode=True,
-            delete_complex_outputs=True,
+            user_param_values = True,
+            max_runs=3,
+            complete_bal_mode=False,
+            only_bal_mode=False,
+            delete_complex_outputs=False,
             validation=False
         )
     )
@@ -623,7 +625,7 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         tp_selection_criteria='dkl',
         parameter_distribution='uniform',
-        parameter_sampling_method = 'sobol'
+        parameter_sampling_method = 'user'
     )
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
