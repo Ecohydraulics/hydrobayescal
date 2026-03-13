@@ -27,36 +27,31 @@ from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 # Instance of Telemac Model for plotting results (calibration)
 full_complexity_model = TelemacModel(
-    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026",
+    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026-AllRange",
     calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
     init_runs=30,
     calibration_parameters=[
-         r"$\tau_{*,\mathrm{cr},d_{10}}$",
-         r"$\tau_{*,\mathrm{cr},d_{16}}$",
-         #r"$\tau_{*,cr,d_{m}}$",
-        r"$k_{s_{pool}}$",
-         #r"$k_{\mathrm{slackwater}}$",
-         #r"$k_{\mathrm{glide}}$",
-         #r"$k_{\mathrm{riffle}}$",
-         #r"$k_{\mathrm{run}}$",
-        r"$k_{s_{slackwater}}$",
-        r"$k_{s_{glide}}$",
-        r"$k_{s_{riffle}}$",
-        r"$k_{s_{run}}$"
+        r"$\tau_{*,\mathrm{cr},d_{10}}$",
+        r"$\tau_{*,\mathrm{cr},d_{16}}$",
+        r"$k_{\mathrm{s,pool}}$",
+        r"$k_{\mathrm{s,slack}}$",
+        r"$k_{\mathrm{s,glide}}$",
+        r"$k_{\mathrm{s,riff}}$",
+        r"$k_{\mathrm{s,run}}$"
     ],
-    param_values=[[0.05, 0.070],  # critical shields parameter class 1
-                  [0.03, 0.070],  # critical shields parameter class 2
-                  [0.002, 0.4],  # zone2
-                  [0.002, 0.4],  # zone3
-                  [0.002, 0.4],  # zone4
-                  [0.01, 0.6],  # zone5
-                  [0.01, 0.6]],  # zone6
+    param_values=[[0.047, 0.070],  # critical shields parameter class 1
+                  [0.047, 0.070],  # critical shields parameter class 2
+                  [0.002, 0.6],  # zone2
+                  [0.002, 0.6],  # zone3
+                  [0.002, 0.6],  # zone4
+                  [0.002, 0.6],  # zone5
+                  [0.002, 0.6]],  # zone6
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
-    calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
+    # calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
     # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
     # calibration_quantities = ["SCALAR VELOCITY"],
-    # calibration_quantities = ["WATER DEPTH"],
+    calibration_quantities = ["WATER DEPTH"],
     # calibration_quantities=["CUMUL BED EVOL"],
     multitask_selection="variables",
     check_inputs=False,

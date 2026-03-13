@@ -281,6 +281,7 @@ def run_bal_model(collocation_points,
                                  training_iter=150,
                                  optimizer="adam", lr=0.07,
                                  verbose=False)
+                surrogate_object = sm
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim))
@@ -302,6 +303,7 @@ def run_bal_model(collocation_points,
                                                     optimizer="adam", lr=0.07,
                                                     number_quantities=complex_model.num_calibration_quantities,
                                                     )
+                    surrogate_object = multi_sm_var
                 if complex_model.multitask_selection == "locations":
 
                     multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
@@ -316,6 +318,8 @@ def run_bal_model(collocation_points,
                                                 likelihood=multi_likelihood_loc,
                                                 optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
                                                 )
+                    surrogate_object = multi_sm_loc
+
                 if complex_model.multitask_selection == "all":
                     multi_likelihood_all = gpytorch.likelihoods.MultitaskGaussianLikelihood(
                         num_tasks=model_outputs.shape[1],
@@ -329,6 +333,7 @@ def run_bal_model(collocation_points,
                                                     optimizer="adam", lr=0.01,
                                                     number_quantities=complex_model.num_calibration_quantities,
                                                     )
+                    surrogate_object = multi_sm_all
 
         # Trains the GPR
         if it == n_iter:
@@ -337,28 +342,23 @@ def run_bal_model(collocation_points,
                     f'------------ Number of initial runs init_runs and n_tp_max are the same. Conditions: n_tp_max > init_runs.     -------------------')
                 # exit()
             else:
-                logger.info(f'------------ Training final surrogate model    -------------------')
+                logger.info(f'------------ Training final surrogate model in {type(surrogate_object).__name__}   -------------------')
         elif it > 0:
-            logger.info(f'------------ Training model with new training point: {new_tp}   -------------------')
+            logger.info(f'------------ Training {type(surrogate_object).__name__} model with new training point: {new_tp}   -------------------')
         elif it == 0:
             logger.info(
-                'Starting surrogate model training with the initial collocation points. Please check the .csv file if information required.')
+                f'Starting {type(surrogate_object).__name__} surrogate model training with the initial collocation points. Please check the .csv file if information required.')
             #logger.info(collocation_points)
 
         if complex_model.num_calibration_quantities == 1:
             sm.train_()
-            surrogate_object = sm
         else:
             if complex_model.multitask_selection == "variables":
-                multi_sm_var.train_tasks_variables()
-                surrogate_object = multi_sm_var
+                surrogate_object.train_tasks_variables()
             if complex_model.multitask_selection == "locations":
-                multi_sm_loc.train_tasks_locations()
-                surrogate_object = multi_sm_loc
+                surrogate_object.train_tasks_locations()
             if complex_model.multitask_selection == "all":
-                multi_sm_all.train_tasks_all()
-                surrogate_object = multi_sm_all
-
+                surrogate_object.train_tasks_all()
 
         # 2. Validate GPR
         if it % eval_steps == 0:
@@ -384,10 +384,11 @@ def run_bal_model(collocation_points,
         if complex_model.num_calibration_quantities == 1:
             multitask = False
             start_time_prediction = time.time()
-            surrogate_output = sm.predict_(input_sets=prior,
+            logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
+            surrogate_output = surrogate_object.predict_(input_sets=prior,
                                            get_conf_int=True)
             end_time_prediction = time.time()
-            print(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+            logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
             model_predictions = surrogate_output['output']
             total_error = complex_model.variances
             if it == 0 or it == n_iter:
@@ -403,9 +404,10 @@ def run_bal_model(collocation_points,
         else:
             multitask=True
             start_time_prediction = time.time()
+            logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
             surrogate_output = surrogate_object.predict_(input_sets=prior,get_conf_int=True)
             end_time_prediction = time.time()
-            print(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+            logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
             total_error = complex_model.variances
             model_predictions = surrogate_output['output']
             if it == 0 or it == n_iter:
@@ -417,7 +419,9 @@ def run_bal_model(collocation_points,
                     print(f"Surrogate output data for iteration {it} successfully saved..")
                 except Exception as e:
                     print(f"An error occurred while saving the dictionary: {e}")
-
+        logger.info(
+            f'------------ Executing Bayesian Inference of {prior_samples} prior samples for prior updating.-------------------')
+        start_time_inference = time.time()
         bi_gpe = BayesianInference(model_predictions=model_predictions,
                                    observations=complex_model.observations,
                                    error=total_error,
@@ -425,6 +429,8 @@ def run_bal_model(collocation_points,
                                    prior=prior,
                                    ) #prior_log_pdf=prior_logpdf This was here
         bi_gpe.estimate_bme()
+        end_time_inference = time.time()
+        logger.info(f"Bayesian inference took: {end_time_inference - start_time_inference:.2f} seconds.")
         bayesian_dict['N_tp'][it] = collocation_points.shape[0]
         bayesian_dict['BME'][it], bayesian_dict['RE'][it] = bi_gpe.BME, bi_gpe.RE
         bayesian_dict['ELPD'][it], bayesian_dict['IE'][it] = bi_gpe.ELPD, bi_gpe.IE
@@ -581,10 +587,10 @@ if __name__ == "__main__":
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
             model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation2026MU",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026",
+            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026-AllRange",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=5,
+            init_runs=10,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "zone2", # Pool
@@ -592,28 +598,28 @@ if __name__ == "__main__":
                                     "zone4", # Glide
                                     "zone5", # Riffle
                                     "zone6"], # Run
-            param_values=[[0.05, 0.070],  # critical shields parameter class 1
-                          [0.03, 0.070],  # critical shields parameter class 2
-                          [0.002, 0.4],  # zone2
-                          [0.002, 0.4],  # zone3
-                          [0.002, 0.4],  # zone4
-                          [0.01, 0.6],  # zone5
-                          [0.01, 0.6]],  # zone6
+            param_values=[[0.047, 0.070],  # critical shields parameter class 1
+                          [0.047, 0.070],  # critical shields parameter class 2
+                          [0.002, 0.6],  # zone2
+                          [0.002, 0.6],  # zone3
+                          [0.002, 0.6],  # zone4
+                          [0.002, 0.6],  # zone5
+                          [0.002, 0.6]],  # zone6
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
             # calibration_quantities=["CUMUL BED EVOL"],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            #calibration_quantities=["WATER DEPTH"],
-            #calibration_quantities=["SCALAR VELOCITY"],
+            # calibration_quantities=["SCALAR VELOCITY"],
+            # calibration_quantities=["WATER DEPTH"],
+            calibration_quantities=["SCALAR VELOCITY"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             dict_output_name="extraction-data",
-            user_param_values = True,
-            max_runs=5,
-            complete_bal_mode=False,
-            only_bal_mode=False,
-            delete_complex_outputs=False,
+            user_param_values = False,
+            max_runs=10,
+            complete_bal_mode=True,
+            only_bal_mode=True,
+            delete_complex_outputs=True,
             validation=False
         )
     )
@@ -623,7 +629,7 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         tp_selection_criteria='dkl',
         parameter_distribution='uniform',
-        parameter_sampling_method = 'user'
+        parameter_sampling_method = 'sobol'
     )
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
@@ -635,7 +641,7 @@ if __name__ == "__main__":
         complex_model=full_complexity_model,
         experiment_design=exp_design,
         eval_steps=5,
-        prior_samples=22000,
+        prior_samples=25000,
         mc_samples_al=2000,
         mc_exploration=1000,
         gp_library="gpy"

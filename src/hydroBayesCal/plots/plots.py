@@ -362,8 +362,8 @@ class BayesianPlotter:
                 # Axis labels (RESTORED)
                 # -------------------------
                 unit = f' [{parameter_units[param_idx]}]' if parameter_units[param_idx] else ''
-                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=50)
-                ax.set_ylabel('Density', fontsize=50)
+                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=40)
+                ax.set_ylabel('Posterior\n density [-]', fontsize=40)
 
                 ax.tick_params(axis='both', which='major', labelsize=35)
 
@@ -404,7 +404,7 @@ class BayesianPlotter:
                 mpatches.Patch(facecolor='0.75', edgecolor='0.6', alpha=0.35, label='Prior'),
                 mpatches.Patch(facecolor='0.35', edgecolor='black', alpha=0.75, label='Posterior'),
                 Line2D([0], [0], color='black', lw=1, label='Posterior KDE'),
-                Line2D([0], [0], color='red', lw=2, linestyle='--', label='MAP')
+                Line2D([0], [0], color='red', lw=2, linestyle='--', label='Posterior mean')
             ]
 
             fig.legend(
@@ -1772,6 +1772,7 @@ class BayesianPlotter:
         *   Uses black line with circles for MO and slate‑gray dashed line
             with squares for SO.
         """
+        save_folder= self.save_folder
         if metrics is None:
             metrics = ["RMSE", "Correlation", "CI"]
 
@@ -1780,9 +1781,6 @@ class BayesianPlotter:
 
         assert len(metric_labels) == len(metrics), \
             "'metric_labels' must have same length as 'metrics'"
-
-        save_folder = Path(self.results_folder_path)
-        save_folder.mkdir(parents=True, exist_ok=True)  # ensure path exists
 
         train_points = np.asarray(surrogate_metrics["TrainPoints"])
         quantity_names = np.asarray(surrogate_metrics["Quantity"])
@@ -1885,8 +1883,12 @@ class BayesianPlotter:
 
         plt.tight_layout(rect=[0, 0, 1, 0.97])
 
-        fig.savefig(save_folder / "combined_metrics_all_quantities.pdf",
-                    format='pdf', bbox_inches='tight')
+        fig.savefig(
+            save_folder / "combined_metrics_all_quantities.svg",
+            format="svg",
+            bbox_inches="tight"
+        )
+
         plt.close(fig)
 
     def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
@@ -2232,12 +2234,12 @@ class BayesianPlotter:
         # ----- X axis: exactly 6 ticks, 2 decimals -----
         xmin, xmax = ax.get_xlim()
         ax.set_xticks(np.linspace(xmin, xmax, 6))
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
         # ----- Y axis: exactly 5 ticks, 2 decimals -----
         ymin, ymax = ax.get_ylim()
-        ax.set_yticks(np.linspace(ymin, ymax, 5))
-        ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax.set_yticks(np.linspace(ymin, ymax, 5 ))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
 
         for spine in ax.spines.values():
@@ -2273,12 +2275,12 @@ class BayesianPlotter:
         # ----- X axis: exactly 6 ticks, 2 decimals -----
         xmin, xmax = ax.get_xlim()
         ax.set_xticks(np.linspace(xmin, xmax, 6))
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
         # ----- Y axis: exactly 5 ticks, 2 decimals -----
         ymin, ymax = ax.get_ylim()
         ax.set_yticks(np.linspace(ymin, ymax, 5))
-        ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
         for spine in ax.spines.values():
             spine.set_linewidth(1.5)
@@ -2316,13 +2318,13 @@ class BayesianPlotter:
             ax.set_ylabel(r"Spearman $\rho$", fontsize=16)
             # ----- X axis: exactly 6 ticks, 2 decimals -----
             xmin, xmax = ax.get_xlim()
-            ax.set_xticks(np.linspace(xmin, xmax, 6))
-            ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            ax.set_xticks(np.linspace(xmin, xmax, 5))
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
             # ----- Y axis: exactly 5 ticks, 2 decimals -----
             ymin, ymax = ax.get_ylim()
             ax.set_yticks(np.linspace(ymin, ymax, 5))
-            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -2363,12 +2365,12 @@ class BayesianPlotter:
             # ----- X axis: exactly 6 ticks, 2 decimals -----
             xmin, xmax = ax.get_xlim()
             ax.set_xticks(np.linspace(xmin, xmax, 6))
-            ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
             # ----- Y axis: exactly 5 ticks, 2 decimals -----
             ymin, ymax = ax.get_ylim()
             ax.set_yticks(np.linspace(ymin, ymax, 5))
-            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -2382,7 +2384,45 @@ class BayesianPlotter:
         fig.tight_layout(rect=[0, 0, 1, 0.93])
         fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_SM.svg"), dpi=300)
         # plt.show()
+        # Subplots for CM (NRMSE vs Spearman)
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
+        axes = axes.flatten()
+        colors = plt.cm.get_cmap('tab10', len(df_summary))
 
+        for i in range(n_quantities):
+            ax = axes[i]
+            q = f"Q{i + 1}"
+
+            for idx, row in df_summary.iterrows():
+                ax.scatter(row[f"NRMSE_CM_{q}"], row[f"Spearman_CM_{q}"],
+                           color=colors(idx), label=row["model_name"],
+                           s=100, alpha=0.8)
+
+            ax.set_title(quantity_names[i], fontsize=20)
+            ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+            ax.set_xlabel("NRMSE", fontsize=16)
+            ax.set_ylabel(r"Spearman $\rho$", fontsize=16)
+
+            xmin, xmax = ax.get_xlim()
+            ax.set_xticks(np.linspace(xmin, xmax, 5))
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+
+            ymin, ymax = ax.get_ylim()
+            ax.set_yticks(np.linspace(ymin, ymax, 5))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+
+            for spine in ax.spines.values():
+                spine.set_linewidth(1.5)
+
+        for j in range(n_quantities, len(axes)):
+            fig.delaxes(axes[j])
+
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.02),
+                   ncol=len(model_names), fontsize=16)
+
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
+        fig.savefig(os.path.join(save_folder, "per_quantity_nrmse_vs_spearman_CM.svg"), dpi=300)
         df_spatial = pd.DataFrame(spatial_records)
         df_spatial.to_csv(os.path.join(save_folder, "location_metrics_models.csv"), index=False)
         df_summary.to_csv(os.path.join(save_folder, "summary_metrics_models.csv"), index=False)
@@ -2784,15 +2824,15 @@ class BayesianPlotter:
                 ax.set_ylim(axis_limits)
 
                 # Titles and labels
-                ax.set_title(f"{model_name} — {qname}", fontsize=18)
-                ax.set_xlabel(f"Observed {qname}", fontsize=16)
+                ax.set_title(f"{model_name} — {qname}", fontsize=25)
+                ax.set_xlabel(f"Observed {qname}", fontsize=25)
                 if j == 0:  # first column
-                    ax.set_ylabel(f"Modeled {qname}", fontsize=16)
+                    ax.set_ylabel(f"Modeled {qname}", fontsize=25)
 
                 # Tick formatting
                 ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
                 ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+                ax.tick_params(axis='both', which='both', direction='in', labelsize=25)
 
                 # Grid and spines
                 ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
@@ -2807,9 +2847,9 @@ class BayesianPlotter:
                 rho = spearmanr(cm, obs).correlation
 
                 ax.text(axis_limits[1], axis_limits[1],
-                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\n$\\rho$={rho:.2f}",
+                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$",
                         va='top', ha='right',
-                        fontsize=12,
+                        fontsize=20,
                         bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
 
         # Add general horizontal legend at the top if grouping was specified
