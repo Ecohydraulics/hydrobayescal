@@ -1749,135 +1749,168 @@ class BayesianPlotter:
             metrics: list = None,
             metric_labels: list = None,
     ):
-        """
-        Parameters
-        ----------
-        surrogate_metrics : dict
-            Keys at a minimum:
-                - "TrainPoints"   : list/array of int
-                - "Quantity"      : list/array of str
-                - "SurrogateType" : list/array of str ("SO" or "MO")
-                - one entry per metric in *metrics*
-        quantities : list[str]
-            Quantities to plot (must be found in surrogate_metrics["Quantity"]).
-        metrics : list[str], optional
-            Metric keys to take from *surrogate_metrics* (default three).
-        metric_labels : list[str], optional
-            Display labels for the rows (same order/length as *metrics*).
 
-        Notes
-        -----
-        *   A vertical dashed line marks 25 training points (BAL).
-        *   Legend is collected once and placed above all subplots.
-        *   Uses black line with circles for MO and slate‑gray dashed line
-            with squares for SO.
-        """
-        save_folder= self.save_folder
+        save_folder = self.save_folder
+
         if metrics is None:
             metrics = ["RMSE", "Correlation", "CI"]
 
         if metric_labels is None:
-            metric_labels = ["RMSE", r"Spearman $\rho$", "CI"]
+            metric_labels = []
+            for m in metrics:
+                if m.lower() in ["correlation", "spearman", "spearmanr"]:
+                    metric_labels.append(r"Spearman $\rho$")
+                else:
+                    metric_labels.append(m)
 
-        assert len(metric_labels) == len(metrics), \
-            "'metric_labels' must have same length as 'metrics'"
+        assert len(metric_labels) == len(metrics)
 
         train_points = np.asarray(surrogate_metrics["TrainPoints"])
         quantity_names = np.asarray(surrogate_metrics["Quantity"])
         surrogate_type = np.asarray(surrogate_metrics["SurrogateType"])
         metric_values = {m: np.asarray(surrogate_metrics[m]) for m in metrics}
 
-        label_prefixes = ['a)', 'b)', 'c)', 'd)', 'e)', 'f)']
         num_metrics = len(metrics)
         num_quantities = len(quantities)
 
         fig, axs = plt.subplots(
-            num_metrics, num_quantities,
+            nrows=num_metrics,
+            ncols=num_quantities,
             figsize=(8 * num_quantities, 4 * num_metrics),
-            sharex='col'
+            sharex='col',
+            squeeze=False
         )
 
-        # Make axs 2‑D for simpler indexing
-        if num_quantities == 1:
-            axs = np.expand_dims(axs, axis=1)
-        if num_metrics == 1:
-            axs = np.expand_dims(axs, axis=0)
-
-        # Leave space on the left for the big y‑labels
         fig.subplots_adjust(left=0.12)
 
         all_handles = []
         all_labels = []
 
+        # ---------------------------------------------------
+        # GLOBAL Y LIMITS PER METRIC (ROW)
+        # ---------------------------------------------------
+
+        row_limits = {}
+
+        for metric in metrics:
+
+            vals_all = []
+
+            for quantity in quantities:
+                mask_q = quantity_names == quantity
+                vals_all.append(metric_values[metric][mask_q])
+
+            vals_all = np.concatenate(vals_all)
+
+            ymin = vals_all.min()
+            ymax = vals_all.max()
+
+            pad = 0.05 * (ymax - ymin) if ymax > ymin else 0.01
+
+            row_limits[metric] = (ymin - pad, ymax + pad)
+
+        # ---------------------------------------------------
+
         for q_idx, quantity in enumerate(quantities):
-            figure_label = (
-                label_prefixes[q_idx]
-                if q_idx < len(label_prefixes)
-                else f"{chr(97 + q_idx)})"
-            )
 
             for r_idx, metric in enumerate(metrics):
+
                 ax = axs[r_idx, q_idx]
 
-                # masks for this quantity and surrogate type
                 mask_q = quantity_names == quantity
                 mask_so = mask_q & (surrogate_type == "SO")
                 mask_mo = mask_q & (surrogate_type == "MO")
 
-                # data
                 so_tp = train_points[mask_so]
                 mo_tp = train_points[mask_mo]
+
                 so_val = metric_values[metric][mask_so]
                 mo_val = metric_values[metric][mask_mo]
 
-                # curves
                 line_mo, = ax.plot(
-                    mo_tp, mo_val, marker='o', linestyle='-', color='black',
-                    linewidth=1.5, markersize=6, label='MO (Multi‑output GP)'
-                )
-                line_so, = ax.plot(
-                    so_tp, so_val, marker='s', linestyle='--', color='slategray',
-                    linewidth=1.5, markersize=6, label='SO (Single‑output GP)'
+                    mo_tp, mo_val,
+                    marker='o', linestyle='-', color='black',
+                    linewidth=1.5, markersize=6,
+                    label='MO (Multi-output GP)'
                 )
 
-                if q_idx == 0 and r_idx == 0:  # store legend items once
+                line_so, = ax.plot(
+                    so_tp, so_val,
+                    marker='s', linestyle='--', color='slategray',
+                    linewidth=1.5, markersize=6,
+                    label='SO (Single-output GP)'
+                )
+
+                if q_idx == 0 and r_idx == 0:
                     all_handles = [line_mo, line_so]
                     all_labels = [h.get_label() for h in all_handles]
 
-                # BAL reference
                 ax.axvline(x=30, color='lightgray', linestyle='--', linewidth=1)
-                ax.text(
-                    25.5, ax.get_ylim()[1] * 0.95, "BAL",
-                    color='gray', fontsize=20, va='top', alpha=0.8
-                )
 
-                # x ticks
-                min_tp, max_tp = train_points.min(), train_points.max()
-                ax.set_xticks(np.arange(min_tp, max_tp + 1, 10))
+                # ---------------------------------------------------
+                # X TICKS WITH EXTRA EMPTY LAST TICK
+                # ---------------------------------------------------
 
-                # y limits with small padding
-                y_vals = np.concatenate([so_val, mo_val])
-                ymin, ymax = y_vals.min(), y_vals.max()
-                pad = 0.05 * (ymax - ymin) if ymax > ymin else 0.01
-                ax.set_ylim(ymin - pad, ymax + pad)
+                min_tp = train_points.min()
+                max_tp = train_points.max()
 
-                ax.tick_params(axis='both', which='major', labelsize=16)
+                xticks = np.arange(min_tp, max_tp + 11, 10)
+
+                ax.set_xticks(xticks)
+
+                xtick_labels = [str(x) for x in xticks]
+                xtick_labels[-1] = ""
+
+                ax.set_xticklabels(xtick_labels)
+
+                # ---------------------------------------------------
+                # Y LIMITS (ROW CONSISTENT)
+                # ---------------------------------------------------
+
+                ymin, ymax = row_limits[metric]
+
+                ax.set_ylim(ymin, ymax)
+
+                # ---------------------------------------------------
+                # 5 Y TICKS + FORMAT TO 3 DECIMALS
+                # ---------------------------------------------------
+
+                yticks = np.linspace(ymin, ymax, 5)
+
+                ax.set_yticks(yticks)
+                ax.set_yticklabels([f"{y:.3f}" for y in yticks])
+
+                ax.tick_params(axis='both', which='major', labelsize=28)
                 ax.grid(True, linestyle=':', alpha=0.7)
 
-                if r_idx == num_metrics - 1:  # bottom row
-                    ax.set_xlabel("Training Points", fontsize=20)
+                if r_idx == num_metrics - 1:
+                    ax.set_xlabel("Training Points", fontsize=28)
+
+        # ---------------------------------------------------
+        # ROW LABELS
+        # ---------------------------------------------------
 
         for r_idx, row_label in enumerate(metric_labels):
             pos = axs[r_idx, 0].get_position()
             y_center = (pos.y0 + pos.y1) / 2
+
             fig.text(
-                0.06, y_center, row_label,
-                ha='center', va='center', rotation='vertical', fontsize=20
+                0.06,
+                y_center,
+                row_label,
+                ha='center',
+                va='center',
+                rotation='vertical',
+                fontsize=30
             )
 
         fig.legend(
-            all_handles, all_labels,
-            loc='upper center', ncol=2, fontsize=20, frameon=False,
+            all_handles,
+            all_labels,
+            loc='upper center',
+            ncol=2,
+            fontsize=20,
+            frameon=False,
             bbox_to_anchor=(0.5, 0.995)
         )
 
@@ -1890,6 +1923,15 @@ class BayesianPlotter:
         )
 
         plt.close(fig)
+
+
+
+
+
+
+
+
+
 
     def plot_realizations(self,surrogate_outputs, complex_model_outputs, gpe_lower_ci, gpe_upper_ci):
         """
@@ -3321,3 +3363,6 @@ class BayesianPlotter:
             )
             fig.savefig(save_path, dpi=300)
             print(f"Residuals plot saved to {save_path}")
+
+
+

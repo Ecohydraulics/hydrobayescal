@@ -135,5 +135,5 @@ for train_points in surrogate_to_analyze:
                     "CI": ci_range_evolution_location
                 }
                 surrogate_metrics["metrics_per_location"].append(per_loc_data)
-plotter.plot_metric_comparison(surrogate_metrics, calibration_quantities, metrics=["MAE","RMSE","CI"])
+plotter.plot_metric_comparison(surrogate_metrics, calibration_quantities, metrics=["MAE","CI"])
 plotter.location_metrics(surrogate_metrics,coordinates)
