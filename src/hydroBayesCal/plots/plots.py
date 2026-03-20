@@ -215,7 +215,7 @@ class BayesianPlotter:
             plot_prior=False,
             parameter_units=None,
             parameter_indices=None,
-            best_estimate_value="posterior_mean" #"posterior_MAP"
+            best_estimate_value="posterior_MAP" #"posterior_MAP" "posterior_mean"
     ):
 
         save_folder = self.save_folder

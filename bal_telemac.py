@@ -351,15 +351,22 @@ def run_bal_model(collocation_points,
             #logger.info(collocation_points)
 
         if complex_model.num_calibration_quantities == 1:
+            logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+            start_time_training = time.time()
             sm.train_()
+            end_time_training = time.time()
+            logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
         else:
+            logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+            start_time_training = time.time()
             if complex_model.multitask_selection == "variables":
                 surrogate_object.train_tasks_variables()
             if complex_model.multitask_selection == "locations":
                 surrogate_object.train_tasks_locations()
             if complex_model.multitask_selection == "all":
                 surrogate_object.train_tasks_all()
-
+            end_time_training = time.time()
+            logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
         # 2. Validate GPR
         if it % eval_steps == 0:
             if complex_model.num_calibration_quantities == 1:
@@ -608,14 +615,14 @@ if __name__ == "__main__":
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
 
             # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
-            # calibration_quantities=["CUMUL BED EVOL"],
+            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+            calibration_quantities=["CUMUL BED EVOL"],
             # calibration_quantities=["SCALAR VELOCITY"],
             # calibration_quantities=["WATER DEPTH"],
             # calibration_quantities=["SCALAR VELOCITY"],
             # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
             dict_output_name="extraction-data",
-            user_param_values = False,
+            user_param_values =False,
             max_runs=100,
             complete_bal_mode=True,
             only_bal_mode=True,

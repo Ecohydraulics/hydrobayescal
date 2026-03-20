@@ -26,7 +26,7 @@ full_complexity_model = TelemacModel(
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026-AllRange",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=5,
+            init_runs=6,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "zone2", # Pool
@@ -42,7 +42,7 @@ full_complexity_model = TelemacModel(
                           [0.002, 0.6],  # zone5
                           [0.002, 0.6]],  # zone6
             extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
-            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
+            calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
             dict_output_name="extraction-data",
             user_param_values=True,
             # max_runs=8,
@@ -109,7 +109,7 @@ df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
             obs_split,
             coordinates,
             model_names=[
-                                 # r"MO-GPE: $h, \bar{U}, \Delta_{z}$",
+                                 r"MO-GPE: $h, \bar{U}, \Delta_{z}$",
                                  r"MO-GPE: $h, \bar{U}$",
                                  r"SO-GPE: $h$",
                                  r"SO-GPE: $\bar{U}$",
@@ -118,20 +118,21 @@ df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
                                  r"Benchmark: $k_{s} = 3 \times d_{50}$"
                              ],
             quantity_names=calibration_names,)
-plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1, 2,3,4,5],
+plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[2,3,4,5,6],
                                     quantity_names=[
                                         r"$h$",
                                         r"$\bar{U}$",
-                                        #r"$\Delta_z$"
+                                        r"$\Delta_z$"
                                     ],
                                     points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
                                     points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
                                                     35, 36, 37]
                                     )
-plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1, 2,3,4,5],
+plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[2,3,4,5,6],
                                     quantity_names=[
                                         r"$h$",
                                         r"$\bar{U}$",
+                                        r"$\Delta_z$"
                                     ],
                                     points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
                                     points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
@@ -142,11 +143,11 @@ plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_
 plotter.plot_residuals(
         df_spatial,
         df_summary,
-        model_ids = [1,2,3],
+        model_ids = [2,3,4,5,6],
         quantity_names = [
                                         r"$h$",
                                         r"$\bar{U}$",
-
+                                        r"$\Delta_z$"
                                     ],
                                     points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
                                     points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,

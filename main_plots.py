@@ -48,10 +48,10 @@ full_complexity_model = TelemacModel(
                   [0.002, 0.6]],  # zone6
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     # calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
-    # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
     # calibration_quantities = ["SCALAR VELOCITY"],
-    calibration_quantities = ["WATER DEPTH"],
+    # calibration_quantities = ["WATER DEPTH"],
     # calibration_quantities=["CUMUL BED EVOL"],
     multitask_selection="variables",
     check_inputs=False,
@@ -127,14 +127,14 @@ for i in range(n_quantities):
 # plotter.plot_combined_bal_3d(collocation_points = collocation_points,
 #                   n_init_tp = full_complexity_model.init_runs,
 #                   bayesian_dict = bayesian_data)
-plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
+# plotter.plot_bme_re(bayesian_dict=bayesian_data, num_bal_iterations=iterations_to_plot, plot_type='both')
 plotter.plot_posterior_updates(
     posterior_arrays=bayesian_data['posterior'],
     parameter_names=full_complexity_model.calibration_parameters,
     prior=bayesian_data['prior'],
     param_values=full_complexity_model.param_values,
     iterations_to_plot=[iterations_to_plot],
-    bins=20,
+    bins=10,
     plot_prior=True,
     parameter_units=['-','-','m','m','m','m','m'],
     # parameter_indices=[0,9,10,6,7,8]
