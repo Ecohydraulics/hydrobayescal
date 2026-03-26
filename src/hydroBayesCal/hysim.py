@@ -270,7 +270,7 @@ class HydroSimulations:
 
         self.asr_dir = os.path.join(res_dir,
                                     f"auto-saved-results-HydroBayesCal")
-        self.calibration_folder = os.path.join(self.asr_dir,"calibration-data",f"{self.calibration_quantities}")
+        self.calibration_folder = os.path.join(self.asr_dir,"calibration-data","_".join(self.calibration_quantities))
         self.restart_data_folder = os.path.join(self.asr_dir,"restart_data")
         if not os.path.exists(self.asr_dir):
             os.makedirs(self.asr_dir)
