@@ -270,8 +270,7 @@ class HydroSimulations:
 
         self.asr_dir = os.path.join(res_dir,
                                     f"auto-saved-results-HydroBayesCal")
-        quantities_str = '_'.join(self.calibration_quantities)
-        self.calibration_folder = os.path.join(self.asr_dir,"calibration-data",f"{quantities_str}")
+        self.calibration_folder = os.path.join(self.asr_dir,"calibration-data",f"{self.calibration_quantities}")
         self.restart_data_folder = os.path.join(self.asr_dir,"restart_data")
         if not os.path.exists(self.asr_dir):
             os.makedirs(self.asr_dir)
@@ -283,117 +282,12 @@ class HydroSimulations:
             os.makedirs(os.path.join(self.asr_dir, "plots"))
         if not os.path.exists(os.path.join(self.asr_dir, "surrogate-gpe")):
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
-        # if complete_bal_mode and only_bal_mode:
-        #     update_json_file(json_path=os.path.join(self.restart_data_folder, "initial-model-outputs.json"),save_dict=False,saving_path=os.path.join(self.calibration_folder, "extraction-data-detailed.json"))
         if self.user_param_values:
             collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
             self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, ndmin=2)
         if self.only_bal_mode:
             collocation_path = os.path.join(self.restart_data_folder, 'initial-collocation-points.csv')
             self.restart_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, max_rows=self.init_runs,ndmin=2)
-
-    def check_inputs(
-            self,
-            model_dir,
-            res_dir,
-            control_file,
-            init_runs,
-            nproc,
-            max_runs,
-            calibration_parameters,
-            param_values,
-            calibration_quantities,
-    ):
-        """
-        Validate input parameters, paths, calibration parameters, and calibration
-        quantities for the model and results directories.
-
-        Parameters
-        ----------
-        model_dir : str
-            Full directory path where the model files are located.
-        res_dir : str
-            Directory path where the results will be stored. This directory should exist and be accessible.
-        control_file : str
-            Name of the control file to be checked within the model_dir.
-        init_runs : int
-            Number of initial runs to be performed. This must be an integer.
-        nproc : int
-            Number of processors to be used. This must be an integer.
-        max_runs : int
-            Maximum number of runs allowed. This must be an integer and should be greater than init_runs.
-        calibration_parameters : list
-            Calibration parameters that will be used in the model. This should be a list of parameter names or identifiers.
-        param_values : list
-            Ranges of min and max values corresponding to the calibration parameters. This should be a list and must have the same length as calibration_parameters.
-        calibration_quantities : list
-             Model output target quantities used for calibration. This should be a list of strings and can have a maximum of 2 elements.
-        Returns
-        --------
-        None
-        """
-        # Check control_file
-        control_file_path = os.path.join(model_dir, control_file)
-        if os.path.exists(control_file_path):
-            print(f"Control file exists: {control_file_path}")
-        else:
-            raise ValueError(f"Control file does not exist: {control_file_path}")
-
-        # Check res_dir
-        if os.path.isdir(res_dir):
-            print(f"Results directory exists: {res_dir}")
-        else:
-            raise ValueError(f"Results directory does not exist: {res_dir}")
-
-        # Check nproc
-        if not isinstance(nproc, int):
-            raise TypeError("Number of processors (nproc) should be an integer")
-
-        # Check init_runs
-        if not isinstance(init_runs, int):
-            raise TypeError("Initial runs (init_runs) should be an integer")
-
-        # Check max_runs
-        if not isinstance(max_runs, int):
-            raise TypeError("Maximum runs (max_runs) should be an integer")
-        if max_runs <= init_runs:
-            raise ValueError("Maximum runs (max_runs) must be greater than initial runs (init_runs)")
-
-        print(f"Maximum runs is valid: {max_runs}")
-
-        # Check calibration_parameters and param_ranges
-        if not isinstance(calibration_parameters, list):
-            raise TypeError("calibration_parameters should be a list")
-
-        if not isinstance(param_values, list):
-            raise TypeError("param_ranges should be a list")
-
-        if len(calibration_parameters) != len(param_values):
-            raise ValueError("calibration_parameters and param_ranges must have the same length")
-
-        # Check calibration_quantities
-        if not isinstance(calibration_quantities, list):
-            raise TypeError("calibration_quantities should be a list of strings")
-
-        if len(calibration_quantities) > 2:
-            raise ValueError("calibration_quantities can have a maximum of 2 quantities")
-
-        # Validate each calibration quantity
-        for quantity in calibration_quantities:
-            if not isinstance(quantity, str):
-                raise TypeError("Each calibration quantity should be a string")
-
-        # Optionally, check if paths exist using os (if calibration quantities were paths, for example)
-        for quantity in calibration_quantities:
-            if os.path.exists(quantity):
-                print(f"Path exists: {quantity}")
-            else:
-                print(f"Path does not exist: {quantity}")
-
-        # Output valid calibration quantities
-        if calibration_quantities:
-            print(f"Calibration quantities are valid: {calibration_quantities}")
-        #pass
 
     def extract_data_point(
             self,
@@ -454,8 +348,6 @@ class HydroSimulations:
         None
             The extracted data is saved to output files in the specified results directory.
         """
-
-
         pass
 
     @log_actions
@@ -553,16 +445,6 @@ class HydroSimulations:
                                                calibration_parameters=calibration_parameters,
                                                auxiliary_file_path=" ",
                                                simulation_id=self.num_run)
-
-                    # Modify the functions accordingly to your model
-
-                    # run_single_simulation(self.control_file)
-                    # dummy_extract_data_point()
-                    # self.model_evaluations = dummy_output_processing(
-                    #     output_data_path=os.path.join(res_dir, 'dummy-output.json'),
-                    #     run_range_filtering=(1, init_runs + 1)
-                    # )
-
             else:
                 if not isinstance(collocation_points, np.ndarray):
                     collocation_points = np.array(collocation_points)
@@ -585,16 +467,6 @@ class HydroSimulations:
                     writer.writerows(array_list)
 
                 logger.info(f">> Dummy BAL run #{self.bal_iteration} with point {collocation_point_sim_list}")
-                # self.update_model_controls(collocation_point_values=collocation_point_sim_list,
-                #                            calibration_parameters=calibration_parameters,
-                #                            auxiliary_file_path=" ",
-                #                            simulation_id=self.num_run)
-                # run_single_simulation(self.control_file)
-                # dummy_extract_data_point()
-                # self.model_evaluations = dummy_output_processing(
-                #     output_data_path=os.path.join(res_dir, 'dummy-output.json'),
-                #     run_range_filtering=(1, init_runs + bal_iteration + 1)
-                # )
 
         else:
             if collocation_points is not None:
@@ -620,16 +492,6 @@ class HydroSimulations:
                     self.num_run = i + 1
                     collocation_point_sim_list = collocation_points[i].tolist()
                     logger.info(f">> Dummy run #{self.num_run} with point {collocation_point_sim_list}")
-                    # self.update_model_controls(collocation_point_values=collocation_point_sim_list,
-                    #                            calibration_parameters=calibration_parameters,
-                    #                            auxiliary_file_path=" ",
-                    #                            simulation_id=self.num_run)
-                    # dummy_run_single_simulation(self.control_file)
-                    # dummy_extract_data_point()
-                    # self.model_evaluations = dummy_output_processing(
-                    #     output_data_path=os.path.join(res_dir, 'dummy-output.json'),
-                    #     run_range_filtering=(1, init_runs + 1)
-                    # )
 
         logger.info(">> Dummy complex model simulations total time: " + str(datetime.now() - start_time))
 
@@ -729,10 +591,6 @@ class HydroSimulations:
         site_specific_errors = calibration_pts_df[error_columns].to_numpy()
         surrogate_errors= observations * model_error
         measurement_errors = observations * measurement_error
-
-
-
-
 
         # Reshape observations and errors to match the expected output format
         observations = observations.flatten().reshape(1, -1)

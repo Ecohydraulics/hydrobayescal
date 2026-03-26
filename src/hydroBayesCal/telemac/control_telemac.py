@@ -19,7 +19,7 @@ class TelemacModel(HydroSimulations):
     def __init__(
             self,
             friction_file="",
-            tm_xd="",
+            tm_xd="Telemac2d",
             gaia_steering_file=None,
             results_filename_base="",
             gaia_results_filename_base=None,
@@ -97,10 +97,6 @@ class TelemacModel(HydroSimulations):
         else:
             self.gaia_cas = None
         self.shebang = python_shebang
-        if tm_xd == '1':
-            self.tm_xd = 'Telemac2d'
-        elif tm_xd == '2':
-            self.tm_xd = 'Telemac3d'
         self.tm_xd_dict = {
             "Telemac2d": "telemac2d.py ",
             "Telemac3d": "telemac3d.py ",

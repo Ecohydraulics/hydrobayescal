@@ -26,7 +26,7 @@ full_complexity_model = TelemacModel(
             res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026-AllRange",
             calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
             n_cpus=16,
-            init_runs=6,
+            init_runs=7,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "zone2", # Pool
@@ -51,7 +51,7 @@ full_complexity_model = TelemacModel(
             # delete_complex_outputs=True,
             # validation=False
             )
-surrogate_to_analyze = 100
+surrogate_to_analyze =100
 results_folder_path = full_complexity_model.asr_dir
 restart_data_folder = full_complexity_model.restart_data_folder
 plotter = BayesianPlotter(results_folder_path=results_folder_path)
@@ -113,12 +113,12 @@ df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
                                  r"MO-GPE: $h, \bar{U}$",
                                  r"SO-GPE: $h$",
                                  r"SO-GPE: $\bar{U}$",
-                                 # r"SO-GPE: $\Delta_{z}$",
+                                 r"SO-GPE: $\Delta_{z}$",
                                  r"Benchmark: $k_{s} = \mathrm{Const}$",
                                  r"Benchmark: $k_{s} = 3 \times d_{50}$"
                              ],
             quantity_names=calibration_names,)
-plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[2,3,4,5,6],
+plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4,5,6,7],
                                     quantity_names=[
                                         r"$h$",
                                         r"$\bar{U}$",
@@ -128,7 +128,7 @@ plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary
                                     points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
                                                     35, 36, 37]
                                     )
-plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[2,3,4,5,6],
+plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4,5,6,7],
                                     quantity_names=[
                                         r"$h$",
                                         r"$\bar{U}$",
@@ -143,7 +143,7 @@ plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_
 plotter.plot_residuals(
         df_spatial,
         df_summary,
-        model_ids = [2,3,4,5,6],
+        model_ids = [1,2,3,4,5,6,7],
         quantity_names = [
                                         r"$h$",
                                         r"$\bar{U}$",

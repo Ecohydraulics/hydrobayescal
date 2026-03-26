@@ -35,8 +35,8 @@ full_complexity_model = TelemacModel(
                            "CUMUL BED EVOL"],
     validation=True
 )
-surrogate_to_analyze = [30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to analyze
-surrogates_to_evaluate = [30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to evaluate per location
+surrogate_to_analyze = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to analyze
+surrogates_to_evaluate = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to evaluate per location
 
 # Define the desired order manually (you can also automate if needed)
 calibration_quantities = full_complexity_model.calibration_quantities

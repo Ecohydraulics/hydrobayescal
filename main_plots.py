@@ -48,11 +48,11 @@ full_complexity_model = TelemacModel(
                   [0.002, 0.6]],  # zone6
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
     # calibration_quantities =["WATER DEPTH","SCALAR VELOCITY"],
-    calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+    # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
     # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH","CUMUL BED EVOL"],
     # calibration_quantities = ["SCALAR VELOCITY"],
     # calibration_quantities = ["WATER DEPTH"],
-    # calibration_quantities=["CUMUL BED EVOL"],
+    calibration_quantities=["CUMUL BED EVOL"],
     multitask_selection="variables",
     check_inputs=False,
 )

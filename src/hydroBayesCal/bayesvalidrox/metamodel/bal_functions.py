@@ -351,7 +351,7 @@ class SequentialDesign:
 
     """
     def __init__(self, exp_design, sm_object, obs, n_cand_groups=4, secondary_sm=None,
-                 parallel=True, n_jobs=-2,
+                 parallel=True, n_jobs=-1, backend='loky',
                  errors=None,
                  do_tradeoff=False,
                  gaussian_assumption=False,
@@ -370,6 +370,7 @@ class SequentialDesign:
         self.n_cand_groups = n_cand_groups
         self.parallel = parallel
         self.n_jobs = n_jobs
+        self.backend= backend
 
         self.do_tradeoff = do_tradeoff
         self.gaussian_assumption = gaussian_assumption
@@ -448,13 +449,15 @@ class SequentialDesign:
 
             if self.parallel and self.n_cand_groups > 1:
                 split_cand = np.array_split(all_candidates, self.n_cand_groups, axis=0)
-                results = Parallel(n_jobs=self.n_jobs, backend='threading')(
+                results = Parallel(n_jobs=self.n_jobs, backend=self.backend)(
                     delayed(self.run_al_functions)(exploit_method, split_cand[i], i,
                                                    self.m_error, util_fun)
                     for i in range(self.n_cand_groups))
 
+                assert len(results) == self.n_cand_groups, f"Expected {self.n_cand_groups} results, got {len(results)}"
                 score_exploit = np.concatenate([results[NofE][1] for NofE in range(self.n_cand_groups)])
-
+                assert score_exploit.shape[0] == all_candidates.shape[0], \
+                f"Score count {score_exploit.shape[0]} != candidate count {all_candidates.shape[0]}"
             else:
                 results = self.run_al_functions(exploit_method=exploit_method, candidates=all_candidates,
                                                 index=1, m_error=self.m_error, utility_func=util_fun)

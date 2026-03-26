@@ -8,6 +8,9 @@ Author: Andres Heredia Hidalgo MSc
 import sys
 import os
 import time
+import pdb
+import argparse
+import importlib.util
 import bayesvalidrox as bvr
 
 # Base directory of the project
@@ -25,14 +28,34 @@ from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_skl import *
 from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_gpytorch import *
 from src.hydroBayesCal.function_pool import *
 
-def initialize_model(complex_model=None):
-    return complex_model
+
+
+def load_config(config_path):
+    """
+    Load configuration from Python file.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the Python configuration file
+
+    Returns
+    -------
+    module
+        Configuration module with all variables
+    """
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config
+# def initialize_model(complex_model=None):
+#     return complex_model
 
 def setup_experiment_design(
         complex_model,
         tp_selection_criteria='dkl',
         parameter_distribution = 'uniform',
-        parameter_sampling_method = 'sobol'
+        parameter_sampling_method = 'sobol',
 
 ):
     """
@@ -493,150 +516,49 @@ def run_bal_model(collocation_points,
             print(f"An error occurred while saving the dictionary: {e}")
     updated_collocation_points = collocation_points
     return bayesian_dict, updated_collocation_points
-
-# def main():
-#     # Parse command-line arguments
-#     parser = argparse.ArgumentParser(description="Run Telemac Model with calibration parameters.")
-#     parser.add_argument(
-#         '--calibration_quantities',
-#         type=str,
-#         nargs='+',  # Accept multiple arguments as a list
-#         required=True,
-#         help='Calibration quantities as a list of strings, e.g., "WATER DEPTH" "SCALAR VELOCITY".'
-#     )
-#     parser.add_argument(
-#         '--only_bal_mode',
-#         type=str,
-#         default=False,  # Default value is False
-#         help='Set to True if only Bayesian Active Learning mode is to be used.'
-#     )
-#     parser.add_argument(
-#         '--complete_bal_mode',
-#         type=str,
-#         default=True,  # Default value is True
-#         help='Set to False if only initial runs are required.'
-#     )
-#
-#     args = parser.parse_args()
-#
-#     # Extract arguments
-#     calibration_quantities = args.calibration_quantities
-#     only_bal_mode = args.only_bal_mode
-#     complete_bal_mode = args.complete_bal_mode
-#
-#     print(f"Calibration Quantities: {calibration_quantities}")
-#     # print(f"Only BAL Mode: {only_bal_mode}")
-#     # print(f"Complete BAL Mode: {complete_bal_mode}")
-
-    #Initialize the model with arguments
-    # full_complexity_model = initialize_model(
-    #     TelemacModel(
-    #         # Telemac parameters
-    #         friction_file="friction_ering_MU.tbl",
-    #         tm_xd="1",
-    #         gaia_steering_file="",
-    #         # General hydrosimulation parameters
-    #         results_filename_base="results2m3",
-    #         control_file="tel_ering_mu_restart.cas",
-    #         model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/",
-    #         res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU",
-    #         calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
-    #         n_cpus=8,
-    #         init_runs=30,
-    #         calibration_parameters=["zone11", "zone12", "zone13", "zone14", "zone15"],
-    #         param_values = [[0.010, 0.1], [0.050, 0.79], [0.0020, 0.1], [0.002, 0.1], [0.050, 0.79]], # coarse-coarse -fine -fine -coarse
-    #         extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-    #         calibration_quantities=calibration_quantities,
-    #         dict_output_name="extraction-data",
-    #         user_param_values=False,
-    #         max_runs=170,
-    #         complete_bal_mode=complete_bal_mode,
-    #         only_bal_mode=only_bal_mode,
-    #         delete_complex_outputs=True,
-    #         validation=False
-    #     )
-    # )
-    #
-    # # Setup and run the experiment
-    # exp_design = setup_experiment_design(
-    #     complex_model=full_complexity_model,
-    #     tp_selection_criteria='dkl',
-    #     parameter_distribution='uniform',
-    #     parameter_sampling_method='sobol'
-    # )
-    # init_collocation_points, model_evaluations = run_complex_model(
-    #     complex_model=full_complexity_model,
-    #     experiment_design=exp_design,
-    # )
-    # run_bal_model(
-    #     collocation_points=init_collocation_points,
-    #     model_outputs=model_evaluations,
-    #     complex_model=full_complexity_model,
-    #     experiment_design=exp_design,
-    #     eval_steps=20,
-    #     prior_samples=20000,
-    #     mc_samples_al=3000,
-    #     mc_exploration=1000,
-    #     gp_library="gpy"
-    # )
-
-
-if __name__ == "__main__":
-    #main()
-    full_complexity_model = initialize_model(
-        TelemacModel(
+def main():
+    parser = argparse.ArgumentParser(description="Run OpenFOAM (interFoam) Model with calibration parameters.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='config.py',
+        help='Path to Python configuration file (default: config.py)'
+    )
+    args = parser.parse_args()
+    config = load_config(args.config)
+    full_complexity_model = TelemacModel(
             # Telemac parameters
-            friction_file="friction_ering_MU_initial_NIKU.tbl",
-            tm_xd="1",
-            gaia_steering_file="gaia_ering_initial_NIKU.cas",
-            gaia_results_filename_base = "resultsGAIA",
+            friction_file=config.hydrodynamic_simulation['friction_file'],
+            tm_xd=config.hydrodynamic_simulation['solver_name'],
+            gaia_steering_file=config.morphodynamic_simulation['gaia_cas'],
+            gaia_results_filename_base = config.morphodynamic_simulation['gaia_results_filename_base'],
             # General hydrosimulation parameters
-            results_filename_base="results2m3",
-            control_file="tel_ering_initial_NIKU.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation2026MU",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026-AllRange",
-            calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
-            n_cpus=16,
-            init_runs=30,
-            calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                    "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                    "zone2", # Pool
-                                    "zone3", # Slackwater
-                                    "zone4", # Glide
-                                    "zone5", # Riffle
-                                    "zone6"], # Run
-            param_values=[[0.047, 0.070],  # critical shields parameter class 1
-                          [0.047, 0.070],  # critical shields parameter class 2
-                          [0.002, 0.6],  # zone2
-                          [0.002, 0.6],  # zone3
-                          [0.002, 0.6],  # zone4
-                          [0.002, 0.6],  # zone5
-                          [0.002, 0.6]],  # zone6
-            extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
-
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-            # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
-            calibration_quantities=["CUMUL BED EVOL"],
-            # calibration_quantities=["SCALAR VELOCITY"],
-            # calibration_quantities=["WATER DEPTH"],
-            # calibration_quantities=["SCALAR VELOCITY"],
-            # calibration_quantities=["SCALAR VELOCITY","WATER DEPTH"],
-            dict_output_name="extraction-data",
-            user_param_values =False,
-            max_runs=100,
-            complete_bal_mode=True,
-            only_bal_mode=True,
-            delete_complex_outputs=True,
-            validation=False
-        )
+            results_filename_base=config.hydrodynamic_simulation['results_filename_base'],
+            control_file=config.hydrodynamic_simulation['control_file'],
+            model_dir=config.paths['model_dir'],
+            res_dir=config.paths['res_dir'],
+            calibration_pts_file_path=config.paths['calibration_pts_file_path'],
+            n_cpus=config.hydrodynamic_simulation['n_processors'],
+            init_runs=config.sampling['init_runs'],
+            calibration_parameters=config.calibration['parameters'],
+            param_values=config.calibration['param_values'],
+            extraction_quantities=config.calibration['extraction_quantities'],
+            calibration_quantities=config.calibration['calibration_quantities'],
+            dict_output_name=config.calibration['dict_output_name'],
+            user_param_values=config.execution['user_param_values'],
+            max_runs=config.sampling['max_runs'],
+            complete_bal_mode=config.execution['complete_bal_mode'],
+            only_bal_mode=config.execution['only_bal_mode'],
+            delete_complex_outputs=config.execution['delete_complex_outputs'],
+            validation=config.execution['validation']
     )
 
     # Setup and run the experiment
     exp_design = setup_experiment_design(
         complex_model=full_complexity_model,
-        tp_selection_criteria='dkl',
-        parameter_distribution='uniform',
-        parameter_sampling_method = 'sobol'
+        tp_selection_criteria=config.sampling['tp_selection_criteria'],
+        parameter_distribution=config.sampling['parameter_distribution'],
+        parameter_sampling_method=config.sampling['parameter_sampling_method']
     )
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
@@ -647,9 +569,13 @@ if __name__ == "__main__":
         model_outputs=model_evaluations,
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        eval_steps=5,
-        prior_samples=25000,
-        mc_samples_al=2000,
-        mc_exploration=1000,
-        gp_library="gpy"
+        eval_steps=config.sampling['eval_steps'],
+        prior_samples=config.sampling['prior_samples'],
+        mc_samples_al=config.sampling['mc_samples_al'],
+        mc_exploration=config.sampling['mc_exploration'],
+        gp_library=config.sampling['gp_library']
     )
+
+if __name__ == "__main__":
+    main()
+
