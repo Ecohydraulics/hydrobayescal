@@ -532,6 +532,7 @@ def main():
             tm_xd=config.hydrodynamic_simulation['solver_name'],
             gaia_steering_file=config.morphodynamic_simulation['gaia_cas'],
             gaia_results_filename_base = config.morphodynamic_simulation['gaia_results_filename_base'],
+            fortran_file = config.hydrodynamic_simulation['fortran_file'],
             # General hydrosimulation parameters
             results_filename_base=config.hydrodynamic_simulation['results_filename_base'],
             control_file=config.hydrodynamic_simulation['control_file'],
@@ -560,6 +561,7 @@ def main():
         parameter_distribution=config.sampling['parameter_distribution'],
         parameter_sampling_method=config.sampling['parameter_sampling_method']
     )
+    # pdb.set_trace()
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
         experiment_design=exp_design,

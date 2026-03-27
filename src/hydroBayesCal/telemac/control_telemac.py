@@ -21,6 +21,7 @@ class TelemacModel(HydroSimulations):
             friction_file="",
             tm_xd="Telemac2d",
             gaia_steering_file=None,
+            fortran_file=None,
             results_filename_base="",
             gaia_results_filename_base=None,
             stdout=6,
@@ -88,6 +89,7 @@ class TelemacModel(HydroSimulations):
         self.tm_xd = tm_xd
         self.gaia_steering_file = gaia_steering_file
         self.gaia_results_filename_base = gaia_results_filename_base
+        self.fortran_file = fortran_file
         self.results_filename_base = results_filename_base
         self.python_shebang = python_shebang
         self.tm_cas = "{}{}{}".format(self.model_dir, os.sep, self.control_file)
@@ -96,6 +98,10 @@ class TelemacModel(HydroSimulations):
             self.gaia_cas = "{}{}{}".format(self.model_dir, os.sep, self.gaia_steering_file)
         else:
             self.gaia_cas = None
+        if self.fortran_file is not None:
+            self.fortran_file = os.path.join(self.model_dir, "user_fortran", self.fortran_file)
+        else:
+            self.fortran_file = None
         self.shebang = python_shebang
         self.tm_xd_dict = {
             "Telemac2d": "telemac2d.py ",
@@ -139,19 +145,31 @@ class TelemacModel(HydroSimulations):
             Modified control files telemac.cas and gaia.cas for Telemac simulations.
         """
         self.tm_results_filename = self.results_filename_base + '_' + str(simulation_id) + '.slf'
+        if self.tm_xd == 'Telemac3d':
+            tm_results_key = '3D RESULT FILE'
+        else:
+            tm_results_key = 'RESULTS FILE'
+
         if self.gaia_cas is not None:
-            self.gaia_results_filename = self.gaia_results_filename_base + '_' + str(simulation_id) + '.slf'
-            params_with_results = calibration_parameters + ['RESULTS FILE', 'gaiaRESULTS FILE']
+            self.gaia_results_filename = (
+                    self.gaia_results_filename_base + '_' + str(simulation_id) + '.slf'
+            )
+
+            params_with_results = calibration_parameters + [tm_results_key, 'GAIA RESULTS FILE']
+
             values_with_results = [
                 round(val, 7) if isinstance(val, float) else val
                 for val in collocation_point_values + [self.tm_results_filename, self.gaia_results_filename]
             ]
+
         else:
-            params_with_results = calibration_parameters + ['RESULTS FILE']
+            params_with_results = calibration_parameters + [tm_results_key]
+
             values_with_results = [
                 round(val, 7) if isinstance(val, float) else val
                 for val in collocation_point_values + [self.tm_results_filename]
             ]
+
         logger.info(f'Results file name for this simulation: {self.tm_results_filename}')
 
         friction_file_path = auxiliary_file_path
@@ -183,9 +201,14 @@ class TelemacModel(HydroSimulations):
                         class_number = None
                         gaia_string=self.create_cas_string(gaia_param_name, value)
                         self.rewrite_steering_file(gaia_param_name,gaia_string, steering_module="gaia")
-
+                elif param.lower().startswith("f."):
+                    # pdb.set_trace()
+                    fortran_param_name = param[2:].strip()
+                    fortran_string = "      " + self.create_cas_string(fortran_param_name, value)
+                    self.rewrite_steering_file(fortran_param_name, fortran_string, steering_module="fortran")
                 else:
                     cas_string = self.create_cas_string(param, value)
+                    # pdb.set_trace()
                     self.rewrite_steering_file(param,cas_string, steering_module="telemac")
         except Exception as e:
             logger_error.error(f'Error occurred during CAS creation: {e}')
@@ -254,6 +277,8 @@ class TelemacModel(HydroSimulations):
             steering_file_name = self.tm_cas
         elif "gaia" in steering_module:
             steering_file_name = self.gaia_cas
+        elif "fortran" in steering_module:
+            steering_file_name = self.fortran_file
 
         # save the variable of interest without unwanted spaces
         variable_interest = param_name.rstrip().lstrip()
