@@ -882,7 +882,8 @@ class TelemacModel(HydroSimulations):
             results_folder_directory,
             validation=False,
             user_param_values=False,
-            extraction_mode="interpolated", # Choose "nearest" to get the outputs at the nearest node in mesh to the measurement coordinate
+            extraction_mode="interpolated",
+            # Choose "nearest" to get the outputs at the nearest node in mesh to the measurement coordinate or choose "interpolated" to get the outputs from an interpolation of the k-nearest nodes in the mesh to the measurement coordinate.
             k=3,
     ):
         """
@@ -937,7 +938,9 @@ class TelemacModel(HydroSimulations):
             - After each run, the extracted results are appended to the JSON files.
             - The detailed results file stores calibration quantities in a nested dictionary format, organized by variable name and point description.
         """
+        self.tm_results_filename = input_file
         extraction_quantity = extraction_quantity
+
         classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
 
         telemac_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "telemac"]
@@ -961,7 +964,7 @@ class TelemacModel(HydroSimulations):
         for key_index, key in enumerate(keys):
             xu = calibration_pts_df.iloc[key_index, 1]
             yu = calibration_pts_df.iloc[key_index, 2]
-
+            zu = calibration_pts_df.iloc[key_index, 3]
             differentiated_values = {}
 
             for model_source, quantities in zip(['telemac', 'gaia'], [telemac_quantities, gaia_quantities]):
@@ -980,6 +983,7 @@ class TelemacModel(HydroSimulations):
                 common_indices = [variables.index(q) for q in quantities]
 
                 NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+
                 NPLAN = slf.getNPLAN()
 
                 x2d = x[:len(x) // NPLAN]
@@ -991,48 +995,83 @@ class TelemacModel(HydroSimulations):
                 if extraction_mode == "nearest":
                     mode = "at nearest point"
                     k_use = 1
-                    idx_all = np.zeros(NPLAN, dtype=np.int32)
+                    idx_base = None
                 elif extraction_mode == "interpolated":
                     mode = f"through interpolation using {k} closest points"
                     k_use = k
-                    idx_all = np.zeros((k, NPLAN), dtype=np.int32)
+                    idx_base = np.zeros(k, dtype=np.int32)
                     idx_coord = np.zeros((k, 2), dtype=np.float64)
 
                 d, idx = tree.query((xu, yu), k=k_use)
+
                 print(
                     f'*** Extraction {key},{xu},{yu} performed {mode} in {model_source.upper()}!: {x2d[idx]} {y2d[idx]}\n')
 
+                # Store base indices (plane 0)
                 if k_use == 1:
-                    idx_all[0] = idx
+                    idx_base = idx
                 else:
-                    idx_all[:, 0] = idx
+                    idx_base[:] = idx
                     idx_coord[:, 0] = x2d[idx]
                     idx_coord[:, 1] = y2d[idx]
                     interpolation_coordinate = (xu, yu)
 
-                for i in range(1, NPLAN):
-                    if k_use == 1:
-                        idx_all[i] = idx_all[i - 1] + (NPOIN // NPLAN)
-                    else:
-                        idx_all[:, i] = idx_all[:, i - 1] + (NPOIN // NPLAN)
+                step = NPOIN // NPLAN
+
+                if NPLAN == 1:
+                    # No vertical dimension → only one layer
+                    p = NPLAN - 1  # = 0
+                else:
+                    step = NPOIN // NPLAN
+                    z_index = variables.index("ELEVATION Z")
+
+                    # pick one node to compute vertical structure
+                    base_idx_for_z = idx_base if k_use == 1 else idx_base[0]
+
+                    z_profile = np.zeros(NPLAN)
+
+                    for p_i in range(NPLAN):
+                        node_idx = base_idx_for_z + p_i * step
+                        slf.readVariablesAtNode(node_idx)
+                        vals = slf.getVarValuesAtNode()[-1]
+                        z_profile[p_i] = vals[z_index]
+
+                    # Convert zu (height above bottom) → absolute elevation
+                    z_bottom = z_profile[0]
+                    z_target = z_bottom + zu
+
+                    # Find corresponding layer
+                    # # p = 0 (surface or 2d mesh) or NPLAN-1 (bottom in a 3d mesh)
+                    p = np.argmin(np.abs(z_profile - z_target))
+
+                # Choose the plane you want
 
                 results_all = np.zeros((k_use, NVAR))
-                for p in range(NPLAN):
-                    for j in range(k_use):
-                        slf.readVariablesAtNode(idx_all[j, p] if k_use > 1 else idx_all[p])
-                        results = slf.getVarValuesAtNode()[-1]
-                        if k_use != 1:
-                            results_all[j, :] = results
+
+                # Single plane computation (NO NPLAN LOOP)
+                for j in range(k_use):
+                    if k_use == 1:
+                        node_idx = idx_base + p * step
+                    else:
+                        node_idx = idx_base[j] + p * step
+
+                    slf.readVariablesAtNode(node_idx)
+                    results = slf.getVarValuesAtNode()[-1]
 
                     if k_use != 1:
-                        results = interpolate_values(idx_coord, results_all, interpolation_coordinate)
+                        results_all[j, :] = results
 
-                    for index in common_indices:
-                        value = results[index]
-                        var_name = variables[index]
-                        differentiated_values[var_name] = value
+                # Interpolation if needed
+                if k_use != 1:
+                    results = interpolate_values(idx_coord, results_all, interpolation_coordinate)
 
-            differentiated_dict[key] = differentiated_values
+                # Extract variables
+                for index in common_indices:
+                    value = results[index]
+                    var_name = variables[index]
+                    differentiated_values[var_name] = value
+
+                differentiated_dict[key] = differentiated_values
 
         if simulation_number == 1:
             # Handle json_path
@@ -1051,7 +1090,7 @@ class TelemacModel(HydroSimulations):
             else:
                 print("No detailed result file found. Creating a new file.")
         # Updating json files for every run
-        #update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
+        # update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
         if validation:
             json_target = os.path.join(self.restart_data_folder, "model-results-validation.json")
         else:
@@ -1061,14 +1100,15 @@ class TelemacModel(HydroSimulations):
         update_json_file(json_path=json_target, modeled_values_dict=differentiated_dict, detailed_dict=True)
 
         if simulation_number == self.init_runs and not validation and not user_param_values:
-            update_json_file(json_path=json_path_detailed,modeled_values_dict=differentiated_dict, detailed_dict=True,save_dict=True,saving_path = json_path_restart_data)
+            update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict, detailed_dict=True,
+                             save_dict=True, saving_path=json_path_restart_data)
 
-        try:
-            shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
-            if self.gaia_cas is not None:
-                shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
-        except Exception as error:
-            print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
+        # try:
+        #     shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
+        #     if self.gaia_cas is not None:
+        #         shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
+        # except Exception as error:
+        #     print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
     @staticmethod
     def tbl_creator(

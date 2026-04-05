@@ -1749,7 +1749,6 @@ class BayesianPlotter:
             metrics: list = None,
             metric_labels: list = None,
     ):
-
         save_folder = self.save_folder
 
         if metrics is None:
@@ -1787,34 +1786,23 @@ class BayesianPlotter:
         all_labels = []
 
         # ---------------------------------------------------
-        # GLOBAL Y LIMITS PER METRIC (ROW)
+        # GLOBAL Y LIMITS PER METRIC (used only as default)
         # ---------------------------------------------------
-
         row_limits = {}
-
         for metric in metrics:
-
             vals_all = []
-
             for quantity in quantities:
                 mask_q = quantity_names == quantity
                 vals_all.append(metric_values[metric][mask_q])
-
             vals_all = np.concatenate(vals_all)
-
             ymin = vals_all.min()
             ymax = vals_all.max()
-
             pad = 0.05 * (ymax - ymin) if ymax > ymin else 0.01
-
             row_limits[metric] = (ymin - pad, ymax + pad)
-
         # ---------------------------------------------------
 
         for q_idx, quantity in enumerate(quantities):
-
             for r_idx, metric in enumerate(metrics):
-
                 ax = axs[r_idx, q_idx]
 
                 mask_q = quantity_names == quantity
@@ -1850,33 +1838,38 @@ class BayesianPlotter:
                 # ---------------------------------------------------
                 # X TICKS WITH EXTRA EMPTY LAST TICK
                 # ---------------------------------------------------
-
                 min_tp = train_points.min()
                 max_tp = train_points.max()
-
                 xticks = np.arange(min_tp, max_tp + 11, 10)
-
                 ax.set_xticks(xticks)
-
                 xtick_labels = [str(x) for x in xticks]
                 xtick_labels[-1] = ""
-
                 ax.set_xticklabels(xtick_labels)
 
                 # ---------------------------------------------------
-                # Y LIMITS (ROW CONSISTENT)
+                # CUSTOM Y LIMITS PER SUBPLOT
                 # ---------------------------------------------------
-
+                # Default row-wise limits (fallback)
                 ymin, ymax = row_limits[metric]
+
+                # Apply your custom limits
+                if q_idx in [0, 2]:  # first and third columns
+                    if r_idx == 0:
+                        ymin, ymax = 0.0, 0.025
+                    elif r_idx == 1:
+                        ymin, ymax = 0.0, 0.10
+                elif q_idx == 1:  # second column
+                    if r_idx == 0:
+                        ymin, ymax = 0.0, 0.075
+                    elif r_idx == 1:
+                        ymin, ymax = 0.0, 0.25
 
                 ax.set_ylim(ymin, ymax)
 
                 # ---------------------------------------------------
                 # 5 Y TICKS + FORMAT TO 3 DECIMALS
                 # ---------------------------------------------------
-
-                yticks = np.linspace(ymin, ymax, 5)
-
+                yticks = np.linspace(ymin, ymax, 6)
                 ax.set_yticks(yticks)
                 ax.set_yticklabels([f"{y:.3f}" for y in yticks])
 
@@ -1889,11 +1882,9 @@ class BayesianPlotter:
         # ---------------------------------------------------
         # ROW LABELS
         # ---------------------------------------------------
-
         for r_idx, row_label in enumerate(metric_labels):
             pos = axs[r_idx, 0].get_position()
             y_center = (pos.y0 + pos.y1) / 2
-
             fig.text(
                 0.06,
                 y_center,
@@ -1923,7 +1914,6 @@ class BayesianPlotter:
         )
 
         plt.close(fig)
-
 
 
 
