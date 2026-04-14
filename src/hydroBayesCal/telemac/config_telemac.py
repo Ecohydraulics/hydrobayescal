@@ -21,9 +21,11 @@ classification_tm_gaia_dict = {
     "FREE SURFACE": "telemac",
     "VELOCITY U": "telemac",
     "VELOCITY V": "telemac",
+    "VELOCITY W": "telemac",
     "FROUDE NUMBER": "telemac",
     "TURBULENT ENERG": "telemac",
     "BOTTOM SHEAR STRESS": "telemac",
+    "DISSIPATION": "telemac",
 
     "BED ELEVATION": "gaia",
     "CUMUL BED EVOL": "gaia",

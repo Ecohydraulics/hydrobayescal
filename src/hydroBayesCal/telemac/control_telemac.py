@@ -861,14 +861,6 @@ class TelemacModel(HydroSimulations):
 
             if delete_slf_files:
                 delete_slf(self.calibration_folder)
-                # gaia_results_path = os.path.join(self.model_dir, self.gaia_results_filename)
-                # if os.path.isfile(gaia_results_path):
-                #     os.remove(gaia_results_path)
-                # else:
-                #     print(f"Warning: {gaia_results_path} not found.")
-
-        # If required, we can return also the whole matrix containing the model results for ALL extraction quantities.
-        # To do it, return model_results_extraction
         return model_results_calibration
 
     def extract_data_point(
@@ -979,7 +971,6 @@ class TelemacModel(HydroSimulations):
                 variables = [' '.join(v.split()) for v in slf.getVarNames()]
                 units = [' '.join(u.split()) for u in slf.getVarUnits()]
                 NVAR = len(variables)
-
                 common_indices = [variables.index(q) for q in quantities]
 
                 NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
@@ -1103,12 +1094,12 @@ class TelemacModel(HydroSimulations):
             update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict, detailed_dict=True,
                              save_dict=True, saving_path=json_path_restart_data)
 
-        # try:
-        #     shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
-        #     if self.gaia_cas is not None:
-        #         shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
-        # except Exception as error:
-        #     print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
+        try:
+            shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
+            if self.gaia_cas is not None:
+                shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
+        except Exception as error:
+            print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
     @staticmethod
     def tbl_creator(

@@ -24,7 +24,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from pathlib import Path
 from matplotlib import gridspec
-from matplotlib.ticker import MaxNLocator, FormatStrFormatter
+from matplotlib.ticker import MaxNLocator, FormatStrFormatter, MultipleLocator
 
 
 class BayesianPlotter:
@@ -1748,7 +1748,9 @@ class BayesianPlotter:
             quantities: list,
             metrics: list = None,
             metric_labels: list = None,
+            spine_linewidth: float = 0.8,  # controls external subplot border thickness
     ):
+
         save_folder = self.save_folder
 
         if metrics is None:
@@ -1794,6 +1796,7 @@ class BayesianPlotter:
             for quantity in quantities:
                 mask_q = quantity_names == quantity
                 vals_all.append(metric_values[metric][mask_q])
+
             vals_all = np.concatenate(vals_all)
             ymin = vals_all.min()
             ymax = vals_all.max()
@@ -1816,16 +1819,24 @@ class BayesianPlotter:
                 mo_val = metric_values[metric][mask_mo]
 
                 line_mo, = ax.plot(
-                    mo_tp, mo_val,
-                    marker='o', linestyle='-', color='black',
-                    linewidth=1.5, markersize=6,
+                    mo_tp,
+                    mo_val,
+                    marker='o',
+                    linestyle='-',
+                    color='black',
+                    linewidth=1.5,
+                    markersize=6,
                     label='MO (Multi-output GP)'
                 )
 
                 line_so, = ax.plot(
-                    so_tp, so_val,
-                    marker='s', linestyle='--', color='slategray',
-                    linewidth=1.5, markersize=6,
+                    so_tp,
+                    so_val,
+                    marker='s',
+                    linestyle='--',
+                    color='slategray',
+                    linewidth=1.5,
+                    markersize=6,
                     label='SO (Single-output GP)'
                 )
 
@@ -1842,6 +1853,7 @@ class BayesianPlotter:
                 max_tp = train_points.max()
                 xticks = np.arange(min_tp, max_tp + 11, 10)
                 ax.set_xticks(xticks)
+
                 xtick_labels = [str(x) for x in xticks]
                 xtick_labels[-1] = ""
                 ax.set_xticklabels(xtick_labels)
@@ -1849,15 +1861,14 @@ class BayesianPlotter:
                 # ---------------------------------------------------
                 # CUSTOM Y LIMITS PER SUBPLOT
                 # ---------------------------------------------------
-                # Default row-wise limits (fallback)
                 ymin, ymax = row_limits[metric]
 
-                # Apply your custom limits
                 if q_idx in [0, 2]:  # first and third columns
                     if r_idx == 0:
-                        ymin, ymax = 0.0, 0.025
+                        ymin, ymax = 0.0, 0.030
                     elif r_idx == 1:
                         ymin, ymax = 0.0, 0.10
+
                 elif q_idx == 1:  # second column
                     if r_idx == 0:
                         ymin, ymax = 0.0, 0.075
@@ -1867,7 +1878,7 @@ class BayesianPlotter:
                 ax.set_ylim(ymin, ymax)
 
                 # ---------------------------------------------------
-                # 5 Y TICKS + FORMAT TO 3 DECIMALS
+                # 6 Y TICKS + FORMAT TO 3 DECIMALS
                 # ---------------------------------------------------
                 yticks = np.linspace(ymin, ymax, 6)
                 ax.set_yticks(yticks)
@@ -1875,6 +1886,12 @@ class BayesianPlotter:
 
                 ax.tick_params(axis='both', which='major', labelsize=28)
                 ax.grid(True, linestyle=':', alpha=0.7)
+
+                # ---------------------------------------------------
+                # THINNER SUBPLOT BORDER LINES
+                # ---------------------------------------------------
+                for spine in ax.spines.values():
+                    spine.set_linewidth(spine_linewidth)
 
                 if r_idx == num_metrics - 1:
                     ax.set_xlabel("Training Points", fontsize=28)
@@ -1885,6 +1902,7 @@ class BayesianPlotter:
         for r_idx, row_label in enumerate(metric_labels):
             pos = axs[r_idx, 0].get_position()
             y_center = (pos.y0 + pos.y1) / 2
+
             fig.text(
                 0.06,
                 y_center,
@@ -1914,8 +1932,6 @@ class BayesianPlotter:
         )
 
         plt.close(fig)
-
-
 
 
 
@@ -2000,9 +2016,95 @@ class BayesianPlotter:
             obs_split,
             coordinates_df,
             model_names=None,
-            quantity_names=None,  # New parameter for quantity labels
+            quantity_names=None,
+            plot_models=None
     ):
         save_folder = self.save_folder
+
+        def set_nice_ticks(ax, axis='x', n_ticks=5, start_at_zero=False):
+            if axis == 'x':
+                vmin, vmax = ax.get_xlim()
+            else:
+                vmin, vmax = ax.get_ylim()
+
+            if not np.isfinite(vmin) or not np.isfinite(vmax):
+                return
+
+            if start_at_zero:
+                vmin = 0.0
+
+            if np.isclose(vmin, vmax):
+                delta = 0.1 * abs(vmin) if vmin != 0 else 0.1
+                vmin -= delta
+                vmax += delta
+
+            raw_step = (vmax - vmin) / (n_ticks - 1)
+
+            exponent = np.floor(np.log10(raw_step))
+            fraction = raw_step / (10 ** exponent)
+
+            if fraction <= 1:
+                nice_fraction = 1
+            elif fraction <= 2:
+                nice_fraction = 2
+            elif fraction <= 2.5:
+                nice_fraction = 2.5
+            elif fraction <= 5:
+                nice_fraction = 5
+            else:
+                nice_fraction = 10
+
+            step = nice_fraction * (10 ** exponent)
+
+            if start_at_zero:
+                ticks = step * np.arange(n_ticks)
+            else:
+                center = 0.5 * (vmin + vmax)
+                total_span = step * (n_ticks - 1)
+                tick_min = center - total_span / 2
+                ticks = tick_min + step * np.arange(n_ticks)
+
+            ticks = np.round(ticks, 10)
+
+            if axis == 'x':
+                ax.set_xlim(ticks[0], ticks[-1])
+                ax.set_xticks(ticks)
+            else:
+                ax.set_ylim(ticks[0], ticks[-1])
+                ax.set_yticks(ticks)
+
+        def padded_limits(values, pad=0.08):
+            values = np.asarray(values, dtype=float)
+            values = values[np.isfinite(values)]
+
+            if values.size == 0:
+                return (-1.0, 1.0)
+
+            vmin = np.nanmin(values)
+            vmax = np.nanmax(values)
+
+            if np.isclose(vmin, vmax):
+                delta = 0.1 * abs(vmin) if vmin != 0 else 0.1
+                return vmin - delta, vmax + delta
+
+            dv = vmax - vmin
+            return vmin - pad * dv, vmax + pad * dv
+
+        def symmetric_limits(values, pad=0.10):
+            values = np.asarray(values, dtype=float)
+            values = values[np.isfinite(values)]
+
+            if values.size == 0:
+                return (-1.0, 1.0)
+
+            y_center = np.mean(values)
+            y_range = np.max(np.abs(values - y_center))
+
+            if np.isclose(y_range, 0.0):
+                y_range = 0.1 * abs(y_center) if y_center != 0 else 0.1
+
+            margin = pad * y_range
+            return y_center - y_range - margin, y_center + y_range + margin
 
         n_quantities = len(cm_outputs_split)
         P = next(iter(cm_outputs_split.values())).shape[0]
@@ -2014,26 +2116,23 @@ class BayesianPlotter:
         spearman_cm_per_quantity = {f"Q{i + 1}": [] for i in range(n_quantities)}
         spearman_sm_per_quantity = {f"Q{i + 1}": [] for i in range(n_quantities)}
 
-        if model_names is None or len(model_names) != P:
+        if model_names is None:
             model_names = [f"M{i + 1}" for i in range(P)]
+        elif len(model_names) != P:
+            raise ValueError(f"Expected {P} model names, got {len(model_names)}")
 
-        if quantity_names is None or len(quantity_names) != n_quantities:
+        if quantity_names is None:
             quantity_names = [f"Q{i + 1}" for i in range(n_quantities)]
+        elif len(quantity_names) != n_quantities:
+            raise ValueError(f"Expected {n_quantities} quantity names, got {len(quantity_names)}")
 
         for p in range(P):
-            model_summary = {"model_id": p + 1, "model_name": model_names[p]}
+            model_summary = {"model_id": p + 1, "model_name": str(model_names[p])}
             total_rmse_cm = []
             total_rmse_sm = []
             total_nrmse_cm = []
             total_nrmse_sm = []
 
-            all_cm_vals = []
-            all_sm_vals = []
-            all_obs_vals = []
-            per_quantity_cm_corr=[]
-            per_quantity_sm_corr=[]
-
-            # Collect all quantities data for composite score calculation
             cm_quantities_matrix = []
             sm_quantities_matrix = []
             obs_quantities_matrix = []
@@ -2046,18 +2145,18 @@ class BayesianPlotter:
 
                 obs_vals_raw = obs_split[f'obs_{i + 1}']
                 obs_vals = obs_vals_raw[0] if obs_vals_raw.ndim > 1 else obs_vals_raw
-                # Store for composite score calculation
+
                 cm_quantities_matrix.append(cm_vals)
                 sm_quantities_matrix.append(sm_vals)
                 obs_quantities_matrix.append(obs_vals)
 
-                residuals_cm = (cm_vals - obs_vals)
-                residuals_sm = (sm_vals - obs_vals)
+                residuals_cm = cm_vals - obs_vals
+                residuals_sm = sm_vals - obs_vals
+
                 rmse_cm_total = np.sqrt(np.mean((cm_vals - obs_vals) ** 2))
                 rmse_sm_total = np.sqrt(np.mean((sm_vals - obs_vals) ** 2))
 
                 obs_std = np.std(obs_vals)
-
                 if obs_std == 0:
                     nrmse_cm_total = np.nan
                     nrmse_sm_total = np.nan
@@ -2067,8 +2166,6 @@ class BayesianPlotter:
 
                 spearman_cm = spearmanr(cm_vals, obs_vals).correlation
                 spearman_sm = spearmanr(sm_vals, obs_vals).correlation
-                per_quantity_cm_corr.append(spearman_cm)
-                per_quantity_sm_corr.append(spearman_sm)
 
                 model_summary[f"RMSE_CM_Q{i + 1}"] = rmse_cm_total
                 model_summary[f"RMSE_SM_Q{i + 1}"] = rmse_sm_total
@@ -2085,10 +2182,6 @@ class BayesianPlotter:
                 spearman_cm_per_quantity[f"Q{i + 1}"].append(spearman_cm)
                 spearman_sm_per_quantity[f"Q{i + 1}"].append(spearman_sm)
 
-                all_cm_vals.extend(cm_vals)
-                all_sm_vals.extend(sm_vals)
-                all_obs_vals.extend(obs_vals)
-
                 cm_ranks = pd.Series(cm_vals).rank().values
                 sm_ranks = pd.Series(sm_vals).rank().values
                 obs_ranks = pd.Series(obs_vals).rank().values
@@ -2097,7 +2190,7 @@ class BayesianPlotter:
                     ci_width = upper_ci_vals[j] - lower_ci_vals[j]
                     spatial_records.append({
                         "model_id": p + 1,
-                        "model_name": model_names[p],
+                        "model_name": str(model_names[p]),
                         "quantity": f"Q{i + 1}",
                         "x": coordinates_df.iloc[j]['x'],
                         "y": coordinates_df.iloc[j]['y'],
@@ -2111,13 +2204,11 @@ class BayesianPlotter:
                         "sm_output": sm_vals[j],
                         "obs": obs_vals[j]
                     })
-            # COMPOSITE SCORE METHOD for Overall Spearman Correlation
-            # Convert to numpy arrays and transpose to have shape (N_points, N_quantities)
-            cm_matrix = np.array(cm_quantities_matrix).T  # Shape: (N, n_quantities)
-            sm_matrix = np.array(sm_quantities_matrix).T  # Shape: (N, n_quantities)
-            obs_matrix = np.array(obs_quantities_matrix).T  # Shape: (N, n_quantities)
 
-            # Standardize each quantity separately
+            cm_matrix = np.array(cm_quantities_matrix).T
+            sm_matrix = np.array(sm_quantities_matrix).T
+            obs_matrix = np.array(obs_quantities_matrix).T
+
             scaler_cm = StandardScaler()
             scaler_sm = StandardScaler()
             scaler_obs = StandardScaler()
@@ -2126,22 +2217,15 @@ class BayesianPlotter:
             sm_standardized = scaler_sm.fit_transform(sm_matrix)
             obs_standardized = scaler_obs.fit_transform(obs_matrix)
 
-            # Create composite scores (equal weighting across quantities)
             cm_composite = np.mean(cm_standardized, axis=1)
             sm_composite = np.mean(sm_standardized, axis=1)
             obs_composite = np.mean(obs_standardized, axis=1)
-
-            # Calculate overall Spearman correlation using composite scores
 
             overall_spearman_cm = spearmanr(cm_composite, obs_composite).correlation
             overall_spearman_sm = spearmanr(sm_composite, obs_composite).correlation
 
             model_summary["Overall_NRMSE_CM"] = np.nanmean(total_nrmse_cm)
             model_summary["Overall_NRMSE_SM"] = np.nanmean(total_nrmse_sm)
-
-            # overall_spearman_cm = np.nanmean(per_quantity_cm_corr)
-            # overall_spearman_sm = np.nanmean(per_quantity_sm_corr)
-
             model_summary["Overall_Spearman_CM"] = overall_spearman_cm
             model_summary["Overall_Spearman_SM"] = overall_spearman_sm
 
@@ -2161,68 +2245,95 @@ class BayesianPlotter:
             df_summary[f"Rank_Spearman_CM_{q}"] = cm_ranks.values
             df_summary[f"Rank_Spearman_SM_{q}"] = sm_ranks.values
 
-        # ---------- Overall scatter plot ----------
-        # ========= COMPUTE LIMITS FOR ALL PLOTS =========
+        if plot_models is not None:
+            df_plot = df_summary.iloc[plot_models]
+        else:
+            df_plot = df_summary
 
-        # Global Spearman Y-limits (shared across all plots)
-        all_spearman_overall = pd.concat([df_summary["Overall_Spearman_CM"], df_summary["Overall_Spearman_SM"]])
+        all_spearman_overall = pd.concat(
+            [df_plot["Overall_Spearman_CM"], df_plot["Overall_Spearman_SM"]],
+            ignore_index=True
+        )
+
         all_spearman_per_quantity = []
-
         for i in range(n_quantities):
             q = f"Q{i + 1}"
-            spearman_all = pd.concat([df_summary[f"Spearman_CM_{q}"], df_summary[f"Spearman_SM_{q}"]])
+            spearman_all = pd.concat(
+                [df_plot[f"Spearman_CM_{q}"], df_plot[f"Spearman_SM_{q}"]],
+                ignore_index=True
+            )
             all_spearman_per_quantity.extend(spearman_all.values)
 
-        # Combine all Spearman values for global Y limits
         all_spearman_combined = list(all_spearman_overall.values) + all_spearman_per_quantity
-        min_spear_global = min(all_spearman_combined)
-        max_spear_global = max(all_spearman_combined)
+        shared_ylim_global = symmetric_limits(all_spearman_combined, pad=0.10)
 
-        spear_margin = 0.15 * (max_spear_global - min_spear_global)
-        shared_ylim_global = (0.35,0.75)
-        shared_limit_global_overall_plots = (0.60,0.72)
-        # Individual X-limits for overall plots (NRMSE)
-        all_nrmse_cm = df_summary["Overall_NRMSE_CM"]
-        all_nrmse_sm = df_summary["Overall_NRMSE_SM"]
+        all_nrmse_cm = df_plot["Overall_NRMSE_CM"]
+        all_nrmse_sm = df_plot["Overall_NRMSE_SM"]
 
-        nrmse_cm_margin = 0.15 * (all_nrmse_cm.max() - all_nrmse_cm.min())
-        nrmse_sm_margin = 0.15 * (all_nrmse_sm.max() - all_nrmse_sm.min())
+        nrmse_cm_margin = (
+            0.15 * (all_nrmse_cm.max() - all_nrmse_cm.min())
+            if not np.isclose(all_nrmse_cm.max(), all_nrmse_cm.min())
+            else 0.1 * abs(all_nrmse_cm.mean())
+        )
+        nrmse_sm_margin = (
+            0.15 * (all_nrmse_sm.max() - all_nrmse_sm.min())
+            if not np.isclose(all_nrmse_sm.max(), all_nrmse_sm.min())
+            else 0.1 * abs(all_nrmse_sm.mean())
+        )
 
-        xlim_cm_overall = (all_nrmse_cm.min() - nrmse_cm_margin, all_nrmse_cm.max() + nrmse_cm_margin)
-        xlim_sm_overall = (all_nrmse_sm.min() - nrmse_sm_margin, all_nrmse_sm.max() + nrmse_sm_margin)
+        xlim_cm_overall = (
+            all_nrmse_cm.min() - nrmse_cm_margin,
+            all_nrmse_cm.max() + nrmse_cm_margin
+        )
+        xlim_sm_overall = (
+            all_nrmse_sm.min() - nrmse_sm_margin,
+            all_nrmse_sm.max() + nrmse_sm_margin
+        )
 
-        # Individual X-limits for per-quantity plots (RMSE)
         xlims_cm_quantity = []
         xlims_sm_quantity = []
 
         for i in range(n_quantities):
             q = f"Q{i + 1}"
-            rmse_cm = df_summary[f"RMSE_CM_{q}"]
-            rmse_sm = df_summary[f"RMSE_SM_{q}"]
+            rmse_cm = df_plot[f"RMSE_CM_{q}"]
+            rmse_sm = df_plot[f"RMSE_SM_{q}"]
 
-            cm_margin = 0.15 * (
-                        rmse_cm.max() - rmse_cm.min()) if rmse_cm.max() != rmse_cm.min() else 0.1 * rmse_cm.mean()
-            sm_margin = 0.15 * (
-                        rmse_sm.max() - rmse_sm.min()) if rmse_sm.max() != rmse_sm.min() else 0.1 * rmse_sm.mean()
+            cm_margin = (
+                0.15 * (rmse_cm.max() - rmse_cm.min())
+                if not np.isclose(rmse_cm.max(), rmse_cm.min())
+                else 0.1 * abs(rmse_cm.mean())
+            )
+            sm_margin = (
+                0.15 * (rmse_sm.max() - rmse_sm.min())
+                if not np.isclose(rmse_sm.max(), rmse_sm.min())
+                else 0.1 * abs(rmse_sm.mean())
+            )
 
             xlims_cm_quantity.append((rmse_cm.min() - cm_margin, rmse_cm.max() + cm_margin))
             xlims_sm_quantity.append((rmse_sm.min() - sm_margin, rmse_sm.max() + sm_margin))
 
-        # Individual Y-limits for per-quantity plots (Spearman)
         ylims_cm_quantity = []
         ylims_sm_quantity = []
 
         for i in range(n_quantities):
             q = f"Q{i + 1}"
 
-            spearman_cm = df_summary[f"Spearman_CM_{q}"]
-            spearman_sm = df_summary[f"Spearman_SM_{q}"]
+            spearman_cm = df_plot[f"Spearman_CM_{q}"]
+            spearman_sm = df_plot[f"Spearman_SM_{q}"]
 
             cm_min, cm_max = spearman_cm.min(), spearman_cm.max()
             sm_min, sm_max = spearman_sm.min(), spearman_sm.max()
 
-            cm_margin = 0.15 * (cm_max - cm_min) if cm_max != cm_min else 0.1 * abs(cm_min)
-            sm_margin = 0.15 * (sm_max - sm_min) if sm_max != sm_min else 0.1 * abs(sm_min)
+            cm_margin = (
+                0.15 * (cm_max - cm_min)
+                if not np.isclose(cm_max, cm_min)
+                else (0.1 * abs(cm_min) if cm_min != 0 else 0.1)
+            )
+            sm_margin = (
+                0.15 * (sm_max - sm_min)
+                if not np.isclose(sm_max, sm_min)
+                else (0.1 * abs(sm_min) if sm_min != 0 else 0.1)
+            )
 
             cm_ylim = (cm_min - cm_margin, cm_max + cm_margin)
             sm_ylim = (sm_min - sm_margin, sm_max + sm_margin)
@@ -2235,128 +2346,40 @@ class BayesianPlotter:
 
         plt.rcParams.update({'xtick.labelsize': 20, 'ytick.labelsize': 20})
 
-        # Overall scatter plot (CM)
-        def padded_limits(values, pad=0.08):
-            vmin = np.nanmin(values)
-            vmax = np.nanmax(values)
-            dv = vmax - vmin if vmax > vmin else 1.0
-            return vmin - pad * dv, vmax + pad * dv
-
-        fig, ax = plt.subplots(figsize=(8, 6))
-        colors = plt.cm.get_cmap('tab10', len(df_summary))
-
-        for idx, row in df_summary.iterrows():
-            ax.scatter(row["Overall_NRMSE_CM"], row["Overall_Spearman_CM"],
-                       color=colors(idx), label=row["model_name"],
-                       s=150, alpha=0.8, marker='o')
-
-        ax.set_title("NRMSE vs Spearman (CM)", fontsize=20)
-
-        # Dynamic axis limits
-        xlim = padded_limits(df_summary["Overall_NRMSE_CM"].values)
-        ylim = padded_limits(df_summary["Overall_Spearman_CM"].values)
-
-        ax.set_xlim(xlim)
-        ax.set_ylim(ylim)
-
-        ax.set_xlabel("Normalized RMSE (NRMSE)", fontsize=18)
-        ax.set_ylabel("Spearman Correlation ($\\rho$)", fontsize=18)
-
-        ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-        # ----- X axis: exactly 6 ticks, 2 decimals -----
-        xmin, xmax = ax.get_xlim()
-        ax.set_xticks(np.linspace(xmin, xmax, 6))
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-
-        # ----- Y axis: exactly 5 ticks, 2 decimals -----
-        ymin, ymax = ax.get_ylim()
-        ax.set_yticks(np.linspace(ymin, ymax, 5 ))
-        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-
-
-        for spine in ax.spines.values():
-            spine.set_linewidth(1.5)
-
-        ax.legend(loc='best', fontsize=14, frameon=True)
-        fig.tight_layout()
-        fig.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman_CM.svg"), dpi=300)
-        # plt.show()
-
-        # ---------- Overall scatter plot (SM) ----------
-        fig, ax = plt.subplots(figsize=(8, 6))
-        colors = plt.cm.get_cmap('tab10', len(df_summary))
-
-        for idx, row in df_summary.iterrows():
-            ax.scatter(row["Overall_NRMSE_SM"], row["Overall_Spearman_SM"],
-                       color=colors(idx), label=row["model_name"],
-                       s=150, alpha=0.8, marker='o')
-
-        ax.set_title("NRMSE vs Spearman (SM)", fontsize=20)
-
-        #  Dynamic axis limits
-        xlim = padded_limits(df_summary["Overall_NRMSE_SM"].values)
-        ylim = padded_limits(df_summary["Overall_Spearman_SM"].values)
-
-        ax.set_xlim(xlim)
-        ax.set_ylim(ylim)
-
-        ax.set_xlabel("Normalized RMSE (NRMSE)", fontsize=18)
-        ax.set_ylabel("Spearman Correlation ($\\rho$)", fontsize=18)
-
-        ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-        # ----- X axis: exactly 6 ticks, 2 decimals -----
-        xmin, xmax = ax.get_xlim()
-        ax.set_xticks(np.linspace(xmin, xmax, 6))
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-
-        # ----- Y axis: exactly 5 ticks, 2 decimals -----
-        ymin, ymax = ax.get_ylim()
-        ax.set_yticks(np.linspace(ymin, ymax, 5))
-        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-
-        for spine in ax.spines.values():
-            spine.set_linewidth(1.5)
-
-        ax.legend(loc='best', fontsize=14, frameon=True)
-        fig.tight_layout()
-        fig.savefig(os.path.join(save_folder, "bulk_statistics_nrmse_vs_spearman_SM.svg"), dpi=300)
-        # plt.show()
-
-        # Subplots for CM
+        # ---------- Subplots for CM (RMSE vs Spearman) ----------
         ncols = 2
         nrows = math.ceil(n_quantities / ncols)
 
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
         axes = axes.flatten()
-        colors = plt.cm.get_cmap('tab10', len(df_summary))
+        colors = plt.cm.get_cmap('tab10', len(df_plot))
 
         for i in range(n_quantities):
             ax = axes[i]
             q = f"Q{i + 1}"
 
-            for idx, row in df_summary.iterrows():
-                ax.scatter(row[f"RMSE_CM_{q}"], row[f"Spearman_CM_{q}"],
-                           color=colors(idx), label=row["model_name"],
-                           s=100, alpha=0.8)
+            for color_idx, (_, row) in enumerate(df_plot.iterrows()):
+                ax.scatter(
+                    row[f"RMSE_CM_{q}"],
+                    row[f"Spearman_CM_{q}"],
+                    color=colors(color_idx),
+                    label=row["model_name"],
+                    s=100,
+                    alpha=0.8
+                )
 
             ax.set_title(quantity_names[i], fontsize=20)
             ax.set_xlim(xlims_cm_quantity[i])
-            if i == 1:  # Replace 3 with the index of the outlier subplot
-                ax.set_ylim((0.10, 0.70))  # manually chosen limits
-            else:
-                ax.set_ylim(ylims_cm_quantity[i])
+            ax.set_ylim(ylims_cm_quantity[i])
+
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
             ax.set_xlabel("RMSE", fontsize=16)
             ax.set_ylabel(r"Spearman $\rho$", fontsize=16)
-            # ----- X axis: exactly 6 ticks, 2 decimals -----
-            xmin, xmax = ax.get_xlim()
-            ax.set_xticks(np.linspace(xmin, xmax, 5))
-            ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
-            # ----- Y axis: exactly 5 ticks, 2 decimals -----
-            ymin, ymax = ax.get_ylim()
-            ax.set_yticks(np.linspace(ymin, ymax, 5))
-            ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+            set_nice_ticks(ax, 'x', n_ticks=5)
+            set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -2365,44 +2388,49 @@ class BayesianPlotter:
             fig.delaxes(axes[j])
 
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.02),
-                   ncol=len(model_names), fontsize=16)
+        by_label = dict(zip(labels, handles))
+        fig.legend(
+            by_label.values(),
+            by_label.keys(),
+            loc='upper center',
+            bbox_to_anchor=(0.5, 1.02),
+            ncol=max(1, len(by_label)),
+            fontsize=16
+        )
         fig.tight_layout(rect=[0, 0, 1, 0.93])
         fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_CM.svg"), dpi=300)
-        # plt.show()
 
-        # Subplots for SM
+        # ---------- Subplots for SM (RMSE vs Spearman) ----------
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
         axes = axes.flatten()
-        colors = plt.cm.get_cmap('tab10', len(df_summary))
+        colors = plt.cm.get_cmap('tab10', len(df_plot))
 
         for i in range(n_quantities):
             ax = axes[i]
             q = f"Q{i + 1}"
 
-            for idx, row in df_summary.iterrows():
-                ax.scatter(row[f"RMSE_SM_{q}"], row[f"Spearman_SM_{q}"],
-                           color=colors(idx), label=row["model_name"],
-                           s=100, alpha=0.8)
+            for color_idx, (_, row) in enumerate(df_plot.iterrows()):
+                ax.scatter(
+                    row[f"RMSE_SM_{q}"],
+                    row[f"Spearman_SM_{q}"],
+                    color=colors(color_idx),
+                    label=row["model_name"],
+                    s=100,
+                    alpha=0.8
+                )
 
             ax.set_title(quantity_names[i], fontsize=20)
             ax.set_xlim(xlims_sm_quantity[i])
-            if i == 1:  # Replace 3 with the index of the outlier subplot
-                ax.set_ylim((0.10, 0.70))  # Your manually chosen limits
-            else:
-                ax.set_ylim(ylims_cm_quantity[i])
+            ax.set_ylim(ylims_sm_quantity[i])
+
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
             ax.set_xlabel("RMSE", fontsize=18)
             ax.set_ylabel(r"Spearman $\rho$", fontsize=18)
-            # ----- X axis: exactly 6 ticks, 2 decimals -----
-            xmin, xmax = ax.get_xlim()
-            ax.set_xticks(np.linspace(xmin, xmax, 6))
-            ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
-            # ----- Y axis: exactly 5 ticks, 2 decimals -----
-            ymin, ymax = ax.get_ylim()
-            ax.set_yticks(np.linspace(ymin, ymax, 5))
-            ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+            set_nice_ticks(ax, 'x', n_ticks=5)
+            set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -2411,179 +2439,138 @@ class BayesianPlotter:
             fig.delaxes(axes[j])
 
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.02),
-                   ncol=len(model_names), fontsize=16)
+        by_label = dict(zip(labels, handles))
+        fig.legend(
+            by_label.values(),
+            by_label.keys(),
+            loc='upper center',
+            bbox_to_anchor=(0.5, 1.02),
+            ncol=max(1, len(by_label)),
+            fontsize=16
+        )
         fig.tight_layout(rect=[0, 0, 1, 0.93])
         fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_SM.svg"), dpi=300)
-        # plt.show()
-        # Subplots for CM (NRMSE vs Spearman)
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
-        axes = axes.flatten()
-        colors = plt.cm.get_cmap('tab10', len(df_summary))
 
-        for i in range(n_quantities):
-            ax = axes[i]
-            q = f"Q{i + 1}"
+        # ---------- Unified subplots for NRMSE vs Spearman ----------
+        def plot_nrmse_vs_spearman_subplots(metric_tag, overall_xlim, quantity_ylims, filename):
+            n_panels = n_quantities + 1
+            ncols_local = 2
+            nrows_local = math.ceil(n_panels / ncols_local)
 
-            for idx, row in df_summary.iterrows():
-                ax.scatter(row[f"NRMSE_CM_{q}"], row[f"Spearman_CM_{q}"],
-                           color=colors(idx), label=row["model_name"],
-                           s=100, alpha=0.8)
+            fig, axes = plt.subplots(
+                nrows=nrows_local,
+                ncols=ncols_local,
+                figsize=(12, 4 * nrows_local),
+                sharey=False
+            )
+            axes = axes.flatten()
+            colors = plt.cm.get_cmap('tab10', len(df_plot))
 
-            ax.set_title(quantity_names[i], fontsize=20)
-            ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+            # Overall panel
+            ax = axes[0]
+            overall_x_col = f"Overall_NRMSE_{metric_tag}"
+            overall_y_col = f"Overall_Spearman_{metric_tag}"
+
+            for color_idx, (_, row) in enumerate(df_plot.iterrows()):
+                ax.scatter(
+                    row[overall_x_col],
+                    row[overall_y_col],
+                    color=colors(color_idx),
+                    label=row["model_name"],
+                    s=150,
+                    alpha=0.8,
+                    marker='o'
+                )
+
+            ax.set_title("Overall", fontsize=20)
             ax.set_xlabel("NRMSE", fontsize=16)
             ax.set_ylabel(r"Spearman $\rho$", fontsize=16)
+            ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
 
-            xmin, xmax = ax.get_xlim()
-            ax.set_xticks(np.linspace(xmin, xmax, 5))
-            ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+            ax.set_xlim(overall_xlim)
+            y_vals = df_plot[overall_y_col].values
+            y_min, y_max = symmetric_limits(y_vals, pad=0.10)
+            ax.set_ylim(y_min, y_max)
 
-            ymin, ymax = ax.get_ylim()
-            ax.set_yticks(np.linspace(ymin, ymax, 5))
-            ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+            set_nice_ticks(ax, 'x', n_ticks=5)
+            set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+            ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
 
-        for j in range(n_quantities, len(axes)):
-            fig.delaxes(axes[j])
+            # Quantity panels
+            for i in range(n_quantities):
+                ax = axes[i + 1]
+                q = f"Q{i + 1}"
 
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.02),
-                   ncol=len(model_names), fontsize=16)
+                x_col = f"NRMSE_{metric_tag}_{q}"
+                y_col = f"Spearman_{metric_tag}_{q}"
 
-        fig.tight_layout(rect=[0, 0, 1, 0.93])
-        fig.savefig(os.path.join(save_folder, "per_quantity_nrmse_vs_spearman_CM.svg"), dpi=300)
+                for color_idx, (_, row) in enumerate(df_plot.iterrows()):
+                    ax.scatter(
+                        row[x_col],
+                        row[y_col],
+                        color=colors(color_idx),
+                        label=row["model_name"],
+                        s=100,
+                        alpha=0.8
+                    )
+
+                ax.set_title(quantity_names[i], fontsize=20)
+                ax.set_xlabel("NRMSE", fontsize=16)
+                ax.set_ylabel(r"Spearman $\rho$", fontsize=16)
+                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+
+                current_xlim = padded_limits(df_plot[x_col].values)
+                ax.set_xlim(current_xlim)
+                ax.set_ylim(quantity_ylims[i])
+
+                set_nice_ticks(ax, 'x', n_ticks=5)
+                set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+                ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+                ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+                for spine in ax.spines.values():
+                    spine.set_linewidth(1.5)
+
+            for j in range(n_panels, len(axes)):
+                fig.delaxes(axes[j])
+
+            handles, labels = axes[0].get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            fig.legend(
+                by_label.values(),
+                by_label.keys(),
+                loc='upper center',
+                bbox_to_anchor=(0.5, 1.02),
+                ncol=max(1, len(by_label)),
+                fontsize=16
+            )
+
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
+            fig.savefig(os.path.join(save_folder, filename), dpi=300)
+
+        plot_nrmse_vs_spearman_subplots(
+            metric_tag="CM",
+            overall_xlim=xlim_cm_overall,
+            quantity_ylims=ylims_cm_quantity,
+            filename="combined_nrmse_vs_spearman_CM.svg"
+        )
+
+        plot_nrmse_vs_spearman_subplots(
+            metric_tag="SM",
+            overall_xlim=xlim_sm_overall,
+            quantity_ylims=ylims_sm_quantity,
+            filename="combined_nrmse_vs_spearman_SM.svg"
+        )
+
         df_spatial = pd.DataFrame(spatial_records)
         df_spatial.to_csv(os.path.join(save_folder, "location_metrics_models.csv"), index=False)
         df_summary.to_csv(os.path.join(save_folder, "summary_metrics_models.csv"), index=False)
 
-        # ==========================================================
-        # Measured vs Modeled scatter plots
-        # One figure per model, 3 subplots (Q1, Q2, Q3)
-        # ==========================================================
-
-        #
-        # model_id_1 = 3  # replace with the actual best model ID
-        # model_id_2 = 4  # replace with your manual calibration model ID
-        #
-        # # Get model names dynamically from df_summary
-        # model_name_best = df_summary[df_summary["model_id"] == model_id_1]["model_name"].values[0]
-        # model_name_manual = df_summary[df_summary["model_id"] == model_id_2]["model_name"].values[0]
-        #
-        # # Filter the spatial dataframe
-        # df_best = df_spatial[df_spatial["model_id"] == model_id_1]
-        # df_manual = df_spatial[df_spatial["model_id"] == model_id_2]
-        #
-        # # Create subplots (one per quantity)
-        # fig, axes = plt.subplots(
-        #     1, n_quantities,
-        #     figsize=(5 * n_quantities, 5),
-        #     sharey=False
-        # )
-        # if n_quantities == 1:
-        #     axes = [axes]
-        #
-        # for i, ax in enumerate(axes):
-        #     q = f"Q{i + 1}"
-        #
-        #     df_q_best = df_best[df_best["quantity"] == q]
-        #     df_q_manual = df_manual[df_manual["quantity"] == q]
-        #
-        #     obs = df_q_best["obs"].values
-        #     cm_best = df_q_best["cm_output"].values
-        #     cm_manual = df_q_manual["cm_output"].values
-        #
-        #     # Scatter plots — same color, different markers
-        #     ax.scatter(
-        #         obs, cm_best,
-        #         s=70,
-        #         marker="o",
-        #         color="tab:blue",
-        #         edgecolor="k",
-        #         alpha=0.85
-        #     )
-        #
-        #     ax.scatter(
-        #         obs, cm_manual,
-        #         s=70,
-        #         marker="s",
-        #         facecolors="none",
-        #         edgecolor="tab:blue",
-        #         linewidth=1.6,
-        #         alpha=0.9
-        #     )
-        #
-        #     # 1:1 line
-        #     vmin = min(obs.min(), cm_best.min(), cm_manual.min())
-        #     vmax = max(obs.max(), cm_best.max(), cm_manual.max())
-        #     margin = 0.05 * (vmax - vmin)
-        #     lims = (vmin - margin, vmax + margin)
-        #     ax.plot(lims, lims, "k--", lw=1)
-        #     ax.set_xlim(lims)
-        #     ax.set_ylim(lims)
-        #
-        #     ax.set_aspect("equal", adjustable="box")
-        #     ax.set_title(quantity_names[i], fontsize=18)
-        #     ax.set_xlabel("Observed", fontsize=16)
-        #     if i == 0:
-        #         ax.set_ylabel("Modeled (CM)", fontsize=16)
-        #
-        #     ax.grid(True, linestyle="--", linewidth=0.5)
-        #     ax.tick_params(axis="both", which="both", direction="in", labelsize=14)
-        #     for spine in ax.spines.values():
-        #         spine.set_linewidth(1.4)
-        #
-        #     # Metrics
-        #     rmse_best = np.sqrt(np.mean((cm_best - obs) ** 2))
-        #     rho_best = spearmanr(cm_best, obs).correlation
-        #     rmse_manual = np.sqrt(np.mean((cm_manual - obs) ** 2))
-        #     rho_manual = spearmanr(cm_manual, obs).correlation
-        #
-        #     # Legend with dynamic model names and metrics
-        #     legend_elements = [
-        #         Line2D(
-        #             [0], [0], marker='o', color='tab:blue',
-        #             linestyle='None', markersize=8,
-        #             label=f"{model_name_best} (RMSE={rmse_best:.3f}, $\\rho$={rho_best:.2f})"
-        #         ),
-        #         Line2D(
-        #             [0], [0], marker='s', color='tab:blue',
-        #             markerfacecolor='none', linestyle='None',
-        #             markersize=8,
-        #             label=f"{model_name_manual} (RMSE={rmse_manual:.3f}, $\\rho$={rho_manual:.2f})"
-        #         )
-        #     ]
-        #
-        #     ax.legend(
-        #         handles=legend_elements,
-        #         fontsize=12,
-        #         loc="lower right",
-        #         frameon=True
-        #     )
-        #
-        # # Overall figure title
-        # fig.suptitle(
-        #     "Measured vs Modeled (CM)\nMO-GPE vs Manual calibration",
-        #     fontsize=20
-        # )
-        #
-        # fig.tight_layout(rect=[0, 0, 1, 0.92])
-        #
-        # # Save figure
-        # fig.savefig(
-        #     os.path.join(
-        #         save_folder,
-        #         "scatter_measured_vs_modeled_CM_best_vs_manual.svg"
-        #     ),
-        #     dpi=300
-        # )
-        #
-        # plt.show()
-
         return df_spatial, df_summary
-
     def plot_residuals(self, df_spatial, df_summary, model_ids, quantity_names):
         """
         Plots residuals (Modeled - Observed) vs Observed for each model in separate columns.
@@ -2704,12 +2691,12 @@ class BayesianPlotter:
     def observed_vs_modeled_compare(self, df_spatial, df_summary, model_ids, quantity_names,
                                     points_group_1=None, points_group_2=None):
         """
-        Plots Modeled vs Observed for each model in separate columns.
-        Rows = quantities, Columns = models.
-        X and Y axes are identical per row (variable) to ensure 45° line is correct.
+        Plots Modeled vs Observed with:
+            Rows    = models
+            Columns = calibration targets / quantities
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         df_spatial : DataFrame
             Spatial data with observations and model outputs
         df_summary : DataFrame
@@ -2717,188 +2704,266 @@ class BayesianPlotter:
         model_ids : list
             List of model IDs to plot
         quantity_names : list
-            List of quantity names to plot
+            List of quantity names to plot, ordered as Q1, Q2, Q3, ...
+            Example: ["h", r"\bar{U}", r"\delta_z"]
         points_group_1 : list or range, optional
-            Node positions to color as downstream (gray).
-            Example: range(1, 18) or [1, 2, 3, ..., 17]
-            Default: None (no grouping - all points will be black)
+            First point group (e.g. downstream nodes)
         points_group_2 : list or range, optional
-            Node positions to color as upstream (black).
-            Example: range(18, 38) or [18, 19, ..., 37]
-            Default: None (no grouping - all points will be black)
-
-        Node colors:
-        - If both downstream_nodes and upstream_nodes are None: All points are black
-        - If grouping specified:
-            - Downstream nodes: Gray
-            - Upstream nodes: Black
-            - Other nodes: Blue (if outside specified ranges)
+            Second point group (e.g. upstream nodes)
         """
 
         save_folder = self.save_folder
         n_models = len(model_ids)
         n_quantities = len(quantity_names)
 
-        # Convert to sets for faster lookup (only if provided)
         downstream_set = set(points_group_1) if points_group_1 is not None else None
         upstream_set = set(points_group_2) if points_group_2 is not None else None
 
-        # Arrange subplots: rows = quantities, cols = models
-        fig, axes = plt.subplots(nrows=n_quantities, ncols=n_models,
-                                 figsize=(6 * n_models, 4 * n_quantities),
-                                 sharey=False)
+        # ------------------------------------------------------------
+        # Create subplot grid: rows = models, cols = quantities
+        # Wider overall figure
+        # ------------------------------------------------------------
+        fig, axes = plt.subplots(
+            nrows=n_models,
+            ncols=n_quantities,
+            figsize=(9.5 * n_quantities, 5.0 * n_models),
+            sharex=False,
+            sharey=False
+        )
 
-        # Ensure axes is 2D array even if n_models or n_quantities = 1
-        if n_quantities == 1:
+        # Force axes into 2D array
+        if n_models == 1 and n_quantities == 1:
+            axes = np.array([[axes]])
+        elif n_models == 1:
             axes = axes[np.newaxis, :]
-        if n_models == 1:
+        elif n_quantities == 1:
             axes = axes[:, np.newaxis]
 
-        # Track if we need to create legend (only when grouping is specified)
-        legend_handles = []
-        legend_labels = []
-        has_downstream = False
-        has_upstream = False
-        has_other = False
+        # ------------------------------------------------------------
+        # Compute global axis limits per quantity (shared by column)
+        # ------------------------------------------------------------
+        axis_limits_by_quantity = {}
 
-        for i, qname in enumerate(quantity_names):
-            # ----- Compute per-variable global limits across all models -----
+        for q_idx, qname in enumerate(quantity_names):
             all_obs_q = []
             all_cm_q = []
+
             for model_id in model_ids:
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
-                all_obs_q.append(df_model["obs"].values)
-                all_cm_q.append(df_model["cm_output"].values)
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == f"Q{q_idx + 1}")
+                    ]
+
+                if not df_model.empty:
+                    all_obs_q.append(df_model["obs"].values)
+                    all_cm_q.append(df_model["cm_output"].values)
+
+            if len(all_obs_q) == 0 or len(all_cm_q) == 0:
+                axis_limits_by_quantity[q_idx] = (0.0, 1.0)
+                continue
 
             all_obs_q = np.concatenate(all_obs_q)
             all_cm_q = np.concatenate(all_cm_q)
 
-            # Limits must cover both observed and modeled
             min_val = min(all_obs_q.min(), all_cm_q.min())
             max_val = max(all_obs_q.max(), all_cm_q.max())
-            margin = 0.05 * (max_val - min_val)
+            span = max_val - min_val
+            margin = 0.05 * span if span > 0 else 0.05 * max(abs(max_val), 1.0)
 
-            axis_limits = (min_val - margin, max_val + margin)
+            axis_limits_by_quantity[q_idx] = (min_val - margin, max_val + margin)
 
-            # ----- Plot each model in this row -----
-            for j, model_id in enumerate(model_ids):
-                ax = axes[i, j]
+        # ------------------------------------------------------------
+        # Legend bookkeeping
+        # ------------------------------------------------------------
+        legend_handles = []
+        legend_labels = []
 
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
-                model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
+        # Quantity-specific RMSE units
+        units_map = {
+            "h": "m",
+            r"\bar{U}": "m/s",
+            r"\delta_z": "m",
+            "delta_z": "m",
+            "U": "m/s"
+        }
+
+        # ------------------------------------------------------------
+        # Plot loop: rows = models, cols = quantities
+        # ------------------------------------------------------------
+        for row_idx, model_id in enumerate(model_ids):
+            model_name_series = df_summary.loc[df_summary["model_id"] == model_id, "model_name"]
+            model_name = model_name_series.iloc[0] if not model_name_series.empty else f"M{model_id}"
+
+            for col_idx, qname in enumerate(quantity_names):
+                ax = axes[row_idx, col_idx]
+
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == f"Q{col_idx + 1}")
+                    ]
+
+                if df_model.empty:
+                    ax.text(
+                        0.5, 0.5, "No data",
+                        ha="center", va="center",
+                        transform=ax.transAxes,
+                        fontsize=18
+                    )
+                    ax.set_axis_off()
+                    continue
 
                 obs = df_model["obs"].values
                 cm = df_model["cm_output"].values
                 n_points = len(obs)
 
-                # Check if node grouping is specified
+                axis_limits = axis_limits_by_quantity[col_idx]
+
+                # ----------------------------------------------------
+                # Scatter points
+                # ----------------------------------------------------
                 if downstream_set is None and upstream_set is None:
-                    # No grouping specified - plot all points in black
-                    ax.scatter(obs, cm,
-                               s=60,
-                               color='black',
-                               alpha=0.8,
-                               marker='*')
-
-                    # 1:1 line (no label)
-                    ax.plot(axis_limits, axis_limits, color='red', linestyle='--', lw=1)
-
+                    ax.scatter(
+                        obs, cm,
+                        s=160,
+                        color="black",
+                        alpha=0.85,
+                        marker="*"
+                    )
                 else:
-                    # Scatter plot with color-coded points
-                    # Separate downstream and upstream for legend
-                    downstream_mask = [node_position in downstream_set for node_position in
-                                       range(1, n_points + 1)] if downstream_set is not None else [False] * n_points
-                    upstream_mask = [node_position in upstream_set for node_position in
-                                     range(1, n_points + 1)] if upstream_set is not None else [False] * n_points
+                    downstream_mask = (
+                        [node_position in downstream_set for node_position in range(1, n_points + 1)]
+                        if downstream_set is not None else [False] * n_points
+                    )
 
-                    # Plot downstream nodes
+                    upstream_mask = (
+                        [node_position in upstream_set for node_position in range(1, n_points + 1)]
+                        if upstream_set is not None else [False] * n_points
+                    )
+
+                    other_mask = [not (downstream_mask[k] or upstream_mask[k]) for k in range(n_points)]
+
                     if downstream_set is not None and any(downstream_mask):
-                        scatter_down = ax.scatter(obs[downstream_mask], cm[downstream_mask],
-                                                  s=60,
-                                                  color='gray',
-                                                  alpha=0.8,
-                                                  marker='*')
-                        if i == 0 and j == 0:  # Only collect handles once
+                        scatter_down = ax.scatter(
+                            obs[downstream_mask], cm[downstream_mask],
+                            s=160, color="gray", alpha=0.85, marker="*"
+                        )
+                        if row_idx == 0 and col_idx == 0:
                             legend_handles.append(scatter_down)
-                            legend_labels.append('Downstream nodes')
-                            has_downstream = True
+                            legend_labels.append("Downstream nodes")
 
-                    # Plot upstream nodes
                     if upstream_set is not None and any(upstream_mask):
-                        scatter_up = ax.scatter(obs[upstream_mask], cm[upstream_mask],
-                                                s=60,
-                                                color='black',
-                                                alpha=0.8,
-                                                marker='*')
-                        if i == 0 and j == 0:  # Only collect handles once
+                        scatter_up = ax.scatter(
+                            obs[upstream_mask], cm[upstream_mask],
+                            s=160, color="black", alpha=0.85, marker="*"
+                        )
+                        if row_idx == 0 and col_idx == 0:
                             legend_handles.append(scatter_up)
-                            legend_labels.append('Upstream nodes')
-                            has_upstream = True
+                            legend_labels.append("Upstream nodes")
 
-                    # Plot any other nodes (if exist)
-                    other_mask = [not (downstream_mask[idx] or upstream_mask[idx]) for idx in range(n_points)]
                     if any(other_mask):
-                        scatter_other = ax.scatter(obs[other_mask], cm[other_mask],
-                                                   s=60,
-                                                   color='blue',
-                                                   alpha=0.8,
-                                                   marker='*')
-                        if i == 0 and j == 0:  # Only collect handles once
+                        scatter_other = ax.scatter(
+                            obs[other_mask], cm[other_mask],
+                            s=160, color="blue", alpha=0.85, marker="*"
+                        )
+                        if row_idx == 0 and col_idx == 0:
                             legend_handles.append(scatter_other)
-                            legend_labels.append('Other nodes')
-                            has_other = True
+                            legend_labels.append("Other nodes")
 
-                    # 1:1 line (no label)
-                    ax.plot(axis_limits, axis_limits, color='red', linestyle='--', lw=1)
+                # 1:1 line
+                ax.plot(axis_limits, axis_limits, color="red", linestyle="--", lw=1.2)
 
-                # Apply identical X and Y limits
+                # Same x/y limits per quantity column
                 ax.set_xlim(axis_limits)
                 ax.set_ylim(axis_limits)
 
-                # Titles and labels
-                ax.set_title(f"{model_name} — {qname}", fontsize=25)
-                ax.set_xlabel(f"Observed {qname}", fontsize=25)
-                if j == 0:  # first column
-                    ax.set_ylabel(f"Modeled {qname}", fontsize=25)
+                # Keep subplot geometrically symmetric
+                ax.set_aspect("equal", adjustable="box")
 
+                # ----------------------------------------------------
+                # Titles and labels
+                # ----------------------------------------------------
+                if row_idx == 0:
+                    ax.set_title(f"{qname}", fontsize=32, pad=16)
+
+                if row_idx == n_models - 1:
+                    ax.set_xlabel(f"Observed {qname}", fontsize=36)
+
+                # Put y-label on every subplot column
+                ax.set_ylabel(f"Modeled {qname}", fontsize=36)
+
+                # Add row label = model name only in first column
+                if col_idx == 0:
+                    ax.annotate(
+                        model_name,
+                        xy=(-0.48, 0.5),
+                        xycoords="axes fraction",
+                        rotation=90,
+                        va="center",
+                        ha="center",
+                        fontsize=28,
+                        fontweight="bold"
+                    )
+
+                # ----------------------------------------------------
                 # Tick formatting
-                ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.tick_params(axis='both', which='both', direction='in', labelsize=25)
+                # 6 ticks, label every second tick only
+                # ----------------------------------------------------
+                ticks = np.linspace(axis_limits[0], axis_limits[1], 6)
+
+                ax.set_xticks(ticks)
+                ax.set_yticks(ticks)
+
+                xlabels = [f"{tick:.2f}" if k % 2 == 0 else "" for k, tick in enumerate(ticks)]
+                ylabels = [f"{tick:.2f}" if k % 2 == 0 else "" for k, tick in enumerate(ticks)]
+
+                ax.set_xticklabels(xlabels)
+                ax.set_yticklabels(ylabels)
+
+                ax.tick_params(axis="both", which="both", direction="in", labelsize=28)
 
                 # Grid and spines
-                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-                ax.minorticks_on()
-                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+                ax.grid(True, linestyle="--", linewidth=0.5, color="gray")
                 for spine in ax.spines.values():
-                    spine.set_linewidth(1.5)
+                    spine.set_linewidth(1.2)
 
-                # Metrics box: RMSE and Spearman
+                # ----------------------------------------------------
+                # Metrics box: RMSE only
+                # ----------------------------------------------------
                 residuals = cm - obs
                 rmse = np.sqrt(np.mean(residuals ** 2))
-                rho = spearmanr(cm, obs).correlation
 
-                ax.text(axis_limits[1], axis_limits[1],
-                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$",
-                        va='top', ha='right',
-                        fontsize=20,
-                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+                unit = units_map.get(qname, "")
+                rmse_text = f"RMSE={rmse:.3f}" + (f" {unit}" if unit else "")
 
-        # Add general horizontal legend at the top if grouping was specified
+                ax.text(
+                    0.97, 0.97,
+                    rmse_text,
+                    transform=ax.transAxes,
+                    va="top",
+                    ha="right",
+                    fontsize=24,
+                    bbox=dict(facecolor="white", alpha=0.85, edgecolor="none")
+                )
+
+        # ------------------------------------------------------------
+        # Figure legend
+        # ------------------------------------------------------------
         if legend_handles:
-            fig.legend(legend_handles, legend_labels,
-                       loc='upper center',
-                       ncol=len(legend_handles),
-                       fontsize=14,
-                       framealpha=0.9,
-                       bbox_to_anchor=(0.5, 0.98))
-            fig.tight_layout(rect=[0, 0, 1, 0.96])
+            fig.legend(
+                legend_handles, legend_labels,
+                loc="upper center",
+                ncol=len(legend_handles),
+                fontsize=18,
+                framealpha=0.9,
+                bbox_to_anchor=(0.5, 0.995)
+            )
+            fig.tight_layout(rect=[0.08, 0.03, 1, 0.95])
         else:
-            fig.tight_layout(rect=[0, 0, 1, 0.95])
+            fig.tight_layout(rect=[0.08, 0.03, 1, 0.98])
 
-        save_path = os.path.join(save_folder, "scatter_observed_vs_modeled_individual_models.svg")
-        fig.savefig(save_path, dpi=300)
-        print(f"Individual model observed vs modeled plots saved to {save_path}")
+        save_path = os.path.join(save_folder, "scatter_observed_vs_modeled_rows_models_cols_targets.svg")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"Observed vs modeled figure saved to {save_path}")
 
     def surrogate_vs_deterministic_compare(
             self,
