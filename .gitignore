@@ -4,12 +4,12 @@ __pycache__/
 *$py.class
 
 # large data in example folders
-examples/ering-data/
-examples/munichFishpass
+#examples/ering-data/
+#examples/munichFishpass
 HBCenv*/
-examples/*.csv
-examples/ering_plotting.py
-examples/inn/
+#examples/*.csv
+#examples/ering_plotting.py
+#examples/inn/
 
 *.slf
 *.pickle
