@@ -2720,8 +2720,101 @@ class BayesianPlotter:
         upstream_set = set(points_group_2) if points_group_2 is not None else None
 
         # ------------------------------------------------------------
-        # Create subplot grid: rows = models, cols = quantities
-        # Wider overall figure
+        # Helpers for "nice" ticks and limits
+        # ------------------------------------------------------------
+        def _nice_step(raw_step):
+            """
+            Round step up to a 'nice' value based on the 1-2-2.5-5-10 sequence.
+            """
+            if raw_step <= 0 or not np.isfinite(raw_step):
+                return 1.0
+
+            exponent = np.floor(np.log10(raw_step))
+            fraction = raw_step / (10 ** exponent)
+
+            for nice_fraction in [1.0, 2.0, 2.5, 5.0, 10.0]:
+                if fraction <= nice_fraction:
+                    return nice_fraction * (10 ** exponent)
+
+            return 10.0 ** (exponent + 1)
+
+        def _format_tick_label(value):
+            """
+            Format tick labels like 0, 0.05, 0.1, 0.15, 0.5
+            without useless trailing zeros.
+            """
+            if np.isclose(value, 0.0, atol=1e-12):
+                value = 0.0
+            return f"{value:.6f}".rstrip("0").rstrip(".")
+
+        def _compute_nice_limits(min_val, max_val, n_ticks=6):
+            """
+            Compute nice axis limits with exactly n_ticks.
+            Rules:
+            - If all data are >= 0, axis starts at 0.
+            - If all data are <= 0, axis ends at 0.
+            - If data cross 0, adapt to nice rounded limits.
+            """
+            if not np.isfinite(min_val) or not np.isfinite(max_val):
+                return 0.0, 1.0
+
+            if np.isclose(min_val, max_val):
+                # Expand degenerate case
+                if min_val >= 0:
+                    min_val = 0.0
+                    max_val = max(max_val * 1.2, 1.0)
+                elif max_val <= 0:
+                    max_val = 0.0
+                    min_val = min(min_val * 1.2, -1.0)
+                else:
+                    delta = max(abs(min_val), abs(max_val), 1.0) * 0.5
+                    min_val -= delta
+                    max_val += delta
+
+            tol = 1e-12
+
+            # Case 1: all non-negative -> force start at 0
+            if min_val >= -tol:
+                start = 0.0
+                raw_step = (max_val - start) / (n_ticks - 1)
+                step = _nice_step(raw_step if raw_step > 0 else max(abs(max_val), 1.0) / (n_ticks - 1))
+                end = start + (n_ticks - 1) * step
+
+                while end < max_val - tol:
+                    step = _nice_step(step * 1.001)
+                    end = start + (n_ticks - 1) * step
+
+                return start, end
+
+            # Case 2: all non-positive -> force end at 0
+            if max_val <= tol:
+                end = 0.0
+                raw_step = (end - min_val) / (n_ticks - 1)
+                step = _nice_step(raw_step if raw_step > 0 else max(abs(min_val), 1.0) / (n_ticks - 1))
+                start = end - (n_ticks - 1) * step
+
+                while start > min_val + tol:
+                    step = _nice_step(step * 1.001)
+                    start = end - (n_ticks - 1) * step
+
+                return start, end
+
+            # Case 3: mixed negative / positive values
+            raw_step = (max_val - min_val) / (n_ticks - 1)
+            step = _nice_step(raw_step)
+
+            start = np.floor(min_val / step) * step
+            end = start + (n_ticks - 1) * step
+
+            while end < max_val - tol:
+                step = _nice_step(step * 1.001)
+                start = np.floor(min_val / step) * step
+                end = start + (n_ticks - 1) * step
+
+            return start, end
+
+        # ------------------------------------------------------------
+        # Create subplot grid
         # ------------------------------------------------------------
         fig, axes = plt.subplots(
             nrows=n_models,
@@ -2740,7 +2833,7 @@ class BayesianPlotter:
             axes = axes[:, np.newaxis]
 
         # ------------------------------------------------------------
-        # Compute global axis limits per quantity (shared by column)
+        # Compute shared nice axis limits per quantity column
         # ------------------------------------------------------------
         axis_limits_by_quantity = {}
 
@@ -2765,12 +2858,11 @@ class BayesianPlotter:
             all_obs_q = np.concatenate(all_obs_q)
             all_cm_q = np.concatenate(all_cm_q)
 
-            min_val = min(all_obs_q.min(), all_cm_q.min())
-            max_val = max(all_obs_q.max(), all_cm_q.max())
-            span = max_val - min_val
-            margin = 0.05 * span if span > 0 else 0.05 * max(abs(max_val), 1.0)
+            combined = np.concatenate([all_obs_q, all_cm_q])
+            min_val = np.nanmin(combined)
+            max_val = np.nanmax(combined)
 
-            axis_limits_by_quantity[q_idx] = (min_val - margin, max_val + margin)
+            axis_limits_by_quantity[q_idx] = _compute_nice_limits(min_val, max_val, n_ticks=5)
 
         # ------------------------------------------------------------
         # Legend bookkeeping
@@ -2778,17 +2870,14 @@ class BayesianPlotter:
         legend_handles = []
         legend_labels = []
 
-        # Quantity-specific RMSE units
         units_map = {
-            "h": "m",
-            r"\bar{U}": "m/s",
-            r"\delta_z": "m",
-            "delta_z": "m",
-            "U": "m/s"
+            r"$h$": "m",
+            r"$\bar{U}$": "m/s",
+            r"$\delta_z$": "m",
         }
 
         # ------------------------------------------------------------
-        # Plot loop: rows = models, cols = quantities
+        # Plot loop
         # ------------------------------------------------------------
         for row_idx, model_id in enumerate(model_ids):
             model_name_series = df_summary.loc[df_summary["model_id"] == model_id, "model_name"]
@@ -2830,19 +2919,19 @@ class BayesianPlotter:
                         marker="*"
                     )
                 else:
-                    downstream_mask = (
-                        [node_position in downstream_set for node_position in range(1, n_points + 1)]
-                        if downstream_set is not None else [False] * n_points
-                    )
+                    downstream_mask = np.array(
+                        [node_position in downstream_set for node_position in range(1, n_points + 1)],
+                        dtype=bool
+                    ) if downstream_set is not None else np.zeros(n_points, dtype=bool)
 
-                    upstream_mask = (
-                        [node_position in upstream_set for node_position in range(1, n_points + 1)]
-                        if upstream_set is not None else [False] * n_points
-                    )
+                    upstream_mask = np.array(
+                        [node_position in upstream_set for node_position in range(1, n_points + 1)],
+                        dtype=bool
+                    ) if upstream_set is not None else np.zeros(n_points, dtype=bool)
 
-                    other_mask = [not (downstream_mask[k] or upstream_mask[k]) for k in range(n_points)]
+                    other_mask = ~(downstream_mask | upstream_mask)
 
-                    if downstream_set is not None and any(downstream_mask):
+                    if downstream_set is not None and np.any(downstream_mask):
                         scatter_down = ax.scatter(
                             obs[downstream_mask], cm[downstream_mask],
                             s=160, color="gray", alpha=0.85, marker="*"
@@ -2851,7 +2940,7 @@ class BayesianPlotter:
                             legend_handles.append(scatter_down)
                             legend_labels.append("Downstream nodes")
 
-                    if upstream_set is not None and any(upstream_mask):
+                    if upstream_set is not None and np.any(upstream_mask):
                         scatter_up = ax.scatter(
                             obs[upstream_mask], cm[upstream_mask],
                             s=160, color="black", alpha=0.85, marker="*"
@@ -2860,7 +2949,7 @@ class BayesianPlotter:
                             legend_handles.append(scatter_up)
                             legend_labels.append("Upstream nodes")
 
-                    if any(other_mask):
+                    if np.any(other_mask):
                         scatter_other = ax.scatter(
                             obs[other_mask], cm[other_mask],
                             s=160, color="blue", alpha=0.85, marker="*"
@@ -2876,7 +2965,7 @@ class BayesianPlotter:
                 ax.set_xlim(axis_limits)
                 ax.set_ylim(axis_limits)
 
-                # Keep subplot geometrically symmetric
+                # Keep subplot symmetric
                 ax.set_aspect("equal", adjustable="box")
 
                 # ----------------------------------------------------
@@ -2885,13 +2974,11 @@ class BayesianPlotter:
                 if row_idx == 0:
                     ax.set_title(f"{qname}", fontsize=32, pad=16)
 
-                if row_idx == n_models - 1:
+                if row_idx == 0 or row_idx == n_models - 1:
                     ax.set_xlabel(f"Observed {qname}", fontsize=36)
 
-                # Put y-label on every subplot column
                 ax.set_ylabel(f"Modeled {qname}", fontsize=36)
 
-                # Add row label = model name only in first column
                 if col_idx == 0:
                     ax.annotate(
                         model_name,
@@ -2906,15 +2993,18 @@ class BayesianPlotter:
 
                 # ----------------------------------------------------
                 # Tick formatting
-                # 6 ticks, label every second tick only
+                # 6 ticks exactly, show label every second tick
                 # ----------------------------------------------------
                 ticks = np.linspace(axis_limits[0], axis_limits[1], 6)
+
+                # Clean tiny floating-point noise
+                ticks = np.array([0.0 if np.isclose(t, 0.0, atol=1e-12) else t for t in ticks])
 
                 ax.set_xticks(ticks)
                 ax.set_yticks(ticks)
 
-                xlabels = [f"{tick:.2f}" if k % 2 == 0 else "" for k, tick in enumerate(ticks)]
-                ylabels = [f"{tick:.2f}" if k % 2 == 0 else "" for k, tick in enumerate(ticks)]
+                xlabels = [_format_tick_label(tick) if k % 2 == 0 else "" for k, tick in enumerate(ticks)]
+                ylabels = [_format_tick_label(tick) if k % 2 == 0 else "" for k, tick in enumerate(ticks)]
 
                 ax.set_xticklabels(xlabels)
                 ax.set_yticklabels(ylabels)

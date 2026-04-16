@@ -119,7 +119,7 @@ df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
                              ],
             quantity_names=calibration_names,
             plot_models=list(range(5)))
-plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4,5],
+plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,3],
                                     quantity_names=[
                                         r"$h$",
                                         r"$\bar{U}$",
