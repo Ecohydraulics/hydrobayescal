@@ -36,14 +36,14 @@ from ppmodules.selafin_io_pp import *
 # MAIN
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #
-# if len(sys.argv) != 3:
-#   print('Wrong number of Arguments, stopping now...')
-#   print('Example usage:')
-#   print('python probe.py -i input.slf')
-#   sys.exit()
+if len(sys.argv) != 3:
+  print('Wrong number of Arguments, stopping now...')
+  print('Example usage:')
+  print('python probe.py -i input.slf')
+  sys.exit()
 
 # I/O
-input_file = '/home/IWS/hidalgo/Documents/EringFishPass/QGIS_BaseMesh/Telemac/results2m3.slf'   # input *.slf file
+input_file = sys.argv[2]   # input *.slf file
 print('#################################')
 print("The input file being probed: " + input_file)
 #

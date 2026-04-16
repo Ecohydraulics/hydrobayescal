@@ -1,106 +1,143 @@
 #!/usr/bin/env python3
 #
-# +!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
+#+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
 #                                                                       #
 #                                 interp_from_pts.py                    # 
 #                                                                       #
-# +!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
+#+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
 #
-# Author: Pat Prodanovic, Ph.D., P.Eng., modularized by Sebastian Schwindt
+# Author: Pat Prodanovic, Ph.D., P.Eng.
+# 
+# Date: May 26, 2016
 #
-# Date: May 26, 2016 / July 28, 2022
+# Purpose: Script takes in a xyz points file and a mesh file (in ADCIRC 
+# format),  and interpolates the nodes of the mesh file from the points
+# file. It uses scipy's kdtree to assign to the mesh node the point in
+# the xyz dataset that is closest.
+#
+# Revised: May 27, 2016
+# Made it such that a number of scipy neighbours is an input argument. If
+# closest node is wanted, just use 1 neighbour. Note that this interpolation
+# script is good only when data points file is very dense.
+#
+# Revised: Nov 13, 2016
+# Fixed a division by zero error if the distance is exactly zero in the
+# kdTree algorithm.
+#
+# Revised: Nov 21, 2016
+# Changed KDTree to cKDTree to improve performance.
+#
+# Uses: Python 2 or 3, Matplotlib, Numpy
+#
+# Example:
+#
+# python interp_from_pts.py -p points.csv -m mesh.grd -o mesh_interp.grd -n 10
+# where:
+# -p xyz points file, no headers, comma delimited
+# -m mesh (whose nodes are to be interpolated)
+# -o interpolated mesh
+# 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Global Imports
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+import os,sys                              # system parameters
+import numpy             as np             # numpy
+from scipy import spatial                  # scipy to get kdTree
+from ppmodules.readMesh import readAdcirc  # to get readAdcirc function
+from ppmodules.utilities import progress   # import the simple progress bar
+# 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# MAIN
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~	
+curdir = os.getcwd()
+#
+# I/O
+if len(sys.argv) != 9 :
+	print('Wrong number of Arguments, stopping now...')
+	print('Usage:')
+	print('python interp_from_pts.py -p points.csv -m mesh.grd -o mesh_interp.grd -n 10')
+	sys.exit()
 
-from scipy import spatial  # scipy to get kdTree
-from ppmodules.readMesh import *
-from progressbar import ProgressBar, Bar, Percentage, ETA
+pts_file = sys.argv[2]
+mesh_file = sys.argv[4]
+output_file = sys.argv[6] # interp_mesh
+neigh = int(sys.argv[8]) # the number of nearest neighbours
 
+# I am imposing a limit on neigh to be between 1 and 10
+if ((neigh < 1) or (neigh > 10)):
+	print('Number of neighbours must be between 1 and 10. Exiting.')
+	sys.exit(0)
 
-def interp_from_pts(points_csv="points.csv", mesh_grd="mesh.grd", interp_mesh_grd="mesh_interp.grd", neighbors=1):
-    """ Function takes a xyz CSV point file and a mesh file (in ADCIRC format), and interpolates the nodes of the mesh
-    file from the points CSV file. It uses scipy's kdtree to assign the closest the xyz dataset to a mesh node.
+print('Reading input data')
+# read the points file
+pts_data = np.loadtxt(pts_file, delimiter=',',skiprows=0,unpack=True)
+x = pts_data[0,:]
+y = pts_data[1,:]
+z = pts_data[2,:]
 
-    :param str points_csv: Full path and name of an xyz CSV point file, no headers, comma delimited
-    :param str mesh_grd: Full path and name of a .grd mesh file whose nodes are to be interpolated
-    :param str interp_mesh_grd: Full path and name of the resulting interpolated mesh
-    :param int neighbors: The default of ``1`` uses the closest neighboring point only (good choice for dense XYZ point
-                         clouds). The maximum number of neighbors for interpolating Z or M values on the mesh is ``10``.
-    :return None: Creates a new mesh file with interpolated values.
-    """
-    # impose a limit on neighbors to be between 1 and 10
-    if (neighbors < 1) or (neighbors > 10):
-        print("ERROR: Number of neighbors must be between 1 and 10. Exiting program.")
-        return -1
+# read the adcirc mesh file (_m is for mesh)
+# this one has z values that are all zeros
+m_n,m_e,m_x,m_y,m_z,m_ikle = readAdcirc(mesh_file)
 
-    print("reading input data...")
-    # read the points file
-    pts_data = np.loadtxt(points_csv, delimiter=',', skiprows=0, unpack=True)
-    x = pts_data[0, :]
-    y = pts_data[1, :]
-    z = pts_data[2, :]
+print('Constructing KDTree object')
+# to create a KDTree object
+source = np.column_stack((x,y))
+tree = spatial.cKDTree(source)
 
-    # read the adcirc mesh file (_m is for mesh) in which the z values are all zeros
-    m_n, m_e, m_x, m_y, m_z, m_ikle = readAdcirc(mesh_grd)
+den = 0.0
+tmp_sum = 0.0
 
-    print("constructing KDTree object...")
-    # to create a KDTree object
-    source = np.column_stack((x, y))
-    tree = spatial.cKDTree(source)
+print('Interpolating')
+for i in range(m_n):
+	d,idx = tree.query((m_x[i],m_y[i]), k = neigh)
+	
+	# calculate the denominator
+	if neigh > 1:
+		for j in range(neigh):
+			if (d[j] < 1.0E-6):
+				d[j] = 1.0E-6
+			den = den + (1.0 / (d[j]**2))
+	else:
+		if (d < 1.0E-6):
+			d = 1.0E-6
+		den = den + (1.0 / (d**2))
+		
+	# calculate the weights
+	weights = (1.0 / d**2) / den
+	
+	# to assign the interpolated value
+	if neigh > 1:
+		for j in range(neigh):
+			tmp_sum = tmp_sum + weights[j]*z[idx[j]]
+	else:
+		tmp_sum = weights * z[idx]
+		
+	# now assign the value	
+	m_z[i] = tmp_sum
+	
+	# reset the denominator
+	den = 0.0
+	tmp_sum = 0.0
+	
+	progress(i+1, m_n)
+print('')
 
-    den = 0.0
-    tmp_sum = 0.0
+print('Writing results to file')
+# to create the output file (this is the interpolated mesh)
+fout = open(output_file,"w")
 
-    print("interpolating...")
-    w = [Percentage(), Bar(), ETA()]
-    pbar = ProgressBar(widgets=w, maxval=m_n).start()
-    for i in range(m_n):
-        d, idx = tree.query((m_x[i], m_y[i]), k=neighbors)
+# now to write the adcirc mesh file
+fout.write("ADCIRC" + "\n")
+# writes the number of elements and number of nodes in the header file
+fout.write(str(m_e) + " " + str(m_n) + "\n")
 
-        # calculate denominator
-        if neighbors > 1:
-            for j in range(neighbors):
-                if d[j] < 1.0E-6:
-                    d[j] = 1.0E-6
-                den = den + (1.0 / (d[j] ** 2))
-        else:
-            if d < 1.0E-6:
-                d = 1.0E-6
-            den = den + (1.0 / (d ** 2))
-
-        # calculate weights
-        weights = (1.0 / d ** 2) / den
-
-        # get interpolated value
-        if neighbors > 1:
-            for j in range(neighbors):
-                tmp_sum = tmp_sum + weights[j] * z[idx[j]]
-        else:
-            tmp_sum = weights * z[idx]
-
-        # assign value
-        m_z[i] = tmp_sum
-
-        # reset the denominator
-        den = 0.0
-        tmp_sum = 0.0
-
-        pbar.update(i + 1)
-    pbar.finish()
-
-    print("writing results to file...")
-    # create the output file (i.e., the interpolated mesh)
-    fout = open(interp_mesh_grd, "w")
-
-    # write the adcirc mesh file
-    fout.write("ADCIRC" + "\n")
-    # write the number of elements and number of nodes in the header file
-    fout.write(str(m_e) + " " + str(m_n) + "\n")
-
-    # write nodes
-    for i in range(0, m_n):
-        fout.write(str(i + 1) + " " + str("{:.3f}".format(m_x[i])) + " " +
-                   str("{:.3f}".format(m_y[i])) + " " + str("{:.3f}".format(m_z[i])) + "\n")
-
-    # write elements
-    for i in range(0, m_e):
-        fout.write(str(i + 1) + " 3 " + str(m_ikle[i, 0] + 1) + " " + str(m_ikle[i, 1] + 1) + " " +
-                   str(m_ikle[i, 2] + 1) + "\n")
+# writes the nodes
+for i in range(0,m_n):
+	fout.write(str(i+1) + " " + str("{:.3f}".format(m_x[i])) + " " + 
+		str("{:.3f}".format(m_y[i])) + " " + str("{:.3f}".format(m_z[i])) + "\n")
+#
+# writes the elements
+for i in range(0,m_e):
+	fout.write(str(i+1) + " 3 " + str(m_ikle[i,0]+1) + " " + str(m_ikle[i,1]+1) + " " + 
+		str(m_ikle[i,2]+1) + "\n")
+print('All done!')

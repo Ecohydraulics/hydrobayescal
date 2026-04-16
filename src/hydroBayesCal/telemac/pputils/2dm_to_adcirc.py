@@ -1,23 +1,54 @@
-"""
-Purpose: Convert a 2dm mesh into adcirc file format. This script works only for triangular elements.
-Author: Pat Prodanovic, Ph.D., P.Eng., modularized by Sebastian Schwindt
-Date: Feb 20, 2016 / January 23, 2023
-"""
+#!/usr/bin/env python3
+#
+#+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
+#                                                                       #
+#                                 2dm_to_adcirc.py                      # 
+#                                                                       #
+#+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!+!
+#
+# Author: Pat Prodanovic, Ph.D., P.Eng.
+# 
+# Date: Apr 19, 2020
+#
+# Purpose: Script takes in a mesh in 2dm format, and writes it to a
+# adcirc file format. This script works only for triangular elements.
+#
+# Uses: Python 2 or 3, Numpy
+#
+# Example:
+#
+# python 2dm_to_adcirc.py -i -out.2dm -o out.grd 
+# where:
+# -i input 2dm mesh file 
+# -o output adcirc mesh file
+# 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Global Imports
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+import os,sys,time                         # system parameters
+import numpy             as np             # numpy
+from ppmodules.readMesh import *           # to get all readMesh functions
+from ppmodules.writeMesh import *          # to get all readMesh functions
+# 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# MAIN
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  
+curdir = os.getcwd()
+#
+# I/O
+if len(sys.argv) != 5 :
+  print('Wrong number of Arguments, stopping now...')
+  print('Usage:')
+  print('python 2dm_to_adcirc.py -i out.2dm -o out.grd')
+  sys.exit()
 
-from ppmodules.readMesh import *
-from ppmodules.writeMesh import *
+two_dm_file = sys.argv[2]
+adcirc_file = sys.argv[4]
 
+# read the 2dm file
+n,e,x,y,z,ikle = read2dm(two_dm_file)
 
-def twodm2adcirc(two_dm_file=".2dm", adcirc_file=".grd"):
-    """ Function runs 2dm conversion to adcirc.grd file
-    :param str two_dm_file: 2dm mesh file
-    :param str adcirc_file: output adcirc mesh file
-    :return int: 0 in case of success
-    """
+# write the adcirc file
+writeAdcirc(n,e,x,y,z,ikle,adcirc_file)
 
-    # read 2dm file
-    n, e, x, y, z, ikle = read2dm(two_dm_file)
-    # write the adcirc file
-    writeAdcirc(n, e, x, y, z, ikle, adcirc_file)
-
-    return 0
+print('All done!')

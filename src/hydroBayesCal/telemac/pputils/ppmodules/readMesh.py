@@ -1,53 +1,50 @@
-"""
-pputils functions for reading meshes, re-formatted and optimized for Python3
-Original Author: Pad Prodanovic
-Modularized by: Sebastian Schwindt
-"""
-import numpy as np
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Global Imports
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+import numpy as np  # numpy
 
 
+#
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Functions
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def readAdcirc(adcirc_file):
-    """
-    Reads an adcirc (grd) file
-    :param str adcirc_file: file name to read
-    :return:
-    """
-
     fin = open(adcirc_file)
 
     # first line is the title string
-    title_name = fin.readline()
+    str = fin.readline()
 
     # second line is e, n
-    title_name = fin.readline()
-    e = int(title_name.split()[0])
-    n = int(title_name.split()[1])
+    str = fin.readline()
+    e = int(str.split()[0])
+    n = int(str.split()[1])
 
-    # declare the arrays that are needed to store the values read
+    # now we can declare the arrays that are needed to store the values read
     x = np.zeros(n, dtype=np.float64)
     y = np.zeros(n, dtype=np.float64)
     z = np.zeros(n, dtype=np.float64)
 
     ikle = np.zeros((e, 3), dtype=np.int64)
 
-    # read nodes
+    # now we can read in the nodes
     for i in range(n):
-        f_string = fin.readline()
-        lst = f_string.split()
+        str = fin.readline()
+        lst = str.split()
+
         x[i] = lst[1]
         y[i] = lst[2]
         z[i] = lst[3]
 
-    # read element connectivity
+    # now we can read in the element connectivity
     for j in range(e):
-        f_string = fin.readline()
-        lst = f_string.split()
+        str = fin.readline()
+        lst = str.split()
 
         ikle[j, 0] = int(lst[2])
         ikle[j, 1] = int(lst[3])
         ikle[j, 2] = int(lst[4])
 
-    # shift element connectivities so that they are zero-based
+    # now we shift the element connectivities, so that they are zero based
     ikle[:, 0] = ikle[:, 0] - 1
     ikle[:, 1] = ikle[:, 1] - 1
     ikle[:, 2] = ikle[:, 2] - 1
@@ -56,15 +53,10 @@ def readAdcirc(adcirc_file):
 
 
 def read2dm(two_dm_file):
-    """
-    Read an SMS 2dm mesh file
-    :param str two_dm_file: name of an SMS 2dm mesh file
-    :return:
-    """
     fin = open(two_dm_file)
 
     # https://stackoverflow.com/questions/845058/how-to-get-line-count-of-a-large-file-cheaply-in-python
-    # this code cheaply reads the number of lines of a text file
+    # this code here cheaply reads the number of lines of a text file
     def _make_gen(reader):
         b = reader(1024 * 1024)
         while b:
@@ -72,32 +64,32 @@ def read2dm(two_dm_file):
             b = reader(1024 * 1024)
 
     def rawgencount(filename):
-        f = open(filename, "rb")
+        f = open(filename, 'rb')
         f_gen = _make_gen(f.raw.read)
-        return sum(buf.count(b"\n") for buf in f_gen)
+        return sum(buf.count(b'\n') for buf in f_gen)
 
     num_lines = rawgencount(two_dm_file)
 
-    # the header line contains the total number of lines in the file
-    # which corresponds to the nodes and elements joined in sum n_plus_e
-    n_plus_e = num_lines - 1
+    # because of the header line, the total number of lines in the file
+    # (which is nodes and elements joined is) n_plus_e
+    n_plus_e = num_lines
 
     # reads the header line
-    f_string = fin.readline()
+    str = fin.readline()
 
     # the number of elements counter
     e = 0
     n = 0
 
     # go through each line and count the total number of elements and nodes
-    for i in range(n_plus_e):
-        f_string = fin.readline()
-        three_chars = f_string[0:3]
-        two_chars = f_string[0:2]
+    for i in range(n_plus_e-1):
+        str = fin.readline()
+        three_chars = str[0:3]
+        two_chars = str[0:2]
 
-        if three_chars == "E3T":
+        if (three_chars == 'E3T'):
             e = e + 1
-        if two_chars == "ND":
+        if (two_chars == 'ND'):
             n = n + 1
 
     fin.close()
@@ -117,19 +109,19 @@ def read2dm(two_dm_file):
     ele_count = 0
 
     # now to fill in x,y,z and ikle arrays
-    for i in range(n_plus_e+1):
-        f_string = fin.readline()
-        three_chars = f_string[0:3]
-        two_chars = f_string[0:2]
-        tmp = f_string.split(" ")
+    for i in range(n_plus_e):
+        str = fin.readline()
+        three_chars = str[0:3]
+        two_chars = str[0:2]
+        tmp = str.split(' ')
 
-        if three_chars == "E3T":
+        if (three_chars == 'E3T'):
             ele_count = int(tmp[1])
             ikle[ele_count - 1, 0] = int(tmp[2])
             ikle[ele_count - 1, 1] = int(tmp[3])
             ikle[ele_count - 1, 2] = int(tmp[4])
 
-        if two_chars == "ND":
+        if (two_chars == 'ND'):
             node_count = int(tmp[1])
             x[node_count - 1] = float(tmp[2])
             y[node_count - 1] = float(tmp[3])
@@ -137,7 +129,7 @@ def read2dm(two_dm_file):
 
     fin.close()
 
-    # shift the element connectivities, so that they are zero based
+    # now we shift the element connectivities, so that they are zero based
     ikle[:, 0] = ikle[:, 0] - 1
     ikle[:, 1] = ikle[:, 1] - 1
     ikle[:, 2] = ikle[:, 2] - 1
@@ -146,12 +138,7 @@ def read2dm(two_dm_file):
 
 
 def readPly(ply_file):
-    """
-    read a poly (line) file
-    :param str ply_file: name of a ply_file
-    :return:
-    """
-
+    # {{{
     # define lists
     x = list()
     y = list()
@@ -162,7 +149,7 @@ def readPly(ply_file):
 
     # each line in the file is a list object
     line = list()
-    with open(ply_file, "r") as f1:
+    with open(ply_file, 'r') as f1:
         for i in f1:
             line.append(i)
 
@@ -189,7 +176,7 @@ def readPly(ply_file):
         e2.append(ele_str_list[2])
         e3.append(ele_str_list[3])
 
-    # convert into numpy arrays
+    # turn these into numpy arrays
     xx = np.zeros(n)
     yy = np.zeros(n)
     zz = np.zeros(n)
@@ -215,32 +202,32 @@ def readPly(ply_file):
     return n, e, xx, yy, zz, ikle
 
 
+# reads a *.dat mesh file format; stores the ikle indexes as zero based
 def readDat(dat_file):
-    """
-    Reads a .dat mesh file format; stores the ikle indexes as zero based
-    :param str dat_file: name of a .dat file
-    :return:
-    """
     # open the file
-    fin = open(dat_file, "r")
+    fin = open(dat_file, 'r')
 
     # read the first line of the *.dat file (and get nodes and elements)
     line = fin.readline()
-    n = int(line.split()[0])
-    e = int(line.split()[1])  # includes the 1d elements too
 
-    # define numpy arrays to store the mesh data
+    # these are strings
+    n = int(line.split()[0])
+    e = int(line.split()[1])  # this includes the 1d elements too
+
+    # now we can define numpy arrays to store the mesh data
     x = np.zeros(n, dtype=np.float64)
     y = np.zeros(n, dtype=np.float64)
     z = np.zeros(n, dtype=np.float64)
 
-    # this is the ikle array, but it has the shape that includes all elements (1d+2d)
+    # this is the ikle array, but it has the shape that includes all
+    # elements (1d+2d)
     ikle = np.zeros((e, 3), dtype=np.int64)
 
     # element type flag in the *.dat mesh (103 = 1d mesh; 203 = 2d mesh)
     mesh_flag = np.zeros(e, dtype=np.int64)
 
-    # read the *.dat file line by line, and store into arrays (read nodes)
+    # now we can read the *.dat file line by line, and store into arrays
+    # read the nodes
     for i in range(n):
         # reads the file from the file stream as a string
         line = fin.readline()
@@ -253,10 +240,11 @@ def readDat(dat_file):
         y[i] = float(lst[2])
         z[i] = float(lst[3])
 
-    # store the elements into the ikle array, starting wit a count for 2d elements
+    # now we are ready to store the elements into the ikle array
+    # count for the 2d elements
     count = 0
 
-    # read elements
+    # read the elements
     for i in range(e):
         # reads the file from the file stream as a string
         line = fin.readline()
@@ -269,7 +257,7 @@ def readDat(dat_file):
 
         # store everything in the ikle array (1d+2d)
         # count the ones that are 203 (these are 2d elements)
-        if mesh_flag[i] == 203:
+        if (mesh_flag[i] == 203):
             ikle[i, 0] = lst[2]
             ikle[i, 1] = lst[3]
             ikle[i, 2] = lst[4]
@@ -277,13 +265,14 @@ def readDat(dat_file):
             # update the count
             count = count + 1
 
-    # define the ikle2d array through the number of 2d elements
+    # now that we have the count for the number of 2d elements, we can define
+    # the ikle2d array
     ikle2d = np.zeros((count, 3), dtype=np.int64)
 
     # go through the ikle array, and write only the 2d elements to the ikle2d array
     a = 0
     for i in range(e):
-        if mesh_flag[i] == 203:
+        if (mesh_flag[i] == 203):
             ikle2d[a, 0] = ikle[i, 0]
             ikle2d[a, 1] = ikle[i, 1]
             ikle2d[a, 2] = ikle[i, 2]
