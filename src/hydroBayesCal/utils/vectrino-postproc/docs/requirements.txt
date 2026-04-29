@@ -1,4 +1,0 @@
-myst-parser
-numpy
-pandas
-sphinx-rtd-theme
