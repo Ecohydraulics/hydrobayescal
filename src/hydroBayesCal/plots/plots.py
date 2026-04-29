@@ -2571,122 +2571,122 @@ class BayesianPlotter:
         df_summary.to_csv(os.path.join(save_folder, "summary_metrics_models.csv"), index=False)
 
         return df_spatial, df_summary
-    def plot_residuals(self, df_spatial, df_summary, model_ids, quantity_names):
-        """
-        Plots residuals (Modeled - Observed) vs Observed for each model in separate columns.
-        Rows = quantities, Columns = models.
-        Each variable (quantity) has its own X and Y limits across all models.
-        Supports 2 or more models.
-        Saves as 'scatter_measured_vs_modeled_individual_models.svg'.
-        """
-
-        save_folder = self.save_folder
-        n_models = len(model_ids)
-        n_quantities = len(quantity_names)
-
-        # Arrange subplots: rows = quantities, cols = models
-        fig, axes = plt.subplots(nrows=n_quantities, ncols=n_models,
-                                 figsize=(6 * n_models, 4 * n_quantities),
-                                 sharey=False)
-
-        # Ensure axes is 2D array even if n_models or n_quantities = 1
-        if n_quantities == 1:
-            axes = axes[np.newaxis, :]
-        if n_models == 1:
-            axes = axes[:, np.newaxis]
-
-        colors = plt.cm.get_cmap('tab10', n_models)
-
-        for i, qname in enumerate(quantity_names):
-            # ======= Compute per-variable limits =======
-            all_obs_q = []
-            all_residuals_q = []
-
-            for model_id in model_ids:
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
-                obs = df_model["obs"].values
-                cm = df_model["cm_output"].values
-                residuals = cm - obs
-
-                all_obs_q.append(obs)
-                all_residuals_q.append(residuals)
-
-            all_obs_q = np.concatenate(all_obs_q)
-            all_residuals_q = np.concatenate(all_residuals_q)
-
-            # X-axis limits (Observed for this quantity)
-            x_min = all_obs_q.min()
-            x_max = all_obs_q.max()
-            x_margin = 0.05 * (x_max - x_min)
-            xlims = (x_min - x_margin, x_max + x_margin)
-
-            # Y-axis limits (Residuals for this quantity)
-            y_min = all_residuals_q.min()
-            y_max = all_residuals_q.max()
-            y_margin = 0.15 * (y_max - y_min)
-            ylims = (y_min - y_margin, y_max + y_margin)
-            # ======= End per-variable limits =======
-
-            for j, model_id in enumerate(model_ids):
-                ax = axes[i, j]
-
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
-                model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
-
-                obs = df_model["obs"].values
-                cm = df_model["cm_output"].values
-                residuals = cm - obs
-
-                # Scatter plot
-                ax.scatter(obs, residuals,
-                           s=80,
-                           color='black',
-                           alpha=0.8,
-                           edgecolor='k',
-                           marker='*')
-
-                # Horizontal zero line
-                ax.axhline(0, color='k', linestyle='--', lw=1)
-
-                # Per-variable limits
-                ax.set_xlim(xlims)
-                ax.set_ylim(ylims)
-
-                # Titles and labels
-                ax.set_title(f"{model_name}", fontsize=18)
-                ax.set_xlabel(f"Observed {qname}", fontsize=18)
-                ax.set_ylabel("Residuals", fontsize=18)
-
-                # Tick formatting
-                ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
-
-                # Grid and spines
-                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-                ax.minorticks_on()
-                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
-                for spine in ax.spines.values():
-                    spine.set_linewidth(1.5)
-
-                # Metrics box: RMSE and Spearman
-                rmse = np.sqrt(np.mean(residuals ** 2))
-                rho = spearmanr(cm, obs).correlation
-                x_box = np.percentile(obs, 100)  # 90% of x-axis
-                y_box = np.percentile(residuals, 100)  # 90% of y-axis
-
-                ax.text(x_box, y_box,
-                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\n$\\rho$={rho:.2f}",
-                        va='top', ha='right',
-                        fontsize=12,
-                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
-
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
-        save_path = os.path.join(save_folder, "scatter_measured_vs_modeled_individual_models.svg")
-        fig.savefig(save_path, dpi=300)
-        plt.show()
-
-        print(f"Individual model residual plots saved to {save_path}")
+    # def plot_residuals(self, df_spatial, df_summary, model_ids, quantity_names):
+    #     """
+    #     Plots residuals (Modeled - Observed) vs Observed for each model in separate columns.
+    #     Rows = quantities, Columns = models.
+    #     Each variable (quantity) has its own X and Y limits across all models.
+    #     Supports 2 or more models.
+    #     Saves as 'scatter_measured_vs_modeled_individual_models.svg'.
+    #     """
+    #
+    #     save_folder = self.save_folder
+    #     n_models = len(model_ids)
+    #     n_quantities = len(quantity_names)
+    #
+    #     # Arrange subplots: rows = quantities, cols = models
+    #     fig, axes = plt.subplots(nrows=n_quantities, ncols=n_models,
+    #                              figsize=(6 * n_models, 4 * n_quantities),
+    #                              sharey=False)
+    #
+    #     # Ensure axes is 2D array even if n_models or n_quantities = 1
+    #     if n_quantities == 1:
+    #         axes = axes[np.newaxis, :]
+    #     if n_models == 1:
+    #         axes = axes[:, np.newaxis]
+    #
+    #     colors = plt.cm.get_cmap('tab10', n_models)
+    #
+    #     for i, qname in enumerate(quantity_names):
+    #         # ======= Compute per-variable limits =======
+    #         all_obs_q = []
+    #         all_residuals_q = []
+    #
+    #         for model_id in model_ids:
+    #             df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
+    #             obs = df_model["obs"].values
+    #             cm = df_model["cm_output"].values
+    #             residuals = cm - obs
+    #
+    #             all_obs_q.append(obs)
+    #             all_residuals_q.append(residuals)
+    #
+    #         all_obs_q = np.concatenate(all_obs_q)
+    #         all_residuals_q = np.concatenate(all_residuals_q)
+    #
+    #         # X-axis limits (Observed for this quantity)
+    #         x_min = all_obs_q.min()
+    #         x_max = all_obs_q.max()
+    #         x_margin = 0.05 * (x_max - x_min)
+    #         xlims = (x_min - x_margin, x_max + x_margin)
+    #
+    #         # Y-axis limits (Residuals for this quantity)
+    #         y_min = all_residuals_q.min()
+    #         y_max = all_residuals_q.max()
+    #         y_margin = 0.15 * (y_max - y_min)
+    #         ylims = (y_min - y_margin, y_max + y_margin)
+    #         # ======= End per-variable limits =======
+    #
+    #         for j, model_id in enumerate(model_ids):
+    #             ax = axes[i, j]
+    #
+    #             df_model = df_spatial[(df_spatial["model_id"] == model_id) & (df_spatial["quantity"] == f"Q{i + 1}")]
+    #             model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
+    #
+    #             obs = df_model["obs"].values
+    #             cm = df_model["cm_output"].values
+    #             residuals = cm - obs
+    #
+    #             # Scatter plot
+    #             ax.scatter(obs, residuals,
+    #                        s=80,
+    #                        color='black',
+    #                        alpha=0.8,
+    #                        edgecolor='k',
+    #                        marker='*')
+    #
+    #             # Horizontal zero line
+    #             ax.axhline(0, color='k', linestyle='--', lw=1)
+    #
+    #             # Per-variable limits
+    #             ax.set_xlim(xlims)
+    #             ax.set_ylim(ylims)
+    #
+    #             # Titles and labels
+    #             ax.set_title(f"{model_name}", fontsize=18)
+    #             ax.set_xlabel(f"Observed {qname}", fontsize=18)
+    #             ax.set_ylabel("Residuals", fontsize=18)
+    #
+    #             # Tick formatting
+    #             ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
+    #             ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
+    #             ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
+    #
+    #             # Grid and spines
+    #             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+    #             ax.minorticks_on()
+    #             ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+    #             for spine in ax.spines.values():
+    #                 spine.set_linewidth(1.5)
+    #
+    #             # Metrics box: RMSE and Spearman
+    #             rmse = np.sqrt(np.mean(residuals ** 2))
+    #             rho = spearmanr(cm, obs).correlation
+    #             x_box = np.percentile(obs, 100)  # 90% of x-axis
+    #             y_box = np.percentile(residuals, 100)  # 90% of y-axis
+    #
+    #             ax.text(x_box, y_box,
+    #                     f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\n$\\rho$={rho:.2f}",
+    #                     va='top', ha='right',
+    #                     fontsize=12,
+    #                     bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+    #
+    #     fig.tight_layout(rect=[0, 0, 1, 0.95])
+    #     save_path = os.path.join(save_folder, "scatter_measured_vs_modeled_individual_models.svg")
+    #     fig.savefig(save_path, dpi=300)
+    #     plt.show()
+    #
+    #     print(f"Individual model residual plots saved to {save_path}")
 
     def observed_vs_modeled_compare(self, df_spatial, df_summary, model_ids, quantity_names,
                                     points_group_1=None, points_group_2=None):
