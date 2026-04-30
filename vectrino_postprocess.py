@@ -1,14 +1,10 @@
 """
 Main script for post-processing Nortek Vectrino Profiler ASCII files.
+The script reads .ntk.dat and .ntk.hdr files detailed in variables case_names, gets velocities in XYZ coordinates, and saves the processed data as CSV files.
+It also generates plots of instantaneous velocities and computes binned TKE tables.
 
-Workflow:
-    1. Find .ntk.dat / .ntk.hdr file pairs.
-    2. Read Vectrino ASCII data.
-    3. Read transformation matrix from header.
-    4. Transform beam data to XYZ, or pass through already-XYZ data.
-    5. Save processed CSV.
-    6. Plot instantaneous velocities with moving mean.
-    7. Compute binned TKE table.
+Author: Andres Heredia
+
 """
 
 import sys
