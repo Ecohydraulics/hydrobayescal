@@ -21,13 +21,13 @@ from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 #from src.hydroBayesCal.function_pool import *
 
 # Define paths and other parameters
-model_dir = '/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/simulation/3d/' # the .slf file must be in this directory.
-res_dir = '/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/simulation/' # a dictionary with the model outputs will be saved in this directory
-calibration_pts_file_path = '/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/simulation/measurements-calibration.csv'
-output_name='output_file_2d'
-calibration_quantities= ['WATER DEPTH','VELOCITY U'] #['TURBULENT ENERG','DISSIPATION'] 
-extraction_quantities= ['WATER DEPTH','VELOCITY U'] #['TURBULENT ENERG','DISSIPATION'] 
-input_slf_file='3d-ref-2.5cm-0.5-2d-GMRES-2-TEST.slf' # the .slf file must be in model_dir
+model_dir = '/home/IWS/hidalgo/Documents/cylinderModel/convergence/0.01/' # the .slf file must be in this directory.
+res_dir = '/home/IWS/hidalgo/Documents/cylinderModel/convergence/0.01/' # a dictionary with the model outputs will be saved in this directory
+calibration_pts_file_path = '/home/IWS/hidalgo/Documents/cylinderModel/convergence/measurements-calibration.csv'
+output_name='output_file_3d'
+calibration_quantities= ['VELOCITY U'] #['TURBULENT ENERG','DISSIPATION']
+extraction_quantities= ['VELOCITY U'] #['TURBULENT ENERG','DISSIPATION']
+input_slf_file='3d-conv-0.01-3d.slf' # the .slf file must be in model_dir
 # Initialize TelemacModel object
 control_tm = TelemacModel(
     model_dir=model_dir,
@@ -53,4 +53,4 @@ calibration_quantities=control_tm.calibration_quantities
 control_tm.extract_data_point(input_file=input_slf_file, calibration_pts_df=calibration_pts_df,
                               output_name=output_name, extraction_quantity=extraction_quantities, simulation_number=1,
                               model_directory=model_dir, results_folder_directory=control_tm.calibration_folder)
-control_tm.output_processing(output_data_path=os.path.join(control_tm.calibration_folder,f'{output_name}-detailed.json'),calibration_quantities=control_tm.calibration_quantities)
+control_tm.output_processing(output_data_path=os.path.join(control_tm.calibration_folder,f'{output_name}-detailed.json'),calibration_quantities=control_tm.calibration_quantities,delete_slf_files=False)

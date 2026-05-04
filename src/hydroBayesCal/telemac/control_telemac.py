@@ -1033,7 +1033,8 @@ class TelemacModel(HydroSimulations):
 
                     # Find corresponding layer
                     # # p = 0 (surface or 2d mesh) or NPLAN-1 (bottom in a 3d mesh)
-                    p = np.argmin(np.abs(z_profile - z_target))
+                    est_h=np.abs(z_profile - z_target)
+                    p = np.argmin(est_h)
 
                 # Choose the plane you want
 
@@ -1047,6 +1048,7 @@ class TelemacModel(HydroSimulations):
                         node_idx = idx_base[j] + p * step
 
                     slf.readVariablesAtNode(node_idx)
+                    results_all_time_steps=slf.getVarValuesAtNode()
                     results = slf.getVarValuesAtNode()[-1]
 
                     if k_use != 1:
@@ -1094,12 +1096,12 @@ class TelemacModel(HydroSimulations):
             update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict, detailed_dict=True,
                              save_dict=True, saving_path=json_path_restart_data)
 
-        try:
-            shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
-            if self.gaia_cas is not None:
-                shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
-        except Exception as error:
-            print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
+        # try:
+        #     shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
+        #     if self.gaia_cas is not None:
+        #         shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
+        # except Exception as error:
+        #     print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
     @staticmethod
     def tbl_creator(
