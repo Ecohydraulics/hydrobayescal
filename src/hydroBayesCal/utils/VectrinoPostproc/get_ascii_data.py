@@ -14,6 +14,7 @@ Supports:
 
 import numpy as np
 import pandas as pd
+import os
 
 
 def read_ascii_file(file_name):
@@ -50,7 +51,7 @@ def read_ascii_file(file_name):
     parsed_beam_data = False
     parsed_xyz_data = False
 
-    dat_file = file_name.strip('.ntk.dat') + '.ntk.dat'
+    dat_file = os.path.splitext(file_name)[0] + '.ntk.dat'
     print('   - reading ' + dat_file)
 
     with open(dat_file, 'r', encoding='latin1', errors='ignore') as file:

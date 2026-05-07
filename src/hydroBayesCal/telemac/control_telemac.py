@@ -875,68 +875,24 @@ class TelemacModel(HydroSimulations):
             validation=False,
             user_param_values=False,
             extraction_mode="interpolated",
-            # Choose "nearest" to get the outputs at the nearest node in mesh to the measurement coordinate or choose "interpolated" to get the outputs from an interpolation of the k-nearest nodes in the mesh to the measurement coordinate.
             k=3,
+            time_mode="last",      # last: use the last time step output; index: use the output at a specific time index; mean_last: use the mean of the last n time steps
+            time_index=0,       # time index to use when time_mode is "index" to extract data at a specific time step
+            n_last=5              # n: number of last time steps to average when time_mode is "mean_last"
     ):
-        """
-        Extracts model outputs (i.e., calibration quantities) from a SELAFIN (.slf) file using calibration points
-        specified in a CSV file with x, y coordinates. The extracted values can be obtained from the nearest mesh node
-        or interpolated from the k-nearest nodes.
 
-        This method is typically called for each model run, sequentially storing outputs in two dictionaries saved
-        as JSON files. If the surrogate model requires 'n' runs of the complex numerical model, this function
-        is called 'n' times, and the dictionary accumulates the outputs for all simulations.
-
-        Parameters
-        ----------
-        input_file : str
-            Name of the SELAFIN (.slf) file containing the model outputs.
-        calibration_pts_df : pd.DataFrame
-            Contains calibration points. It must include:
-            - Point descriptions (e.g., "P1").
-            - X and Y coordinates of the measurement points.
-            - Measured values and errors for the calibration quantities.
-
-            Expected columns:
-            - For a single calibration quantity: `['Point Name', 'X', 'Y', 'Measured Value', 'Measured Error']`
-            - For two calibration quantities: `['Point Name', 'X', 'Y', 'Measured Value 1', 'Measured Error 1', 'Measured Value 2', 'Measured Error 2']`
-        output_name : str
-            Base name for the JSON file storing the extracted model outputs. Two files are generated:
-            - `<output_name>.json` (standard results file)
-            - `<output_name>_detailed.json` (detailed results file)
-        extraction_quantity : list of str
-            List of variables (calibration quantities) to be extracted from the SELAFIN file.
-            Ensure the variable names match those in the .slf file before extraction.
-        simulation_number : int
-            Current simulation number. Used to manage output files and ensure correct data accumulation.
-        model_directory : str
-            Path to the directory containing the SELAFIN file.
-        results_folder_directory : str
-            Path to the directory where the output JSON files will be saved.
-        validation : bool, optional (default: False)
-            If True, the extracted data is used for validation purposes.
-        extraction_mode : str, optional (default: "interpolated")
-            Specifies the method for extracting model outputs:
-            - `"nearest"`: Uses the closest node in the mesh.
-            - `"interpolated"`: Uses an interpolation of the k-nearest nodes.
-        k : int, optional (default: 3)
-            Number of nearest nodes used for interpolation when `extraction_mode="interpolated"`.
-
-        Returns
-        -------
-        None
-            The extracted model outputs are saved to two JSON files in the specified results directory.
-            - If this is the first simulation run, existing JSON files with the same name are deleted.
-            - After each run, the extracted results are appended to the JSON files.
-            - The detailed results file stores calibration quantities in a nested dictionary format, organized by variable name and point description.
-        """
         self.tm_results_filename = input_file
-        extraction_quantity = extraction_quantity
 
         classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
 
-        telemac_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "telemac"]
-        gaia_quantities = [q for q in extraction_quantity if classification_tm_gaia_dict.get(q) == "gaia"]
+        telemac_quantities = [
+            q for q in extraction_quantity
+            if classification_tm_gaia_dict.get(q) == "telemac"
+        ]
+        gaia_quantities = [
+            q for q in extraction_quantity
+            if classification_tm_gaia_dict.get(q) == "gaia"
+        ]
 
         slf_files = {
             "telemac": os.path.join(model_directory, self.tm_results_filename),
@@ -947,154 +903,219 @@ class TelemacModel(HydroSimulations):
         json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
         json_path_restart_data = os.path.join(self.restart_data_folder, "initial-model-outputs.json")
 
-        keys = list(calibration_pts_df.iloc[:, 0])
-        modeled_values_dict = {}
+        keys = calibration_pts_df.iloc[:, 0].tolist()
         differentiated_dict = {}
 
         logger.info(f'Extracting from {input_file} using quantities: {extraction_quantity}')
 
+        # ============================================================
+        # TIME MODE FUNCTION (NEW)
+        # ============================================================
+        def apply_time_mode(all_times_outputs):
+
+            if time_mode == "last":
+                return all_times_outputs[-1]
+
+            elif time_mode == "index":
+                return all_times_outputs[time_index]
+
+            elif time_mode == "mean_last":
+                return np.mean(all_times_outputs[-n_last:], axis=0)
+
+            else:
+                raise ValueError("Invalid time_mode")
+
+        # ============================================================
+        # PRECOMPUTE MODELS
+        # ============================================================
+        model_cache = {}
+
+        for model_source, quantities in zip(
+                ["telemac", "gaia"],
+                [telemac_quantities, gaia_quantities]):
+
+            if not quantities:
+                continue
+
+            slf = ppSELAFIN(slf_files[model_source])
+            slf.readHeader()
+            slf.readTimes()
+
+            variables = [' '.join(v.split()) for v in slf.getVarNames()]
+            var_index = {v: i for i, v in enumerate(variables)}
+
+            NVAR = len(variables)
+            NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+            NPLAN = slf.getNPLAN()
+
+            x2d = x[:len(x) // NPLAN]
+            y2d = y[:len(x) // NPLAN]
+
+            tree = spatial.cKDTree(np.column_stack((x2d, y2d)))
+            step = NPOIN // NPLAN
+
+            model_cache[model_source] = {
+                "slf": slf,
+                "variables": variables,
+                "var_index": var_index,
+                "NVAR": NVAR,
+                "NPLAN": NPLAN,
+                "step": step,
+                "tree": tree,
+                "x2d": x2d,
+                "y2d": y2d,
+                "quantities": quantities
+            }
+
+        # ============================================================
+        # MAIN LOOP
+        # ============================================================
         for key_index, key in enumerate(keys):
+
             xu = calibration_pts_df.iloc[key_index, 1]
             yu = calibration_pts_df.iloc[key_index, 2]
             zu = calibration_pts_df.iloc[key_index, 3]
+
             differentiated_values = {}
 
-            for model_source, quantities in zip(['telemac', 'gaia'], [telemac_quantities, gaia_quantities]):
+            for model_source in ["telemac", "gaia"]:
+
+                if model_source not in model_cache:
+                    continue
+
+                data = model_cache[model_source]
+
+                slf = data["slf"]
+                tree = data["tree"]
+                variables = data["variables"]
+                var_index = data["var_index"]
+                NPLAN = data["NPLAN"]
+                step = data["step"]
+                x2d = data["x2d"]
+                y2d = data["y2d"]
+                quantities = data["quantities"]
+
                 if not quantities:
-                    continue  # Skip if no quantities to extract from this model
+                    continue
 
-                slf_path = slf_files[model_source]
-                slf = ppSELAFIN(slf_path)
-                slf.readHeader()
-                slf.readTimes()
-
-                variables = [' '.join(v.split()) for v in slf.getVarNames()]
-                units = [' '.join(u.split()) for u in slf.getVarUnits()]
-                NVAR = len(variables)
-                common_indices = [variables.index(q) for q in quantities]
-
-                NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
-
-                NPLAN = slf.getNPLAN()
-
-                x2d = x[:len(x) // NPLAN]
-                y2d = y[:len(x) // NPLAN]
-
-                source = np.column_stack((x2d, y2d))
-                tree = spatial.cKDTree(source)
-
-                if extraction_mode == "nearest":
-                    mode = "at nearest point"
-                    k_use = 1
-                    idx_base = None
-                elif extraction_mode == "interpolated":
-                    mode = f"through interpolation using {k} closest points"
-                    k_use = k
-                    idx_base = np.zeros(k, dtype=np.int32)
-                    idx_coord = np.zeros((k, 2), dtype=np.float64)
+                # --------------------------------------------------------
+                # NODE SELECTION
+                # --------------------------------------------------------
+                k_use = 1 if extraction_mode == "nearest" else k
 
                 d, idx = tree.query((xu, yu), k=k_use)
 
-                print(
-                    f'*** Extraction {key},{xu},{yu} performed {mode} in {model_source.upper()}!: {x2d[idx]} {y2d[idx]}\n')
-
-                # Store base indices (plane 0)
                 if k_use == 1:
-                    idx_base = idx
+                    idx_base = np.array([idx])
+                    idx_coord = np.array([[x2d[idx], y2d[idx]]])
                 else:
-                    idx_base[:] = idx
-                    idx_coord[:, 0] = x2d[idx]
-                    idx_coord[:, 1] = y2d[idx]
-                    interpolation_coordinate = (xu, yu)
+                    idx_base = np.array(idx)
+                    idx_coord = np.column_stack((x2d[idx], y2d[idx]))
 
-                step = NPOIN // NPLAN
+                logger.info(
+                    f"[{model_source.upper()}] Point {key} ({xu:.3f},{yu:.3f})"
+                )
 
+                # --------------------------------------------------------
+                # VERTICAL PROFILE
+                # --------------------------------------------------------
                 if NPLAN == 1:
-                    # No vertical dimension → only one layer
-                    p = NPLAN - 1  # = 0
-                else:
-                    step = NPOIN // NPLAN
-                    z_index = variables.index("ELEVATION Z")
+                    p = 0
+                    logger.info(
+                        f"[{model_source.upper()}] Point {key} → single layer model"
+                    )
 
-                    # pick one node to compute vertical structure
-                    base_idx_for_z = idx_base if k_use == 1 else idx_base[0]
+                else:
+                    z_index = var_index["ELEVATION Z"]
+                    base_idx_for_z = idx_base[0]
 
                     z_profile = np.zeros(NPLAN)
 
                     for p_i in range(NPLAN):
+
                         node_idx = base_idx_for_z + p_i * step
+
                         slf.readVariablesAtNode(node_idx)
-                        vals = slf.getVarValuesAtNode()[-1]
-                        z_profile[p_i] = vals[z_index]
+                        all_times_outputs = slf.getVarValuesAtNode()
 
-                    # Convert zu (height above bottom) → absolute elevation
-                    z_bottom = z_profile[0]
-                    z_target = z_bottom + zu
+                        results = apply_time_mode(all_times_outputs)
 
-                    # Find corresponding layer
-                    # # p = 0 (surface or 2d mesh) or NPLAN-1 (bottom in a 3d mesh)
-                    est_h=np.abs(z_profile - z_target)
-                    p = np.argmin(est_h)
+                        z_profile[p_i] = results[z_index]
 
-                # Choose the plane you want
+                    z_target = z_profile[0] + zu
+                    p = np.argmin(np.abs(z_profile - z_target))
 
-                results_all = np.zeros((k_use, NVAR))
 
-                # Single plane computation (NO NPLAN LOOP)
+                    logger.info(
+                        f"[{model_source.upper()}] Point {key} → selected layer p={p+1}/{NPLAN} (zu={zu:.3f})"
+                    )
+
+                # --------------------------------------------------------
+                # VALUE EXTRACTION
+                # --------------------------------------------------------
+                results_all = np.zeros((k_use, data["NVAR"]))
+
                 for j in range(k_use):
-                    if k_use == 1:
-                        node_idx = idx_base + p * step
-                    else:
-                        node_idx = idx_base[j] + p * step
+
+                    node_idx = idx_base[j] + p * step
+
+                    logger.debug(
+                        f"[{model_source.upper()}] extracting node={node_idx}"
+                    )
 
                     slf.readVariablesAtNode(node_idx)
-                    results_all_time_steps=slf.getVarValuesAtNode()
-                    results = slf.getVarValuesAtNode()[-1]
+                    all_times_outputs = slf.getVarValuesAtNode()
 
-                    if k_use != 1:
-                        results_all[j, :] = results
+                    vals = apply_time_mode(all_times_outputs)
 
-                # Interpolation if needed
+                    results_all[j, :] = vals
+
+                # --------------------------------------------------------
+                # INTERPOLATION
+                # --------------------------------------------------------
                 if k_use != 1:
-                    results = interpolate_values(idx_coord, results_all, interpolation_coordinate)
+                    results = interpolate_values(idx_coord, results_all, (xu, yu))
+                else:
+                    results = results_all[0]
 
-                # Extract variables
-                for index in common_indices:
-                    value = results[index]
-                    var_name = variables[index]
-                    differentiated_values[var_name] = value
+                # --------------------------------------------------------
+                # STORE RESULTS
+                # --------------------------------------------------------
+                for q in quantities:
+                    differentiated_values[q] = results[var_index[q]]
 
-                differentiated_dict[key] = differentiated_values
+            differentiated_dict[key] = differentiated_values
 
+        # ============================================================
+        # JSON HANDLING (UNCHANGED)
+        # ============================================================
         if simulation_number == 1:
-            # Handle json_path
-            if os.path.exists(json_path):
-                old_json_path = json_path.replace(".json", "_old.json")
-                os.rename(json_path, old_json_path)
-                print(f"Renamed existing file to: {old_json_path}")
-            else:
-                print("No nested result file found. Creating a new file.")
 
-            # Handle json_path_detailed
+            if os.path.exists(json_path):
+                os.rename(json_path, json_path.replace(".json", "_old.json"))
+
             if os.path.exists(json_path_detailed):
-                old_json_path_detailed = json_path_detailed.replace(".json", "_old.json")
-                os.rename(json_path_detailed, old_json_path_detailed)
-                print(f"Renamed existing file to: {old_json_path_detailed}")
-            else:
-                print("No detailed result file found. Creating a new file.")
-        # Updating json files for every run
-        # update_json_file(json_path=json_path, modeled_values_dict=modeled_values_dict)
+                os.rename(json_path_detailed, json_path_detailed.replace(".json", "_old.json"))
+
         if validation:
             json_target = os.path.join(self.restart_data_folder, "model-results-validation.json")
         else:
             json_target = json_path_detailed
 
-        # Always update the primary results file
-        update_json_file(json_path=json_target, modeled_values_dict=differentiated_dict, detailed_dict=True)
+        update_json_file(
+            json_path=json_target,
+            modeled_values_dict=differentiated_dict,
+            detailed_dict=True
+        )
 
         if simulation_number == self.init_runs and not validation and not user_param_values:
-            update_json_file(json_path=json_path_detailed, modeled_values_dict=differentiated_dict, detailed_dict=True,
-                             save_dict=True, saving_path=json_path_restart_data)
+            update_json_file(
+                json_path=json_path_detailed,
+                modeled_values_dict=differentiated_dict,
+                detailed_dict=True,
+                save_dict=True,
+                saving_path=json_path_restart_data
+            ) 
 
         # try:
         #     shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)

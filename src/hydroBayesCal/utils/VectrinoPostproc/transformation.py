@@ -1,6 +1,7 @@
 """Retrieve transformation matrix to transform beam signals into velocities with Cartesian coordinates"""
 import numpy as np
 import pandas as pd
+import os
 
 
 def get_transformation_matrix(ntk_file_name, scaling_factor=4096):
@@ -15,7 +16,9 @@ def get_transformation_matrix(ntk_file_name, scaling_factor=4096):
     # initialize hBeamToXYZ
     hBeamToXYZ = []
     # retrieve hBeamToXYZ values from header file
-    with open(ntk_file_name.strip('.ntk.hdr') + '.ntk.hdr', 'r') as file:
+    
+    base, _ = os.path.splitext(ntk_file_name)
+    with open(base + '.ntk.hdr', 'r') as file:
         for line in file:
             if 'Probe_hBeamToXYZ' in line:
                 # extract probe transformation
