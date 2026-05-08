@@ -1122,12 +1122,12 @@ class TelemacModel(HydroSimulations):
                 saving_path=json_path_restart_data
             ) 
 
-        # try:
-        #     shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
-        #     if self.gaia_cas is not None:
-        #         shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
-        # except Exception as error:
-        #     print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
+        try:
+            shutil.move(os.path.join(model_directory, self.tm_results_filename), results_folder_directory)
+            if self.gaia_cas is not None:
+                shutil.move(os.path.join(model_directory, self.gaia_results_filename), results_folder_directory)
+        except Exception as error:
+            print("ERROR: could not move results file to " + self.res_dir + "\nREASON:\n" + error)
 
     @staticmethod
     def tbl_creator(

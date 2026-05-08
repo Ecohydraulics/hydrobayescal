@@ -52,5 +52,5 @@ calibration_quantities=control_tm.calibration_quantities
 # Call extract_data_point method
 control_tm.extract_data_point(input_file=input_slf_file, calibration_pts_df=calibration_pts_df,
                               output_name=output_name, extraction_quantity=extraction_quantities, simulation_number=1,
-                              model_directory=model_dir, results_folder_directory=control_tm.calibration_folder,time_mode="mean_last", time_index=100, n_last=150)
+                              model_directory=model_dir, results_folder_directory=control_tm.calibration_folder,output_extraction_time="mean_last", time_index=100, n=150)
 control_tm.output_processing(output_data_path=os.path.join(control_tm.calibration_folder,f'{output_name}-detailed.json'),calibration_quantities=control_tm.calibration_quantities,delete_slf_files=False)
