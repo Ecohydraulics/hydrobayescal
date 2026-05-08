@@ -379,6 +379,9 @@ class TelemacModel(HydroSimulations):
             bal_new_set_parameters=None,
             bal_iteration=int(),
             complete_bal_mode=True,
+            output_extraction="interpolated",
+            output_extraction_time="last",
+            n=40,
             validation=False,
             kill_process = True
     ):
@@ -401,7 +404,12 @@ class TelemacModel(HydroSimulations):
             only initial runs are required.
         validation : bool
             If `True`, the method runs a separate set of simulations for validation purposes.
-
+        output_extraction : str
+            The mode for extracting model outputs. Options are "nearest", "index" or "interpolated".
+        output_extraction_time : str
+            The time mode for extracting model outputs. Options are "last", "index", or "mean_last".
+        n : int
+            The number of last time steps to consider when `output_extraction_time` is set to "mean_last". Default is 40.
         Returns
         -------
          model_evaluations:array
@@ -455,8 +463,7 @@ class TelemacModel(HydroSimulations):
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
 
-                collocation_points=collocation_points  #*[[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]] - remove these numbers?
-                # collocation_points=collocation_points#*[[0.00625,0.00625,0.0131,0.0131,0.0178]]
+                collocation_points=collocation_points 
 
                 for i in range(init_runs):
                     self.num_run = i + 1
@@ -470,7 +477,7 @@ class TelemacModel(HydroSimulations):
                     self.run_single_simulation(self.control_file)
                     self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
                                             self.extraction_quantities, self.num_run, self.model_dir,
-                                            res_dir)
+                                            res_dir,output_extraction=output_extraction,output_extraction_time=output_extraction_time,n=n)
                     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
                                                                       f'{self.dict_output_name}-detailed.json'),
                                                                     delete_slf_files=self.delete_complex_outputs,
@@ -484,12 +491,7 @@ class TelemacModel(HydroSimulations):
                                                                         filter_outputs=True,
                                                                         save_extraction_outputs=True,
                                                                         run_range_filtering=(1, init_runs + 1))
-                    # else:
-                    #     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
-                    #                                                                                   f'{self.dict_output_name}-detailed.json'),
-                    #                                                     delete_slf_files=self.delete_complex_outputs,
-                    #                                                     validation=validation,
-                    #                                                     save_extraction_outputs=True)
+
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
             # This part of the code runs BAL
             else:
@@ -529,7 +531,7 @@ class TelemacModel(HydroSimulations):
                 output_name_calibration = f'{self.dict_output_name}{"_".join(self.calibration_quantities)}'
                 self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
                                         self.extraction_quantities, self.num_run, self.model_dir,
-                                        res_dir)
+                                        res_dir,output_extraction=output_extraction,output_extraction_time=output_extraction_time,n=n)
                 # In this first output processing, ALL the extraction quantities are saved as .csv file in the calibration folder.
                 self.output_processing(output_data_path=os.path.join(res_dir,f'{self.dict_output_name}-detailed.json'),
                                                                 delete_slf_files=self.delete_complex_outputs,
@@ -629,7 +631,10 @@ class TelemacModel(HydroSimulations):
                     self.run_single_simulation(self.control_file)
                     self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
                                             self.extraction_quantities, self.num_run, self.model_dir,
-                                            self.calibration_folder, self.validation, self.user_param_values)
+                                            self.calibration_folder, self.validation, self.user_param_values,
+                                            output_extraction=output_extraction,
+                                            output_extraction_time=output_extraction_time,
+                                            n=n )
                     if validation:
                         output_data_path = os.path.join(restart_data_path, 'model-results-validation.json')
                     else:
@@ -874,11 +879,11 @@ class TelemacModel(HydroSimulations):
             results_folder_directory,
             validation=False,
             user_param_values=False,
-            extraction_mode="interpolated",
-            k=3,
-            time_mode="last",      # last: use the last time step output; index: use the output at a specific time index; mean_last: use the mean of the last n time steps
+            output_extraction="interpolated", # "nearest": use the value of the nearest node; "interpolated": use inverse distance weighting interpolation based on the k nearest nodes
+            k=3, # number of nearest neighbors to use for interpolation when output_extraction is "interpolated"
+            output_extraction_time="last",      # last: use the last time step output; index: use the output at a specific time index; mean_last: use the mean of the last n time steps
             time_index=0,       # time index to use when time_mode is "index" to extract data at a specific time step
-            n_last=5              # n: number of last time steps to average when time_mode is "mean_last"
+            n=5              # n: number of last time steps to average when time_mode is "mean_last"
     ):
 
         self.tm_results_filename = input_file
@@ -913,17 +918,17 @@ class TelemacModel(HydroSimulations):
         # ============================================================
         def apply_time_mode(all_times_outputs):
 
-            if time_mode == "last":
+            if output_extraction_time == "last":
                 return all_times_outputs[-1]
 
-            elif time_mode == "index":
+            elif output_extraction_time == "index":
                 return all_times_outputs[time_index]
 
-            elif time_mode == "mean_last":
-                return np.mean(all_times_outputs[-n_last:], axis=0)
+            elif output_extraction_time == "mean_last":
+                return np.mean(all_times_outputs[-n:], axis=0)
 
             else:
-                raise ValueError("Invalid time_mode")
+                raise ValueError("Invalid output_extraction_time")
 
         # ============================================================
         # PRECOMPUTE MODELS
@@ -1001,7 +1006,7 @@ class TelemacModel(HydroSimulations):
                 # --------------------------------------------------------
                 # NODE SELECTION
                 # --------------------------------------------------------
-                k_use = 1 if extraction_mode == "nearest" else k
+                k_use = 1 if output_extraction == "nearest" else k
 
                 d, idx = tree.query((xu, yu), k=k_use)
 
@@ -1037,7 +1042,7 @@ class TelemacModel(HydroSimulations):
 
                         slf.readVariablesAtNode(node_idx)
                         all_times_outputs = slf.getVarValuesAtNode()
-
+                            
                         results = apply_time_mode(all_times_outputs)
 
                         z_profile[p_i] = results[z_index]

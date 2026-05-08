@@ -48,8 +48,6 @@ def load_config(config_path):
     config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(config)
     return config
-# def initialize_model(complex_model=None):
-#     return complex_model
 
 def setup_experiment_design(
         complex_model,
@@ -140,7 +138,8 @@ def run_complex_model(complex_model,
         collocation_points = experiment_design.x
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                complete_bal_mode=complex_model.complete_bal_mode,
-                                               validation=complex_model.validation)
+                                               validation=complex_model.validation,
+                                               output_extraction_time="mean_last", n=40)
         model_outputs = complex_model.model_evaluations
     else:
         try:
@@ -497,6 +496,8 @@ def run_bal_model(collocation_points,
                                                        bal_iteration=bal_iteration,
                                                        bal_new_set_parameters=new_tp,
                                                        complete_bal_mode=complex_model.complete_bal_mode,
+                                                       output_extraction_time="mean_last",
+                                                       n=40,
                                                        validation=complex_model.validation)
 
                 model_outputs = complex_model.model_evaluations
