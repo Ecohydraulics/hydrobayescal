@@ -465,7 +465,13 @@ def run_bal_model(collocation_points,
         bayesian_dict['ELPD'][it], bayesian_dict['IE'][it] = bi_gpe.ELPD, bi_gpe.IE
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
         bayesian_dict['posterior'][it] = bi_gpe.posterior
-
+        try:
+            with open(os.path.join(complex_model.calibration_folder,
+                                'BAL_dictionary.pkl'), 'wb') as pickle_file:
+                pickle.dump(bayesian_dict, pickle_file)
+            print(f"BAL posterior data saved for iteration {it}.")
+        except Exception as e:
+            print(f"An error occurred while saving posterior data: {e}")
         # 4. Sequential Design --------------------------------------------------------------------------------------
         if it < n_iter:
             logger.info(
@@ -488,6 +494,13 @@ def run_bal_model(collocation_points,
             logger.info(f"The new collocation point after rejection sampling is {new_tp} obtained with {util_fun}")
             bayesian_dict['util_func'][it] = util_fun
 
+            try:
+                with open(os.path.join(complex_model.calibration_folder,
+                                    'BAL_dictionary.pkl'), 'wb') as pickle_file:
+                    pickle.dump(bayesian_dict, pickle_file)
+                print(f"BAL utility function saved for iteration {it}.")
+            except Exception as e:
+                print(f"An error occurred while saving utility data: {e}")
             # Evaluate model in new TP
 
             if complex_model.complete_bal_mode or complex_model.only_bal_mode:
@@ -509,12 +522,7 @@ def run_bal_model(collocation_points,
             else:
                 collocation_points = np.vstack((collocation_points, new_tp))
                 logger.info(f'------------ Finished iteration {it + 1}/{n_iter} -------------------')
-        try:
-            with open(os.path.join(complex_model.calibration_folder, 'BAL_dictionary.pkl'), 'wb') as pickle_file:
-                pickle.dump(bayesian_dict, pickle_file)
-            print("BAL data successfully saved.")
-        except Exception as e:
-            print(f"An error occurred while saving the dictionary: {e}")
+
     updated_collocation_points = collocation_points
     return bayesian_dict, updated_collocation_points
 def main():

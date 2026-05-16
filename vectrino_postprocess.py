@@ -28,51 +28,52 @@ from src.hydroBayesCal.utils.VectrinoPostproc.get_ascii_data import read_ascii_f
 from src.hydroBayesCal.utils.VectrinoPostproc.transformation import get_transformation_matrix, apply_transformation
 from src.hydroBayesCal.utils.VectrinoPostproc.plot_velocities import plot_instantaneous_velocities
 from src.hydroBayesCal.utils.VectrinoPostproc.compute_tke import compute_tke_data
+from src.hydroBayesCal.utils.VectrinoPostproc.despiking import despike_velocity_dataframe
 
 # ======================================================================
 # USER INPUT
 # ======================================================================
 
 data_directory = "/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/raw-data-vectrinoApril2026/ADV_pier_Andres/raw_ascii"
-results_directory = "/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/raw-data-vectrinoApril2026/ValidationQ25ls_50ls_postprocessed"
+results_directory = "/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/raw-data-vectrinoApril2026/ValidationQ25ls_Q60ls_postprocessed"
 # Base names WITHOUT ".ntk.dat" or ".ntk.hdr"
 case_names = [
     #Calibration points at different locations (Q=50 l/s)
-    "xyz_-05_2cm_CL",
-    "xyz_-05_4cm_CL",
-    "xyz_-05_6cm_CL",
-    "xyz_-05_8cm_CL",
-    "xyz_-05_10cm_CL",
-    "xyz_+05_2cm_CL",
-    "xyz_+05_4cm_CL",
-    "xyz_+05_6cm_CL",
-    "xyz_+05_8cm_CL",
-    "xyz_+05_10cm_CL",
-    "xyz_+05_2cm_offCL20",
-    "xyz_+05_4cm_offCL20",
-    "xyz_+05_6cm_offCL20",
-    "xyz_+05_8cm_offCL20",
-    "xyz_+05_10cm_offCL20",
-    "xyz_+1_2cm_CL",
-    "xyz_+1_4cm_CL",
-    "xyz_+1_6cm_CL",
-    "xyz_+1_8cm_CL",
-    "xyz_+1_10cm_CL",
-    "xyz_+1_2cm_offCL20",
-    "xyz_+1_4cm_offCL20",
-    "xyz_+1_6cm_offCL20",
-    "xyz_+1_8cm_offCL20",
-    "xyz_+1_10cm_offCL20",
-    "xyz_+2_2cm_CL",
-    "xyz_+2_4cm_CL",
-    "xyz_+2_6cm_CL",
-    "xyz_+2_8cm_CL",
-    "xyz_+2_10cm_CL",
-    "xyz_+2_2cm_offCL20",
-    "xyz_+2_4cm_offCL20",
-    "xyz_+2_6cm_offCL20",
-    "xyz_+2_8cm_offCL20",
-    "xyz_+2_10cm_offCL20",
+    # "xyz_-05_2cm_CL",
+    # "xyz_-05_4cm_CL",
+    # "xyz_-05_6cm_CL",
+    # "xyz_-05_8cm_CL",
+    # "xyz_-05_10cm_CL",
+    # "xyz_+05_2cm_CL",
+    # "xyz_+05_4cm_CL",
+    # "xyz_+05_6cm_CL",
+    # "xyz_+05_8cm_CL",
+    # "xyz_+05_10cm_CL",
+    # "xyz_+05_2cm_offCL20",
+    # "xyz_+05_4cm_offCL20",
+    # "xyz_+05_6cm_offCL20",
+    # "xyz_+05_8cm_offCL20",
+    # "xyz_+05_10cm_offCL20",
+    # "xyz_+1_2cm_CL",
+    # "xyz_+1_4cm_CL",
+    # "xyz_+1_6cm_CL",
+    # "xyz_+1_8cm_CL",
+    # "xyz_+1_10cm_CL",
+    # "xyz_+1_2cm_offCL20",
+    # "xyz_+1_4cm_offCL20",
+    # "xyz_+1_6cm_offCL20",
+    # "xyz_+1_8cm_offCL20",
+    # "xyz_+1_10cm_offCL20",
+    # "xyz_+2_2cm_CL",
+    # "xyz_+2_4cm_CL",
+    # "xyz_+2_6cm_CL",
+    # "xyz_+2_8cm_CL",
+    # "xyz_+2_10cm_CL",
+    # "xyz_+2_2cm_offCL20",
+    # "xyz_+2_4cm_offCL20",
+    # "xyz_+2_6cm_offCL20",
+    # "xyz_+2_8cm_offCL20",
+    # "xyz_+2_10cm_offCL20",
     #Validation points at different points (Q=50 l/s)
     # "xyz_+4m_2cm_offCL20left",
     # "xyz_+4m_4cm_offCL20left",
@@ -90,17 +91,17 @@ case_names = [
     # "xyz_+55m_8cm_offCL35left",
     # "xyz_+55m_10cm_offCL35left", 
     #Validation points with different discharge (Q=25 l/s,60 l/s)
-    # "xyz_extraQ60_+25_2cm_CL",
-    # "xyz_extraQ60_+25_4cm_CL",
-    # "xyz_extraQ60_+25_6cm_CL",
-    # "xyz_extraQ60_+25_8cm_CL",
-    # "xyz_extraQ60_+25_10cm_CL", 
-    # "xyz_extraQ25_+25_2cm_CL",
-    # "xyz_extraQ25_+25_4cm_CL",
-    # "xyz_extraQ25_+25_6cm_CL",
-    # "xyz_extraQ25_+25_8cm_CL",
-    # "xyz_extraQ25_+25_10cm_CL",  
-]
+    "xyz_extraQ60_+25_2cm_CL",
+    "xyz_extraQ60_+25_4cm_CL",
+    "xyz_extraQ60_+25_6cm_CL",
+    "xyz_extraQ60_+25_8cm_CL",
+    "xyz_extraQ60_+25_10cm_CL", 
+    "xyz_extraQ25_+25_2cm_CL",
+    "xyz_extraQ25_+25_4cm_CL",
+    "xyz_extraQ25_+25_6cm_CL",
+    "xyz_extraQ25_+25_8cm_CL",
+    "xyz_extraQ25_+25_10cm_CL",  
+ ]
 
 relevant_point_ids = (0,)
 
@@ -109,7 +110,7 @@ tke_averaging_window = 0.5
 
 make_velocity_plots = True
 compute_tke = True
-
+despike_velocities = True
 
 # ======================================================================
 # MAIN PROCESSING
@@ -183,7 +184,22 @@ try:
                 transformation_matrix=M,
                 relevant_point_ids=relevant_point_ids
             )
+        if despike_velocities:
+            print("   - despiking velocity time series using phase-space threshold method...")
 
+            vectrino_data = despike_velocity_dataframe(
+                vectrino_data,
+                velocity_columns=[
+                    "u (m/s)",
+                    "v (m/s)",
+                    "w1 (m/s)",
+                    "w2 (m/s)",
+                ],
+                replacement="linear",
+                threshold_factor=1.0,
+                keep_original=True,
+                add_flag_columns=True,
+            )
             output_file = os.path.join(
                 csv_output_directory,
                 ascii_file + ".csv"
