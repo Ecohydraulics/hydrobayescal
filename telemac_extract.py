@@ -21,11 +21,11 @@ from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 #from src.hydroBayesCal.function_pool import *
 
 # Define paths and other parameters
-model_dir = '/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/simulationsConvergence/0.01/' # the .slf file must be in this directory.
-res_dir = '/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/simulationsConvergence/0.01/' # a dictionary with the model outputs will be saved in this directory
-calibration_pts_file_path = '/media/andres/Windows/Users/andre/Documents/PhD/2026/cylinder_model/simulationsConvergence/measurements-calibration.csv'
+model_dir = '/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/simulation2026MU/' # the .slf file must be in this directory.
+res_dir = '/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/simulation2026MU/' # a dictionary with the model outputs will be saved in this directory
+calibration_pts_file_path = '/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/measurements-calibration-EringCalib.csv'
 output_name='output_file_3d'
-calibration_quantities= ['VELOCITY U'] #['TURBULENT ENERG','DISSIPATION']
+calibration_quantities= [["''WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"]] #['TURBULENT ENERG','DISSIPATION']
 extraction_quantities= ['VELOCITY U'] #['TURBULENT ENERG','DISSIPATION']
 input_slf_file='3d-conv-0.01-3d-rest2.slf' # the .slf file must be in model_dir
 # Initialize TelemacModel object

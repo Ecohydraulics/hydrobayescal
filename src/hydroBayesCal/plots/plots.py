@@ -215,7 +215,7 @@ class BayesianPlotter:
             plot_prior=False,
             parameter_units=None,
             parameter_indices=None,
-            best_estimate_value="posterior_MAP" #"posterior_MAP" "posterior_mean"
+            best_estimate_value="posterior_MAP"  # "posterior_MAP" or "posterior_mean"
     ):
 
         save_folder = self.save_folder
@@ -259,22 +259,16 @@ class BayesianPlotter:
                 ax = axes[col]
                 posterior_vector = posterior_arrays[iteration_idx][:, param_idx]
 
+                # --------------------------------------------------
                 # Histogram values for normalization
+                # --------------------------------------------------
                 hist_values, _ = np.histogram(
                     posterior_vector,
                     bins=bins,
                     density=density
                 )
 
-                # KDE
-                kde_post = gaussian_kde(posterior_vector)
-                x_vals = np.linspace(x_limits[col][0], x_limits[col][1], 1000)
-
-                # Compute max density for normalization
-                max_density = max(
-                    max(hist_values),
-                    max(kde_post(x_vals))
-                )
+                max_density = max(hist_values)
 
                 if plot_prior:
                     prior_vector = prior[:, param_idx]
@@ -285,9 +279,9 @@ class BayesianPlotter:
                     )
                     max_density = max(max_density, max(prior_hist_values))
 
-                # -------------------------
+                # --------------------------------------------------
                 # Posterior histogram
-                # -------------------------
+                # --------------------------------------------------
                 hist_values, bins_edges, patches = ax.hist(
                     posterior_vector,
                     bins=bins,
@@ -302,26 +296,41 @@ class BayesianPlotter:
                     for patch in patches:
                         patch.set_height(patch.get_height() / max_density)
 
-                # -------------------------
-                # Posterior KDE
-                # -------------------------
-                ax.plot(
-                    x_vals,
-                    kde_post(x_vals) / max_density,
-                    color='black',
-                    linewidth=1
+                # --------------------------------------------------
+                # MAP directly from posterior vector
+                # --------------------------------------------------
+                mean_value = np.mean(posterior_vector)
+
+                hist_counts, hist_bin_edges = np.histogram(
+                    posterior_vector,
+                    bins=bins,
+                    density=False
                 )
 
-                # -------------------------
-                # MAP line + value
-                # -------------------------
-                mean_value = np.mean(posterior_vector)
-                post_values=kde_post(x_vals)
-                map_value = x_vals[np.argmax(post_values)]
+                map_bin_index = np.argmax(hist_counts)
+
+                # Samples inside the most populated bin
+                bin_left = hist_bin_edges[map_bin_index]
+                bin_right = hist_bin_edges[map_bin_index + 1]
+
+                samples_in_map_bin = posterior_vector[
+                    (posterior_vector >= bin_left) &
+                    (posterior_vector <= bin_right)
+                    ]
+
+                # Empirical MAP value from posterior samples
+                # Using the mean of samples inside the most populated bin
+                map_value = np.mean(samples_in_map_bin)
+
                 if best_estimate_value == "posterior_mean":
                     value = mean_value
                 elif best_estimate_value == "posterior_MAP":
                     value = map_value
+                else:
+                    raise ValueError(
+                        "best_estimate_value must be either 'posterior_MAP' or 'posterior_mean'"
+                    )
+
                 ax.axvline(
                     value,
                     color='red',
@@ -330,7 +339,7 @@ class BayesianPlotter:
                 )
 
                 ax.text(
-                    value,#mean_value,
+                    value,
                     1.05,
                     f'{value:.3f}',
                     color='black',
@@ -340,9 +349,9 @@ class BayesianPlotter:
                     horizontalalignment='right'
                 )
 
-                # -------------------------
-                # Prior histogram (optional)
-                # -------------------------
+                # --------------------------------------------------
+                # Prior histogram optional
+                # --------------------------------------------------
                 if plot_prior:
                     prior_hist_values, prior_bins_edges, prior_patches = ax.hist(
                         prior_vector,
@@ -358,9 +367,9 @@ class BayesianPlotter:
                         for patch in prior_patches:
                             patch.set_height(patch.get_height() / max_density)
 
-                # -------------------------
-                # Axis labels (RESTORED)
-                # -------------------------
+                # --------------------------------------------------
+                # Axis labels
+                # --------------------------------------------------
                 unit = f' [{parameter_units[param_idx]}]' if parameter_units[param_idx] else ''
                 ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=40)
                 ax.set_ylabel('Posterior\n density [-]', fontsize=40)
@@ -381,36 +390,64 @@ class BayesianPlotter:
                 ax.set_xlim(x_limits[col])
                 ax.set_ylim(0, 1.2)
 
-                ax.grid(True, which='both',
-                        linestyle='--',
-                        linewidth=0.7,
-                        color='lightgrey')
+                ax.grid(
+                    True,
+                    which='both',
+                    linestyle='--',
+                    linewidth=0.7,
+                    color='lightgrey'
+                )
 
                 ax.minorticks_on()
 
-                ax.grid(True, which='minor',
-                        linestyle=':',
-                        linewidth=0.5,
-                        color='grey')
+                ax.grid(
+                    True,
+                    which='minor',
+                    linestyle=':',
+                    linewidth=0.5,
+                    color='grey'
+                )
 
             # Remove unused axes
             for j in range(parameter_num, len(axes)):
                 fig.delaxes(axes[j])
 
-            # -------------------------
+            # --------------------------------------------------
             # Global horizontal legend
-            # -------------------------
+            # --------------------------------------------------
+            estimate_label = (
+                'Posterior MAP'
+                if best_estimate_value == "posterior_MAP"
+                else 'Posterior mean'
+            )
+
             legend_elements = [
-                mpatches.Patch(facecolor='0.75', edgecolor='0.6', alpha=0.35, label='Prior'),
-                mpatches.Patch(facecolor='0.35', edgecolor='black', alpha=0.75, label='Posterior'),
-                Line2D([0], [0], color='black', lw=1, label='Posterior KDE'),
-                Line2D([0], [0], color='red', lw=2, linestyle='--', label='Posterior mean')
+                mpatches.Patch(
+                    facecolor='0.75',
+                    edgecolor='0.6',
+                    alpha=0.35,
+                    label='Prior'
+                ),
+                mpatches.Patch(
+                    facecolor='0.35',
+                    edgecolor='black',
+                    alpha=0.75,
+                    label='Posterior'
+                ),
+                Line2D(
+                    [0],
+                    [0],
+                    color='red',
+                    lw=2,
+                    linestyle='--',
+                    label=estimate_label
+                )
             ]
 
             fig.legend(
                 handles=legend_elements,
                 loc='upper center',
-                ncol=4,
+                ncol=3,
                 fontsize=28,
                 frameon=False,
                 bbox_to_anchor=(0.5, 1.02)
@@ -426,6 +463,7 @@ class BayesianPlotter:
             )
 
             plt.close(fig)
+
 
     def plot_posterior_iteration(self, posterior_samples, parameter_names, param_values):
         """
