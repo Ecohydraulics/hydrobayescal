@@ -26,6 +26,7 @@ classification_tm_gaia_dict = {
     "TURBULENT ENERG": "telemac",
     "BOTTOM SHEAR STRESS": "telemac",
     "DISSIPATION": "telemac",
+    "3D VELOCITY MAGNITUDE": "telemac",
 
     "BED ELEVATION": "gaia",
     "CUMUL BED EVOL": "gaia",
@@ -35,3 +36,29 @@ classification_tm_gaia_dict = {
     "SEDIMENT DIAMETER": "gaia",
     "CRITICAL SHEAR STRESS": "gaia"
 }
+# ============================================================
+# DEFAULT PHYSICAL CONSTANTS FOR WALL-LAW DIAGNOSTICS
+# ============================================================
+# These constants are used to compute TELEMAC-style friction
+# velocity and y+ from the near-bed velocity and vertical spacing.
+#
+# They can be overwritten inside the extraction function if needed.
+# ============================================================
+
+DEFAULT_VON_KARMAN_CONSTANT = 0.40
+DEFAULT_NIKURADSE_LOG_FACTOR = 30.0
+DEFAULT_KINEMATIC_VISCOSITY_WATER = 1.0e-6
+
+# ============================================================
+# 2D SLF VARIABLE NAMES FOR BOTTOM FRICTION / NIKURADSE ks
+# ============================================================
+
+GENERATED_2D_SLF_VARIABLES_FROM_3D = [
+    "FRICTION COEFFICIENT",
+    "BOTTOM FRICTION COEFFICIENT",
+    "FRICTION COEFFICIENT FOR THE BOTTOM",
+    "BOTTOM FRICTION",
+    "ROUGHNESS COEFFICIENT",
+    "NIKURADSE ROUGHNESS",
+    "NIKURADSE KS"
+]

@@ -2165,11 +2165,19 @@ class BayesianPlotter:
             raise ValueError(f"Expected {n_quantities} quantity names, got {len(quantity_names)}")
 
         for p in range(P):
-            model_summary = {"model_id": p + 1, "model_name": str(model_names[p])}
+            model_summary = {
+                "model_id": p + 1,
+                "model_name": str(model_names[p])
+            }
+
             total_rmse_cm = []
             total_rmse_sm = []
+
             total_nrmse_cm = []
             total_nrmse_sm = []
+
+            total_nmae_cm = []
+            total_nmae_sm = []
 
             cm_quantities_matrix = []
             sm_quantities_matrix = []
@@ -2191,31 +2199,74 @@ class BayesianPlotter:
                 residuals_cm = cm_vals - obs_vals
                 residuals_sm = sm_vals - obs_vals
 
-                rmse_cm_total = np.sqrt(np.mean((cm_vals - obs_vals) ** 2))
-                rmse_sm_total = np.sqrt(np.mean((sm_vals - obs_vals) ** 2))
+                # ---------------------------------------------------------
+                # Error metrics per calibration target
+                # ---------------------------------------------------------
+                rmse_cm_total = np.sqrt(np.mean(residuals_cm ** 2))
+                rmse_sm_total = np.sqrt(np.mean(residuals_sm ** 2))
 
+                mae_cm_total = np.mean(np.abs(residuals_cm))
+                mae_sm_total = np.mean(np.abs(residuals_sm))
+
+                # RMSE/MAE ratio.
+                # If MAE is zero, all residuals are zero, so 0/0 is undefined.
+                rmse_mae_ratio_cm = (
+                    np.nan if np.isclose(mae_cm_total, 0.0)
+                    else rmse_cm_total / mae_cm_total
+                )
+
+                rmse_mae_ratio_sm = (
+                    np.nan if np.isclose(mae_sm_total, 0.0)
+                    else rmse_sm_total / mae_sm_total
+                )
+
+                # Normalized RMSE and normalized MAE.
+                # Both are normalized by the observed standard deviation.
                 obs_std = np.std(obs_vals)
-                if obs_std == 0:
+
+                if np.isclose(obs_std, 0.0):
                     nrmse_cm_total = np.nan
                     nrmse_sm_total = np.nan
+                    nmae_cm_total = np.nan
+                    nmae_sm_total = np.nan
                 else:
                     nrmse_cm_total = rmse_cm_total / obs_std
                     nrmse_sm_total = rmse_sm_total / obs_std
+                    nmae_cm_total = mae_cm_total / obs_std
+                    nmae_sm_total = mae_sm_total / obs_std
 
                 spearman_cm = spearmanr(cm_vals, obs_vals).correlation
                 spearman_sm = spearmanr(sm_vals, obs_vals).correlation
 
+                # ---------------------------------------------------------
+                # Summary CSV columns per calibration target
+                # ---------------------------------------------------------
                 model_summary[f"RMSE_CM_Q{i + 1}"] = rmse_cm_total
                 model_summary[f"RMSE_SM_Q{i + 1}"] = rmse_sm_total
+
+                model_summary[f"MAE_CM_Q{i + 1}"] = mae_cm_total
+                model_summary[f"MAE_SM_Q{i + 1}"] = mae_sm_total
+
                 model_summary[f"NRMSE_CM_Q{i + 1}"] = nrmse_cm_total
                 model_summary[f"NRMSE_SM_Q{i + 1}"] = nrmse_sm_total
+
+                model_summary[f"NMAE_CM_Q{i + 1}"] = nmae_cm_total
+                model_summary[f"NMAE_SM_Q{i + 1}"] = nmae_sm_total
+
+                model_summary[f"RMSE_MAE_CM_Q{i + 1}"] = rmse_mae_ratio_cm
+                model_summary[f"RMSE_MAE_SM_Q{i + 1}"] = rmse_mae_ratio_sm
+
                 model_summary[f"Spearman_CM_Q{i + 1}"] = spearman_cm
                 model_summary[f"Spearman_SM_Q{i + 1}"] = spearman_sm
 
                 total_rmse_cm.append(rmse_cm_total)
                 total_rmse_sm.append(rmse_sm_total)
+
                 total_nrmse_cm.append(nrmse_cm_total)
                 total_nrmse_sm.append(nrmse_sm_total)
+
+                total_nmae_cm.append(nmae_cm_total)
+                total_nmae_sm.append(nmae_sm_total)
 
                 spearman_cm_per_quantity[f"Q{i + 1}"].append(spearman_cm)
                 spearman_sm_per_quantity[f"Q{i + 1}"].append(spearman_sm)
@@ -2226,6 +2277,7 @@ class BayesianPlotter:
 
                 for j in range(N):
                     ci_width = upper_ci_vals[j] - lower_ci_vals[j]
+
                     spatial_records.append({
                         "model_id": p + 1,
                         "model_name": str(model_names[p]),
@@ -2264,6 +2316,10 @@ class BayesianPlotter:
 
             model_summary["Overall_NRMSE_CM"] = np.nanmean(total_nrmse_cm)
             model_summary["Overall_NRMSE_SM"] = np.nanmean(total_nrmse_sm)
+
+            model_summary["Overall_NMAE_CM"] = np.nanmean(total_nmae_cm)
+            model_summary["Overall_NMAE_SM"] = np.nanmean(total_nmae_sm)
+
             model_summary["Overall_Spearman_CM"] = overall_spearman_cm
             model_summary["Overall_Spearman_SM"] = overall_spearman_sm
 
@@ -2273,13 +2329,31 @@ class BayesianPlotter:
 
         df_summary["Rank_NRMSE_CM"] = df_summary["Overall_NRMSE_CM"].rank(method="min")
         df_summary["Rank_NRMSE_SM"] = df_summary["Overall_NRMSE_SM"].rank(method="min")
-        df_summary["Rank_Spearman_CM"] = df_summary["Overall_Spearman_CM"].rank(ascending=False, method="min")
-        df_summary["Rank_Spearman_SM"] = df_summary["Overall_Spearman_SM"].rank(ascending=False, method="min")
+
+        df_summary["Rank_NMAE_CM"] = df_summary["Overall_NMAE_CM"].rank(method="min")
+        df_summary["Rank_NMAE_SM"] = df_summary["Overall_NMAE_SM"].rank(method="min")
+
+        df_summary["Rank_Spearman_CM"] = df_summary["Overall_Spearman_CM"].rank(
+            ascending=False,
+            method="min"
+        )
+        df_summary["Rank_Spearman_SM"] = df_summary["Overall_Spearman_SM"].rank(
+            ascending=False,
+            method="min"
+        )
 
         for i in range(n_quantities):
             q = f"Q{i + 1}"
-            cm_ranks = pd.Series(spearman_cm_per_quantity[q]).rank(ascending=False, method="min")
-            sm_ranks = pd.Series(spearman_sm_per_quantity[q]).rank(ascending=False, method="min")
+
+            cm_ranks = pd.Series(spearman_cm_per_quantity[q]).rank(
+                ascending=False,
+                method="min"
+            )
+            sm_ranks = pd.Series(spearman_sm_per_quantity[q]).rank(
+                ascending=False,
+                method="min"
+            )
+
             df_summary[f"Rank_Spearman_CM_{q}"] = cm_ranks.values
             df_summary[f"Rank_Spearman_SM_{q}"] = sm_ranks.values
 
@@ -2294,12 +2368,15 @@ class BayesianPlotter:
         )
 
         all_spearman_per_quantity = []
+
         for i in range(n_quantities):
             q = f"Q{i + 1}"
+
             spearman_all = pd.concat(
                 [df_plot[f"Spearman_CM_{q}"], df_plot[f"Spearman_SM_{q}"]],
                 ignore_index=True
             )
+
             all_spearman_per_quantity.extend(spearman_all.values)
 
         all_spearman_combined = list(all_spearman_overall.values) + all_spearman_per_quantity
@@ -2313,6 +2390,7 @@ class BayesianPlotter:
             if not np.isclose(all_nrmse_cm.max(), all_nrmse_cm.min())
             else 0.1 * abs(all_nrmse_cm.mean())
         )
+
         nrmse_sm_margin = (
             0.15 * (all_nrmse_sm.max() - all_nrmse_sm.min())
             if not np.isclose(all_nrmse_sm.max(), all_nrmse_sm.min())
@@ -2323,6 +2401,7 @@ class BayesianPlotter:
             all_nrmse_cm.min() - nrmse_cm_margin,
             all_nrmse_cm.max() + nrmse_cm_margin
         )
+
         xlim_sm_overall = (
             all_nrmse_sm.min() - nrmse_sm_margin,
             all_nrmse_sm.max() + nrmse_sm_margin
@@ -2333,6 +2412,7 @@ class BayesianPlotter:
 
         for i in range(n_quantities):
             q = f"Q{i + 1}"
+
             rmse_cm = df_plot[f"RMSE_CM_{q}"]
             rmse_sm = df_plot[f"RMSE_SM_{q}"]
 
@@ -2341,14 +2421,19 @@ class BayesianPlotter:
                 if not np.isclose(rmse_cm.max(), rmse_cm.min())
                 else 0.1 * abs(rmse_cm.mean())
             )
+
             sm_margin = (
                 0.15 * (rmse_sm.max() - rmse_sm.min())
                 if not np.isclose(rmse_sm.max(), rmse_sm.min())
                 else 0.1 * abs(rmse_sm.mean())
             )
 
-            xlims_cm_quantity.append((rmse_cm.min() - cm_margin, rmse_cm.max() + cm_margin))
-            xlims_sm_quantity.append((rmse_sm.min() - sm_margin, rmse_sm.max() + sm_margin))
+            xlims_cm_quantity.append(
+                (rmse_cm.min() - cm_margin, rmse_cm.max() + cm_margin)
+            )
+            xlims_sm_quantity.append(
+                (rmse_sm.min() - sm_margin, rmse_sm.max() + sm_margin)
+            )
 
         ylims_cm_quantity = []
         ylims_sm_quantity = []
@@ -2367,6 +2452,7 @@ class BayesianPlotter:
                 if not np.isclose(cm_max, cm_min)
                 else (0.1 * abs(cm_min) if cm_min != 0 else 0.1)
             )
+
             sm_margin = (
                 0.15 * (sm_max - sm_min)
                 if not np.isclose(sm_max, sm_min)
@@ -2382,13 +2468,22 @@ class BayesianPlotter:
             ylims_cm_quantity.append(ylimit_cm)
             ylims_sm_quantity.append(ylimit_sm)
 
-        plt.rcParams.update({'xtick.labelsize': 20, 'ytick.labelsize': 20})
+        plt.rcParams.update({
+            'xtick.labelsize': 20,
+            'ytick.labelsize': 20
+        })
 
-        # ---------- Subplots for CM (RMSE vs Spearman) ----------
+        # ---------- Subplots for CM: RMSE vs Spearman ----------
         ncols = 2
         nrows = math.ceil(n_quantities / ncols)
 
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
+        fig, axes = plt.subplots(
+            nrows=nrows,
+            ncols=ncols,
+            figsize=(12, 4 * nrows),
+            sharey=False
+        )
+
         axes = axes.flatten()
         colors = plt.cm.get_cmap('tab10', len(df_plot))
 
@@ -2416,6 +2511,7 @@ class BayesianPlotter:
 
             set_nice_ticks(ax, 'x', n_ticks=5)
             set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+
             ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
             ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
@@ -2427,6 +2523,7 @@ class BayesianPlotter:
 
         handles, labels = axes[0].get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
+
         fig.legend(
             by_label.values(),
             by_label.keys(),
@@ -2435,11 +2532,21 @@ class BayesianPlotter:
             ncol=max(1, len(by_label)),
             fontsize=16
         )
-        fig.tight_layout(rect=[0, 0, 1, 0.93])
-        fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_CM.svg"), dpi=300)
 
-        # ---------- Subplots for SM (RMSE vs Spearman) ----------
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), sharey=False)
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
+        fig.savefig(
+            os.path.join(save_folder, "per_quantity_rmse_vs_spearman_CM.svg"),
+            dpi=300
+        )
+
+        # ---------- Subplots for SM: RMSE vs Spearman ----------
+        fig, axes = plt.subplots(
+            nrows=nrows,
+            ncols=ncols,
+            figsize=(12, 4 * nrows),
+            sharey=False
+        )
+
         axes = axes.flatten()
         colors = plt.cm.get_cmap('tab10', len(df_plot))
 
@@ -2467,6 +2574,7 @@ class BayesianPlotter:
 
             set_nice_ticks(ax, 'x', n_ticks=5)
             set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+
             ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
             ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
@@ -2478,6 +2586,7 @@ class BayesianPlotter:
 
         handles, labels = axes[0].get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
+
         fig.legend(
             by_label.values(),
             by_label.keys(),
@@ -2486,8 +2595,12 @@ class BayesianPlotter:
             ncol=max(1, len(by_label)),
             fontsize=16
         )
+
         fig.tight_layout(rect=[0, 0, 1, 0.93])
-        fig.savefig(os.path.join(save_folder, "per_quantity_rmse_vs_spearman_SM.svg"), dpi=300)
+        fig.savefig(
+            os.path.join(save_folder, "per_quantity_rmse_vs_spearman_SM.svg"),
+            dpi=300
+        )
 
         # ---------- Unified subplots for NRMSE vs Spearman ----------
         def plot_nrmse_vs_spearman_subplots(metric_tag, overall_xlim, quantity_ylims, filename):
@@ -2501,11 +2614,13 @@ class BayesianPlotter:
                 figsize=(12, 4 * nrows_local),
                 sharey=False
             )
+
             axes = axes.flatten()
             colors = plt.cm.get_cmap('tab10', len(df_plot))
 
             # Overall panel
             ax = axes[0]
+
             overall_x_col = f"Overall_NRMSE_{metric_tag}"
             overall_y_col = f"Overall_Spearman_{metric_tag}"
 
@@ -2526,12 +2641,14 @@ class BayesianPlotter:
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
 
             ax.set_xlim(overall_xlim)
+
             y_vals = df_plot[overall_y_col].values
             y_min, y_max = symmetric_limits(y_vals, pad=0.10)
             ax.set_ylim(y_min, y_max)
 
             set_nice_ticks(ax, 'x', n_ticks=5)
             set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+
             ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
             ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
@@ -2567,6 +2684,7 @@ class BayesianPlotter:
 
                 set_nice_ticks(ax, 'x', n_ticks=5)
                 set_nice_ticks(ax, 'y', n_ticks=5, start_at_zero=True)
+
                 ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
                 ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
@@ -2578,6 +2696,7 @@ class BayesianPlotter:
 
             handles, labels = axes[0].get_legend_handles_labels()
             by_label = dict(zip(labels, handles))
+
             fig.legend(
                 by_label.values(),
                 by_label.keys(),
@@ -2605,10 +2724,19 @@ class BayesianPlotter:
         )
 
         df_spatial = pd.DataFrame(spatial_records)
-        df_spatial.to_csv(os.path.join(save_folder, "location_metrics_models.csv"), index=False)
-        df_summary.to_csv(os.path.join(save_folder, "summary_metrics_models.csv"), index=False)
+
+        df_spatial.to_csv(
+            os.path.join(save_folder, "location_metrics_models.csv"),
+            index=False
+        )
+
+        df_summary.to_csv(
+            os.path.join(save_folder, "summary_metrics_models.csv"),
+            index=False
+        )
 
         return df_spatial, df_summary
+
     # def plot_residuals(self, df_spatial, df_summary, model_ids, quantity_names):
     #     """
     #     Plots residuals (Modeled - Observed) vs Observed for each model in separate columns.

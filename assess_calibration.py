@@ -22,11 +22,11 @@ full_complexity_model = TelemacModel(
             # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
-            model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation2026MU",
-            res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026-AllRange",
-            calibration_pts_file_path = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+            model_dir="/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/simulation2026MU",
+            res_dir="/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/",
+            calibration_pts_file_path = "/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/measurements-calibration-EringCalib.csv",
             n_cpus=16,
-            init_runs=7,
+            init_runs=5,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "zone2", # Pool
@@ -114,12 +114,12 @@ df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
                                  r"SO-GPE: $h$",
                                  r"SO-GPE: $\bar{U}$",
                                  r"SO-GPE: $\delta_{z}$",
-                                 "Benchmark: $k_{s} = \mathrm{Const}$",
-                                 r"Benchmark: $k_{s} = 3 \times d_{50}$"
+                                 #r"Benchmark: $k_{s} = \mathrm{Const}$",
+                                 #r"Benchmark: $k_{s} = 3 \times d_{50}$"
                              ],
             quantity_names=calibration_names,
             plot_models=list(range(5)))
-plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,3],
+plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4,5],
                                     quantity_names=[
                                         r"$h$",
                                         r"$\bar{U}$",
@@ -141,15 +141,15 @@ plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_
                                     )
 
 
-plotter.plot_residuals(
-        df_spatial,
-        df_summary,
-        model_ids = [1,2,3,4,5],
-        quantity_names = [
-                                        r"$h$",
-                                        r"$\bar{U}$",
-                                        r"$\delta_z$"
-                                    ],
-                                    points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-                                    points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-                                                    35, 36, 37])
+# plotter.plot_residuals(
+#         df_spatial,
+#         df_summary,
+#         model_ids = [1,2,3,4,5],
+#         quantity_names = [
+#                                         r"$h$",
+#                                         r"$\bar{U}$",
+#                                         r"$\delta_z$"
+#                                     ],
+#                                     points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+#                                     points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+#                                                     35, 36, 37])
