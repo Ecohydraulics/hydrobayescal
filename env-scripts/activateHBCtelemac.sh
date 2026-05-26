@@ -1,8 +1,8 @@
 #!/bin/bash
 # User definitions
-TELEMAC_CONFIG_DIR=/home/andres/modeling/telemac-v9.0.0/configs
-TELEMAC_CONFIG_NAME=pysource.gfortranHPC.sh
-HBCenv_DIR=/home/andres/modeling/hydrobayescal/HBCenv/
+TELEMAC_CONFIG_DIR=//home/modelling/telemac/telemac-mascaret/configs
+TELEMAC_CONFIG_NAME=pysource.debian12.sh
+HBCenv_DIR=/home/IWS/hidalgo/Documents/hydrobayescal/HBCenv/
 
 # SCRIPT ACTIONS - DO NOT MODIFY BELOW
 

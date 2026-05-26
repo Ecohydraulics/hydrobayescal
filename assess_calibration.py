@@ -22,9 +22,9 @@ full_complexity_model = TelemacModel(
             # General hydrosimulation parameters
             results_filename_base="results2m3",
             control_file="tel_ering_initial_NIKU.cas",
-            model_dir="/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/simulation2026MU",
-            res_dir="/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/",
-            calibration_pts_file_path = "/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPECalibration/calibration/measurements-calibration-EringCalib.csv",
+            model_dir="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/simulation2026MU",
+            res_dir="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/",
+            calibration_pts_file_path = "/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/measurements-calibration-EringCalib.csv",
             n_cpus=16,
             init_runs=5,
             calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",

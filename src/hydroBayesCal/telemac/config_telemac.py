@@ -45,15 +45,15 @@ classification_tm_gaia_dict = {
 # They can be overwritten inside the extraction function if needed.
 # ============================================================
 
-DEFAULT_VON_KARMAN_CONSTANT = 0.40
-DEFAULT_NIKURADSE_LOG_FACTOR = 30.0
-DEFAULT_KINEMATIC_VISCOSITY_WATER = 1.0e-6
+von_Karman_constant = 0.40
+nikuradse_log_factor = 30.0
+kinematic_viscosity_water = 1.0e-6
 
 # ============================================================
 # 2D SLF VARIABLE NAMES FOR BOTTOM FRICTION / NIKURADSE ks
 # ============================================================
 
-GENERATED_2D_SLF_VARIABLES_FROM_3D = [
+slf_2d_variables_from_3d = [
     "FRICTION COEFFICIENT",
     "BOTTOM FRICTION COEFFICIENT",
     "FRICTION COEFFICIENT FOR THE BOTTOM",

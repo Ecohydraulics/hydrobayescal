@@ -13,6 +13,7 @@ from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 from collections import OrderedDict
 from src.hydroBayesCal.hysim import HydroSimulations
 from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
+import matplotlib.pyplot as plt
 
 
 class TelemacModel(HydroSimulations):
@@ -563,7 +564,7 @@ class TelemacModel(HydroSimulations):
                     self.run_single_simulation(self.control_file)
                     self.extract_data_point(self.tm_results_filename, self.calibration_pts_df, self.dict_output_name,
                                             self.extraction_quantities, self.num_run, self.model_dir,
-                                            res_dir,output_extraction=output_extraction,output_extraction_time=output_extraction_time,n=n,compute_wall_law_diagnostics=True)
+                                            res_dir,output_extraction=output_extraction,output_extraction_time=output_extraction_time,n=n,compute_wall_law_diagnostics=False)
                     self.model_evaluations = self.output_processing(output_data_path=os.path.join(res_dir,
                                                                       f'{self.dict_output_name}-detailed.json'),
                                                                     delete_slf_files=self.delete_complex_outputs,
@@ -955,843 +956,604 @@ class TelemacModel(HydroSimulations):
         return model_results_calibration
 
     def extract_data_point(
-                self,
-                input_file,
-                calibration_pts_df,
-                output_name,
-                extraction_quantity,
-                simulation_number,
+            self,
+            input_file,
+            calibration_pts_df,
+            output_name,
+            extraction_quantity,
+            simulation_number,
+            model_directory,
+            results_folder_directory,
+            validation=False,
+            user_param_values=False,
+            output_extraction="interpolated",  # "nearest": nearest node; "interpolated": IDW interpolation
+            k=3,
+            output_extraction_time="last",  # "last", "index", "mean_last"
+            time_index=0,
+            n=5,
+            compute_wall_law_diagnostics=False
+    ):
+
+        self.tm_results_filename = input_file
+
+        classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
+
+        # ============================================================
+        # WALL-LAW CONSTANTS FROM CONFIG
+        # ============================================================
+        kappa = config_telemac.von_Karman_constant
+        nikuradse_log_factor = config_telemac.nikuradse_log_factor
+        kinematic_viscosity = config_telemac.kinematic_viscosity_water
+
+        bottom_friction_2d_variable_candidates = (
+            config_telemac.slf_2d_variables_from_3d
+        )
+
+        # ============================================================
+        # DERIVED TELEMAC QUANTITY: 3D VELOCITY MAGNITUDE
+        # ============================================================
+        velocity_magnitude_quantity = "3D VELOCITY MAGNITUDE"
+
+        velocity_components = [
+            "VELOCITY U",
+            "VELOCITY V",
+            "VELOCITY W"
+        ]
+
+        compute_3d_velocity_magnitude = (
+                velocity_magnitude_quantity in extraction_quantity
+        )
+
+        # ============================================================
+        # WALL-LAW DIAGNOSTIC QUANTITIES
+        # ============================================================
+        # Since the modeled vertical profile is diagnostic information,
+        # it is also excluded from the normal calibration-output dictionary.
+        wall_law_required_3d_components = [
+            "VELOCITY U",
+            "VELOCITY V",
+            "VELOCITY W",
+            "ELEVATION Z"
+        ]
+
+        wall_law_diagnostic_quantities = {
+            "FRICTION VELOCITY",
+            "Y PLUS",
+            "DZ PLANE 1 2",
+            "U PLANE 2",
+            "BOTTOM FRICTION",
+            "BOTTOM FRICTION SOURCE FILE",
+            "BOTTOM FRICTION VARIABLE",
+            "VELOCITY PROFILE"
+        }
+
+        # If these are accidentally included in extraction_quantity,
+        # remove them from the calibration/model-output dictionary.
+        # They are diagnostics and will be saved separately.
+        if any(q in extraction_quantity for q in wall_law_diagnostic_quantities):
+            compute_wall_law_diagnostics = True
+
+        calibration_extraction_quantity = [
+            q for q in extraction_quantity
+            if q not in wall_law_diagnostic_quantities
+        ]
+
+        # ============================================================
+        # CLASSIFY REQUESTED QUANTITIES
+        # ============================================================
+        telemac_quantities = [
+            q for q in calibration_extraction_quantity
+            if classification_tm_gaia_dict.get(q) == "telemac"
+        ]
+
+        gaia_quantities = [
+            q for q in calibration_extraction_quantity
+            if classification_tm_gaia_dict.get(q) == "gaia"
+        ]
+
+        internal_telemac_helpers = set()
+
+        # If 3D velocity magnitude is requested, internally add U, V, W.
+        # These are helper variables. They will not be saved unless explicitly requested.
+        if compute_3d_velocity_magnitude:
+            for comp in velocity_components:
+                if comp not in telemac_quantities:
+                    telemac_quantities.append(comp)
+                    internal_telemac_helpers.add(comp)
+
+        # If wall-law diagnostics are requested, internally add the 3D variables needed.
+        # Bottom friction itself is NOT read from the 3D SLF.
+        # It is read from the generated 2D SLF.
+        #
+        # VELOCITY W is included here because the wall-law diagnostics JSON now also
+        # receives the full modeled vertical velocity profile.
+        if compute_wall_law_diagnostics:
+            for comp in wall_law_required_3d_components:
+                if comp not in telemac_quantities:
+                    telemac_quantities.append(comp)
+                    internal_telemac_helpers.add(comp)
+
+        # ============================================================
+        # FILE PATHS
+        # ============================================================
+        slf_files = {
+            "telemac": os.path.join(model_directory, self.tm_results_filename)
+        }
+
+        if self.gaia_cas is not None:
+            slf_files["gaia"] = os.path.join(
                 model_directory,
+                self.gaia_results_filename
+            )
+
+        json_path = os.path.join(
+            results_folder_directory,
+            f"{output_name}.json"
+        )
+
+        json_path_detailed = os.path.join(
+            results_folder_directory,
+            f"{output_name}-detailed.json"
+        )
+
+        json_path_restart_data = os.path.join(
+            self.restart_data_folder,
+            "initial-model-outputs.json"
+        )
+
+        if validation:
+            json_path_wall_law_diagnostics = os.path.join(
+                self.restart_data_folder,
+                "model-results-validation-wall-law-diagnostics.json"
+            )
+        else:
+            json_path_wall_law_diagnostics = os.path.join(
                 results_folder_directory,
-                validation=False,
-                user_param_values=False,
-                output_extraction="interpolated",  # "nearest": nearest node; "interpolated": IDW interpolation
-                k=3,
-                output_extraction_time="last",     # "last", "index", "mean_last"
-                time_index=0,
-                n=5,
-                compute_wall_law_diagnostics=False
+                f"{output_name}-wall-law-diagnostics.json"
+            )
+
+        keys = calibration_pts_df.iloc[:, 0].tolist()
+
+        differentiated_dict = {}
+        wall_law_diagnostics_dict = {}
+
+        logger.info(
+            f"Extracting from {input_file} using quantities: {extraction_quantity}"
+        )
+
+        # ============================================================
+        # PRECOMPUTE MODELS
+        # ============================================================
+        model_cache = {}
+
+        for model_source, quantities in zip(
+                ["telemac", "gaia"],
+                [telemac_quantities, gaia_quantities]
         ):
 
-            self.tm_results_filename = input_file
+            if not quantities:
+                continue
 
-            classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
+            if model_source not in slf_files:
+                continue
 
-            # ============================================================
-            # WALL-LAW CONSTANTS FROM CONFIG
-            # ============================================================
-            kappa = config_telemac.DEFAULT_VON_KARMAN_CONSTANT
-            nikuradse_log_factor = config_telemac.DEFAULT_NIKURADSE_LOG_FACTOR
-            kinematic_viscosity = config_telemac.DEFAULT_KINEMATIC_VISCOSITY_WATER
+            slf = ppSELAFIN(slf_files[model_source])
+            slf.readHeader()
+            slf.readTimes()
 
-            bottom_friction_2d_variable_candidates = (
-                config_telemac.GENERATED_2D_SLF_VARIABLES_FROM_3D
-            )
+            variables = [' '.join(v.split()) for v in slf.getVarNames()]
+            var_index = {v: i for i, v in enumerate(variables)}
 
-            # ============================================================
-            # DERIVED TELEMAC QUANTITY: 3D VELOCITY MAGNITUDE
-            # ============================================================
-            velocity_magnitude_quantity = "3D VELOCITY MAGNITUDE"
-
-            velocity_components = [
-                "VELOCITY U",
-                "VELOCITY V",
-                "VELOCITY W"
+            # --------------------------------------------------------
+            # CHECK AVAILABLE VARIABLES
+            # --------------------------------------------------------
+            # "3D VELOCITY MAGNITUDE" is derived, so it is not expected
+            # to exist directly inside the SLF file.
+            missing_quantities = [
+                q for q in quantities
+                if q not in var_index and q != velocity_magnitude_quantity
             ]
 
-            compute_3d_velocity_magnitude = velocity_magnitude_quantity in extraction_quantity
-
-            # ============================================================
-            # WALL-LAW DIAGNOSTIC QUANTITIES
-            # ============================================================
-            wall_law_required_3d_components = [
-                "VELOCITY U",
-                "VELOCITY V",
-                "ELEVATION Z"
-            ]
-
-            wall_law_diagnostic_quantities = {
-                "FRICTION VELOCITY",
-                "Y PLUS",
-                "DZ PLANE 1 2",
-                "U PLANE 2",
-                "BOTTOM FRICTION",
-                "BOTTOM FRICTION SOURCE FILE",
-                "BOTTOM FRICTION VARIABLE"
-            }
-
-            # If these are accidentally included in extraction_quantity,
-            # remove them from the calibration/model-output dictionary.
-            # They are diagnostics and will be saved separately.
-            if any(q in extraction_quantity for q in wall_law_diagnostic_quantities):
-                compute_wall_law_diagnostics = True
-
-            calibration_extraction_quantity = [
-                q for q in extraction_quantity
-                if q not in wall_law_diagnostic_quantities
-            ]
-
-            # ============================================================
-            # CLASSIFY REQUESTED QUANTITIES
-            # ============================================================
-            telemac_quantities = [
-                q for q in calibration_extraction_quantity
-                if classification_tm_gaia_dict.get(q) == "telemac"
-            ]
-
-            gaia_quantities = [
-                q for q in calibration_extraction_quantity
-                if classification_tm_gaia_dict.get(q) == "gaia"
-            ]
-
-            internal_telemac_helpers = set()
-
-            # If 3D velocity magnitude is requested, internally add U, V, W.
-            # These are helper variables. They will not be saved unless explicitly requested.
-            if compute_3d_velocity_magnitude:
-                for comp in velocity_components:
-                    if comp not in telemac_quantities:
-                        telemac_quantities.append(comp)
-                        internal_telemac_helpers.add(comp)
-
-            # If wall-law diagnostics are requested, internally add the 3D variables needed.
-            # Bottom friction itself is NOT read from the 3D SLF.
-            # It is read from the generated 2D SLF.
-            if compute_wall_law_diagnostics:
-                for comp in wall_law_required_3d_components:
-                    if comp not in telemac_quantities:
-                        telemac_quantities.append(comp)
-                        internal_telemac_helpers.add(comp)
-
-            # ============================================================
-            # FILE PATHS
-            # ============================================================
-            slf_files = {
-                "telemac": os.path.join(model_directory, self.tm_results_filename)
-            }
-
-            if self.gaia_cas is not None:
-                slf_files["gaia"] = os.path.join(model_directory, self.gaia_results_filename)
-
-            json_path = os.path.join(results_folder_directory, f"{output_name}.json")
-            json_path_detailed = os.path.join(results_folder_directory, f"{output_name}-detailed.json")
-            json_path_restart_data = os.path.join(
-                self.restart_data_folder,
-                "initial-model-outputs.json"
-            )
-
-            if validation:
-                json_path_wall_law_diagnostics = os.path.join(
-                    self.restart_data_folder,
-                    "model-results-validation-wall-law-diagnostics.json"
-                )
-            else:
-                json_path_wall_law_diagnostics = os.path.join(
-                    results_folder_directory,
-                    f"{output_name}-wall-law-diagnostics.json"
-                )
-
-            keys = calibration_pts_df.iloc[:, 0].tolist()
-
-            differentiated_dict = {}
-            wall_law_diagnostics_dict = {}
-
-            logger.info(f'Extracting from {input_file} using quantities: {extraction_quantity}')
-
-            # ============================================================
-            # TIME MODE FUNCTION
-            # ============================================================
-            def apply_time_mode(all_times_outputs):
-
-                if output_extraction_time == "last":
-                    return all_times_outputs[-1]
-
-                elif output_extraction_time == "index":
-                    return all_times_outputs[time_index]
-
-                elif output_extraction_time == "mean_last":
-                    return np.mean(all_times_outputs[-n:], axis=0)
-
-                else:
-                    raise ValueError(
-                        "Invalid output_extraction_time. "
-                        "Use 'last', 'index', or 'mean_last'."
-                    )
-
-            # ============================================================
-            # GENERAL HELPERS
-            # ============================================================
-            def get_2d_result_filename_from_3d(input_file_3d):
-                """
-                Converts:
-                    result.slf -> result_2d.slf
-                """
-                root, ext = os.path.splitext(input_file_3d)
-                return f"{root}_2d{ext}"
-
-            def normalize_var_name(name):
-                return " ".join(str(name).split()).upper()
-
-            def interpolate_scalar(idx_coord, values, target_xy):
-
-                values = np.asarray(values, dtype=float)
-
-                if len(values) == 1:
-                    return float(values[0])
-
-                interpolated = interpolate_values(
-                    idx_coord,
-                    values.reshape(-1, 1),
-                    target_xy
-                )
-
-                return float(np.asarray(interpolated).ravel()[0])
-
-            # ============================================================
-            # GENERATED 2D SLF HELPERS
-            # ============================================================
-            def find_2d_bottom_friction_variable(variables_2d):
-                """
-                Finds the bottom friction / Nikuradse ks variable in the generated 2D SLF.
-                """
-
-                normalized_var_lookup = {
-                    normalize_var_name(var_name): var_name
-                    for var_name in variables_2d
-                }
-
-                for candidate in bottom_friction_2d_variable_candidates:
-                    candidate_clean = normalize_var_name(candidate)
-
-                    if candidate_clean in normalized_var_lookup:
-                        return normalized_var_lookup[candidate_clean]
-
+            if missing_quantities:
                 raise ValueError(
-                    "Could not find a bottom-friction / Nikuradse variable in the "
-                    "generated 2D SLF file. "
-                    f"Tried these names: {bottom_friction_2d_variable_candidates}. "
-                    f"Available 2D SLF variables are: {variables_2d}"
+                    f"The following quantities were requested for {model_source.upper()} "
+                    f"but are not available in the SLF file: {missing_quantities}. "
+                    f"Available variables are: {variables}"
                 )
 
-            def load_generated_2d_slf_for_bottom_friction():
-                """
-                Loads the 2D result file generated from the TELEMAC-3D simulation.
+            # Check that U, V, W exist if 3D velocity magnitude is requested.
+            if model_source == "telemac" and compute_3d_velocity_magnitude:
+                missing_components = [
+                    comp for comp in velocity_components
+                    if comp not in var_index
+                ]
 
-                Expected:
-                    3D file: result.slf
-                    2D file: result_2d.slf
-                """
-
-                if hasattr(self, "tm_2d_results_filename") and self.tm_2d_results_filename is not None:
-                    input_file_2d = self.tm_2d_results_filename
-                else:
-                    input_file_2d = get_2d_result_filename_from_3d(self.tm_results_filename)
-
-                slf_2d_path = os.path.join(model_directory, input_file_2d)
-
-                if not os.path.exists(slf_2d_path):
-                    raise FileNotFoundError(
-                        "The generated 2D result file required for wall-law diagnostics "
-                        f"was not found: {slf_2d_path}. "
-                        "Expected the same name as the 3D SLF with '_2d' before '.slf'."
-                    )
-
-                slf_2d = ppSELAFIN(slf_2d_path)
-                slf_2d.readHeader()
-                slf_2d.readTimes()
-
-                variables_2d = [' '.join(v.split()) for v in slf_2d.getVarNames()]
-                var_index_2d = {v: i for i, v in enumerate(variables_2d)}
-
-                bottom_friction_variable = find_2d_bottom_friction_variable(variables_2d)
-
-                NELEM2D, NPOIN2D, NDP2D, IKLE2D, IPOBO2D, x2d_slf, y2d_slf = slf_2d.getMesh()
-
-                tree_2d = spatial.cKDTree(np.column_stack((x2d_slf, y2d_slf)))
-
-                logger.info(
-                    f"Using generated 2D SLF for wall-law diagnostics: {slf_2d_path}"
-                )
-                logger.info(
-                    f"Using bottom-friction variable from generated 2D SLF: "
-                    f"{bottom_friction_variable}"
-                )
-
-                return {
-                    "slf": slf_2d,
-                    "path": slf_2d_path,
-                    "filename": input_file_2d,
-                    "variables": variables_2d,
-                    "var_index": var_index_2d,
-                    "bottom_friction_variable": bottom_friction_variable,
-                    "bottom_friction_index": var_index_2d[bottom_friction_variable],
-                    "x": x2d_slf,
-                    "y": y2d_slf,
-                    "tree": tree_2d
-                }
-
-            def extract_bottom_friction_from_2d_slf(slf_2d_data, target_xy):
-                """
-                Extracts bottom friction / Nikuradse ks from the generated 2D SLF
-                at a horizontal coordinate.
-
-                Nearest-node extraction is used because the generated 2D SLF should
-                share the same horizontal mesh as the 3D SLF.
-                """
-
-                slf_2d = slf_2d_data["slf"]
-                tree_2d = slf_2d_data["tree"]
-                friction_index = slf_2d_data["bottom_friction_index"]
-
-                d2, idx2 = tree_2d.query(target_xy, k=1)
-                node_2d = int(idx2)
-
-                slf_2d.readVariablesAtNode(node_2d)
-                all_times_outputs_2d = slf_2d.getVarValuesAtNode()
-
-                vals_2d = apply_time_mode(all_times_outputs_2d)
-
-                bottom_friction = float(vals_2d[friction_index])
-
-                if bottom_friction <= 0.0:
+                if missing_components:
                     raise ValueError(
-                        f"Invalid bottom friction / Nikuradse ks extracted from 2D SLF "
-                        f"at coordinate {target_xy}: value={bottom_friction}. "
-                        "It must be > 0."
+                        "Cannot compute 3D VELOCITY MAGNITUDE because the following "
+                        f"velocity components are missing in the TELEMAC SLF file: "
+                        f"{missing_components}. Available variables are: {variables}"
                     )
 
-                return bottom_friction
+            NVAR = len(variables)
+            NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
+            NPLAN = slf.getNPLAN()
 
-            # ============================================================
-            # WALL-LAW DIAGNOSTICS FROM 3D PLANE 2 + 2D BOTTOM FRICTION
-            # ============================================================
-            def compute_wall_law_from_3d_plane2_and_2d_bottom_friction(
-                    slf_3d,
-                    var_index_3d,
-                    idx_base_3d,
-                    idx_coord_3d,
-                    step_3d,
-                    k_use,
-                    target_xy,
-                    key,
-                    slf_2d_data
-            ):
-                """
-                Computes TELEMAC-style friction velocity and y+.
+            # Check wall-law requirements after NPLAN is known.
+            if model_source == "telemac" and compute_wall_law_diagnostics:
 
-                From 3D SLF:
-                    - VELOCITY U at plane 2
-                    - VELOCITY V at plane 2
-                    - ELEVATION Z at plane 1 and plane 2
+                missing_wall_law_components = [
+                    comp for comp in wall_law_required_3d_components
+                    if comp not in var_index
+                ]
 
-                From generated 2D SLF:
-                    - bottom friction / Nikuradse ks
-                """
-
-                if kinematic_viscosity <= 0.0:
+                if missing_wall_law_components:
                     raise ValueError(
-                        f"Cannot compute Y PLUS because "
-                        f"kinematic_viscosity={kinematic_viscosity}. It must be > 0."
+                        "Cannot compute wall-law diagnostics and velocity profile "
+                        "because these 3D SLF variables are missing: "
+                        f"{missing_wall_law_components}. "
+                        f"Available variables are: {variables}"
                     )
 
-                z_index = var_index_3d["ELEVATION Z"]
-                u_index = var_index_3d["VELOCITY U"]
-                v_index = var_index_3d["VELOCITY V"]
-
-                friction_velocity_values = np.zeros(k_use)
-                y_plus_values = np.zeros(k_use)
-                dz_values = np.zeros(k_use)
-                u_plane2_values = np.zeros(k_use)
-                bottom_friction_values = np.zeros(k_use)
-
-                for j in range(k_use):
-
-                    node_plane1 = idx_base_3d[j]
-                    node_plane2 = idx_base_3d[j] + step_3d
-
-                    xy_neighbor = (
-                        float(idx_coord_3d[j, 0]),
-                        float(idx_coord_3d[j, 1])
+                if NPLAN < 2:
+                    raise ValueError(
+                        "Cannot compute wall-law diagnostics because the 3D result "
+                        f"has NPLAN={NPLAN}. At least 2 vertical planes are required."
                     )
 
-                    # ----------------------------------------------------
-                    # 2D SLF: bottom friction / Nikuradse ks
-                    # ----------------------------------------------------
-                    bottom_friction = extract_bottom_friction_from_2d_slf(
-                        slf_2d_data=slf_2d_data,
-                        target_xy=xy_neighbor
-                    )
+            x2d = x[:len(x) // NPLAN]
+            y2d = y[:len(x) // NPLAN]
 
-                    # ----------------------------------------------------
-                    # 3D SLF plane 1: bed elevation
-                    # ----------------------------------------------------
-                    slf_3d.readVariablesAtNode(node_plane1)
-                    all_times_outputs_plane1 = slf_3d.getVarValuesAtNode()
-                    vals_plane1 = apply_time_mode(all_times_outputs_plane1)
+            tree = spatial.cKDTree(np.column_stack((x2d, y2d)))
+            step = NPOIN // NPLAN
 
-                    z_plane1 = vals_plane1[z_index]
+            model_cache[model_source] = {
+                "slf": slf,
+                "variables": variables,
+                "var_index": var_index,
+                "NVAR": NVAR,
+                "NPLAN": NPLAN,
+                "step": step,
+                "tree": tree,
+                "x2d": x2d,
+                "y2d": y2d,
+                "quantities": quantities
+            }
 
-                    # ----------------------------------------------------
-                    # 3D SLF plane 2: near-bed velocity and elevation
-                    # ----------------------------------------------------
-                    slf_3d.readVariablesAtNode(node_plane2)
-                    all_times_outputs_plane2 = slf_3d.getVarValuesAtNode()
-                    vals_plane2 = apply_time_mode(all_times_outputs_plane2)
+        # ============================================================
+        # LOAD GENERATED 2D SLF FOR WALL-LAW DIAGNOSTICS
+        # ============================================================
+        if compute_wall_law_diagnostics:
+            slf_2d_data = self._load_generated_2d_slf_for_bottom_friction(
+                model_directory=model_directory,
+                bottom_friction_2d_variable_candidates=bottom_friction_2d_variable_candidates
+            )
+        else:
+            slf_2d_data = None
 
-                    z_plane2 = vals_plane2[z_index]
+        # ============================================================
+        # MAIN LOOP
+        # ============================================================
+        for key_index, key in enumerate(keys):
 
-                    u_plane2 = vals_plane2[u_index]
-                    v_plane2 = vals_plane2[v_index]
+            xu = calibration_pts_df.iloc[key_index, 1]
+            yu = calibration_pts_df.iloc[key_index, 2]
+            zu = calibration_pts_df.iloc[key_index, 3]
 
-                    dz = float(z_plane2 - z_plane1)
+            differentiated_values = {}
+            wall_law_diagnostic_values = {}
 
-                    if dz <= 0.0:
-                        raise ValueError(
-                            f"Cannot compute wall-law diagnostics for point {key}: "
-                            f"Dz = Z_plane2 - Z_plane1 = {dz}. It must be > 0."
-                        )
+            for model_source in ["telemac", "gaia"]:
 
-                    u_horizontal_plane2 = float(
-                        np.sqrt(u_plane2**2 + v_plane2**2)
-                    )
+                if model_source not in model_cache:
+                    continue
 
-                    log_argument = float(
-                        nikuradse_log_factor * dz / bottom_friction
-                    )
+                data = model_cache[model_source]
 
-                    if log_argument <= 1.0:
-                        raise ValueError(
-                            f"Cannot compute wall-law diagnostics reliably for point {key}: "
-                            f"log argument = {log_argument:.6f}. "
-                            f"Computed as {nikuradse_log_factor} * Dz / bottom_friction, "
-                            f"with Dz={dz:.6e} m and bottom_friction={bottom_friction:.6e} m. "
-                            "The logarithm denominator must be positive. "
-                            "Check whether the 2D variable is really Nikuradse ks in meters."
-                        )
-
-                    friction_velocity = float(
-                        u_horizontal_plane2 * kappa / np.log(log_argument)
-                    )
-
-                    y_plus = float(
-                        friction_velocity * dz / kinematic_viscosity
-                    )
-
-                    friction_velocity_values[j] = friction_velocity
-                    y_plus_values[j] = y_plus
-                    dz_values[j] = dz
-                    u_plane2_values[j] = u_horizontal_plane2
-                    bottom_friction_values[j] = bottom_friction
-
-                friction_velocity_interp = interpolate_scalar(
-                    idx_coord_3d,
-                    friction_velocity_values,
-                    target_xy
-                )
-
-                y_plus_interp = interpolate_scalar(
-                    idx_coord_3d,
-                    y_plus_values,
-                    target_xy
-                )
-
-                dz_interp = interpolate_scalar(
-                    idx_coord_3d,
-                    dz_values,
-                    target_xy
-                )
-
-                u_plane2_interp = interpolate_scalar(
-                    idx_coord_3d,
-                    u_plane2_values,
-                    target_xy
-                )
-
-                bottom_friction_interp = interpolate_scalar(
-                    idx_coord_3d,
-                    bottom_friction_values,
-                    target_xy
-                )
-
-                return {
-                    "FRICTION VELOCITY": friction_velocity_interp,
-                    "Y PLUS": y_plus_interp,
-                    "DZ PLANE 1 2": dz_interp,
-                    "U PLANE 2": u_plane2_interp,
-                    "BOTTOM FRICTION": bottom_friction_interp,
-                    "BOTTOM FRICTION SOURCE FILE": slf_2d_data["filename"],
-                    "BOTTOM FRICTION VARIABLE": slf_2d_data["bottom_friction_variable"]
-                }
-
-            # ============================================================
-            # PRECOMPUTE MODELS
-            # ============================================================
-            model_cache = {}
-
-            for model_source, quantities in zip(
-                    ["telemac", "gaia"],
-                    [telemac_quantities, gaia_quantities]):
+                slf = data["slf"]
+                tree = data["tree"]
+                var_index = data["var_index"]
+                NPLAN = data["NPLAN"]
+                step = data["step"]
+                x2d = data["x2d"]
+                y2d = data["y2d"]
+                quantities = data["quantities"]
 
                 if not quantities:
                     continue
 
-                if model_source not in slf_files:
-                    continue
+                # --------------------------------------------------------
+                # NODE SELECTION
+                # --------------------------------------------------------
+                k_use = 1 if output_extraction == "nearest" else k
 
-                slf = ppSELAFIN(slf_files[model_source])
-                slf.readHeader()
-                slf.readTimes()
+                d, idx = tree.query((xu, yu), k=k_use)
 
-                variables = [' '.join(v.split()) for v in slf.getVarNames()]
-                var_index = {v: i for i, v in enumerate(variables)}
+                if k_use == 1:
+                    idx_base = np.array([idx])
+                    idx_coord = np.array([[x2d[idx], y2d[idx]]])
+                else:
+                    idx_base = np.array(idx)
+                    idx_coord = np.column_stack((x2d[idx], y2d[idx]))
+
+                logger.info(
+                    f"[{model_source.upper()}] Point {key} ({xu:.3f},{yu:.3f})"
+                )
 
                 # --------------------------------------------------------
-                # CHECK AVAILABLE VARIABLES
+                # WALL-LAW DIAGNOSTICS + FULL MODELED VELOCITY PROFILE
                 # --------------------------------------------------------
-                # "3D VELOCITY MAGNITUDE" is derived, so it is not expected
-                # to exist directly inside the SLF file.
-                missing_quantities = [
-                    q for q in quantities
-                    if q not in var_index and q != velocity_magnitude_quantity
-                ]
-
-                if missing_quantities:
-                    raise ValueError(
-                        f"The following quantities were requested for {model_source.upper()} "
-                        f"but are not available in the SLF file: {missing_quantities}. "
-                        f"Available variables are: {variables}"
+                # Computed from:
+                #   - 3D SLF: plane 1 and plane 2
+                #   - generated 2D SLF: bottom friction / Nikuradse ks
+                #
+                # Saved separately in the wall-law diagnostics JSON.
+                # Not saved in differentiated_dict.
+                if model_source == "telemac" and compute_wall_law_diagnostics:
+                    wall_law_diagnostic_values = (
+                        self._compute_wall_law_from_3d_plane2_and_2d_bottom_friction(
+                            slf_3d=slf,
+                            var_index_3d=var_index,
+                            idx_base_3d=idx_base,
+                            idx_coord_3d=idx_coord,
+                            step_3d=step,
+                            k_use=k_use,
+                            target_xy=(xu, yu),
+                            key=key,
+                            slf_2d_data=slf_2d_data,
+                            output_extraction_time=output_extraction_time,
+                            time_index=time_index,
+                            n=n,
+                            kappa=kappa,
+                            nikuradse_log_factor=nikuradse_log_factor,
+                            kinematic_viscosity=kinematic_viscosity
+                        )
                     )
 
-                # Check that U, V, W exist if 3D velocity magnitude is requested.
-                if model_source == "telemac" and compute_3d_velocity_magnitude:
-                    missing_components = [
-                        comp for comp in velocity_components
-                        if comp not in var_index
-                    ]
-
-                    if missing_components:
-                        raise ValueError(
-                            "Cannot compute 3D VELOCITY MAGNITUDE because the following "
-                            f"velocity components are missing in the TELEMAC SLF file: "
-                            f"{missing_components}. Available variables are: {variables}"
+                    wall_law_diagnostic_values["VELOCITY PROFILE"] = (
+                        self._vertical_velocity_profile(
+                            slf=slf,
+                            var_index=var_index,
+                            idx_base=idx_base,
+                            idx_coord=idx_coord,
+                            step=step,
+                            k_use=k_use,
+                            NPLAN=NPLAN,
+                            NVAR=data["NVAR"],
+                            target_xy=(xu, yu),
+                            output_extraction_time=output_extraction_time,
+                            time_index=time_index,
+                            n=n
                         )
+                    )
 
-                NVAR = len(variables)
-                NELEM, NPOIN, NDP, IKLE, IPOBO, x, y = slf.getMesh()
-                NPLAN = slf.getNPLAN()
-
-                # Check wall-law requirements after NPLAN is known.
-                if model_source == "telemac" and compute_wall_law_diagnostics:
-
-                    missing_wall_law_components = [
-                        comp for comp in wall_law_required_3d_components
-                        if comp not in var_index
-                    ]
-
-                    if missing_wall_law_components:
-                        raise ValueError(
-                            "Cannot compute wall-law diagnostics because these 3D SLF "
-                            f"variables are missing: {missing_wall_law_components}. "
-                            f"Available variables are: {variables}"
-                        )
-
-                    if NPLAN < 2:
-                        raise ValueError(
-                            "Cannot compute wall-law diagnostics because the 3D result "
-                            f"has NPLAN={NPLAN}. At least 2 vertical planes are required."
-                        )
-
-                x2d = x[:len(x) // NPLAN]
-                y2d = y[:len(x) // NPLAN]
-
-                tree = spatial.cKDTree(np.column_stack((x2d, y2d)))
-                step = NPOIN // NPLAN
-
-                model_cache[model_source] = {
-                    "slf": slf,
-                    "variables": variables,
-                    "var_index": var_index,
-                    "NVAR": NVAR,
-                    "NPLAN": NPLAN,
-                    "step": step,
-                    "tree": tree,
-                    "x2d": x2d,
-                    "y2d": y2d,
-                    "quantities": quantities
-                }
-
-            # ============================================================
-            # LOAD GENERATED 2D SLF FOR WALL-LAW DIAGNOSTICS
-            # ============================================================
-            if compute_wall_law_diagnostics:
-                slf_2d_data = load_generated_2d_slf_for_bottom_friction()
-            else:
-                slf_2d_data = None
-
-            # ============================================================
-            # MAIN LOOP
-            # ============================================================
-            for key_index, key in enumerate(keys):
-
-                xu = calibration_pts_df.iloc[key_index, 1]
-                yu = calibration_pts_df.iloc[key_index, 2]
-                zu = calibration_pts_df.iloc[key_index, 3]
-
-                differentiated_values = {}
-                wall_law_diagnostic_values = {}
-
-                for model_source in ["telemac", "gaia"]:
-
-                    if model_source not in model_cache:
-                        continue
-
-                    data = model_cache[model_source]
-
-                    slf = data["slf"]
-                    tree = data["tree"]
-                    var_index = data["var_index"]
-                    NPLAN = data["NPLAN"]
-                    step = data["step"]
-                    x2d = data["x2d"]
-                    y2d = data["y2d"]
-                    quantities = data["quantities"]
-
-                    if not quantities:
-                        continue
-
-                    # --------------------------------------------------------
-                    # NODE SELECTION
-                    # --------------------------------------------------------
-                    k_use = 1 if output_extraction == "nearest" else k
-
-                    d, idx = tree.query((xu, yu), k=k_use)
-
-                    if k_use == 1:
-                        idx_base = np.array([idx])
-                        idx_coord = np.array([[x2d[idx], y2d[idx]]])
-                    else:
-                        idx_base = np.array(idx)
-                        idx_coord = np.column_stack((x2d[idx], y2d[idx]))
+                # --------------------------------------------------------
+                # VERTICAL PROFILE FOR NORMAL EXTRACTION
+                # --------------------------------------------------------
+                # This block only selects the closest TELEMAC vertical layer
+                # to the requested measurement height zu.
+                # The full velocity profile is already saved above, but only
+                # inside wall_law_diagnostic_values.
+                if NPLAN == 1:
+                    p = 0
 
                     logger.info(
-                        f"[{model_source.upper()}] Point {key} ({xu:.3f},{yu:.3f})"
+                        f"[{model_source.upper()}] Point {key} � single layer model"
                     )
 
-                    # --------------------------------------------------------
-                    # WALL-LAW DIAGNOSTICS
-                    # --------------------------------------------------------
-                    # Computed from:
-                    #   - 3D SLF: plane 1 and plane 2
-                    #   - generated 2D SLF: bottom friction / Nikuradse ks
-                    #
-                    # Saved separately. Not a calibration target.
-                    if model_source == "telemac" and compute_wall_law_diagnostics:
-                        wall_law_diagnostic_values = (
-                            compute_wall_law_from_3d_plane2_and_2d_bottom_friction(
-                                slf_3d=slf,
-                                var_index_3d=var_index,
-                                idx_base_3d=idx_base,
-                                idx_coord_3d=idx_coord,
-                                step_3d=step,
-                                k_use=k_use,
-                                target_xy=(xu, yu),
-                                key=key,
-                                slf_2d_data=slf_2d_data
-                            )
+                else:
+                    if "ELEVATION Z" not in var_index:
+                        raise ValueError(
+                            f"'ELEVATION Z' is required to select the vertical layer, "
+                            f"but it is missing in the {model_source.upper()} SLF file."
                         )
 
-                    # --------------------------------------------------------
-                    # VERTICAL PROFILE FOR NORMAL EXTRACTION
-                    # --------------------------------------------------------
-                    if NPLAN == 1:
-                        p = 0
+                    z_index = var_index["ELEVATION Z"]
+                    base_idx_for_z = idx_base[0]
 
-                        logger.info(
-                            f"[{model_source.upper()}] Point {key} → single layer model"
-                        )
+                    z_profile = np.zeros(NPLAN)
 
-                    else:
-                        if "ELEVATION Z" not in var_index:
-                            raise ValueError(
-                                f"'ELEVATION Z' is required to select the vertical layer, "
-                                f"but it is missing in the {model_source.upper()} SLF file."
-                            )
-
-                        z_index = var_index["ELEVATION Z"]
-                        base_idx_for_z = idx_base[0]
-
-                        z_profile = np.zeros(NPLAN)
-
-                        for p_i in range(NPLAN):
-
-                            node_idx = base_idx_for_z + p_i * step
-
-                            slf.readVariablesAtNode(node_idx)
-                            all_times_outputs = slf.getVarValuesAtNode()
-
-                            results_z = apply_time_mode(all_times_outputs)
-
-                            z_profile[p_i] = results_z[z_index]
-
-                        z_target = z_profile[0] + zu
-                        p = np.argmin(np.abs(z_profile - z_target))
-
-                        logger.info(
-                            f"[{model_source.upper()}] Point {key} → selected layer "
-                            f"p={p + 1}/{NPLAN} (zu={zu:.3f})"
-                        )
-
-                    # --------------------------------------------------------
-                    # VALUE EXTRACTION
-                    # --------------------------------------------------------
-                    results_all = np.zeros((k_use, data["NVAR"]))
-
-                    for j in range(k_use):
-
-                        node_idx = idx_base[j] + p * step
-
-                        logger.debug(
-                            f"[{model_source.upper()}] extracting node={node_idx}"
-                        )
+                    for p_i in range(NPLAN):
+                        node_idx = base_idx_for_z + p_i * step
 
                         slf.readVariablesAtNode(node_idx)
                         all_times_outputs = slf.getVarValuesAtNode()
 
-                        vals = apply_time_mode(all_times_outputs)
+                        results_z = self._apply_time_mode(
+                            all_times_outputs=all_times_outputs,
+                            output_extraction_time=output_extraction_time,
+                            time_index=time_index,
+                            n=n
+                        )
 
-                        results_all[j, :] = vals
+                        z_profile[p_i] = results_z[z_index]
 
-                    # --------------------------------------------------------
-                    # INTERPOLATION
-                    # --------------------------------------------------------
-                    if k_use != 1:
-                        results = interpolate_values(idx_coord, results_all, (xu, yu))
-                    else:
-                        results = results_all[0]
+                    z_target = z_profile[0] + zu
+                    p = np.argmin(np.abs(z_profile - z_target))
 
-                    # --------------------------------------------------------
-                    # STORE NORMAL RESULTS
-                    # --------------------------------------------------------
-                    for q in quantities:
-
-                        # Derived variable: compute internally from U, V, W.
-                        if q == velocity_magnitude_quantity:
-
-                            u = results[var_index["VELOCITY U"]]
-                            v = results[var_index["VELOCITY V"]]
-                            w = results[var_index["VELOCITY W"]]
-
-                            differentiated_values[q] = float(
-                                np.sqrt(u**2 + v**2 + w**2)
-                            )
-
-                        # Internal helper components:
-                        # skip them if they were not explicitly requested by the user.
-                        elif (
-                            q in internal_telemac_helpers
-                            and q not in calibration_extraction_quantity
-                        ):
-
-                            continue
-
-                        # Normal SLF variable extraction.
-                        else:
-
-                            differentiated_values[q] = results[var_index[q]]
-
-                differentiated_dict[key] = differentiated_values
-
-                if compute_wall_law_diagnostics:
-                    wall_law_diagnostics_dict[key] = wall_law_diagnostic_values
-
-            # ============================================================
-            # JSON HANDLING
-            # ============================================================
-            if simulation_number == 1:
-
-                if os.path.exists(json_path):
-                    os.rename(json_path, json_path.replace(".json", "_old.json"))
-
-                if os.path.exists(json_path_detailed):
-                    os.rename(json_path_detailed, json_path_detailed.replace(".json", "_old.json"))
-
-                if compute_wall_law_diagnostics and os.path.exists(json_path_wall_law_diagnostics):
-                    os.rename(
-                        json_path_wall_law_diagnostics,
-                        json_path_wall_law_diagnostics.replace(".json", "_old.json")
+                    logger.info(
+                        f"[{model_source.upper()}] Point {key} � selected layer "
+                        f"p={p + 1}/{NPLAN} (zu={zu:.3f})"
                     )
 
-            if validation:
-                json_target = os.path.join(
-                    self.restart_data_folder,
-                    "model-results-validation.json"
-                )
-            else:
-                json_target = json_path_detailed
+                # --------------------------------------------------------
+                # VALUE EXTRACTION
+                # --------------------------------------------------------
+                results_all = np.zeros((k_use, data["NVAR"]))
 
+                for j in range(k_use):
+                    node_idx = idx_base[j] + p * step
+
+                    logger.debug(
+                        f"[{model_source.upper()}] extracting node={node_idx}"
+                    )
+
+                    slf.readVariablesAtNode(node_idx)
+                    all_times_outputs = slf.getVarValuesAtNode()
+
+                    vals = self._apply_time_mode(
+                        all_times_outputs=all_times_outputs,
+                        output_extraction_time=output_extraction_time,
+                        time_index=time_index,
+                        n=n
+                    )
+
+                    results_all[j, :] = vals
+
+                # --------------------------------------------------------
+                # INTERPOLATION
+                # --------------------------------------------------------
+                if k_use != 1:
+                    results = interpolate_values(
+                        idx_coord,
+                        results_all,
+                        (xu, yu)
+                    )
+                else:
+                    results = results_all[0]
+
+                # --------------------------------------------------------
+                # STORE NORMAL RESULTS
+                # --------------------------------------------------------
+                for q in quantities:
+
+                    # Derived variable: compute internally from U, V, W.
+                    if q == velocity_magnitude_quantity:
+
+                        u = results[var_index["VELOCITY U"]]
+                        v = results[var_index["VELOCITY V"]]
+                        w = results[var_index["VELOCITY W"]]
+
+                        differentiated_values[q] = float(
+                            np.sqrt(u ** 2 + v ** 2 + w ** 2)
+                        )
+
+                    # Internal helper components:
+                    # skip them if they were not explicitly requested by the user.
+                    elif (
+                            q in internal_telemac_helpers
+                            and q not in calibration_extraction_quantity
+                    ):
+
+                        continue
+
+                    # Normal SLF variable extraction.
+                    else:
+
+                        differentiated_values[q] = results[var_index[q]]
+
+            differentiated_dict[key] = differentiated_values
+
+            if compute_wall_law_diagnostics:
+                wall_law_diagnostics_dict[key] = wall_law_diagnostic_values
+
+        # ============================================================
+        # JSON HANDLING
+        # ============================================================
+        if simulation_number == 1:
+
+            if os.path.exists(json_path):
+                os.rename(
+                    json_path,
+                    json_path.replace(".json", "_old.json")
+                )
+
+            if os.path.exists(json_path_detailed):
+                os.rename(
+                    json_path_detailed,
+                    json_path_detailed.replace(".json", "_old.json")
+                )
+
+            if (
+                    compute_wall_law_diagnostics
+                    and os.path.exists(json_path_wall_law_diagnostics)
+            ):
+                os.rename(
+                    json_path_wall_law_diagnostics,
+                    json_path_wall_law_diagnostics.replace(".json", "_old.json")
+                )
+
+        if validation:
+            json_target = os.path.join(
+                self.restart_data_folder,
+                "model-results-validation.json"
+            )
+        else:
+            json_target = json_path_detailed
+
+        update_json_file(
+            json_path=json_target,
+            modeled_values_dict=differentiated_dict,
+            detailed_dict=True
+        )
+
+        # Wall-law diagnostics are saved separately.
+        # They are not calibration targets.
+        #
+        # The full modeled velocity profile is also saved here, and only here.
+        if compute_wall_law_diagnostics:
             update_json_file(
-                json_path=json_target,
-                modeled_values_dict=differentiated_dict,
+                json_path=json_path_wall_law_diagnostics,
+                modeled_values_dict=wall_law_diagnostics_dict,
                 detailed_dict=True
             )
 
-            # Wall-law diagnostics are saved separately.
-            # They are not calibration targets.
+        if (
+                simulation_number == self.init_runs
+                and not validation
+                and not user_param_values
+        ):
+            update_json_file(
+                json_path=json_path_detailed,
+                modeled_values_dict=differentiated_dict,
+                detailed_dict=True,
+                save_dict=True,
+                saving_path=json_path_restart_data
+            )
+
+        try:
+            shutil.move(
+                os.path.join(model_directory, self.tm_results_filename),
+                results_folder_directory
+            )
+
+            # Move generated 2D result file if it exists.
             if compute_wall_law_diagnostics:
-                update_json_file(
-                    json_path=json_path_wall_law_diagnostics,
-                    modeled_values_dict=wall_law_diagnostics_dict,
-                    detailed_dict=True
-                )
 
-            if simulation_number == self.init_runs and not validation and not user_param_values:
-                update_json_file(
-                    json_path=json_path_detailed,
-                    modeled_values_dict=differentiated_dict,
-                    detailed_dict=True,
-                    save_dict=True,
-                    saving_path=json_path_restart_data
-                )
-
-            try:
-                shutil.move(
-                    os.path.join(model_directory, self.tm_results_filename),
-                    results_folder_directory
-                )
-
-                # Move generated 2D result file if it exists.
-                if compute_wall_law_diagnostics:
-                    if hasattr(self, "tm_2d_results_filename") and self.tm_2d_results_filename is not None:
-                        tm_2d_results_filename = self.tm_2d_results_filename
-                    else:
-                        tm_2d_results_filename = get_2d_result_filename_from_3d(
-                            self.tm_results_filename
-                        )
-
-                    tm_2d_result_path = os.path.join(
-                        model_directory,
-                        tm_2d_results_filename
+                if (
+                        hasattr(self, "tm_2d_results_filename")
+                        and self.tm_2d_results_filename is not None
+                ):
+                    tm_2d_results_filename = self.tm_2d_results_filename
+                else:
+                    tm_2d_results_filename = self._get_2d_result_filename_from_3d(
+                        self.tm_results_filename
                     )
 
-                    if os.path.exists(tm_2d_result_path):
-                        shutil.move(
-                            tm_2d_result_path,
-                            results_folder_directory
-                        )
+                tm_2d_result_path = os.path.join(
+                    model_directory,
+                    tm_2d_results_filename
+                )
 
-                if self.gaia_cas is not None:
+                if os.path.exists(tm_2d_result_path):
                     shutil.move(
-                        os.path.join(model_directory, self.gaia_results_filename),
+                        tm_2d_result_path,
                         results_folder_directory
                     )
 
-            except Exception as error:
-                print(
-                    "ERROR: could not move results file to "
-                    + self.res_dir
-                    + "\nREASON:\n"
-                    + str(error)
+            if self.gaia_cas is not None:
+                shutil.move(
+                    os.path.join(model_directory, self.gaia_results_filename),
+                    results_folder_directory
                 )
+
+        except Exception as error:
+            print(
+                "ERROR: could not move results file to "
+                + self.res_dir
+                + "\nREASON:\n"
+                + str(error)
+            )
 
     @staticmethod
     def tbl_creator(
@@ -1858,6 +1620,502 @@ class TelemacModel(HydroSimulations):
 
         with open(friction_file_path, 'w') as file:
             file.writelines(updated_lines)
+    # ============================================================
+    # TIME HELPER FOR TELEMAC EXTRACTION
+    # ============================================================
+    def _apply_time_mode(
+            self,
+            all_times_outputs,
+            output_extraction_time="last",
+            time_index=0,
+            n=5
+    ):
+        if output_extraction_time == "last":
+            return all_times_outputs[-1]
+
+        elif output_extraction_time == "index":
+            return all_times_outputs[time_index]
+
+        elif output_extraction_time == "mean_last":
+            return np.mean(all_times_outputs[-n:], axis=0)
+
+        else:
+            raise ValueError(
+                "Invalid output_extraction_time. "
+                "Use 'last', 'index', or 'mean_last'."
+            )
+
+    # ============================================================
+    # GENERAL HELPERS FOR WALL-LAW DIAGNOSTICS
+    # ============================================================
+    def _get_2d_result_filename_from_3d(self, input_file_3d):
+        """
+        Converts:
+            result.slf -> result_2d.slf
+        """
+        root, ext = os.path.splitext(input_file_3d)
+        return f"{root}_2d{ext}"
+
+    def _normalize_var_name(self, name):
+        return " ".join(str(name).split()).upper()
+
+    def _interpolate_scalar(self, idx_coord, values, target_xy):
+        values = np.asarray(values, dtype=float)
+
+        if len(values) == 1:
+            return float(values[0])
+
+        interpolated = interpolate_values(
+            idx_coord,
+            values.reshape(-1, 1),
+            target_xy
+        )
+
+        return float(np.asarray(interpolated).ravel()[0])
+
+    def _vertical_velocity_profile(
+            self,
+            slf,
+            var_index,
+            idx_base,
+            idx_coord,
+            step,
+            k_use,
+            NPLAN,
+            NVAR,
+            target_xy,
+            output_extraction_time="last",
+            time_index=0,
+            n=5
+    ):
+        """
+        Extracts the full modeled vertical velocity profile at one horizontal point.
+
+        This is intended for the wall-law diagnostics JSON only.
+        One profile entry is saved per TELEMAC vertical plane/layer.
+        """
+
+        required_vars = [
+            "ELEVATION Z",
+            "VELOCITY U",
+            "VELOCITY V",
+            "VELOCITY W"
+        ]
+
+        missing_vars = [
+            var for var in required_vars
+            if var not in var_index
+        ]
+
+        if missing_vars:
+            raise ValueError(
+                "Cannot extract modeled vertical velocity profile because these "
+                f"variables are missing: {missing_vars}. "
+                f"Available variables are: {list(var_index.keys())}"
+            )
+
+        z_index = var_index["ELEVATION Z"]
+        u_index = var_index["VELOCITY U"]
+        v_index = var_index["VELOCITY V"]
+        w_index = var_index["VELOCITY W"]
+
+        velocity_profile = []
+        bed_z = None
+
+        for p_i in range(NPLAN):
+
+            results_all = np.zeros((k_use, NVAR))
+
+            for j in range(k_use):
+                node_idx = idx_base[j] + p_i * step
+
+                slf.readVariablesAtNode(node_idx)
+                all_times_outputs = slf.getVarValuesAtNode()
+
+                vals = self._apply_time_mode(
+                    all_times_outputs=all_times_outputs,
+                    output_extraction_time=output_extraction_time,
+                    time_index=time_index,
+                    n=n
+                )
+
+                results_all[j, :] = vals
+
+            if k_use != 1:
+                results = interpolate_values(
+                    idx_coord,
+                    results_all,
+                    target_xy
+                )
+            else:
+                results = results_all[0]
+
+            z_abs = float(results[z_index])
+
+            if bed_z is None:
+                bed_z = z_abs
+
+            z_above_bed = float(z_abs - bed_z)
+
+            u = float(results[u_index])
+            v = float(results[v_index])
+            w = float(results[w_index])
+
+            velocity_horizontal = float(np.sqrt(u ** 2 + v ** 2))
+            velocity_3d = float(np.sqrt(u ** 2 + v ** 2 + w ** 2))
+
+            velocity_profile.append({
+                "LAYER": int(p_i + 1),
+                "Z": z_abs,
+                "Z ABOVE BED": z_above_bed,
+                "VELOCITY U": u,
+                "VELOCITY V": v,
+                "VELOCITY W": w,
+                "HORIZONTAL VELOCITY MAGNITUDE": velocity_horizontal,
+                "3D VELOCITY MAGNITUDE": velocity_3d
+            })
+
+        return velocity_profile
+    # ============================================================
+    # GENERATED 2D SLF HELPERS
+    # ============================================================
+    def _find_2d_bottom_friction_variable(
+            self,
+            variables_2d,
+            bottom_friction_2d_variable_candidates=None
+    ):
+        """
+        Finds the bottom friction / Nikuradse ks variable in the generated 2D SLF.
+        """
+
+        if bottom_friction_2d_variable_candidates is None:
+            bottom_friction_2d_variable_candidates = config_telemac.slf_2d_variables_from_3d
+
+        normalized_var_lookup = {
+            self._normalize_var_name(var_name): var_name
+            for var_name in variables_2d
+        }
+
+        for candidate in bottom_friction_2d_variable_candidates:
+            candidate_clean = self._normalize_var_name(candidate)
+
+            if candidate_clean in normalized_var_lookup:
+                return normalized_var_lookup[candidate_clean]
+
+        raise ValueError(
+            "Could not find a bottom-friction / Nikuradse variable in the "
+            "generated 2D SLF file. "
+            f"Tried these names: {bottom_friction_2d_variable_candidates}. "
+            f"Available 2D SLF variables are: {variables_2d}"
+        )
+
+    def _load_generated_2d_slf_for_bottom_friction(
+            self,
+            model_directory,
+            bottom_friction_2d_variable_candidates=None
+    ):
+        """
+        Loads the 2D result file generated from the TELEMAC-3D simulation.
+
+        Expected default:
+            3D file: result.slf
+            2D file: result_2d.slf
+
+        If self.tm_2d_results_filename exists, it is used instead.
+        """
+
+        if (
+            hasattr(self, "tm_2d_results_filename")
+            and self.tm_2d_results_filename is not None
+        ):
+            input_file_2d = self.tm_2d_results_filename
+        else:
+            input_file_2d = self._get_2d_result_filename_from_3d(
+                self.tm_results_filename
+            )
+
+        slf_2d_path = os.path.join(model_directory, input_file_2d)
+
+        if not os.path.exists(slf_2d_path):
+            raise FileNotFoundError(
+                "The generated 2D result file required for wall-law diagnostics "
+                f"was not found: {slf_2d_path}. "
+                "Expected the same name as the 3D SLF with '_2d' before '.slf', "
+                "unless self.tm_2d_results_filename is explicitly defined."
+            )
+
+        slf_2d = ppSELAFIN(slf_2d_path)
+        slf_2d.readHeader()
+        slf_2d.readTimes()
+
+        variables_2d = [' '.join(v.split()) for v in slf_2d.getVarNames()]
+        var_index_2d = {v: i for i, v in enumerate(variables_2d)}
+
+        bottom_friction_variable = self._find_2d_bottom_friction_variable(
+            variables_2d=variables_2d,
+            bottom_friction_2d_variable_candidates=bottom_friction_2d_variable_candidates
+        )
+
+        NELEM2D, NPOIN2D, NDP2D, IKLE2D, IPOBO2D, x2d_slf, y2d_slf = slf_2d.getMesh()
+
+        tree_2d = spatial.cKDTree(np.column_stack((x2d_slf, y2d_slf)))
+
+        logger.info(
+            f"Using generated 2D SLF for wall-law diagnostics: {slf_2d_path}"
+        )
+        logger.info(
+            f"Using bottom-friction variable from generated 2D SLF: "
+            f"{bottom_friction_variable}"
+        )
+
+        return {
+            "slf": slf_2d,
+            "path": slf_2d_path,
+            "filename": input_file_2d,
+            "variables": variables_2d,
+            "var_index": var_index_2d,
+            "bottom_friction_variable": bottom_friction_variable,
+            "bottom_friction_index": var_index_2d[bottom_friction_variable],
+            "x": x2d_slf,
+            "y": y2d_slf,
+            "tree": tree_2d
+        }
+
+    def _extract_bottom_friction_from_2d_slf(
+            self,
+            slf_2d_data,
+            target_xy,
+            output_extraction_time="last",
+            time_index=0,
+            n=5
+    ):
+        """
+        Extracts bottom friction / Nikuradse ks from the generated 2D SLF
+        at a horizontal coordinate.
+
+        Nearest-node extraction is used because the generated 2D SLF should
+        share the same horizontal mesh as the 3D SLF.
+        """
+
+        slf_2d = slf_2d_data["slf"]
+        tree_2d = slf_2d_data["tree"]
+        friction_index = slf_2d_data["bottom_friction_index"]
+
+        d2, idx2 = tree_2d.query(target_xy, k=1)
+        node_2d = int(idx2)
+
+        slf_2d.readVariablesAtNode(node_2d)
+        all_times_outputs_2d = slf_2d.getVarValuesAtNode()
+
+        vals_2d = self._apply_time_mode(
+            all_times_outputs=all_times_outputs_2d,
+            output_extraction_time=output_extraction_time,
+            time_index=time_index,
+            n=n
+        )
+
+        bottom_friction = float(vals_2d[friction_index])
+
+        if bottom_friction <= 0.0:
+            raise ValueError(
+                f"Invalid bottom friction / Nikuradse ks extracted from 2D SLF "
+                f"at coordinate {target_xy}: value={bottom_friction}. "
+                "It must be > 0."
+            )
+
+        return bottom_friction
+
+    # ============================================================
+    # WALL-LAW DIAGNOSTICS FROM 3D PLANE 2 + 2D BOTTOM FRICTION
+    # ============================================================
+    def _compute_wall_law_from_3d_plane2_and_2d_bottom_friction(
+            self,
+            slf_3d,
+            var_index_3d,
+            idx_base_3d,
+            idx_coord_3d,
+            step_3d,
+            k_use,
+            target_xy,
+            key,
+            slf_2d_data,
+            output_extraction_time="last",
+            time_index=0,
+            n=5,
+            kappa=None,
+            nikuradse_log_factor=None,
+            kinematic_viscosity=None
+    ):
+        """
+        Computes TELEMAC-style friction velocity and y+.
+
+        From 3D SLF:
+            - VELOCITY U at plane 2
+            - VELOCITY V at plane 2
+            - ELEVATION Z at plane 1 and plane 2
+
+        From generated 2D SLF:
+            - bottom friction / Nikuradse ks
+        """
+
+        if kappa is None:
+            kappa = config_telemac.von_Karman_constant
+
+        if nikuradse_log_factor is None:
+            nikuradse_log_factor = config_telemac.nikuradse_log_factor
+
+        if kinematic_viscosity is None:
+            kinematic_viscosity = config_telemac.kinematic_viscosity_water
+
+        if kinematic_viscosity <= 0.0:
+            raise ValueError(
+                f"Cannot compute Y PLUS because "
+                f"kinematic_viscosity={kinematic_viscosity}. It must be > 0."
+            )
+
+        z_index = var_index_3d["ELEVATION Z"]
+        u_index = var_index_3d["VELOCITY U"]
+        v_index = var_index_3d["VELOCITY V"]
+
+        friction_velocity_values = np.zeros(k_use)
+        y_plus_values = np.zeros(k_use)
+        dz_values = np.zeros(k_use)
+        u_plane2_values = np.zeros(k_use)
+        bottom_friction_values = np.zeros(k_use)
+
+        for j in range(k_use):
+
+            node_plane1 = idx_base_3d[j]
+            node_plane2 = idx_base_3d[j] + step_3d
+
+            xy_neighbor = (
+                float(idx_coord_3d[j, 0]),
+                float(idx_coord_3d[j, 1])
+            )
+
+            # ----------------------------------------------------
+            # 2D SLF: bottom friction / Nikuradse ks
+            # ----------------------------------------------------
+            bottom_friction = self._extract_bottom_friction_from_2d_slf(
+                slf_2d_data=slf_2d_data,
+                target_xy=xy_neighbor,
+                output_extraction_time=output_extraction_time,
+                time_index=time_index,
+                n=n
+            )
+
+            # ----------------------------------------------------
+            # 3D SLF plane 1: bed elevation
+            # ----------------------------------------------------
+            slf_3d.readVariablesAtNode(node_plane1)
+            all_times_outputs_plane1 = slf_3d.getVarValuesAtNode()
+
+            vals_plane1 = self._apply_time_mode(
+                all_times_outputs=all_times_outputs_plane1,
+                output_extraction_time=output_extraction_time,
+                time_index=time_index,
+                n=n
+            )
+
+            z_plane1 = vals_plane1[z_index]
+
+            # ----------------------------------------------------
+            # 3D SLF plane 2: near-bed velocity and elevation
+            # ----------------------------------------------------
+            slf_3d.readVariablesAtNode(node_plane2)
+            all_times_outputs_plane2 = slf_3d.getVarValuesAtNode()
+
+            vals_plane2 = self._apply_time_mode(
+                all_times_outputs=all_times_outputs_plane2,
+                output_extraction_time=output_extraction_time,
+                time_index=time_index,
+                n=n
+            )
+
+            z_plane2 = vals_plane2[z_index]
+
+            u_plane2 = vals_plane2[u_index]
+            v_plane2 = vals_plane2[v_index]
+
+            dz = float(z_plane2 - z_plane1)
+
+            if dz <= 0.0:
+                raise ValueError(
+                    f"Cannot compute wall-law diagnostics for point {key}: "
+                    f"Dz = Z_plane2 - Z_plane1 = {dz}. It must be > 0."
+                )
+
+            u_horizontal_plane2 = float(
+                np.sqrt(u_plane2**2 + v_plane2**2)
+            )
+
+            log_argument = float(
+                nikuradse_log_factor * dz / bottom_friction
+            )
+
+            if log_argument <= 1.0:
+                raise ValueError(
+                    f"Cannot compute wall-law diagnostics reliably for point {key}: "
+                    f"log argument = {log_argument:.6f}. "
+                    f"Computed as {nikuradse_log_factor} * Dz / bottom_friction, "
+                    f"with Dz={dz:.6e} m and bottom_friction={bottom_friction:.6e} m. "
+                    "The logarithm denominator must be positive. "
+                    "Check whether the 2D variable is really Nikuradse ks in meters."
+                )
+
+            friction_velocity = float(
+                u_horizontal_plane2 * kappa / np.log(log_argument)
+            )
+
+            y_plus = float(
+                friction_velocity * dz / kinematic_viscosity
+            )
+
+            friction_velocity_values[j] = friction_velocity
+            y_plus_values[j] = y_plus
+            dz_values[j] = dz
+            u_plane2_values[j] = u_horizontal_plane2
+            bottom_friction_values[j] = bottom_friction
+
+        friction_velocity_interp = self._interpolate_scalar(
+            idx_coord_3d,
+            friction_velocity_values,
+            target_xy
+        )
+
+        y_plus_interp = self._interpolate_scalar(
+            idx_coord_3d,
+            y_plus_values,
+            target_xy
+        )
+
+        dz_interp = self._interpolate_scalar(
+            idx_coord_3d,
+            dz_values,
+            target_xy
+        )
+
+        u_plane2_interp = self._interpolate_scalar(
+            idx_coord_3d,
+            u_plane2_values,
+            target_xy
+        )
+
+        bottom_friction_interp = self._interpolate_scalar(
+            idx_coord_3d,
+            bottom_friction_values,
+            target_xy
+        )
+
+        return {
+            "FRICTION VELOCITY": friction_velocity_interp,
+            "Y PLUS": y_plus_interp,
+            "DZ PLANE 1 2": dz_interp,
+            "U PLANE 2": u_plane2_interp,
+            "BOTTOM FRICTION": bottom_friction_interp,
+            "BOTTOM FRICTION SOURCE FILE": slf_2d_data["filename"],
+            "BOTTOM FRICTION VARIABLE": slf_2d_data["bottom_friction_variable"]
+        }
 
     @staticmethod
     def check_tm_inputs(user_inputs):

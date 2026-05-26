@@ -139,7 +139,7 @@ def run_complex_model(complex_model,
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                complete_bal_mode=complex_model.complete_bal_mode,
                                                validation=complex_model.validation,
-                                               output_extraction_time="last")
+                                               output_extraction_time="mean_last", n=80)
         model_outputs = complex_model.model_evaluations
     else:
         try:
