@@ -531,84 +531,85 @@ class HydroSimulations:
         print("Full-complexity simulation time: " + str(datetime.now() - start_time))
         pass
 
-    def set_observations_and_variances(self,
-                                    calibration_pts_file_path,
-                                    calibration_quantities,
-                                    extraction_quantities,
-                                    model_error = 0.1,
-                                    measurement_error=0.25):
+    def set_observations_and_variances(
+            self,
+            calibration_pts_file_path,
+            calibration_quantities,
+            extraction_quantities,
+            gpe_error=0.10,
+            measurement_error=0.10):
         """
-        Reads and processes calibration point data, extracting observations and measurement errors.
+        Reads calibration point data and constructs observation variances.
 
-        This method reads a file containing calibration point data, extracts the observed values
-        and associated measurement errors, and formats them appropriately for Bayesian inference.
-        Determines the number of calibration locations and
-        quantities being processed .
+        Total variance is computed as:
 
-        Parameters
-        ----------
-        calibration_pts_file_path : str
-            Path to the CSV file containing calibration data points. The file should include
-            columns for observed values and their corresponding measurement errors.
-        calibration_quantities : list of str
-            List of calibration quantities to be extracted from the data file. The method expects
-            corresponding columns labeled as `<quantity>_DATA` for observations and `<quantity>_ERROR`
-            for measurement errors. <quantity> is the name of how the extraction variable is recognized in
-            the model output file.
-            Example: WATER DEPTH_DATA means the name WATER DEPTH recognizes the variable WATER DEPTH in Telemac .slf files
-        extraction_quantities : list of str
-            List of all quantities required to be extracted from the model output file.
-        model_error: int
-            Percentage of the measurements associated to the surrogate model error.
+            variance = measurement_error^2 + gpe_error^2 + site_specific_error^2
 
-        Returns
-        -------
-        observations : ndarray, shape (1, n_loc * n_calib_quantities)
-            A 2D array containing the extracted observed values for all calibration points.
-        measurement_errors : ndarray, shape (n_loc * n_calib_quantities,)
-            A 1D array containing the measurement errors (standard deviation) associated with the observations.
-        n_loc : int
-            The number of unique calibration locations (data points).
-        n_calib_quantities : int
-            The number of calibration quantities being processed.
-        calibration_pts_df : pd.DataFrame
-            A DataFrame containing the raw calibration data read from the file.
-        n_extraction_quantities : int
-            The number of all extraction quantities being processed.
+        where:
+        - measurement_error is assigned as a percentage of the measured value.
+        - gpe_error is assigned as a percentage of the measured value.
+        - site_specific_error is read from <quantity>_ERROR columns and should already be
+          in the physical units of the corresponding calibration quantity.
         """
 
         calibration_pts_df = pd.read_csv(calibration_pts_file_path)
+
         observation_columns = []
         error_columns = []
 
-        # Loop through the calibration quantities to match with the column names
         for quantity in calibration_quantities:
             observation_columns.append(f"{quantity}_DATA")
             error_columns.append(f"{quantity}_ERROR")
 
-        # Select the observation and error columns based on the list
-        observations = calibration_pts_df[observation_columns].to_numpy()
-        site_specific_errors = calibration_pts_df[error_columns].to_numpy()
-        surrogate_errors= observations * model_error
-        measurement_errors = observations * measurement_error
+        missing_columns = [
+            col for col in observation_columns + error_columns
+            if col not in calibration_pts_df.columns
+        ]
 
-        # Reshape observations and errors to match the expected output format
-        observations = observations.flatten().reshape(1, -1)
-        measurement_errors = measurement_errors.flatten()
-        variances = (measurement_errors.flatten() ** 2) + (surrogate_errors.flatten() ** 2) + (
-                    site_specific_errors.flatten() ** 2)
+        if missing_columns:
+            raise ValueError(
+                f"Missing required columns in calibration file: {missing_columns}"
+            )
 
-        # Calculate the number of unique locations or data points
+        observations_2d = calibration_pts_df[observation_columns].to_numpy(dtype=float)
+
+        site_specific_errors_2d = calibration_pts_df[error_columns].to_numpy(dtype=float)
+
+        abs_observations_2d = np.abs(observations_2d)
+
+        measurement_errors_2d = abs_observations_2d * measurement_error
+        gpe_errors_2d = abs_observations_2d * gpe_error
+
+        observations = observations_2d.flatten().reshape(1, -1)
+
+        measurement_errors = measurement_errors_2d.flatten()
+        gpe_errors = gpe_errors_2d.flatten()
+        site_specific_errors = site_specific_errors_2d.flatten()
+
+        variances = (
+                measurement_errors ** 2
+                + gpe_errors ** 2
+                + site_specific_errors ** 2
+        )
+
         n_loc = len(calibration_pts_df)
-
-        # Number of calibration quantities (based on the input list)
         n_calib_quantities = len(calibration_quantities)
+
         if extraction_quantities is None:
             n_extraction_quantities = 0
         else:
             n_extraction_quantities = len(extraction_quantities)
 
-        return observations, variances,measurement_errors, n_loc, n_calib_quantities, calibration_pts_df,n_extraction_quantities
+        return (
+            observations,
+            variances,
+            measurement_errors,
+            n_loc,
+            n_calib_quantities,
+            calibration_pts_df,
+            n_extraction_quantities
+        )
+
 
     @staticmethod
     def read_data(results_folder, file_name):
