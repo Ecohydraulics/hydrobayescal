@@ -126,24 +126,42 @@ class TelemacModel(HydroSimulations):
             simulation_id=0,
     ):
         """
-        Modifies the .cas steering file for each of the Telemac runs according to the values of the collocation points and the
-        calibration parameters. If a "FRICTION DATA FILE" is provided for Telemac simulations, it is possible to consider any zone
-        as a calibration parameter. The parameters must start with the prefix "zone" and the number of the friction zone. The .tbl will be
-        modified for this purpose. This method is called every time it is required that the .cas or .tbl are modified.
+        Modifies the .cas steering file for each of the Telemac runs according to the
+        values of the collocation points and the calibration parameters. If a
+        "FRICTION DATA FILE" is provided for Telemac simulations, it is possible to
+        consider any zone as a calibration parameter. The parameters must start with
+        the prefix "zone" and the number of the friction zone. The .tbl file will be
+        modified for this purpose. This method is called every time it is required
+        that the .cas or .tbl files are modified. It also modifies the gaia cas file. If
+        the parameter starts with the prefix "gaia", the method will look for the parameter
+        in the gaia cas file and update it with the new value. If the parameter starts with "f.",
+        the method will look for it in the fortran file and update it with the new value.
+        The rest of the parameters will be updated in the telemac cas file.
 
         Parameters
         ----------
         collocation_point_values : list
             Values for each of the calibration parameters.
+
         calibration_parameters : list
             Names of the calibration parameters.
-        auxiliary_file_path : str
-            Path to the friction file .tbl.
+
+        auxiliary_file_path : str, optional
+            Path to the friction file (.tbl).
+
+        gaia_file_path : str, optional
+            Path to the GAIA steering file (.cas). If provided, GAIA calibration
+            parameters will also be updated.
+
+        simulation_id : int, optional
+            Identifier of the current simulation. Used when generating or updating
+            control files for multiple simulations. Default is 0.
 
         Returns
         -------
         None
-            Modified control files telemac.cas and gaia.cas for Telemac simulations.
+            Modified control files (telemac.cas, gaia.cas, fortran file, and/or friction .tbl)
+            for Telemac simulations.
         """
 
         # ============================================================
@@ -497,6 +515,12 @@ class TelemacModel(HydroSimulations):
             The time mode for extracting model outputs. Options are "last", "index", or "mean_last".
         n : int
             The number of last time steps to consider when `output_extraction_time` is set to "mean_last". Default is 40.
+        validation: bool
+            If `True`, the method runs a separate set of simulations for validation purposes, and saves the collocation points used for validation in a separate CSV file.
+        kill_process: bool
+            If `True`, the method will attempt to kill any remaining Telemac processes after running the simulations. This is useful when preventing to running BAL after the initial runs.
+
+
         Returns
         -------
          model_evaluations:array
@@ -527,9 +551,6 @@ class TelemacModel(HydroSimulations):
                 # Ensure collocation_points is a 2D array
                 if collocation_points.ndim == 1:
                     collocation_points = collocation_points[:, np.newaxis]
-
-                # print(collocation_points)
-                # pdb.set_trace()
                 # Convert collocation_points to a list for saving to CSV
                 array_list = collocation_points.tolist()
                 if validation:
@@ -593,7 +614,7 @@ class TelemacModel(HydroSimulations):
                 self.bal_iteration = bal_iteration
                 self.num_run = bal_iteration + init_runs
 
-                new_collocation_point=bal_new_set_parameters #* [[1,0.042,0.042,0.023,0.023,0.042,0.023,0.023,0.042]]
+                new_collocation_point=bal_new_set_parameters
                 updated_collocation_points = np.vstack((collocation_points, new_collocation_point))
                 collocation_point_sim_list = updated_collocation_points[-1].tolist()
                 array_list = updated_collocation_points.tolist()

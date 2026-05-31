@@ -158,8 +158,6 @@ def run_complex_model(complex_model,
 
     return collocation_points, model_outputs#, observations, errors, nloc
 
-
-#@log_actions
 def run_bal_model(collocation_points,
                   model_outputs,
                   complex_model,
@@ -241,8 +239,6 @@ def run_bal_model(collocation_points,
         logger.info(f'Creating folder {gpe_results_folder_bal}')
         os.makedirs(gpe_results_folder_bal, exist_ok=True)
     #
-    #     # Arrays to save results ---------------------------------------------------------------------------- #
-    #
     # Arrays to save results ---------------------------------------------------------------------------- #
     bayesian_dict = {'N_tp': np.zeros(n_iter + 1), 'BME': np.zeros(n_iter + 1), 'ELPD': np.zeros(n_iter + 1),
                      'RE': np.zeros(n_iter + 1), 'IE': np.zeros(n_iter + 1), 'post_size': np.zeros(n_iter + 1),
@@ -307,9 +303,6 @@ def run_bal_model(collocation_points,
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim))
-                # *
-                #     gpytorch.kernels.RBFKernel(ard_num_dims=complex_model.ndim)
-                # )
 
                 if complex_model.multitask_selection == "variables":
                     multi_likelihood_var = gpytorch.likelihoods.MultitaskGaussianLikelihood(
@@ -362,7 +355,6 @@ def run_bal_model(collocation_points,
             if n_iter < 0:
                 logger.info(
                     f'------------ Number of initial runs init_runs and n_tp_max are the same. Conditions: n_tp_max > init_runs.     -------------------')
-                # exit()
             else:
                 logger.info(f'------------ Training final surrogate model in {type(surrogate_object).__name__}   -------------------')
         elif it > 0:
@@ -370,7 +362,6 @@ def run_bal_model(collocation_points,
         elif it == 0:
             logger.info(
                 f'Starting {type(surrogate_object).__name__} surrogate model training with the initial collocation points. Please check the .csv file if information required.')
-            #logger.info(collocation_points)
 
         if complex_model.num_calibration_quantities == 1:
             logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
