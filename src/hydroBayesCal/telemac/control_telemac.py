@@ -13,7 +13,6 @@ from pputils.ppmodules.selafin_io_pp import ppSELAFIN
 from collections import OrderedDict
 from src.hydroBayesCal.hysim import HydroSimulations
 from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
-import matplotlib.pyplot as plt
 
 
 class TelemacModel(HydroSimulations):

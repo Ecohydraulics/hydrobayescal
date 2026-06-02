@@ -21,7 +21,6 @@ from telemac.pputils.ppmodules.utilities import *
 sys.path.insert(0, os.path.abspath('..'))
 
 from src.hydroBayesCal.utils.config_logging import *
-# TODO: re-instate config_physics - Done
 from src.hydroBayesCal.utils.config_physics import *
 from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
 
