@@ -994,7 +994,108 @@ class TelemacModel(HydroSimulations):
             n=5,
             compute_wall_law_diagnostics=False
     ):
+        """
+        Extract model results at specified calibration or validation points from
+        TELEMAC and/or GAIA SELAFIN result files.
 
+        The method supports extraction of scalar variables,
+        vertical layer selection based on measurement height, inverse-distance
+        interpolation, and optional wall-law diagnostics.
+        Extracted values are written to JSON files and result files are moved to
+        the designated results directory.
+
+        Parameters
+        ----------
+        input_file : str
+            Name of the TELEMAC result file (.slf) to extract data from.
+
+        calibration_pts_df : pandas.DataFrame
+            DataFrame containing extraction locations. The first column must
+            contain point identifiers. The following columns are expected to be:
+
+            - column 1: x-coordinate
+            - column 2: y-coordinate
+            - column 3: vertical measurement offset (z)
+
+        output_name : str
+            Base name used for generated JSON output files.
+
+        extraction_quantity : list of str
+            Quantities to extract from the model results. Variables may originate
+            from TELEMAC or GAIA according to the configuration mapping
+            ``classification_tm_gaia_dict``.
+
+        simulation_number : int
+            Current simulation number within the calibration workflow.
+
+        model_directory : str
+            Directory containing TELEMAC and GAIA result files.
+
+        results_folder_directory : str
+            Directory where extracted results and moved result files are stored.
+
+        validation : bool, optional
+            If True, extracted values are treated as validation results and are
+            written to validation-specific JSON files. Default is False.
+
+        user_param_values : bool, optional
+            Flag controlling restart-data generation. Default is False.
+
+        output_extraction : {"nearest", "interpolated"}, optional
+            Spatial extraction method.
+
+            - ``"nearest"``: use the closest model node.
+            - ``"interpolated"``: perform inverse-distance-weighted interpolation
+              using the k nearest nodes.
+
+            Default is ``"interpolated"``.
+
+        k : int, optional
+            Number of nearest nodes used for interpolation when
+            ``output_extraction="interpolated"``. Ignored when using nearest-node
+            extraction. Default is 3.
+
+        output_extraction_time : {"last", "index", "mean_last"}, optional
+            Temporal aggregation mode applied to the extracted time series.
+
+            - ``"last"``: use the final time step.
+            - ``"index"``: use the time step specified by ``time_index``.
+            - ``"mean_last"``: average the last ``n`` time steps.
+
+            Default is ``"last"``.
+
+        time_index : int, optional
+            Time-step index used when
+            ``output_extraction_time="index"``.
+            Default is 0.
+
+        n : int, optional
+            Number of final time steps used when
+            ``output_extraction_time="mean_last"``.
+            Default is 5.
+
+        compute_wall_law_diagnostics : bool, optional
+            If True, compute wall-law diagnostic quantities from TELEMAC 3D
+            results and the generated 2D result file. Diagnostics include
+            friction velocity, y-plus values, bottom friction parameters,
+            near-bed velocity information, and the complete modeled vertical
+            velocity profile. Default is False.
+
+        Returns
+        -------
+        None
+            Results are written to JSON files and model result files are moved
+            to the results directory.
+
+        Notes
+        -----
+        - If ``"3D VELOCITY MAGNITUDE"`` is requested, it is computed from
+          ``VELOCITY U``, ``VELOCITY V``, and ``VELOCITY W``.
+        - For 3D simulations, the vertical layer closest to the measurement
+          elevation is automatically selected using ``ELEVATION Z``.
+        - Wall-law diagnostics require at least two vertical planes
+          (``NPLAN >= 2``).
+        """
         self.tm_results_filename = input_file
 
         classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
