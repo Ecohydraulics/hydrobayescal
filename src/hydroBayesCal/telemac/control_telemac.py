@@ -3,16 +3,15 @@
 Functional core for controlling Telemac simulations for coupling with the Surrogate-Assisted Bayesian inversion technique.
 Authors: Andres Heredia, Sebastian Schwindt
 """
-import pdb
 from scipy import spatial
 import numpy as np
-import config_telemac
+from hydroBayesCal.telemac import config_telemac
 from datetime import datetime
-from pputils.ppmodules.selafin_io_pp import ppSELAFIN
+from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 from collections import OrderedDict
-from src.hydroBayesCal.hysim import HydroSimulations
-from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
+from hydroBayesCal.hysim import HydroSimulations
+from hydroBayesCal.function_pool import *  # provides os, subprocess, logging
 
 
 class TelemacModel(HydroSimulations):
@@ -357,23 +356,21 @@ class TelemacModel(HydroSimulations):
             updated_string,
             steering_module="telemac"
     ):
-        """
-        Rewrites the *.cas steering file with new (updated) parameters
+        """Rewrite the ``.cas`` steering file with updated parameters.
 
         Parameters
         ----------
-            param_name: string
-                Name of the calibration parameter
+        param_name : str
+            Name of the calibration parameter.
+        updated_string : str
+            Updated string written into the ``.cas`` file with the new value.
+        steering_module : str, optional
+            Steering module to rewrite: ``"telemac"`` (default) or ``"gaia"``.
 
-            updated_string: string
-                Updated string to be replaced in .cas file with the new value.
-            steering_module: string
-                By default Telemac
         Returns
-        ----------
-            int: 0 corresponds to success.
-            int: -1 points to an error.
-
+        -------
+        int
+            ``0`` on success, ``-1`` on error.
         """
 
         # check if telemac or gaia cas type
@@ -757,7 +754,7 @@ class TelemacModel(HydroSimulations):
                                                                     )
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
                 if kill_process:
-                    exit()
+                    return self.model_evaluations
 
         return self.model_evaluations
 

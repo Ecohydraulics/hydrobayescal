@@ -85,7 +85,7 @@ The prior assumptions for these uncertain calibration parameters are defined as 
 
     param_values=[[0.011, 0.79], [0.011, 0.79], [0.0016, 0.060], [0.018, 0.028]].
 
-The measured data, stored in a `.csv` file, should consists of water depth and scalar velocity. Each of these quantities has a measurement error which is also assigned in the corresponding column in the .csv file. These quantities will be the calibration targets and are extracted from the model. The user-specified ``calibration_quantities``are ["WATER DEPTH", "SCALAR VELOCITY"].
+The measured data, stored in a `.csv` file, should consists of water depth and scalar velocity. Each of these quantities has a measurement error which is also assigned in the corresponding column in the .csv file. These quantities will be the calibration targets and are extracted from the model. The user-specified ``calibration_quantities`` are ["WATER DEPTH", "SCALAR VELOCITY"].
 .. code::
 
     calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY"]
@@ -158,8 +158,6 @@ Returns
 **exp_design** : object
     An instance of the experiment design object configured with the specified model and selection criteria.
 
-.. autofunction:: bal.setup_experiment_design
-
 Run Numerical Model with Experiment Design
 -------------------------------------------
 
@@ -219,6 +217,7 @@ Example Usage
 +++++++++++++
 
 .. code-block:: python
+
     run_bal_model(
         collocation_points=init_collocation_points,
         model_outputs=model_evaluations,
@@ -281,7 +280,7 @@ the name **auto-saved-results-HydroBayesCal**:
 - **model_outputs**: Files ``.csv`` and ``.json`` containing all model outputs obtained from the
   collocation points and required model variables.
 
-.. _outputs-folder: outputs-folder
+.. _outputs-folder:
 
 Surrogate-Assisted BAL Calibration Outputs
 ++++++++++++++++++++++++++++++++++++++++++
@@ -339,6 +338,7 @@ The generated folders and their contents are as follows:
 
     These files allow the continuation of the BAL calibration process. This is the training data for the initial surrogate model before BAL iterations.
     It is possible also to build the surrogate model with either **ALL** the restart data or just a **PART** of it. To use only a part of it, initialize the ``initial_runs`` with the desired number of initial training ponts.
+
    - **``initial-collocation-points.csv``**:
      Contains the initial parameter combinations used for surrogate training and further BAL calibration..
      The number of collocation points corresponds to the value assigned in ``init_runs``.

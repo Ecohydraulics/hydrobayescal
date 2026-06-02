@@ -1,71 +1,8 @@
-# requirements-dev.txt (Python >=3.12)
+# Single source of truth for dependencies is pyproject.toml.
+# Installs the project in editable mode with all optional extras used for
+# development, documentation, extra mesh/geospatial IO, the UM-Bridge model
+# server, and (optionally) MPI.
 #
-# Policy:
-# - Keep only direct/top-level deps (no pip-freeze / transitive pins).
-# - Use bounded ranges (>= current-tested, < next major) for robustness.
-# - Prefer platform markers for OS-specific bits.
-#
-# NOTE: 'bayesvalidrox' currently declares Python <3.12 upstream, so it is intentionally omitted.
-
-# --- Core scientific stack ---
-numpy>=2.4,<3
-scipy>=1.17,<2
-pandas>=3.0,<4
-pyarrow>=23,<24
-h5py>=3.15,<4
-sympy>=1.14,<2
-scikit-learn>=1.8,<2
-statsmodels>=0.14.6,<0.15
-
-# --- Plotting / viz ---
-matplotlib>=3.10,<4
-seaborn>=0.13,<1
-corner>=2.2,<3
-emcee>=3.1,<4
-pillow>=11,<12
-
-# --- 3D / mesh ---
-pyvista>=0.46,<1
-vtk>=9.5,<10
-meshio>=5.3,<6
-
-# --- Geospatial ---
-rasterio>=1.5,<2
-affine>=2.4,<3
-
-# --- ML / GP / typing ---
-torch>=2.10,<3
-gpytorch>=1.15,<2
-linear-operator>=0.6,<1
-typeguard>=4.4,<5
-jaxtyping>=0.3,<0.4
-typing_extensions>=4.15,<5
-
-# --- Hugging Face / HTTP / misc ---
-datasets>=4.5,<5
-huggingface-hub>=1.3,<2
-aiohttp>=3.13,<4
-requests>=2.32,<3
-urllib3>=2.6,<3
-pyyaml>=6.0,<7
-tqdm>=4.67,<5
-rich>=14,<15
-
-# --- UQ / coupling ---
-chaospy>=4.3,<5
-numpoly>=1.4,<2
-umbridge>=1.2,<2
-
-# --- MPI ---
-# NOTE: mpi4py wheels exist, but MPI setups can still be probelmatic on some clusters
-mpi4py>=4.1,<5
-
-# --- Docs / packaging ---
-sphinx>=9.1,<10
-sphinx-rtd-theme>=3.0,<4
-twine>=6.2,<7
-readme_renderer>=44,<45
-keyring>=25,<26
-
-# --- Platform quirks ---
-tzdata; platform_system=="Windows"
+# NOTE: mpi4py needs a working MPI toolchain; drop the `mpi` extra below on
+# machines without one.
+-e .[dev,docs,mesh,server,mpi]

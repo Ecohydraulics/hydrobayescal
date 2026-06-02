@@ -11,20 +11,13 @@ import argparse
 import importlib.util
 import bayesvalidrox as bvr
 
-# Base directory of the project
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(base_dir, 'src')
-hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
-sys.path.insert(0, base_dir)
-sys.path.insert(0, src_path)
-sys.path.insert(0, hydroBayesCal_path)
 
 # Import own scripts
-from src.hydroBayesCal.openfoam.control_openfoam import OpenFOAMModel
-from src.hydroBayesCal.bayesvalidrox.metamodel.bal_functions import BayesianInference, SequentialDesign
-from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_skl import *
-from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_gpytorch import *
-from src.hydroBayesCal.function_pool import *
+from hydroBayesCal.openfoam.control_openfoam import OpenFOAMModel
+from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
+from hydroBayesCal.surrogate.gpe_skl import *
+from hydroBayesCal.surrogate.gpe_gpytorch import *
+from hydroBayesCal.function_pool import *
 
 def load_config(config_path):
     """
@@ -363,7 +356,7 @@ def run_bal_model(collocation_points,
         if complex_model.num_calibration_quantities == 1:
             surrogate_output = sm.predict_(input_sets=prior, get_conf_int=True)
             model_predictions = surrogate_output['output']
-            total_error = complex_model.measurement_errors
+            total_error = complex_model.variances
             if it == 0 or it == n_iter:
                 try:
                     # Open the file and save the dictionary
@@ -374,7 +367,7 @@ def run_bal_model(collocation_points,
                     print(f"An error occurred while saving the dictionary: {e}")
         else:
             surrogate_output = surrogate_object.predict_(input_sets=prior, get_conf_int=True)
-            total_error = complex_model.measurement_errors
+            total_error = complex_model.variances
             model_predictions = surrogate_output['output']
             if it == 0 or it == n_iter:
                 try:

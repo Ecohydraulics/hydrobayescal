@@ -9,20 +9,15 @@ import json
 import glob
 import matplotlib.tri as mtri
 import pyvista as pv
-import pdb
 import shutil
 from numpy import linspace, dtype
-from telemac.pputils.ppmodules.readMesh import *
-from telemac.pputils.ppmodules.writeMesh import *
-from telemac.pputils.ppmodules.utilities import *
+from hydroBayesCal.telemac.pputils.ppmodules.readMesh import *
+from hydroBayesCal.telemac.pputils.ppmodules.writeMesh import *
+from hydroBayesCal.telemac.pputils.ppmodules.utilities import *
 
-
-
-sys.path.insert(0, os.path.abspath('..'))
-
-from src.hydroBayesCal.utils.config_logging import *
-from src.hydroBayesCal.utils.config_physics import *
-from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
+from hydroBayesCal.utils.config_logging import *
+from hydroBayesCal.utils.config_physics import *
+from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
 
 
 def append_new_line(file_name, text_to_append):
@@ -47,30 +42,41 @@ def append_new_line(file_name, text_to_append):
 
 def call_process(bash_command, environment=None):
     """
-    Call a Terminal process with a bash command through subprocess.Popen
+    Call a terminal process via subprocess and return its exit status.
 
-    :param str bash_command: terminal process to call
-    :param environment: run process in a specific environment (e.g.
-    :return int: 0 (success) or -1 (error - read output message)
+    The process return code is checked and reported: a non-zero code (e.g. a
+    failed Telemac/OpenFOAM run) is logged together with the captured stderr and
+    returned to the caller, instead of silently reporting success.
+
+    :param str bash_command: terminal command to run
+    :param environment: optional environment mapping to run the process in
+    :return int: the process return code (0 on success, non-zero on failure,
+        -1 if the process could not be started)
     """
-
-    print("* CALLING SUBROUTINE: %s " % bash_command)
+    logger.info("* CALLING SUBROUTINE: %s", bash_command)
     try:
-        # process = subprocess.Popen(bash_command.split(), stdout=subprocess.PIPE)
-        # output, error = process.communicate()
-        if environment:
-            # res = subprocess.run(bash_command, capture_output=True, shell=True, env=environment)
-            process = subprocess.Popen(bash_command, stdout=subprocess.PIPE,
-                                       shell=True, stdin=None, env=environment)
-            output, error = process.communicate()
-        else:
-            res = subprocess.run(bash_command, capture_output=True, shell=True)
-            print(res.stdout.decode())
-        print("* finished ")
-        return 0
+        result = subprocess.run(
+            bash_command,
+            shell=True,
+            capture_output=True,
+            env=environment,
+        )
     except Exception as e:
-        print("WARNING: command failed:\n" + str(e))
+        logger.error("Command could not be started: %s", e)
         return -1
+
+    if result.stdout:
+        print(result.stdout.decode(errors="replace"))
+
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace") if result.stderr else ""
+        logger.error(
+            "Command failed (return code %s): %s\n%s",
+            result.returncode, bash_command, stderr,
+        )
+    else:
+        logger.info("* finished (return code 0)")
+    return result.returncode
 
 
 def calculate_settling_velocity(diameters):
@@ -96,7 +102,7 @@ def calculate_settling_velocity(diameters):
 
 def concatenate_csv_pts(file_directory, *args):
     """Concatenate a csv-files with lists of XYZ points into one CSV file that is saved to the same directory where the
-    first CSV file name provided lives. The merged CSV file name starts with merged_ and also ends with the name
+    first CSV file name provided lives. The merged CSV file name starts with ``merged_`` and also ends with the name
     of the first CSV file name provided.
 
     :param file_directory: os.path of the directory where the CSV files live, and which must NOT end on '/' or '\\'

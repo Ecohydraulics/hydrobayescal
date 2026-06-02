@@ -1,0 +1,114 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hydroBayesCal"
+version = "0.1.0"
+description = "Surrogate-assisted Bayesian calibration for hydrodynamic and morphodynamic models (Telemac, OpenFOAM)."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+# bayesvalidrox currently declares python < 3.12 upstream, and the tested
+# environment is CPython 3.11. Keep the upper bound aligned with that until
+# the bayesvalidrox dependency boundary is resolved (see refactor item #3).
+requires-python = ">=3.10,<3.12"
+authors = [
+    { name = "Sebastian Schwindt" },
+    { name = "Andres Heredia" },
+    { name = "Eduardo Acuna" },
+]
+keywords = [
+    "Bayesian calibration",
+    "Gaussian process emulator",
+    "surrogate model",
+    "Bayesian active learning",
+    "Telemac",
+    "OpenFOAM",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+]
+
+# Core runtime stack. These are the dependencies required to import the
+# package and run a surrogate-assisted Bayesian calibration. Floors track the
+# versions the code is currently tested against; upper bounds are intentionally
+# omitted (the previous contradictory caps across requirements*.txt were the
+# source of unresolvable environments).
+dependencies = [
+    # scientific python
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    # data IO
+    "h5py>=3.10",
+    "openpyxl>=3.1",       # pandas.to_excel engine (function_pool)
+    "pyyaml>=6.0",         # utils.configuration
+    # plotting
+    "matplotlib>=3.7",
+    "seaborn>=0.13",
+    "corner>=2.2",
+    # CLI / utilities
+    "tqdm>=4.66",
+    "rich>=13",
+    "joblib>=1.3",
+    # mesh / result-file IO (imported by function_pool on the core path)
+    "pyvista>=0.43",
+    # Gaussian process surrogate stack
+    "torch>=2.2",
+    "gpytorch>=1.11",
+    "linear-operator>=0.5",
+    # uncertainty quantification / sampling (numpoly comes in transitively via chaospy)
+    "emcee>=3.1",
+    "chaospy>=4.3",
+    # coupling: experimental design / sampling
+    "bayesvalidrox>=2.1",
+]
+
+[project.urls]
+Documentation = "https://hydrobayescal.readthedocs.io"
+Source = "https://github.com/sschwindt/hydrobayescal"
+
+[project.optional-dependencies]
+# Extra mesh / geospatial IO used by some post-processing utilities only.
+mesh = [
+    "vtk>=9.2",
+    "meshio>=5.3",
+    "rasterio>=1.3",
+    "affine>=2.4",
+]
+# UM-Bridge model-server coupling protocol (used by the bayesvalidrox layer).
+server = [
+    "umbridge>=1.2",
+]
+# Parallel execution on HPC clusters.
+mpi = [
+    "mpi4py>=3.1",
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "sphinxcontrib-mermaid>=0.9",
+]
+dev = [
+    "pytest>=7.4",
+    "build>=1.0",
+    "twine>=5.0",
+    "ruff>=0.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Ship the non-Python data files the package reads at runtime (Telemac
+# parameter templates, etc.).
+[tool.setuptools.package-data]
+"hydroBayesCal" = [
+    "telemac/templates/*.csv",
+    "telemac/templates/*",
+]

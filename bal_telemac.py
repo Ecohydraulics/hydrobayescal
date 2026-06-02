@@ -8,25 +8,17 @@ Author: Andres Heredia Hidalgo MSc
 import sys
 import os
 import time
-import pdb
 import argparse
 import importlib.util
 import bayesvalidrox as bvr
 
-# Base directory of the project
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(base_dir, 'src')
-hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
-sys.path.insert(0, base_dir)
-sys.path.insert(0, src_path)
-sys.path.insert(0, hydroBayesCal_path)
 
 # Import own scripts
-from src.hydroBayesCal.telemac.control_telemac import TelemacModel
-from src.hydroBayesCal.bayesvalidrox.metamodel.bal_functions import BayesianInference, SequentialDesign
-from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_skl import *
-from src.hydroBayesCal.bayesvalidrox.metamodel.gpe_gpytorch import *
-from src.hydroBayesCal.function_pool import *
+from hydroBayesCal.telemac.control_telemac import TelemacModel
+from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
+from hydroBayesCal.surrogate.gpe_skl import *
+from hydroBayesCal.surrogate.gpe_gpytorch import *
+from hydroBayesCal.function_pool import *
 
 
 
@@ -517,7 +509,7 @@ def run_bal_model(collocation_points,
     updated_collocation_points = collocation_points
     return bayesian_dict, updated_collocation_points
 def main():
-    parser = argparse.ArgumentParser(description="Run OpenFOAM (interFoam) Model with calibration parameters.")
+    parser = argparse.ArgumentParser(description="Run TELEMAC (2D/3D) model surrogate-assisted Bayesian calibration.")
     parser.add_argument(
         '--config',
         type=str,

@@ -3,13 +3,22 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# large data in example folders
-#examples/ering-data/
-#examples/munichFishpass
+# large data in example folders --- NEVER CHANGE!!! --- examples should be linked to external big data repositories!!!
+examples/ering-data/
+examples/munichFishpass
 HBCenv*/
-#examples/*.csv
-#examples/ering_plotting.py
-#examples/inn/
+examples/*.csv
+examples/ering_plotting.py
+examples/inn/
+examples/donau/
+examples/OpenFoam/
+examples/Telemac/
+examples/yuba/
+
+# Local reference material: copyrighted manuscripts + the non-public Acuna
+# thesis. Keep these out of the public repository (ExportedItems.bib with the
+# citations is kept tracked).
+ExportedItems/
 
 *.slf
 *.pickle

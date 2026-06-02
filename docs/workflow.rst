@@ -36,6 +36,7 @@ calls the necessary instances of the classes that run the hydrodynamic model, cr
 
 
 .. _HydroSimulations_class:
+
 Functioning of the HydroSimulations Class
 +++++++++++++++++++++++++++++++++++++++++
 
@@ -54,6 +55,7 @@ This class contains the general attributes that a hydrodynamic simulation requir
 * **calibration_pts_file_path**: File path to the calibration points data file. Please check documentation for further details of the file format.
 
 .. table:: Measurement Data
+
    ======================= ================== ================== ====================== =============== ====================== ===============
    Point                   X                  Y                  MEASUREMENT 1           ERROR 1        MEASUREMENT 2           ERROR 2
    ======================= ================== ================== ====================== =============== ====================== ===============
@@ -113,8 +115,9 @@ This class contains the general attributes that a hydrodynamic simulation requir
 * **dict_output_name**: Base name for output dictionary files where the outputs are saved as `.json` files.
 
 * **user_param_values**: (Default: ``False``). Boolean variable that enables the use of user-defined collocation points taken from a .csv file located in the restart folder.
-- If ``True``: Collocation points are taken from the user-defined .csv file.
-- If ``False``: Sampling methods from BayesValidRox according to the available sampling options.
+
+  - If ``True``: Collocation points are taken from the user-defined .csv file.
+  - If ``False``: Sampling methods from BayesValidRox according to the available sampling options.
 
     Available options:
 
@@ -219,16 +222,18 @@ With the initial model setup and the measurement points, the Bayesian model opti
 2. Bayesian Inference in light of measured data
     *  **Bayesian Inference** through the calculation of likelihood functions based on surrogate model predictions , measurements and the errors. Note that the errors are taken from the calibration points file (.csv) in **calibration_pts_file_path**. Those errors must include measurement and surrogate errors :math:`{\varepsilon}^2=({\varepsilon}^2_{measured} + {\varepsilon}^2_{surrogate})`
     *  **Uncertainty quantification** of calibration parameters by estimating their posterior distributions using rejection sampling.
-3. Bayesian Active Learning (BAL) iterations (**heavy computation load**)
-    In each BAL iteration, the following steps are performed:
-    *  From the original prior sample pool (``prior_samples``), the code selects the MC samples using their indices (i.e. collocation points) that have not been used in the previous steps and taken according to the number expressed in (``mc_samples_al``).
-    *  Instantiate an active learning output space as a function of a user-defined size (``mc_samples_al``), and the calculated surrogate prediction and standard deviation arrays.
-    *  Calculate Bayesian model evidence (BME) and relative entropy (RE) according to the user-defined (``mc_exploration``).
-           - **Bayesian model evidence** rates the model quality compared with available measured data `Bayesian Model Evidence <https://en.wikipedia.org/wiki/Marginal_likelihood>`_.
-           - **Relative Entropy** also known as `Kullback-Leibler divergence <https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence>`_ and measures the so-called **information geometry** in moving from the prior :math:`p(\omega)` to the posterior :math:`p(\omega | D)`.
-     `Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_.
-    *  Find the best performing calibration parameter values (maximum BME/RE scores) and set it as the new best parameter set for use with the deterministic (TELEMAC) model
-    *  Run the complex model (i.e., TELEMAC) with the best best performing calibration parameter values.
+3. Bayesian Active Learning (BAL) iterations (**heavy computation load**).
+   In each BAL iteration, the following steps are performed:
+
+   * From the original prior sample pool (``prior_samples``), the code selects the MC samples using their indices (i.e. collocation points) that have not been used in previous steps, according to the number set in ``mc_samples_al``.
+   * Instantiate an active-learning output space as a function of a user-defined size (``mc_samples_al``) and the computed surrogate prediction and standard-deviation arrays.
+   * Calculate Bayesian model evidence (BME) and relative entropy (RE) according to the user-defined ``mc_exploration``:
+
+     - **Bayesian model evidence** rates the model quality compared with available measured data (`Bayesian Model Evidence <https://en.wikipedia.org/wiki/Marginal_likelihood>`_).
+     - **Relative entropy**, also known as `Kullback-Leibler divergence <https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence>`_, measures the **information geometry** in moving from the prior :math:`p(\omega)` to the posterior :math:`p(\omega | D)` (`Oladyshkin et al. (2020) <https://doi.org/10.3390/e22080890>`_).
+
+   * Find the best-performing calibration parameter values (maximum BME/RE scores) and set them as the new parameter set for the deterministic (TELEMAC) model.
+   * Run the complex model (i.e., TELEMAC) with the best-performing calibration parameter values.
 4.  Repeat the process until the maximum number of iterations or a convergence in BME/RE is reached. The last iteration step corresponds to the supposedly best solution. Consider trying more iteration steps, other calibration parameters, or other value ranges if the calibration results in physical non-sense combinations.
 
 

@@ -1,19 +1,16 @@
 """
-Configuration File for HydroBayesCal - OpenFOAM InterFoam
-Calibration of Cmu turbulence parameter using velocity measurements
+Configuration file for HydroBayesCal - TELEMAC-2D + GAIA (morphodynamics).
 
-Cylinder in Channel Case:
-  - ADV measurements 115cm behind cylinder center (x = 4.15m)
-  - Two measurement depths: z = 3cm and z = 9cm
+Example: Ering case, surrogate-assisted Bayesian calibration of bed-friction
+zones and GAIA critical Shields parameters against measured water depth.
 
-Standard Names Reference:
-  - U_x, U_y, U_z      -> Velocity components (OpenFOAM: U[0,1,2])
-  - U_MAG              -> Velocity magnitude
-  - WATER_DEPTH        -> Water depth
-  - FREE_SURFACE       -> Free surface elevation
-  - ALPHA_WATER        -> Volume fraction (OpenFOAM only)
-  - TKE                -> Turbulent kinetic energy (OpenFOAM: k)
-  - CMU                -> k-epsilon Cmu parameter
+Consumed by ``bal_telemac.py`` via ``--config``; see the dictionaries below
+(``paths``, ``hydrodynamic_simulation``, ``morphodynamic_simulation``,
+``calibration``, ``sampling``, ``execution``) for the configurable fields.
+
+Calibration / extraction quantity names refer to TELEMAC SELAFIN variables,
+e.g. "WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U/V",
+"CUMUL BED EVOL".
 """
 
 import os
@@ -60,7 +57,8 @@ interfoam = {
 # CALIBRATION PARAMETERS - CMU TURBULENCE COEFFICIENT
 # ============================================================================
 calibration = {
-    # Use "Cmu" to match the key expected by update_model_controls
+    # GAIA critical Shields parameters (per sediment class) and TELEMAC
+    # bed-friction zones; names must match update_model_controls / the .cas.
     'parameters': ["gaiaCLASSES SHIELDS PARAMETERS 1",
                                     "gaiaCLASSES SHIELDS PARAMETERS 2",
                                     "zone2", # Pool
@@ -69,7 +67,7 @@ calibration = {
                                     "zone5", # Riffle
                                     "zone6"], # Run,
 
-    # Cmu range: typical values 0.06-0.12 (default is 0.09)
+    # Parameter ranges [min, max] in the same order as 'parameters' above.
     'param_values': [[0.047, 0.070],  # critical shields parameter class 1
                           [0.047, 0.070],  # critical shields parameter class 2
                           [0.002, 0.6],  # zone2

@@ -12,23 +12,17 @@ import os
 import time
 import pandas as pd
 
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(base_dir, "src")
-hydroBayesCal_path = os.path.join(src_path, "hydroBayesCal")
 
-sys.path.insert(0, base_dir)
-sys.path.insert(0, src_path)
-sys.path.insert(0, hydroBayesCal_path)
 
 # ======================================================================
 # LOCAL VECTRINO POST-PROCESSING IMPORTS
 # ======================================================================
 
-from src.hydroBayesCal.utils.VectrinoPostproc.get_ascii_data import read_ascii_file
-from src.hydroBayesCal.utils.VectrinoPostproc.transformation import get_transformation_matrix, apply_transformation
-from src.hydroBayesCal.utils.VectrinoPostproc.plot_velocities import plot_instantaneous_velocities
-from src.hydroBayesCal.utils.VectrinoPostproc.compute_tke import compute_tke_data
-from src.hydroBayesCal.utils.VectrinoPostproc.despiking import despike_velocity_dataframe
+from hydroBayesCal.utils.VectrinoPostproc.get_ascii_data import read_ascii_file
+from hydroBayesCal.utils.VectrinoPostproc.transformation import get_transformation_matrix, apply_transformation
+from hydroBayesCal.utils.VectrinoPostproc.plot_velocities import plot_instantaneous_velocities
+from hydroBayesCal.utils.VectrinoPostproc.compute_tke import compute_tke_data
+from hydroBayesCal.utils.VectrinoPostproc.despiking import despike_velocity_dataframe
 
 # ======================================================================
 # USER INPUT

@@ -1,16 +1,9 @@
 import sys
 import os
 
-# Base directory of the project
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(base_dir, 'src')
-hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
-sys.path.insert(0, base_dir)
-sys.path.insert(0, src_path)
-sys.path.insert(0, hydroBayesCal_path)
 
-from src.hydroBayesCal.telemac.control_telemac import TelemacModel
-from src.hydroBayesCal.plots.plots import BayesianPlotter
+from hydroBayesCal.telemac.control_telemac import TelemacModel
+from hydroBayesCal.plots.plots import BayesianPlotter
 
 # Initialize full complexity model
 full_complexity_model = TelemacModel(
