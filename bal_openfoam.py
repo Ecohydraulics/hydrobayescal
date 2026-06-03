@@ -445,8 +445,8 @@ def main():
     parser.add_argument(
         '--config',
         type=str,
-        default='config.py',
-        help='Path to Python configuration file (default: config.py)'
+        default='config_OpenFOAM.py',
+        help='Path to Python configuration file (default: config_OpenFOAM.py)'
     )
     parser.add_argument(
         '--calibration_quantities',
@@ -476,7 +476,7 @@ def main():
     print(f"Loading configuration from: {args.config}")
     config = load_config(args.config)
 
-    # config.py uses standard names (e.g. U_x, TKE, WATER_DEPTH) for both solvers.
+    # config_OpenFOAM.py uses standard names (e.g. U_x, TKE, WATER_DEPTH) for both solvers.
     # No translation needed here - control_openfoam.py works with standard names internally.
     
     if args.calibration_quantities:

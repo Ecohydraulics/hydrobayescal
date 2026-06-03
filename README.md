@@ -50,7 +50,7 @@ for the full environment setup, including coupling HydroBayesCal with TELEMAC.
 Configure a calibration in a Python config file and run the TELEMAC driver:
 
 ```bash
-python bal_telemac.py --config config.py
+python bal_telemac.py --config config_Telemac.py
 ```
 
 See the [documentation](https://hydrobayescal.readthedocs.io) for the

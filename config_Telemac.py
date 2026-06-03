@@ -1,12 +1,13 @@
 """
-Configuration file for HydroBayesCal - TELEMAC-2D + GAIA (morphodynamics).
+TELEMAC configuration for HydroBayesCal (TELEMAC-2D + GAIA morphodynamics).
 
 Example: Ering case, surrogate-assisted Bayesian calibration of bed-friction
 zones and GAIA critical Shields parameters against measured water depth.
 
-Consumed by ``bal_telemac.py`` via ``--config``; see the dictionaries below
-(``paths``, ``hydrodynamic_simulation``, ``morphodynamic_simulation``,
-``calibration``, ``sampling``, ``execution``) for the configurable fields.
+Consumed by ``bal_telemac.py`` via ``--config`` (default: this file); see the
+dictionaries below (``paths``, ``hydrodynamic_simulation``,
+``morphodynamic_simulation``, ``calibration``, ``sampling``, ``execution``) for
+the configurable fields. The OpenFOAM analogue is ``config_OpenFOAM.py``.
 
 Calibration / extraction quantity names refer to TELEMAC SELAFIN variables,
 e.g. "WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U/V",
@@ -45,16 +46,7 @@ morphodynamic_simulation= {
 }
 
 # ============================================================================
-# INTERFOAM SPECIFIC SETTINGS
-# ============================================================================
-interfoam = {
-    'alpha_water_name':   None,
-    'water_surface_alpha': None,
-    'reference_z':         None,
-}
-
-# ============================================================================
-# CALIBRATION PARAMETERS - CMU TURBULENCE COEFFICIENT
+# CALIBRATION PARAMETERS - TELEMAC FRICTION ZONES + GAIA SHIELDS PARAMETERS
 # ============================================================================
 calibration = {
     # GAIA critical Shields parameters (per sediment class) and TELEMAC

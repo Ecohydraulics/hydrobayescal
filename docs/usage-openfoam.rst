@@ -122,7 +122,7 @@ Define a configuration file and launch the OpenFOAM driver:
 
 .. code-block:: bash
 
-   python bal_openfoam.py --config config.py
+   python bal_openfoam.py --config config_OpenFOAM.py
 
 The driver builds an ``OpenFOAMModel``, runs the initial simulations
 (``decomposePar`` → ``interFoam`` → ``reconstructPar`` → ``foamToVTK``),

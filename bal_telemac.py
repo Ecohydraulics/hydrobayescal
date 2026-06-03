@@ -513,8 +513,8 @@ def main():
     parser.add_argument(
         '--config',
         type=str,
-        default='config.py',
-        help='Path to Python configuration file (default: config.py)'
+        default='config_Telemac.py',
+        help='Path to Python configuration file (default: config_Telemac.py)'
     )
     args = parser.parse_args()
     config = load_config(args.config)

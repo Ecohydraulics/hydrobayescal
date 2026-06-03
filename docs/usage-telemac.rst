@@ -143,12 +143,12 @@ names, e.g. ``"WATER DEPTH"``, ``"SCALAR VELOCITY"``, ``"TURBULENT ENERG"``,
 Running the calibration
 -----------------------
 
-Define a configuration file (see the example ``config.py``) and launch the
-TELEMAC driver:
+Define a configuration file (see the example ``config_Telemac.py``) and launch
+the TELEMAC driver:
 
 .. code-block:: bash
 
-   python bal_telemac.py --config config.py
+   python bal_telemac.py --config config_Telemac.py
 
 The driver builds a ``TelemacModel``, sets up the experimental design, runs the
 initial simulations, trains the GPE and performs Bayesian Active Learning.
