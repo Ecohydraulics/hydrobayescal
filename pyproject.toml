@@ -15,9 +15,9 @@ license-files = ["LICENSE"]
 # the *tested* interpreters through the Trove classifiers below instead.
 requires-python = ">=3.10"
 authors = [
-    { name = "Sebastian Schwindt" },
     { name = "Andres Heredia" },
-    { name = "Eduardo Acuna" },
+    { name = "Federica Scolari" },
+    { name = "Sebastian Schwindt"},
 ]
 keywords = [
     "Bayesian calibration",
