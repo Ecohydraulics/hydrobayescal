@@ -20,8 +20,8 @@ set of driver scripts:
 The driver scripts ``bal_telemac.py`` and ``bal_openfoam.py`` wire these layers
 together and read all user input from a configuration file.
 
-Architecture at a glance
-------------------------
+Architecture at a glance (UML)
+------------------------------
 
 The base class owns everything common to a calibration — calibration
 parameters, observations and their variances, and the standard result-folder

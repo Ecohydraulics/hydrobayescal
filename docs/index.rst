@@ -12,8 +12,9 @@ Active Learning (BAL)** — iteratively adding the training points that maximise
 the information gain (relative entropy) and Bayesian model evidence for the
 calibration. The package supports both single-output and **multi-output GPEs**,
 and couples to open-source modelling software through a common binding layer:
-**TELEMAC** (2D/3D) is fully supported, and an **OpenFOAM** binding is under
-active development. Adding bindings for further solvers — or swapping the
+**TELEMAC** (2D/3D) is fully supported, an **OpenFOAM** binding is under
+active development, and a **Delft3D-FLOW** binding is planned. Adding bindings
+for further solvers — or swapping the
 experimental-design backend (`BayesValidRox
 <https://pages.iws.uni-stuttgart.de/inversemodeling/bayesvalidrox/>`_) — is
 designed to be straightforward.
@@ -53,6 +54,8 @@ redistributed.)
    gpe-bal-telemac
    usage-telemac
    usage-openfoam
+   usage-delft3d
+   use-cases
 
 .. toctree::
    :maxdepth: 2

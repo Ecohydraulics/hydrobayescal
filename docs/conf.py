@@ -90,13 +90,10 @@ exclude_patterns = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
-    "readme.rst",
-    "readme-*.txt",
-    "test.md",
-    "conf_full_example.py",
+    # ``create-tm-model.rst`` is an unfinished TELEMAC-meshing draft kept out of
+    # the build until it is revised; remove this entry once it is wired into a
+    # toctree.
     "create-tm-model.rst",
-    "multiple-times.rst",
-    "use-cases.rst",
 ]
 
 # -- Options for HTML output -------------------------------------------------

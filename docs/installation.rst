@@ -4,7 +4,8 @@ Installation
 ============
 
 HydroBayesCal is a Python package bound to an external numerical model
-(currently TELEMAC; OpenFOAM support is in progress). It is developed and tested
+(TELEMAC is fully supported, OpenFOAM is in progress, Delft3D-FLOW is planned).
+It is developed and tested
 on **Debian/Ubuntu Linux**, which we recommend: Linux gives the flexibility to
 configure the environment and TELEMAC together, and a command-line interface
 well suited to batch simulations. Windows has not been tested.
@@ -16,8 +17,8 @@ This page covers (1) the Python environment and the package itself, and
    :local:
    :depth: 2
 
-1. Python environment
----------------------
+Python environment
+------------------
 
 Dependencies are declared once in ``pyproject.toml``; the legacy
 ``requirements*.txt`` files simply install the project. Use a dedicated
@@ -101,8 +102,8 @@ For example, a developer install with documentation and mesh tools:
    PyTorch and VTK wheels are large (several hundred MB). On clusters without
    a working MPI toolchain, omit the ``mpi`` extra.
 
-2. Numerical-model bindings
----------------------------
+Numerical-model bindings
+------------------------
 
 TELEMAC
 +++++++
@@ -165,6 +166,19 @@ OpenFOAM
    <https://hydro-informatics.com/install-openfoam/>`_. The ``mesh`` extra
    (PyVista/VTK) is used to read the VTK output. See :doc:`usage-openfoam` for
    running a calibration.
+
+Delft3D-FLOW
+++++++++++++
+
+.. note::
+
+   The Delft3D-FLOW (Deltares) binding is **planned and not yet implemented**.
+   A placeholder interface
+   (:class:`hydroBayesCal.delft3d.control_delft3d.Delft3DModel`) records the
+   intended coupling and the Delft3D-specific file conventions (``.mdf`` master
+   definition file, ``config_d_hydro.xml`` / ``d_hydro`` launcher, NEFIS
+   ``trim``/``trih`` output). It raises :class:`NotImplementedError`. See
+   :doc:`usage-delft3d` for the planned workflow.
 
 Check your installation
 ------------------------

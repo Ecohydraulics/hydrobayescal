@@ -30,6 +30,13 @@ OpenFOAM binding
    :members:
    :show-inheritance:
 
+Delft3D-FLOW binding (planned)
+++++++++++++++++++++++++++++++
+
+.. automodule:: hydroBayesCal.delft3d.control_delft3d
+   :members:
+   :show-inheritance:
+
 Surrogate model and Bayesian Active Learning
 --------------------------------------------
 
