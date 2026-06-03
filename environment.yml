@@ -2,7 +2,7 @@
 #
 # Python dependencies are defined once in pyproject.toml; this file only pins
 # the interpreter and lets pip install the project (and its dependencies) in
-# editable mode. bayesvalidrox currently requires python < 3.12.
+# editable mode. The dependency stack supports CPython 3.10-3.12.
 #
 #   mamba env create -f environment.yml
 #   mamba activate hbenv
@@ -10,7 +10,7 @@ name: hbenv
 channels:
   - conda-forge
 dependencies:
-  - python>=3.10,<3.12
+  - python>=3.10,<3.13
   - pip
   - pip:
       - -e .[dev,docs,mesh,server]

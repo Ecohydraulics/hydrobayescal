@@ -6,9 +6,11 @@ PyPI releases work**.
 
 ## Development setup
 
-HydroBayesCal targets **Python 3.10–3.11** (the upper bound is imposed by the
-`bayesvalidrox` dependency, which declares `python < 3.12`). It uses a `src`
-layout and a single `pyproject.toml`; there is no `setup.py`.
+HydroBayesCal requires **Python ≥ 3.10** and is tested on CPython 3.10–3.12.
+No upper version bound is enforced (an upper cap on `requires-python` is a hard,
+non-overridable install error); the *tested* interpreters are advertised through
+the Trove classifiers in `pyproject.toml`. It uses a `src` layout and a single
+`pyproject.toml`; there is no `setup.py`.
 
 ```bash
 git clone https://github.com/Ecohydraulics/hydrobayescal.git

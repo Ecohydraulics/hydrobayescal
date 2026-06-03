@@ -9,10 +9,11 @@ description = "Surrogate-assisted Bayesian calibration for hydrodynamic and morp
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
-# bayesvalidrox currently declares python < 3.12 upstream, and the tested
-# environment is CPython 3.11. Keep the upper bound aligned with that until
-# the bayesvalidrox dependency boundary is resolved (see refactor item #3).
-requires-python = ">=3.10,<3.12"
+# No upper bound: bayesvalidrox declares ``>=3.8`` (no cap), and the full
+# dependency stack resolves and imports on CPython 3.10-3.12. An upper cap on
+# requires-python is a hard, non-overridable install error, so we communicate
+# the *tested* interpreters through the Trove classifiers below instead.
+requires-python = ">=3.10"
 authors = [
     { name = "Sebastian Schwindt" },
     { name = "Andres Heredia" },
@@ -30,6 +31,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
     "Intended Audience :: Science/Research",
 ]

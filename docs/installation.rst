@@ -26,8 +26,9 @@ environment.
 
 .. important::
 
-   HydroBayesCal currently targets **Python 3.10 or 3.11**. The upper bound is
-   imposed by the ``bayesvalidrox`` dependency, which declares ``python < 3.12``.
+   HydroBayesCal requires **Python >= 3.10** and is tested on **CPython
+   3.10, 3.11 and 3.12**. No upper bound is enforced, but newer interpreters
+   are only supported once the dependency stack provides compatible wheels.
 
 Option A — from PyPI (recommended)
 ++++++++++++++++++++++++++++++++++
@@ -97,10 +98,25 @@ For example, a developer install with documentation and mesh tools:
 
    pip install -e ".[dev,docs,mesh]"
 
-.. note::
+.. warning::
 
-   PyTorch and VTK wheels are large (several hundred MB). On clusters without
-   a working MPI toolchain, omit the ``mpi`` extra.
+   **Large download — multi-GB.** Installing HydroBayesCal pulls in PyTorch,
+   which on Linux ``x86_64`` brings a full set of **NVIDIA CUDA wheels**
+   (``nvidia-cublas``, ``nvidia-cudnn``, ``nvidia-cusolver``, ``triton`` …).
+   Together these amount to **several gigabytes**, and they are downloaded *even
+   on machines without an NVIDIA GPU*. On metered, disk-constrained or
+   CPU-only systems, install the CPU build of PyTorch first, from its dedicated
+   index, then install HydroBayesCal:
+
+   .. code-block:: bash
+
+      pip install torch --index-url https://download.pytorch.org/whl/cpu
+      pip install hydroBayesCal
+
+   (``pip`` keeps the already-installed CPU ``torch`` instead of fetching the
+   CUDA build.) The ``vtk`` wheel pulled in via PyVista is also large
+   (~hundreds of MB). On clusters without a working MPI toolchain, omit the
+   ``mpi`` extra.
 
 Numerical-model bindings
 ------------------------

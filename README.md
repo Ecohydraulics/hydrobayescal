@@ -25,8 +25,8 @@ the GP emulators and the Bayesian active-learning logic are implemented in-tree.
 
 ## Installation
 
-HydroBayesCal targets **Python 3.10–3.11** (the upper bound is imposed by the
-`bayesvalidrox` dependency). It is developed and tested on Linux.
+HydroBayesCal requires **Python ≥ 3.10** (tested on 3.10–3.12). It is developed
+and tested on Linux.
 
 ```bash
 pip install hydroBayesCal
@@ -64,7 +64,7 @@ development setup, coding conventions, and the documentation build.
 
 For maintainers, a few essentials:
 
-* **Editable install:** `pip install -e ".[dev,docs,mesh]"` (Python 3.10–3.11).
+* **Editable install:** `pip install -e ".[dev,docs,mesh]"` (Python ≥ 3.10, tested 3.10–3.12).
 * **Versioning:** [Semantic Versioning](https://semver.org/) /
   [PEP 440](https://peps.python.org/pep-0440/); the version lives only in
   `pyproject.toml` (keep `docs/conf.py` in sync). PyPI versions are immutable —
