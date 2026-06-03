@@ -1,56 +1,116 @@
-## Basics
+# Contributing to HydroBayesCal
 
-Make sure to understand the basics of building a PyPI package ([example tutorial](https://towardsdatascience.com/build-your-first-open-source-python-project-53471c9942a7)).
+Thanks for contributing! This guide covers the development setup, coding
+conventions, the documentation build, and — importantly — **how versioning and
+PyPI releases work**.
 
-## Requirements (PyPI)
+## Development setup
 
-* Create a [TestPyPI](https://test.pypi.org/) account
-* Create a [PyPI](https://pypi.org/) account
-* Install requirements for developers (in *Terminal*)</br>`pip install -r requirements-dev.txt`
+HydroBayesCal targets **Python 3.10–3.11** (the upper bound is imposed by the
+`bayesvalidrox` dependency, which declares `python < 3.12`). It uses a `src`
+layout and a single `pyproject.toml`; there is no `setup.py`.
 
-## Build and push test version
-
-SHORT VERSION:
-
-```
-python setup.py develop
-twine upload dist/*
-```
-
-TEST:
-
-```
-python -m venv test_env
-source test_env/bin/activate
-pip install stochastic_surrogate
-import stochastic_surrogate
+```bash
+git clone https://github.com/Ecohydraulics/hydrobayescal.git
+cd hydrobayescal
+python3.11 -m venv .venv && source .venv/bin/activate   # or conda/mamba
+pip install -e ".[dev,docs,mesh]"
 ```
 
+The `dev` extra provides `pytest`, `build`, `twine` and `ruff`; `docs` provides
+Sphinx and the Read the Docs theme; `mesh` adds the geospatial/VTK IO used by
+some bindings.
 
-Before adding a new version of *stochastic_surrogate*, please inform about the severity and version numbering semantics on [python.org](https://www.python.org/dev/peps/pep-0440/).
+## Making changes
 
-1. `cd` to your local *stochastic_surrogate* folder (in *Terminal*)
-1. Create *stochastic_surrogate* locally 
-	* Linux (in Terminal): `sudo python setup.py sdist bdist_wheel`
-	* Windows (in Anaconda Prompt with flussenv): `python setup.py sdist bdist_wheel`
-1. Upload the (new version) to TestPyPI (with your TestPyPI account):
-	* `twine upload --skip-existing --repository-url https://test.pypi.org/legacy/ dist/*`
-	* If any error occurs, fix it and rebuild the package (previous step).
-1. Create a new environment and activate it to test if the upload and installation work
-    * On *Linux*:</br>`python -m venv test_env`</br>`source test_env/bin/activate`
-    * On *Windows* (with Anaconda):</br>`conda activate stochastic_surrogate-test`
-1. Install the new version of *stochastic_surrogate* in the environment:
-	* `pip install -i https://test.pypi.org/simple/ stochastic_surrogate`
-1. Launch python and import *stochastic_surrogate*:
-	* `python`
-	* `>>> import stochastic_surrogate`
+* Branch off `main`; open a pull request rather than pushing to `main`.
+* Match the surrounding code style. Public classes and functions use
+  **NumPy-style docstrings** (rendered by Sphinx + napoleon).
+* When you add or change a numerical-solver binding, **preserve the
+  solver-specific strings and file conventions** (e.g. TELEMAC `.cas`/SELAFIN
+  keywords, OpenFOAM `system/controlDict`, planned Delft3D-FLOW `.mdf`/NEFIS).
+  The Python attribute names are shared across bindings; the software-facing
+  values are not.
+* Run the test suite and the docs build before opening a PR:
 
-## Push to PyPI
+  ```bash
+  pytest
+  sphinx-build -b html -W docs docs/_build/html
+  ```
 
-If you could build and install the test version successfully, you can push the new version to PyPI. **Make sure to increase the `VERSION="major.minor.micro" in *ROOT/setup.py***. Then push to PyPI (with your PyPI account):
+## Versioning
 
-`twine upload dist/*`
+We follow **Semantic Versioning** (`MAJOR.MINOR.PATCH`, see
+[semver.org](https://semver.org/)), which is a subset of Python's version rules
+([PEP 440](https://peps.python.org/pep-0440/)):
 
-## Create a new release on GitHub
+* **MAJOR** — incompatible API changes.
+* **MINOR** — new, backward-compatible functionality (e.g. a new solver binding).
+* **PATCH** — backward-compatible bug fixes.
 
-Please note that we are currently still in the *growing* phase of *stochastic_surrogate*. Since *version 0.2*, login at github.com and create a new *release* after merging branches.
+While the project is pre-1.0, the API may still change between minor versions.
+
+The version is declared in **one place**, `pyproject.toml`:
+
+```toml
+[project]
+version = "0.1.0"
+```
+
+When you bump it, also update `release`/`version` in `docs/conf.py` so the
+documentation header matches.
+
+> **PyPI versions are immutable.** Once `X.Y.Z` is uploaded it can never be
+> re-uploaded or overwritten (even if yanked). Always bump the version for any
+> new release.
+
+## Releasing to PyPI (maintainers)
+
+Releases are **automated via GitHub Actions and PyPI Trusted Publishing**
+(OIDC) — no API token is stored anywhere. The workflow lives in
+`.github/workflows/publish.yml` and runs when a GitHub *Release* is published.
+
+To cut a release:
+
+1. Bump `version` in `pyproject.toml` (and `docs/conf.py`); commit and push to
+   `main`.
+2. On GitHub, go to **Releases → Draft a new release**, create the tag
+   `vX.Y.Z`, write release notes, and **Publish release**.
+3. The workflow builds the sdist + wheel, runs `twine check`, and publishes to
+   PyPI through the trusted publisher. Watch progress under the **Actions** tab.
+
+That's it — there is no manual `twine upload` in the normal flow.
+
+### Building locally (sanity check)
+
+You can reproduce what CI does without publishing:
+
+```bash
+pip install -e ".[dev]"      # provides build + twine
+python -m build              # writes dist/*.whl and dist/*.tar.gz
+twine check dist/*           # validates metadata + long description
+```
+
+### One-time Trusted Publishing setup
+
+This is configured already, but for reference, a maintainer with PyPI access
+registered a GitHub publisher at
+`https://pypi.org/manage/project/hydrobayescal/settings/publishing/` with:
+
+| Field | Value |
+| --- | --- |
+| Owner | `Ecohydraulics` |
+| Repository | `hydrobayescal` |
+| Workflow | `publish.yml` |
+| Environment | `pypi` |
+
+### Manual fallback
+
+Only needed if Trusted Publishing is unavailable (e.g. bootstrapping a new
+project name). Build as above, then upload with a token:
+
+```bash
+TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-<token> twine upload dist/*
+```
+
+Prefer a **project-scoped** token, and delete account-scoped tokens after use.

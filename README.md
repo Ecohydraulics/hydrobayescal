@@ -57,6 +57,24 @@ See the [documentation](https://hydrobayescal.readthedocs.io) for the
 end-to-end workflow, the configuration parameters, the code architecture, and
 worked examples.
 
+## Development & releases
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development setup, coding conventions, and the documentation build.
+
+For maintainers, a few essentials:
+
+* **Editable install:** `pip install -e ".[dev,docs,mesh]"` (Python 3.10–3.11).
+* **Versioning:** [Semantic Versioning](https://semver.org/) /
+  [PEP 440](https://peps.python.org/pep-0440/); the version lives only in
+  `pyproject.toml` (keep `docs/conf.py` in sync). PyPI versions are immutable —
+  always bump for a new release.
+* **Releases are automated:** publishing a GitHub *Release* (tag `vX.Y.Z`)
+  triggers `.github/workflows/publish.yml`, which builds the distributions and
+  uploads them to PyPI via **Trusted Publishing** (OIDC, no stored token). No
+  manual `twine upload` is needed. Build locally to sanity-check with
+  `python -m build && twine check dist/*`.
+
 ## Citing / scientific background
 
 HydroBayesCal builds on the Bayesian active-learning framework of Oladyshkin et

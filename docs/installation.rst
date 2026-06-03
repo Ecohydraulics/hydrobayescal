@@ -191,12 +191,54 @@ With the environment active, confirm the package imports:
 
 You are now ready to set up a calibration — continue with :doc:`workflow`.
 
-Building and publishing (maintainers)
--------------------------------------
+Building and releasing (maintainers)
+------------------------------------
 
 The project is configured for PyPI via :file:`pyproject.toml` (``src`` layout,
-SPDX license, build backend ``setuptools``). To build and check the
-distribution artifacts:
+SPDX license, build backend ``setuptools``). The full contributor guide —
+including coding conventions and the release checklist — lives in
+:file:`CONTRIBUTING.md`.
+
+Versioning
+++++++++++
+
+HydroBayesCal follows `Semantic Versioning <https://semver.org/>`_
+(``MAJOR.MINOR.PATCH``), a subset of `PEP 440
+<https://peps.python.org/pep-0440/>`_:
+
+* **MAJOR** — incompatible API changes,
+* **MINOR** — new, backward-compatible features (e.g. a new solver binding),
+* **PATCH** — backward-compatible bug fixes.
+
+The version is declared **once**, as ``version`` in :file:`pyproject.toml`; keep
+``release``/``version`` in :file:`docs/conf.py` in sync. Pre-1.0, the API may
+still change between minor versions.
+
+.. important::
+
+   PyPI versions are **immutable**: an uploaded ``X.Y.Z`` can never be
+   re-uploaded or overwritten (even after yanking). Always bump the version for
+   a new release.
+
+Releasing
++++++++++
+
+Releases are **automated through GitHub Actions and PyPI Trusted Publishing**
+(OIDC) — no API token is stored. The workflow
+(:file:`.github/workflows/publish.yml`) runs when a GitHub *Release* is
+published:
+
+#. Bump ``version`` in :file:`pyproject.toml` (and :file:`docs/conf.py`); commit
+   and push to ``main``.
+#. On GitHub, draft a new **Release**, create the tag ``vX.Y.Z``, and publish
+   it.
+#. The workflow builds the sdist + wheel, runs ``twine check``, and publishes to
+   PyPI via the trusted publisher.
+
+Building locally
+++++++++++++++++
+
+To reproduce what CI does (without publishing):
 
 .. code-block:: bash
 
@@ -204,12 +246,5 @@ distribution artifacts:
    python -m build                  # creates dist/*.whl and dist/*.tar.gz
    twine check dist/*               # validate the metadata/long description
 
-Upload to TestPyPI first, then to PyPI:
-
-.. code-block:: bash
-
-   twine upload --repository testpypi dist/*
-   twine upload dist/*
-
-Bump ``version`` in :file:`pyproject.toml` (and tag the release) before each
-upload.
+A manual ``twine upload`` is only needed as a fallback when Trusted Publishing
+is unavailable (use a project-scoped token); see :file:`CONTRIBUTING.md`.
