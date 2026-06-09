@@ -8,17 +8,10 @@ Author: Andrés Heredia Hidalgo
 import sys
 import os
 
-# Base directory of the project
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-src_path = os.path.join(base_dir, 'src')
-hydroBayesCal_path = os.path.join(src_path, 'hydroBayesCal')
-sys.path.insert(0, base_dir)
-sys.path.insert(0, src_path)
-sys.path.insert(0, hydroBayesCal_path)
 
 # Import own scripts
-from src.hydroBayesCal.telemac.control_telemac import TelemacModel
-#from src.hydroBayesCal.function_pool import *
+from hydroBayesCal.telemac.control_telemac import TelemacModel
+#from hydroBayesCal.function_pool import *
 
 # Define paths and other parameters
 model_dir = '/home/IWS/hidalgo/Documents/HIC2026-MO-GPE/HICHydrodynamicsEring50it/auto-saved-results-HydroBayesCal/restart_data/' # the .slf file must be in this directory.

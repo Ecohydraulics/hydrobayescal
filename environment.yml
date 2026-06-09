@@ -1,16 +1,16 @@
+# Conda/mamba environment for hydroBayesCal.
+#
+# Python dependencies are defined once in pyproject.toml; this file only pins
+# the interpreter and lets pip install the project (and its dependencies) in
+# editable mode. The dependency stack supports CPython 3.10-3.12.
+#
+#   mamba env create -f environment.yml
+#   mamba activate hbenv
 name: hbenv
 channels:
   - conda-forge
-  - defaults
-  - blaze
-  - anaconda
-
 dependencies:
-  - python>=3.10
+  - python>=3.10,<3.13
   - pip
-  # scientific python
-  - numpy
-  - pandas
-  # plotting
-  - matplotlib
-  - plotly
+  - pip:
+      - -e .[dev,docs,mesh,server]

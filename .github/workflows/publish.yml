@@ -1,0 +1,51 @@
+name: Publish to PyPI
+
+# Build the distributions and publish them to PyPI whenever a GitHub Release is
+# published. Authentication uses PyPI Trusted Publishing (OIDC) -- no API token
+# is stored in the repository.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:  # allow manual builds (build + check only; see publish gate)
+
+jobs:
+  build:
+    name: Build sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build distributions
+        run: pipx run build
+
+      - name: Check metadata
+        run: pipx run twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish on a real release event, and only from the canonical repo.
+    if: github.event_name == 'release' && github.repository == 'Ecohydraulics/hydrobayescal'
+    environment:
+      name: pypi
+      url: https://pypi.org/project/hydroBayesCal/
+    permissions:
+      id-token: write  # required for Trusted Publishing (OIDC); no token needed
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1

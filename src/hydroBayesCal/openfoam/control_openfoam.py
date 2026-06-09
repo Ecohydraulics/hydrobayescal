@@ -437,28 +437,8 @@ class OpenFOAMController:
 # OpenFOAMModel - BAL-compatible wrapper around OpenFOAMController
 # =============================================================================
 
-# Setup paths for hydroBayesCal imports
-HERE = Path(__file__).resolve()
-ROOT = HERE.parents[1]
-for candidate in (ROOT / "src", ROOT, ROOT.parent):
-    if candidate.exists() and str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
-# Try to import base class
-try:
-    from hydroBayesCal.hysim import HydroSimulations
-except ImportError:
-    class HydroSimulations:
-        def __init__(self, *args, **kwargs):
-            pass
-
-# Logging setup
-try:
-    from hydroBayesCal.function_pool import setup_logging
-    logger = setup_logging(__name__)
-except ImportError:
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+from hydroBayesCal.hysim import HydroSimulations
+from hydroBayesCal.function_pool import logger
 
 
 class OpenFOAMModel(HydroSimulations):
@@ -495,11 +475,31 @@ class OpenFOAMModel(HydroSimulations):
         only_bal_mode=False,
         delete_complex_outputs=False,
         validation=False,
+        multitask_selection="variables",
         n_avg_timesteps=1,
         *args,
         **kwargs
     ):
+        # OpenFOAM-specific directory defaults, resolved before the base
+        # constructor runs so the standard result layout is built on them.
+        case_template_dir = os.path.abspath(case_template_dir)
+        model_dir = os.path.abspath(model_dir) if model_dir else os.path.dirname(case_template_dir)
+        res_dir = os.path.abspath(res_dir) if res_dir else os.path.join(model_dir, "results")
+
+        # Fall back to a minimal single-parameter k-epsilon Cmu setup so a bare
+        # OpenFOAM case is still usable without an explicit calibration config.
+        calibration_parameters = calibration_parameters or ["Cmu"]
+        param_values = param_values or [[0.06, 0.12]]
+        extraction_quantities = extraction_quantities or ["U_x", "U_y", "U_z"]
+        calibration_quantities = calibration_quantities or ["U_x", "U_y", "U_z"]
+
+        # The base class owns the common state: parameters, observations and
+        # variances (from the calibration CSV), and the standard result folder
+        # layout (asr_dir, calibration-data/<quantities>, restart_data, plots,
+        # surrogate-gpe). This keeps the OpenFOAM binding aligned with Telemac.
+        os.makedirs(model_dir, exist_ok=True)
         super().__init__(
+            control_file=control_file,
             model_dir=model_dir,
             res_dir=res_dir,
             calibration_pts_file_path=calibration_pts_file_path,
@@ -508,70 +508,43 @@ class OpenFOAMModel(HydroSimulations):
             calibration_parameters=calibration_parameters,
             param_values=param_values,
             calibration_quantities=calibration_quantities,
+            extraction_quantities=extraction_quantities,
+            dict_output_name=dict_output_name,
+            user_param_values=user_param_values,
             max_runs=max_runs,
+            complete_bal_mode=complete_bal_mode,
+            only_bal_mode=only_bal_mode,
+            delete_complex_outputs=delete_complex_outputs,
+            validation=validation,
+            multitask_selection=multitask_selection,
         )
 
-        # Store settings
-        self.case_template_dir = os.path.abspath(case_template_dir)
+        # OpenFOAM-specific attributes
+        self.case_template_dir = case_template_dir
         self.solver_name = solver_name
         self.n_processors = n_processors
         self.results_filename_base = results_filename_base
         self.alpha_water_name = alpha_water_name
         self.water_surface_alpha = water_surface_alpha
         self.reference_z = reference_z
-        self.control_file = control_file
-        self.model_dir = os.path.abspath(model_dir) if model_dir else os.path.dirname(case_template_dir)
-        self.res_dir = os.path.abspath(res_dir) if res_dir else os.path.join(self.model_dir, "results")
-        self.calibration_pts_file_path = calibration_pts_file_path
-        self.n_cpus = n_cpus
-        self.init_runs = init_runs
-        self.calibration_parameters = calibration_parameters or ["Cmu"]
-        self.param_values = param_values or [[0.06, 0.12]]
-        self.extraction_quantities = extraction_quantities or ["U_x", "U_y", "U_z"]
-        self.calibration_quantities = calibration_quantities or ["U_x", "U_y", "U_z"]
-        self.dict_output_name = dict_output_name
-        self.user_param_values = user_param_values
-        self.max_runs = max_runs
-        self.complete_bal_mode = complete_bal_mode
-        self.only_bal_mode = only_bal_mode
-        self.delete_complex_outputs = delete_complex_outputs
-        self.validation = validation
         self.n_avg_timesteps = max(1, int(n_avg_timesteps))  # minimum 1
-
-        # BAL required properties
-        self.ndim = len(self.calibration_parameters)
-        self.num_calibration_quantities = len(self.calibration_quantities)
-        self.multitask_selection = "variables"  # one GP per calibration quantity
+        # Alias consumed by the GP layer (see bal_openfoam.py).
         self.parameter_ranges = self.param_values
 
-        # Create directories
-        os.makedirs(self.res_dir, exist_ok=True)
-        os.makedirs(self.model_dir, exist_ok=True)
+        # The base class sets these only when a calibration file is present;
+        # provide robust fallbacks so the BAL driver never sees None.
+        if self.num_calibration_quantities is None:
+            self.num_calibration_quantities = len(self.calibration_quantities)
+        if self.nloc is None:
+            self.nloc = 0
 
-        self.calibration_folder = os.path.join(self.res_dir, "calibration")
-        os.makedirs(self.calibration_folder, exist_ok=True)
-
-        # auto-saved-results folder (mirrors Telemac asr_dir convention)
-        self.asr_dir = os.path.join(self.res_dir, "auto-saved-results-HydroBayesCal")
-        os.makedirs(self.asr_dir, exist_ok=True)
-
-        # calibration-data/<quantities>/  one CSV per BAL iteration
-        quantities_str = '_'.join(self.calibration_quantities)
-        self.calibration_data_folder = os.path.join(
-            self.asr_dir, "calibration-data", quantities_str)
-        os.makedirs(self.calibration_data_folder, exist_ok=True)
-
-        # restart_data subfolder
-        self.restart_data_folder = os.path.join(self.asr_dir, "restart_data")
-        os.makedirs(self.restart_data_folder, exist_ok=True)
-        self.restart_collocation_points = None
-        self.user_collocation_points = None
+        # XYZ coordinates of the calibration points. The base class stores the
+        # dataframe and the observations/variances; the OpenFOAM field
+        # extraction additionally needs the point coordinates.
+        self._load_control_points()
 
         # Check that k is written to VTK output
         self._check_k_in_controldict()
-
-        # Load observations
-        self._load_calibration_data()
 
         # Results storage
         self.model_evaluations = None
@@ -610,19 +583,19 @@ class OpenFOAMModel(HydroSimulations):
         else:
             logger.info("controlDict check passed: 'k' field appears to be available for VTK output.")
 
-    def _load_calibration_data(self):
-        """Load observations from calibration CSV."""
-        if not os.path.isfile(self.calibration_pts_file_path):
-            logger.warning(f"Calibration file not found: {self.calibration_pts_file_path}")
-            self.observations = np.array([])
-            self.measurement_errors = np.array([])
-            self.nloc = 0
+    def _load_control_points(self):
+        """Read the XYZ coordinates of the calibration points.
+
+        Observations, variances and ``nloc`` are set by the base class from the
+        calibration CSV (``<quantity>_DATA`` / ``<quantity>_ERROR`` columns).
+        The OpenFOAM field extraction additionally needs the point coordinates,
+        which are read here from the same dataframe the base class stored.
+        """
+        df = self.calibration_pts_df
+        if df is None:
             self.control_points = np.array([])
             return
 
-        df = pd.read_csv(self.calibration_pts_file_path)
-
-        # Get coordinates
         x_col = next((c for c in df.columns if c.lower() == 'x'), None)
         y_col = next((c for c in df.columns if c.lower() == 'y'), None)
         z_col = next((c for c in df.columns if c.lower() == 'z'), None)
@@ -631,21 +604,6 @@ class OpenFOAMModel(HydroSimulations):
             self.control_points = df[[x_col, y_col, z_col]].values
         else:
             self.control_points = np.array([])
-
-        self.nloc = len(self.control_points)
-
-        # Get observations for calibration quantities
-        obs_list, err_list = [], []
-        for qty in self.calibration_quantities:
-            obs_col = next((c for c in df.columns if c.lower() == f"{qty.lower()}_data"), None)
-            err_col = next((c for c in df.columns if c.lower() == f"{qty.lower()}_error"), None)
-
-            if obs_col:
-                obs_list.append(df[obs_col].values)
-                err_list.append(df[err_col].values if err_col else np.abs(df[obs_col].values) * 0.1)
-
-        self.observations = np.hstack(obs_list).reshape(1, -1) if obs_list else np.array([]).reshape(1, -1)
-        self.measurement_errors = np.hstack(err_list) if err_list else np.array([])
 
     def run_multiple_simulations(
         self,
@@ -736,7 +694,7 @@ class OpenFOAMModel(HydroSimulations):
                             logger.info(f"Sanity check passed: run {run_idx} fields differ from run {run_idx - 1}.")
 
                 if self.nloc == 0:
-                    # No measurements file yet  save raw fields to disk so they can
+                    # No measurements file yet  save raw fields to disk so they can
                     # be re-extracted at control points once measurements.csv is ready.
                     # This allows the initial runs to complete and free disk space
                     # without needing measurement coordinates.
@@ -746,14 +704,14 @@ class OpenFOAMModel(HydroSimulations):
                     np.save(os.path.join(raw_dir, f"U_{run_idx:04d}.npy"), U)
                     if k is not None:
                         np.save(os.path.join(raw_dir, f"k_{run_idx:04d}.npy"), k)
-                    logger.info(f"No measurements file  raw fields saved to {raw_dir} for run {run_idx}.")
+                    logger.info(f"No measurements file  raw fields saved to {raw_dir} for run {run_idx}.")
 
                     # Save collocation points so they can be reloaded later
                     current_cp = params_to_run[:i + 1]
                     np.save(os.path.join(self.restart_data_folder, "collocation_points.npy"), current_cp)
 
                 else:
-                    # Measurements file exists  interpolate to control points as normal
+                    # Measurements file exists  interpolate to control points as normal
                     results = self._extract_at_control_points(coords, U, k)
 
                     run_results = []
@@ -829,7 +787,7 @@ class OpenFOAMModel(HydroSimulations):
 
         # model_evaluations is already up to date from the per-run updates above.
         # Final save to ensure all results are on disk after the full batch.
-        # Skip if nloc=0 (no measurements file yet)  raw fields were saved per-run instead.
+        # Skip if nloc=0 (no measurements file yet)  raw fields were saved per-run instead.
         if self.nloc > 0:
             if bal_new_set_parameters is not None:
                 all_cp = np.vstack([collocation_points, params_to_run])
@@ -957,21 +915,21 @@ class OpenFOAMModel(HydroSimulations):
             logger.info(f"Saved detailed results npy to {npy_path}")
 
     def save_calibration_data(self, it, collocation_points, bayesian_dict):
-        """Write per-iteration CSV files to calibration-data/<quantities>/.
+        """Write per-iteration CSV files to ``calibration-data/<quantities>/``.
 
-        Called once per BAL iteration from bal_openfoam.py after estimate_bme().
-        Produces three files per iteration:
+        Called once per BAL iteration from ``bal_openfoam.py`` after
+        ``estimate_bme()``. Produces three files per iteration::
 
-          collocation_points_N{n_tp}.csv   - parameter values tested so far
-          model_results_N{n_tp}.csv        - simulation outputs (model_evaluations)
-          bayesian_scores.csv              - BME, RE, IE, ELPD for all iterations
-                                             (appended each call, one row per iter)
+            collocation_points_N{n_tp}.csv   parameter values tested so far
+            model_results_N{n_tp}.csv        simulation outputs (model_evaluations)
+            bayesian_scores.csv              BME, RE, IE, ELPD for all iterations
 
-        The posterior is saved as a separate npy file because it is a variable-
-        length array (rejection sampling keeps only accepted samples).
+        ``bayesian_scores.csv`` is appended on each call (one row per iteration).
+        The posterior is saved as a separate ``.npy`` file because it is a
+        variable-length array (rejection sampling keeps only accepted samples).
         """
         n_tp = int(collocation_points.shape[0])
-        folder = self.calibration_data_folder
+        folder = self.calibration_folder
 
         # 1. Collocation points CSV
         cp_path = os.path.join(folder, f"collocation_points_N{n_tp:03d}.csv")
