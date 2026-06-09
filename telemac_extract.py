@@ -21,13 +21,13 @@ from src.hydroBayesCal.telemac.control_telemac import TelemacModel
 #from src.hydroBayesCal.function_pool import *
 
 # Define paths and other parameters
-model_dir = '/home/IWS/hidalgo/Documents/cylinderModel/calibration/auto-saved-results-HydroBayesCal/calibration-data/TURBULENT ENERG_3D VELOCITY MAGNITUDE/' # the .slf file must be in this directory.
-res_dir = '/home/IWS/hidalgo/Documents/cylinderModel/calibration/auto-saved-results-HydroBayesCal/calibration-data/TURBULENT ENERG_3D VELOCITY MAGNITUDE/' # a dictionary with the model outputs will be saved in this directory
-calibration_pts_file_path = '/home/IWS/hidalgo/Documents/cylinderModel/convergence/measurements-calibration.csv'
-output_name='3d-ref-2cm-0.5-3d-BAL_3'
-calibration_quantities= ['TURBULENT ENERG','VELOCITY U'] #['TURBULENT ENERG','DISSIPATION']
-extraction_quantities= ['TURBULENT ENERG','VELOCITY U','VELOCITY V','VELOCITY W'] #['TURBULENT ENERG','DISSIPATION']
-input_slf_file='3d-ref-2cm-0.5-3d-BAL_3.slf' # the .slf file must be in model_dir
+model_dir = '/home/IWS/hidalgo/Documents/HIC2026-MO-GPE/HICHydrodynamicsEring50it/auto-saved-results-HydroBayesCal/restart_data/' # the .slf file must be in this directory.
+res_dir = '/home/IWS/hidalgo/Documents/HIC2026-MO-GPE/HICHydrodynamicsEring50it/auto-saved-results-HydroBayesCal/restart_data/' # a dictionary with the model outputs will be saved in this directory
+calibration_pts_file_path = '/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/measurements-calibration-EringCalib-test.csv'
+output_name='results_restart_1'
+calibration_quantities= ['WATER DEPTH','SCALAR VELOCITY'] #['TURBULENT ENERG','DISSIPATION']
+extraction_quantities= ['WATER DEPTH','SCALAR VELOCITY'] #['TURBULENT ENERG','DISSIPATION']
+input_slf_file='results_restart_1.slf' # the .slf file must be in model_dir
 # Initialize TelemacModel object
 control_tm = TelemacModel(
     model_dir=model_dir,
@@ -52,5 +52,5 @@ calibration_quantities=control_tm.calibration_quantities
 # Call extract_data_point method
 control_tm.extract_data_point(input_file=input_slf_file, calibration_pts_df=calibration_pts_df,
                               output_name=output_name, extraction_quantity=extraction_quantities, simulation_number=1,
-                              model_directory=model_dir, results_folder_directory=control_tm.calibration_folder,output_extraction_time="mean_last", time_index=100, n=80,compute_wall_law_diagnostics=True)
+                              model_directory=model_dir, results_folder_directory=control_tm.calibration_folder,output_extraction_time="mean_last", time_index=100, n=80,compute_wall_law_diagnostics=False)
 control_tm.output_processing(output_data_path=os.path.join(control_tm.calibration_folder,f'{output_name}-detailed.json'),calibration_quantities=control_tm.calibration_quantities,delete_slf_files=False)
