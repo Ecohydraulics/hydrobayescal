@@ -1,0 +1,21 @@
+/* "View on GitHub" button in the sidebar navigation. */
+a.github-button {
+    display: block;
+    margin: 0.75em 1.618em 0.75em;
+    padding: 0.5em 1em;
+    text-align: center;
+    font-weight: bold;
+    color: #fff;
+    background-color: #24292e;
+    border-radius: 4px;
+}
+
+a.github-button:hover,
+a.github-button:focus {
+    color: #fff;
+    background-color: #444d56;
+}
+
+a.github-button .fa {
+    margin-right: 0.4em;
+}
