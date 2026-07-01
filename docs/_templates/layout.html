@@ -1,0 +1,12 @@
+{% extends "!layout.html" %}
+
+{# Add a persistent "View on GitHub" button to the top of the sidebar nav,
+   above the table of contents. #}
+{% block menu %}
+  <a class="github-button"
+     href="https://github.com/{{ github_user }}/{{ github_repo }}"
+     target="_blank" rel="noopener noreferrer">
+    <i class="fa fa-github" aria-hidden="true"></i> View on GitHub
+  </a>
+  {{ super() }}
+{% endblock %}

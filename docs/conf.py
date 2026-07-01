@@ -18,6 +18,10 @@ author = "Andrés Heredia, Federica Scolari, Sebastian Schwindt"
 release = "0.1.2"
 version = "0.1"
 
+# Look for template overrides (e.g. the sidebar "View on GitHub" button) in
+# ``_templates`` before falling back to the theme defaults.
+templates_path = ["_templates"]
+
 # -- General configuration ---------------------------------------------------
 
 extensions = [
@@ -101,9 +105,25 @@ exclude_patterns = [
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 html_title = "HydroBayesCal"
+# Logo shown in the top-left corner of the sidebar and favicon shown in the
+# browser tab. Paths are relative to this configuration file.
+html_logo = "img/icon-gimp.jpg"
+html_favicon = "img/browser-icon.ico"
+html_css_files = ["custom.css"]
 html_theme_options = {
     "navigation_depth": 3,
     "collapse_navigation": False,
+}
+
+# Expose the source repository to the theme. This drives the standard RTD
+# "Edit on GitHub" link and is reused by the custom sidebar button (see
+# ``_templates/layout.html``).
+html_context = {
+    "display_github": True,
+    "github_user": "Ecohydraulics",
+    "github_repo": "hydrobayescal",
+    "github_version": "main",
+    "conf_py_path": "/docs/",
 }
 
 # -- Options for EPUB output -------------------------------------------------
