@@ -9,7 +9,7 @@ import math
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from hydroBayesCal.surrogate.exploration import Exploration
+from src.hydroBayesCal.surrogate.exploration import Exploration
 
 
 class BayesianInference:

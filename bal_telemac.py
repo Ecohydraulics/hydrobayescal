@@ -14,11 +14,11 @@ import bayesvalidrox as bvr
 
 
 # Import own scripts
-from hydroBayesCal.telemac.control_telemac import TelemacModel
-from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
-from hydroBayesCal.surrogate.gpe_skl import *
-from hydroBayesCal.surrogate.gpe_gpytorch import *
-from hydroBayesCal.function_pool import *
+from src.hydroBayesCal.telemac.control_telemac import TelemacModel
+from src.hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
+from src.hydroBayesCal.surrogate.gpe_skl import *
+from src.hydroBayesCal.surrogate.gpe_gpytorch import *
+from src.hydroBayesCal.function_pool import *
 
 
 

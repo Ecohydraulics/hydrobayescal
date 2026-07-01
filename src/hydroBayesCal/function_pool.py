@@ -11,13 +11,12 @@ import matplotlib.tri as mtri
 import pyvista as pv
 import shutil
 from numpy import linspace, dtype
-from hydroBayesCal.telemac.pputils.ppmodules.readMesh import *
-from hydroBayesCal.telemac.pputils.ppmodules.writeMesh import *
-from hydroBayesCal.telemac.pputils.ppmodules.utilities import *
+from src.hydroBayesCal.telemac.pputils.ppmodules.writeMesh import *
+from src.hydroBayesCal.telemac.pputils.ppmodules.utilities import *
 
-from hydroBayesCal.utils.config_logging import *
-from hydroBayesCal.utils.config_physics import *
-from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
+from src.hydroBayesCal.utils.config_logging import *
+from src.hydroBayesCal.utils.config_physics import *
+from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import *
 
 
 def append_new_line(file_name, text_to_append):

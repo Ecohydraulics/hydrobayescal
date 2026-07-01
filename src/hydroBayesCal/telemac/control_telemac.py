@@ -5,13 +5,13 @@ Authors: Andres Heredia, Sebastian Schwindt
 """
 from scipy import spatial
 import numpy as np
-from hydroBayesCal.telemac import config_telemac
+from src.hydroBayesCal.telemac import config_telemac
 from datetime import datetime
-from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
+# from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 from collections import OrderedDict
-from hydroBayesCal.hysim import HydroSimulations
-from hydroBayesCal.function_pool import *  # provides os, subprocess, logging
+from src.hydroBayesCal.hysim import HydroSimulations
+from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
 
 
 class TelemacModel(HydroSimulations):
@@ -1630,11 +1630,22 @@ class TelemacModel(HydroSimulations):
             )
 
         try:
-            shutil.move(
+            shutil.copy(
                 os.path.join(model_directory, self.tm_results_filename),
                 results_folder_directory
             )
-            shutil.move(
+
+            if self.gaia_cas is not None:
+                gaia_result_path = os.path.join(model_directory, self.gaia_results_filename)
+
+                if os.path.exists(gaia_result_path):
+                    shutil.copy(
+                        gaia_result_path,
+                        results_folder_directory
+                    )
+                else:
+                    print(f"GAIA result file not found: {gaia_result_path}")
+            shutil.copy(
                 os.path.join(model_directory, self.tm_2d_results_filename_from_3d),
                 results_folder_directory
             )
@@ -1658,16 +1669,10 @@ class TelemacModel(HydroSimulations):
                 )
 
                 if os.path.exists(tm_2d_result_path):
-                    shutil.move(
+                    shutil.copy(
                         tm_2d_result_path,
                         results_folder_directory
                     )
-
-            if self.gaia_cas is not None:
-                shutil.move(
-                    os.path.join(model_directory, self.gaia_results_filename),
-                    results_folder_directory
-                )
 
         except Exception as error:
             print(

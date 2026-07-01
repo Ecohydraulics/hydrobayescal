@@ -2128,6 +2128,75 @@ class BayesianPlotter:
             dv = vmax - vmin
             return vmin - pad * dv, vmax + pad * dv
 
+        def tight_metric_limits(values, pad_fraction=0.12, min_span_fraction=1e-4, min_abs_span=1e-12):
+            """
+            Axis limits for metrics with very small inter-model differences.
+
+            Uses the real min/max range when available.
+            If values are almost identical, it creates only a small artificial span,
+            instead of expanding by 10% of the metric magnitude.
+            """
+            values = np.asarray(values, dtype=float)
+            values = values[np.isfinite(values)]
+
+            if values.size == 0:
+                return (-1.0, 1.0)
+
+            vmin = np.nanmin(values)
+            vmax = np.nanmax(values)
+
+            center = 0.5 * (vmin + vmax)
+            span = vmax - vmin
+
+            scale = max(abs(vmin), abs(vmax), abs(center), 1.0)
+            min_span = max(min_abs_span, min_span_fraction * scale)
+
+            if span < min_span:
+                half_span = 0.5 * min_span
+                return center - half_span, center + half_span
+
+            pad = pad_fraction * span
+            return vmin - pad, vmax + pad
+
+        def set_adaptive_decimal_formatter(ax, axis='both', values=None, max_decimals=2):
+            """
+            Uses adaptive decimals, but caps the number of decimals.
+
+            max_decimals=2 means the axis labels will never show more than two decimals.
+            """
+            if values is None:
+                decimals = max_decimals
+            else:
+                values = np.asarray(values, dtype=float)
+                values = values[np.isfinite(values)]
+
+                if values.size == 0:
+                    decimals = max_decimals
+                else:
+                    span = np.nanmax(values) - np.nanmin(values)
+
+                    if span < 1e-4:
+                        decimals = 6
+                    elif span < 1e-3:
+                        decimals = 5
+                    elif span < 1e-2:
+                        decimals = 4
+                    elif span < 1e-1:
+                        decimals = 3
+                    else:
+                        decimals = 2
+
+                    # Cap the number of decimals.
+                    decimals = min(decimals, max_decimals)
+
+            formatter = FormatStrFormatter(f'%.{decimals}f')
+
+            if axis in ('x', 'both'):
+                ax.xaxis.set_major_formatter(formatter)
+
+            if axis in ('y', 'both'):
+                ax.yaxis.set_major_formatter(formatter)
+
         def symmetric_limits(values, pad=0.10):
             values = np.asarray(values, dtype=float)
             values = values[np.isfinite(values)]
@@ -2208,8 +2277,6 @@ class BayesianPlotter:
                 mae_cm_total = np.mean(np.abs(residuals_cm))
                 mae_sm_total = np.mean(np.abs(residuals_sm))
 
-                # RMSE/MAE ratio.
-                # If MAE is zero, all residuals are zero, so 0/0 is undefined.
                 rmse_mae_ratio_cm = (
                     np.nan if np.isclose(mae_cm_total, 0.0)
                     else rmse_cm_total / mae_cm_total
@@ -2721,6 +2788,129 @@ class BayesianPlotter:
             overall_xlim=xlim_sm_overall,
             quantity_ylims=ylims_sm_quantity,
             filename="combined_nrmse_vs_spearman_SM.svg"
+        )
+
+        # ---------- Unified subplots for NMAE vs NRMSE ----------
+        def plot_nmae_vs_nrmse_subplots(metric_tag, filename):
+            n_panels = n_quantities + 1
+            ncols_local = 2
+            nrows_local = math.ceil(n_panels / ncols_local)
+
+            fig, axes = plt.subplots(
+                nrows=nrows_local,
+                ncols=ncols_local,
+                figsize=(12, 4 * nrows_local),
+                sharey=False
+            )
+
+            axes = axes.flatten()
+            colors = plt.cm.get_cmap('tab10', len(df_plot))
+
+            # Overall panel
+            ax = axes[0]
+
+            overall_x_col = f"Overall_NRMSE_{metric_tag}"
+            overall_y_col = f"Overall_NMAE_{metric_tag}"
+
+            for color_idx, (_, row) in enumerate(df_plot.iterrows()):
+                ax.scatter(
+                    row[overall_x_col],
+                    row[overall_y_col],
+                    color=colors(color_idx),
+                    label=row["model_name"],
+                    s=150,
+                    alpha=0.8,
+                    marker='o'
+                )
+
+            ax.set_title("Overall", fontsize=20)
+            ax.set_xlabel("NRMSE", fontsize=16)
+            ax.set_ylabel("NMAE", fontsize=16)
+            ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+
+            overall_x_vals = df_plot[overall_x_col].values
+            overall_y_vals = df_plot[overall_y_col].values
+
+            ax.set_xlim(tight_metric_limits(overall_x_vals))
+            ax.set_ylim(tight_metric_limits(overall_y_vals))
+
+            # Important: do not force zero here.
+            # For tiny differences, start_at_zero=True destroys visual separation.
+            set_nice_ticks(ax, 'x', n_ticks=5)
+            set_nice_ticks(ax, 'y', n_ticks=5)
+
+            set_adaptive_decimal_formatter(ax, axis='x', values=overall_x_vals)
+            set_adaptive_decimal_formatter(ax, axis='y', values=overall_y_vals)
+
+            for spine in ax.spines.values():
+                spine.set_linewidth(1.5)
+
+            # Quantity panels
+            for i in range(n_quantities):
+                ax = axes[i + 1]
+                q = f"Q{i + 1}"
+
+                x_col = f"NRMSE_{metric_tag}_{q}"
+                y_col = f"NMAE_{metric_tag}_{q}"
+
+                for color_idx, (_, row) in enumerate(df_plot.iterrows()):
+                    ax.scatter(
+                        row[x_col],
+                        row[y_col],
+                        color=colors(color_idx),
+                        label=row["model_name"],
+                        s=100,
+                        alpha=0.8,
+                        marker='o'
+                    )
+
+                ax.set_title(quantity_names[i], fontsize=20)
+                ax.set_xlabel("NRMSE", fontsize=16)
+                ax.set_ylabel("NMAE", fontsize=16)
+                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+
+                x_vals = df_plot[x_col].values
+                y_vals = df_plot[y_col].values
+
+                ax.set_xlim(tight_metric_limits(x_vals))
+                ax.set_ylim(tight_metric_limits(y_vals))
+
+                # Important: do not force zero here.
+                set_nice_ticks(ax, 'x', n_ticks=5)
+                set_nice_ticks(ax, 'y', n_ticks=5)
+
+                set_adaptive_decimal_formatter(ax, axis='x', values=x_vals)
+                set_adaptive_decimal_formatter(ax, axis='y', values=y_vals)
+
+                for spine in ax.spines.values():
+                    spine.set_linewidth(1.5)
+
+            for j in range(n_panels, len(axes)):
+                fig.delaxes(axes[j])
+
+            handles, labels = axes[0].get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+
+            fig.legend(
+                by_label.values(),
+                by_label.keys(),
+                loc='upper center',
+                bbox_to_anchor=(0.5, 1.02),
+                ncol=max(1, len(by_label)),
+                fontsize=16
+            )
+
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
+            fig.savefig(os.path.join(save_folder, filename), dpi=300)
+
+        plot_nmae_vs_nrmse_subplots(
+            metric_tag="CM",
+            filename="combined_nMAE_vs_nRMSE_CM.svg"
+        )
+
+        plot_nmae_vs_nrmse_subplots(
+            metric_tag="SM",
+            filename="combined_nMAE_vs_nRMSE_SM.svg"
         )
 
         df_spatial = pd.DataFrame(spatial_records)

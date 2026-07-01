@@ -14,7 +14,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from hydroBayesCal.utils.config_logging import logger_error
+from src.hydroBayesCal.utils.config_logging import logger_error
 
 
 class HydroSimulations(ABC):

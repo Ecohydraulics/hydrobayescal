@@ -22,6 +22,7 @@ classification_tm_gaia_dict = {
     "FROUDE NUMBER": "telemac",
     "TURBULENT ENERG": "telemac",
     "BOTTOM SHEAR STRESS": "telemac",
+    "FRICTION VELOCI": "telemac",
     "DISSIPATION": "telemac",
     "3D VELOCITY MAGNITUDE": "telemac",
 

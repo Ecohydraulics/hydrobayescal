@@ -2,15 +2,13 @@ import sys
 import os
 
 
-from hydroBayesCal.telemac.control_telemac import TelemacModel
-from hydroBayesCal.plots.plots import BayesianPlotter
+from src.hydroBayesCal.telemac.control_telemac import TelemacModel
+from src.hydroBayesCal.plots.plots import BayesianPlotter
 
 # Initialize full complexity model
 full_complexity_model = TelemacModel(
-    # control_file="tel_ering_initial_NIKU.cas",
-    # model_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation-telemac-gaia",
-    res_dir="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/MU2026-AllRange",
-    calibration_pts_file_path="/home/IWS/hidalgo/Documents/hydrobayescal/examples/ering-data/simulation_folder_telemac/measurements-calibration.csv",
+    res_dir="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/",
+    calibration_pts_file_path="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/measurements-calibration-EringCalib.csv",
     init_runs=30, # Number oF samples for validation
     calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                             "gaiaCLASSES SHIELDS PARAMETERS 2",
@@ -128,5 +126,5 @@ for train_points in surrogate_to_analyze:
                     "CI": ci_range_evolution_location
                 }
                 surrogate_metrics["metrics_per_location"].append(per_loc_data)
-plotter.plot_metric_comparison(surrogate_metrics, calibration_quantities, metrics=["MAE","CI"])
+plotter.plot_metric_comparison(surrogate_metrics, calibration_quantities, metrics=["MAE"])
 plotter.location_metrics(surrogate_metrics,coordinates)
