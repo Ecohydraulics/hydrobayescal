@@ -3,8 +3,8 @@
 Code Structure
 ==============
 
-HydroBayesCal is organised into two cooperating layers, tied together by a small
-set of driver scripts:
+HydroBayesCal is organised into three cooperating layers, tied together by a
+small set of driver scripts:
 
 1. **Full-complexity model bindings** — run the numerical model and extract its
    outputs at the calibration points. A solver-agnostic abstract base class,
@@ -17,8 +17,16 @@ set of driver scripts:
    (single- and multi-output) and performs Bayesian inference and sequential
    design (BAL).
 
+3. **Post-processing** — the :mod:`hydroBayesCal.visualize` package plots
+   calibration results (``BayesianPlotter``), and
+   :func:`hydroBayesCal.extract_results` samples 2D/3D results at arbitrary
+   points, inside and outside the calibration workflow (see
+   :doc:`usage-telemac`).
+
 The driver scripts ``templates/bal_telemac.py`` and ``templates/bal_openfoam.py`` wire these layers
-together and read all user input from a configuration file.
+together and read all user input from a configuration file. The rendered UML
+class diagram is maintained in the repository under ``UML/BayesCal-UML.pdf``
+(LaTeX/TikZ source next to it).
 
 Architecture at a glance (UML)
 ------------------------------
@@ -62,9 +70,20 @@ TELEMAC and OpenFOAM workflows aligned.
            +run_simulation()
            +extract_fields_from_vtk()
        }
+       class BayesianPlotter {
+           +plot_posterior_updates()
+           +plot_bme_re()
+           +evaluate_calibration()
+           +observed_vs_modeled_compare()
+       }
+       class extract {
+           <<module>>
+           +extract_results(result_file, variable, x, y, z)
+       }
        HydroSimulations <|-- TelemacModel : implements
        HydroSimulations <|-- OpenFOAMModel : implements
        OpenFOAMModel ..> OpenFOAMController : uses
+       extract ..> TelemacModel : standalone twin of extract_data_point()
 
 The calibration pipeline
 ------------------------

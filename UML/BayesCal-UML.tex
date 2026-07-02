@@ -1,13 +1,17 @@
-% framework provided by pgf-umlcd.sty, a set of macros for drawing UML class diagrams
-% UML started on: 2023-04-05
+% UML class diagram of HydroBayesCal, drawn with pgf-umlcd.sty
+% UML started on: 2023-04-05, rewritten for v1.0.0 on 2026-07-02
 % written by: Sebastian Schwindt
-% not yet implemented DoE, pputils only partially (i.e., relevant)
-% OpenFOAM: 
-% 	* place between model_structure and telemac
-% 	* replace -- with -| links between model_structure and telemac
+%
+% The diagram shows the three cooperating layers:
+%   1. full-complexity model bindings (HydroSimulations + solver subclasses)
+%   2. surrogate model and Bayesian Active Learning (surrogate package)
+%   3. post-processing (visualize package and the standalone extract module)
+% The templates/ driver scripts wire layers 1 and 2 together.
+%
+% Compile with: pdflatex BayesCal-UML.tex
 
 \documentclass{article}
-\usepackage[margin=5mm,landscape,a2paper]{geometry}
+\usepackage[margin=5mm,landscape,a1paper]{geometry}
 \usepackage{hyperref}
 
 \usepackage[
@@ -22,7 +26,6 @@
 language=[LaTeX]TeX,
 breaklines=true,
 frame=single,
-% frameround=tttt,
 basicstyle=\footnotesize\ttfamily,
 backgroundcolor=\color{listinggray},
 keywordstyle=\color{blue}
@@ -43,295 +46,178 @@ keywordstyle=\color{blue}
 
 
 \begin{document}
-\section*{\texttt{\detokenize{HyBayesCal}}}
+\section*{\texttt{\detokenize{HydroBayesCal v1.0}}}
 \thispagestyle{empty}
 \begin{tikzpicture}
-	\begin{package}{model_structure}
-		\begin{class}[text width=10cm]{FullComplexityModel}{4,-2}
-			\attribute{model_dir: os.path }
-			\attribute{control_file: str }
-			\attribute{collocation_file: str }
-			\attribute{res_dir: str }
-			\attribute{supervisor_dir: str }
-			
-			\operation{update_model_controls(new_parameter_values: dict, simulation_id: int): None}
-			\operation{run_simulation(None): None}
-		\end{class}
-		\begin{class}[text width=10cm]{UserDefs}{4,8}
-			\attribute{CALIB_PAR_SET: dict }
-			\attribute{CALIB_PTS: numpy }
-			\attribute{CALIB_TARGETS: list }
-			\attribute{init_runs: int }
-			\attribute{init_run_sampling: str}
-			\attribute{IT_LIMIT: int}
-			\attribute{MC_SAMPLES: int}
-			\attribute{MC_SAMPLES_AL: int}
-			\attribute{AL_SAMPLES: int}
-			\attribute{AL_STRATEGY: str}
-			\attribute{score_method: str}
-			\attribute{SIM_DIR: str}
-			\attribute{BME: None}
-			\attribute{RE: None}
-			\attribute{al_BME: None}
-			\attribute{al_RE: None}
-			
-			\operation{assign_global_settings(all attributes): None}
-			\operation{check_user_input(None): None}
-			\operation{read_wb_range(read_range: str, sheet_name: str): pd.df}
-		\end{class}
-		\begin{object}[text width=10cm]{\detokenize{config_physics}}{4,11}
-			\attribute{GRAVITY: 9.81 }
-			\attribute{KINEMATIC_VISCOSITY: 10 ** -6}
-			\attribute{WATER_DENSITY: 10. ** 3}
-			\attribute{SED_DENSITY: 2650 }
-		\end{object}
+
+	% ================================================================
+	% LAYER 1: FULL-COMPLEXITY MODEL BINDINGS
+	% ================================================================
+	\begin{package}{hysim}
+		\begin{abstractclass}[text width=11cm]{HydroSimulations}{0,0}
+			\attribute{control_file: str}
+			\attribute{model_dir, res_dir: str}
+			\attribute{calibration_pts_file_path: str}
+			\attribute{calibration_parameters: list, param_values: list}
+			\attribute{calibration_quantities, extraction_quantities: list}
+			\attribute{init_runs, max_runs, n_cpus: int}
+			\attribute{observations, measurement_errors: np.array}
+			\attribute{asr_dir, calibration_folder, restart_data_folder: str}
+			\operation[0]{run\_multiple\_simulations(collocation\_points, ...): np.array}
+			\operation[0]{run\_single\_simulation(control\_file, ...): None}
+			\operation[0]{update\_model\_controls(new\_parameter\_values, ...): None}
+			\operation[0]{output\_processing(output\_data\_path, ...): np.array}
+			\operation[0]{extract\_data\_point(input\_file, calibration\_pts\_df, ...): None}
+			\operation{set_observations_and_variances(...): None}
+			\operation{set_calibration_parameters(params, values): None}
+			\operation{read_data(results_folder, file_name): object}
+		\end{abstractclass}
 	\end{package}
 
 	\begin{package}{telemac}
-		\begin{class}[text width=10cm]{TelemacModel}{19,0}
-			\inherit{FullComplexityModel}
-			\attribute{calibration_parameters: dict}
-			\attribute{comm: mpi4py.MPI.Comm(mpi4py.MPI.COMM_WORLD)}
-			\attribute{control_file: str }
-			\attribute{nproc: int }
-			\attribute{python_shebang: str }
-			\attribute{results: TelemacFile() }
-			\attribute{slf_input_file: str}
-			\attribute{stdout: int (default: 6) }
-			\attribute{tm_cas: str }
-			\attribute{tm_results_filename: str }
-			\attribute{tm_xd: str }
-			\attribute{tm_case: Telemac2d() / Telemac3d()}
-			\attribute{tm_case_loaded: bool}
-			\attribute{tm_xd_dict: dict }
-			\attribute{**gaia_cas: str }
-			\attribute{**gaia_results_file: str }
-						
-			\operation{call_tm_shell(cmd: str): (subprocess.PIPE, subprocess.Popen().returncode) }
-			\operation{cmd2string(keyword: str): str.encode() }
-			\operation{create_cas_string(param_name: str, value: var.): None }
-			\operation{create_launcher_pyscript(filename: str): None }
-			\operation{get_results_filename(): None }
-			\operation{get_variable_value(slf_file_name: str, calibration_par: str, specific_nodes: np.array, save_name: str): np.array }
-			\operation{close_case(): None }
-			\operation{load_case(): int }
-			\operation{load_results(): None }
-			\operation{mpirun(filename: str): None }
-			\operation{reload_case(): None }
-			\operation{rename_selafin(old_name=".slf", new_name=".slf"): None }
-			\operation{rewrite_steering_file(param_name: str, updated_string: str, steering_module="telemac"): int}
-			\operation{>> run_simulation(filename: str, load_results=True)}
-			\operation{>> update_model_controls}
+		\begin{class}[text width=11cm]{TelemacModel}{14,8}
+			\inherit{HydroSimulations}
+			\attribute{tm_xd: str (Telemac2d / Telemac3d)}
+			\attribute{friction_file: str (.tbl)}
+			\attribute{gaia_steering_file: str (.cas)}
+			\attribute{results_filename_base: str}
+			\operation{run_single_simulation(...): None}
+			\operation{run_multiple_simulations(...): np.array}
+			\operation{update_model_controls(...): None}
+			\operation{rewrite_steering_file(...): int}
+			\operation{output_processing(...): np.array}
+			\operation{extract_data_point(...): None (depth-explicit 2D/3D)}
+			\operation{tbl_creator(zone_identifier, val, ...): None}
 		\end{class}
-		\begin{class}[text width=10cm]{TelemacUserDefs}{19,4.8}
-			\inherit{UserDefs}
-			\attribute{N_CPUS: int }
-			\attribute{TM_CAS: str }
-			\attribute{tm_xD: str }
-			\attribute{GAIA_CAS: str }
-			
-			\operation{assign_calib_ranges(direct_par_df: pd.df, vector_par_df: pd.df, recalc_par_df: pd.df): None}
-			\operation{check_user_input(None): None}
-			\operation{>> assign_global_settings}
-		\end{class}
-		\begin{object}[text width=10cm]{\detokenize{config_telemac}}{19,10.9}
-			\attribute{TM_TEMPLATE_DIR: os.path }
-			\attribute{GAIA_PARAMETERS: pd.df}
-			\attribute{TM2D_PARAMETERS: pd.df}
-			\attribute{TM_TRANSLATOR: dict}
-			\attribute{AL_RANGE = "A14:B22"}
-			\attribute{MEASUREMENT_DATA_RANGE = "A23:B26"}
-			\attribute{PRIOR_SCA_RANGE = "A32:B35"}
-			\attribute{PRIOR_VEC_RANGE = "A38:B40"}
-			\attribute{PRIOR_REC_RANGE = "A43:B44"}
-			\attribute{ZONAL_PAR_RANGE = "A47:A49"}
-			\attribute{RECALC_PARS: dict}
+		\begin{object}[text width=11cm]{\detokenize{config_telemac}}{14,-6}
+			\attribute{classification_tm_gaia_dict: dict}
+			\attribute{slf_2d_variables_from_3d: list}
+			\attribute{von_Karman_constant, kinematic_viscosity_water: float}
 		\end{object}
 	\end{package}
-	\begin{package}{pputils/ppmodules/selafin_io_pp}
-		\begin{class}[text width=10cm]{ppSELAFIN}{39,10}
-			\attribute{float_type = 'f'}
-			\attribute{float_size = 4}			
-			\attribute{title: str}
-			\attribute{precision = 'SELAFIN '}
-			\attribute{NBV1 = 0}
-			\attribute{NBV2 = 0}
-			\attribute{vars: list }			
-			\attribute{vnames: list }
-			\attribute{vunits: list }
-			\attribute{IPARAM: list }
-			\attribute{NPLAN = 0}
-			\attribute{DATE = [1997, 8, 29, 2, 15, 0]}			
-			\attribute{NELEM = 0}
-			\attribute{NPOIN = 0}
-			\attribute{NDP = 0}		
-			\attribute{IKLE = np.zeros((self.NELEM, self.NPOIN), dtype=np.int32)}		
-			\attribute{IPOBO = np.zeros(self.NPOIN, dtype=np.int32)}
-			\attribute{x = np.zeros(self.NPOIN)}
-			\attribute{y = np.zeros(self.NPOIN)}	
-			\attribute{time: list}
-			\attribute{temp = np.zeros((self.NBV1, self.NPOIN))}			
-			\attribute{tempAtNode = np.zeros((0, 0))}
-			
-			\operation{readHeader(): None}
-			\operation{writeHeader(): None}
-			\operation{writeVariables(time: list, temp: np.array((NBV1, NPOIN))}
-			\operation{readTimes(): None}
-			\operation{readVariables(t_des: int): None}
-			\operation{readVariablesAtNode(node): None}
-			\operation{setPrecision(ftype: str, fsize: int): None}
-			\operation{getPrecision: (float_type, float_size), getNPOIN: NPOIN, getNELEM: NELEM, getTimes: time, getVarNames: vnames, getVarUnits: vunits, getNPLAN: int NPLAN, getIKLE: IKLE, getMeshX: x, getMeshY: y, getVarValues: temp, getVarValuesAtNode: tempAtNode, getIPOBO: IPOBO, getDATE: DATE, getMesh: (NELEM, NPOIN, NDP, IKLE, IPOBO, x, y)}
-			\operation{setTitle(title: str), setDATE(DATE:list[6e]), setVarNames(vnames:), setVarUnits(vunits:), setIPARAM(IPARAM:),setMesh(NELEM: int, NPOIN: int, NDP:int, IKLE: np.array, IPOBO: np.array, x: np.array, y: np.array)}
+
+	\begin{package}{openfoam}
+		\begin{class}[text width=11cm]{OpenFOAMModel}{14,-11}
+			\inherit{HydroSimulations}
+			\attribute{solver_name: str (interFoam)}
+			\attribute{control_points: np.array}
+			\operation{run_multiple_simulations(...): np.array}
+			\operation{output_processing(...): np.array}
+			\operation{save_calibration_data(it, ...): None}
 		\end{class}
-%		\begin{object}{ppmodules.readMesh}
-%			\attribute{VARIOUS: not used}
-%		\end{object}
-%		\begin{object}{ppmodules.utilities}
-%			\attribute{VARIOUS: not used}
-%		\end{object}
-%		\begin{object}{ppmodules.writeMesh}
-%			\attribute{VARIOUS: not used}
-%		\end{object}
+		\begin{class}[text width=11cm]{OpenFOAMController}{14,-19}
+			\attribute{case_dir: str}
+			\operation{update_model_controls(params): None}
+			\operation{update_boundary_condition(...): None}
+			\operation{decompose_parallel_case(nprocs) / reconstruct_parallel_case()}
+			\operation{run_simulation(nprocs, solver): None}
+			\operation{convert_to_vtk(): None}
+			\operation{extract_fields_from_vtk(...): (coords, U, k)}
+		\end{class}
 	\end{package}
-	
-	\begin{object}[text width=10cm]{\detokenize{config_logging}}{0,26}
-		\attribute{SCRIPT_DIR: str}
-		\attribute{info_formatter: logging.Formatter}
-		\attribute{warn_formatter: logging.Formatter}
-		\attribute{error_formatter: logging.Formatter}
-		\attribute{logger: logging.getLogger("stochastic_calibration")}
-		\attribute{logger_warn: logging.getLogger("warnings")}
-		\attribute{logger_error: logging.getLogger("errors")}
-		\attribute{console_handler: logging.StreamHandler()}
-		\attribute{console_ehandler: logging.StreamHandler()}
-		\attribute{console_whandler: logging.StreamHandler()}
-		\attribute{info_handler=logging.FileHandler("logfile.log", "w")}
-		\attribute{warn_handler=logging.FileHandler("warnings.log", "w")}
-		\attribute{err_handler=logging.FileHandler("errors.log", "w")}
+
+	\begin{package}{ppmodules}
+		\begin{class}[text width=10cm]{ppSELAFIN}{28,8}
+			\attribute{NBV1, NELEM, NPOIN, NDP, NPLAN: int}
+			\attribute{vnames, vunits, time: list}
+			\attribute{IKLE, IPOBO, x, y: np.array}
+			\operation{readHeader() / writeHeader(): None}
+			\operation{readTimes() / readVariables(t_des): None}
+			\operation{readVariablesAtNode(node): None}
+			\operation{writeVariables(time, temp): None}
+			\operation{getMesh(): (NELEM, NPOIN, NDP, IKLE, IPOBO, x, y)}
+			\operation{getNPLAN() / getVarNames() / getVarValuesAtNode(): ...}
+		\end{class}
+	\end{package}
+
+	% ================================================================
+	% LAYER 2: SURROGATE MODEL + BAYESIAN ACTIVE LEARNING
+	% ================================================================
+	\begin{package}{surrogate}
+		\begin{class}[text width=10cm]{BayesianInference}{42,8}
+			\attribute{model_predictions, observations, error: np.array}
+			\attribute{prior, prior_log_pdf: np.array}
+			\operation{calculate_likelihood(): None}
+			\operation{calculate_likelihood_with_error(): None}
+			\operation{rejection_sampling(): None}
+			\operation{estimate_bme(): (BME, RE, ELPD, IE, post.)}
+		\end{class}
+		\begin{class}[text width=10cm]{SequentialDesign}{42,0}
+			\attribute{exp_design, gpr: object}
+			\attribute{al_strategy: str (dkl / bme / ie / global_mc)}
+			\operation{run_sequential_design(prior_samples): np.array}
+			\operation{bayesian_active_learning(y_mean, y_std, ...): dict}
+			\operation{select_indexes(prior_samples, collocation_points): np.array}
+		\end{class}
+		\begin{class}[text width=10cm]{GPyTraining}{42,-8}
+			\attribute{collocation_points, model_evaluations: np.array}
+			\attribute{likelihood, kernel: gpytorch objects}
+			\operation{train_(): None}
+			\operation{predict_(input_sets, get_conf_int): dict}
+		\end{class}
+		\begin{class}[text width=10cm]{MultiGPyTraining}{42,-14.5}
+			\attribute{multitask_selection: str (variables / locations / all)}
+			\operation{train_tasks_variables() / _locations() / _all(): None}
+			\operation{predict_(input_sets, get_conf_int, ...): dict}
+		\end{class}
+		\begin{class}[text width=10cm]{SklTraining}{42,-20.5}
+			\operation{train_(): None}
+			\operation{predict_(input_sets, get_conf_int): dict}
+		\end{class}
+		\begin{class}[text width=10cm]{Exploration}{42,-25}
+			\operation{get_exploration_samples(): np.array}
+		\end{class}
+	\end{package}
+
+	% ================================================================
+	% LAYER 3: POST-PROCESSING
+	% ================================================================
+	\begin{package}{visualize}
+		\begin{class}[text width=10.5cm]{BayesianPlotter}{56,8}
+			\attribute{results_folder_path, save_folder: Path}
+			\operation{plot_posterior_updates(...) / plot_prior_posterior_kde(...)}
+			\operation{plot_bme_re(...) / plot_bme_3d(...) / plot_bme_comparison(...)}
+			\operation{plot_model_comparisons(...) / plot_validation_results(...)}
+			\operation{plot_metric_comparison(...) / location_metric_heatmap(...)}
+			\operation{evaluate_calibration(...): (df_spatial, df_summary)}
+			\operation{observed_vs_modeled_compare(...) / plot_residuals(...)}
+		\end{class}
+	\end{package}
+
+	\begin{object}[text width=10.5cm]{extract}{56,-8}
+		\operation{extract_results(result_file, variable, x, y, z, ...): pd.DataFrame}
 	\end{object}
 
-	\begin{object}[text width=10cm]{\detokenize{function_pool}}{0,19}
-		\operation{append_new_line(file_name: str, text_to_append: str): None }
-		\operation{call_subroutine(bash_command: str): int}
-		\operation{calculate_settling_velocity(diameters: np. array): np.array}
-		\operation{concatenate_csv_pts(file_directory: os.path, *args: str/list): pd.df}
-		\operation{lookahead(iterable): bool}
-		\operation{str2seq(list_like_string: str, separator=",", return_type="tuple"): tuple/list}
-		\operation{log_actions(func: function): function}
+	\begin{object}[text width=10.5cm]{\detokenize{function_pool}}{56,-12}
+		\operation{call_process(bash_command, environment): int}
+		\operation{update_json_file(json_path, modeled_values_dict, ...): None}
+		\operation{interpolate_values(coords, values, point): np.array}
+		\operation{append_new_line(file_name, text_to_append): None}
 	\end{object}
-	
-	\begin{class}[text width=10cm]{Bal}{13,26}
-		\attribute{observations: np.array }
-		\attribute{error: np.array }
-		
-		\operation{compute_likelihood(prediction: np.array, normalize=False): np.array}
-		\operation{compute_bayesian_scores(prediction: np.array, method="weighting"): (float, float)}
-		\operation{selection_criteria(al_strategy: str, al_BME: np.array[d_size_AL], al_RE: np.array[d_size_AL]): (float, int)}
-	\end{class}
 
-	\begin{class}[text width=10cm]{BalWithGPE}{26,26}
-		\inherit{TelemacUserDefs}
-		
-		\attribute{__numerical_model = None}
-		\attribute{__set_model("numerical_model", software_coupling)}
-		\attribute{observations = {}}
-		\attribute{n_simulation = int}
-		\attribute{prior_distribution = np.array(())}
-		\attribute{collocation_points = np.ndarray(())}
-		\attribute{bme_csv_prior = ""}
-		\attribute{re_csv_prior = ""}
-		\attribute{bme_score_file = None}
-		\attribute{re_score_file = None}
-		%\attribute{doe = DesignOfExperiment()}
-		
-		\operation{initialize_score_writing(func: function): function}
-		\operation{full_model_calibration(): None}
-		\operation{initiate_prior_distributions(): None}
-		\operation{load_observations(): None}
-		\operation{run_initial_simulations(): int}
-		\operation{get_collocation_points(): None}
-		\operation{get_surrogate_prediction(model_results: np.array, number_of_points: int, prior: np.array): (np.array(mean), np.array(std))}
-		\operation{runBal(model_results: np.array, prior=np.array): int}
-		\operation{sample_collocation_points(method="uniform"): None}		
-	\end{class}
+	% drivers note
+	\umlnote[text width=10.5cm] (drivers) at (56,-18) {\textbf{templates/} driver scripts
+		(\texttt{bal\_telemac.py}, \texttt{bal\_openfoam.py}) read a config
+		file, instantiate a binding (layer 1), delegate the experimental design
+		to BayesValidRox, and run the GPE training + BAL loop (layer 2).
+		Post-processing (layer 3) works inside and outside this workflow.};
 
-	% associations for import directions
-	\association{\detokenize{config_physics}}{}{}{\detokenize{function_pool}}{}{import}
-	\association{\detokenize{config_logging}}{}{}{\detokenize{function_pool}}{}{import}
-	\association{\detokenize{config_logging}}{}{import}{Bal}{}{}
-	\association{Bal}{}{}{BalWithGPE}{}{import}
-	\association{TelemacUserDefs}{}{}{BalWithGPE}{import}{}
-	% \association{TelemacModel}{}{}{BalWithGPE}{import}{}
-	\association{\detokenize{function_pool}}{}{}{TelemacUserDefs}{}{import}
-	\association{\detokenize{function_pool}}{import}{}{FullComplexityModel}{}{}
-	\association{\detokenize{config_telemac}}{}{}{TelemacUserDefs}{}{import}
-	\draw[umlcd style dashed line,,opacity=0.58,line width=0.5mm,-stealth] (ppSELAFIN) --node[above, sloped,
-	black]{import} (TelemacModel);
+	% ================================================================
+	% IMPORT ASSOCIATIONS
+	% ================================================================
+	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
+		(ppSELAFIN) --node[above, sloped, black]{import} (TelemacModel);
+	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
+		(config_telemac) --node[above, sloped, black]{import} (TelemacModel);
+	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
+		(OpenFOAMController) --node[above, sloped, black]{uses} (OpenFOAMModel);
+	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
+		(Exploration) --node[above, sloped, black]{import} (SequentialDesign);
+	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
+		(ppSELAFIN) --node[above, sloped, black]{import} (extract);
+	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
+		(function_pool) --node[above, sloped, black]{import} (HydroSimulations);
 
 \end{tikzpicture}
 
 \end{document}
-%\section{Basics}
-%\subsection{Class with attributes and operations}
-%Note: If you don't want to show empty parts in the diagrams, please
-%use \texttt{simplified} option, e.g. \lstinline|\usepackage[simplified]{pgf-umlcd}|.\\
-%\demo{class}
-%
-%\subsubsection{Visibility of attributes and operations}
-%\demo[0.8]{visibility}
-%
-%\subsubsection{Abstract class and interface}
-%\demo[0.5]{abstract-class}
-%\demo[0.5]{interface}
-%
-%\subsubsection{Object}
-%\demo[0.7]{object}
-%Note: Object with rounded corners and methods are used in German school for didactic reasons. You get the rounded corners with \lstinline|\usepackage[school]{pgf-umlcd}|. If you need both in one document you can switch it with \lstinline|\switchUmlcdSchool| \\
-%\switchUmlcdSchool
-%\demo[0.7]{object}
-%\demo[0.7]{object-include-methods}
-%
-%\subsubsection{Note}
-%The \lstinline|\umlnote| use the same syntax as tikz command
-%\lstinline|\node|, e.g. \lstinline|\umlnote[style] (name) at (coordinate) {text};|
-%
-%\demo[0.7]{note}
-%
-%\subsection{Inheritance and implement}
-%\subsubsection{Inheritance}
-%\demo{inheritance}
-%\subsubsection{Multiple Inheritance}
-%\demo{multiple-inheritance}
-% 
-%\subsubsection{Implement an interface}
-%\demo{implement-interface}
-%
-%\subsection{Association, Aggregation and Composition}
-%\subsubsection{Association} 
-%\demo{association}
-% 
-%\subsubsection{Unidirectional association}
-%\demo{unidirectional-association}
-%
-%\subsubsection{Aggregation}
-%\demo{aggregation}
-%
-%\subsubsection{Composition}
-%\demo{composition}
-%
-%\subsection{Package}
-%\demo{package}
-%
-%\section{Customization}
-%\subsection{Color settings}
-%The color of digram is defined by \lstinline|\umltextcolor|, \lstinline|\umldrawcolor| and \lstinline|\umlfillcolor|, such as:
-%
-%\demo{color} 
-%
-%\section{Examples}
-%\subsection{Abstract Factory}
-%\example{abstract-factory}
-
-
-
-
