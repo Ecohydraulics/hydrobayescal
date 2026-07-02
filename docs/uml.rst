@@ -17,7 +17,7 @@ set of driver scripts:
    (single- and multi-output) and performs Bayesian inference and sequential
    design (BAL).
 
-The driver scripts ``bal_telemac.py`` and ``bal_openfoam.py`` wire these layers
+The driver scripts ``templates/bal_telemac.py`` and ``templates/bal_openfoam.py`` wire these layers
 together and read all user input from a configuration file.
 
 Architecture at a glance (UML)
@@ -106,9 +106,9 @@ Package layout
    │   ├── gpe_skl.py           # scikit-learn GP training
    │   ├── bal_functions.py     # BayesianInference, SequentialDesign
    │   └── exploration.py       # parameter-space exploration for BAL
-   └── utils/, plots/, doepy/   # logging/config, plotting, design-of-experiments helpers
+   └── utils/, visualize/, doepy/   # logging/config, plotting, design-of-experiments helpers
 
-   bal_telemac.py / bal_openfoam.py   # entry-point drivers (read the config, run the loop)
+   templates/bal_telemac.py / bal_openfoam.py   # entry-point drivers (read the config, run the loop)
 
 .. note::
 

@@ -321,7 +321,7 @@ The generated folders and their contents are as follows:
 
 **2. Plots**
    This folder stores plots generated after the calibration process.
-   The Python script **``plots.py``** is used to create these plots.
+   The ``hydroBayesCal.visualize`` package is used to create these plots.
 
 **3. Surrogate Models**
    Contains surrogate models developed during the calibration process. Inside this folder a subfolder will be created depending on the training point selection criteria.
