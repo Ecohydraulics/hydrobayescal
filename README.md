@@ -26,7 +26,7 @@ pip install hydroBayesCal
 or, for a development/editable install from a clone:
 
 ```bash
-git clone https://github.com/sschwindt/hydrobayescal.git
+git clone https://github.com/Ecohydraulics/hydrobayescal.git
 cd hydrobayescal
 pip install -e ".[dev,docs,mesh]"
 ```
