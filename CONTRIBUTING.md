@@ -64,7 +64,7 @@ When you bump it, also update `release`/`version` in `docs/conf.py` so the docum
 
 ## Releasing to PyPI (maintainers)
 
-Releases are **automated via GitHub Actions and PyPI Trusted Publishing** (OIDC)i.e. no API token is stored anywhere. The workflow lives in `.github/workflows/publish.yml` and runs when a GitHub *Release* is published.
+Releases are **automated via GitHub Actions and PyPI Trusted Publishing** (OIDC), i.e. no API token is stored anywhere. The workflow lives in `.github/workflows/publish.yml` and runs when a GitHub *Release* is published.
 
 To cut a release:
 
