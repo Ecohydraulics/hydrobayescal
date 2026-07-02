@@ -5,13 +5,13 @@ Authors: Andres Heredia, Sebastian Schwindt
 """
 from scipy import spatial
 import numpy as np
-from src.hydroBayesCal.telemac import config_telemac
+from hydroBayesCal.telemac import config_telemac
 from datetime import datetime
-# from src.hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
+# from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 from collections import OrderedDict
-from src.hydroBayesCal.hysim import HydroSimulations
-from src.hydroBayesCal.function_pool import *  # provides os, subprocess, logging
+from hydroBayesCal.hysim import HydroSimulations
+from hydroBayesCal.function_pool import *  # provides os, subprocess, logging
 
 
 class TelemacModel(HydroSimulations):
