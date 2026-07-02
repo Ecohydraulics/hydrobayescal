@@ -1,0 +1,35 @@
+# Server-side enforcement of the 20 MB file-size limit for all contributors:
+# fails when any file in the pushed tree exceeds the limit, regardless of
+# whether the contributor has the pre-commit hook installed.
+name: check-file-size
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  file-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail on tracked files larger than 20 MB
+        run: |
+          limit=$((20 * 1024 * 1024))
+          too_big=$(git ls-files -z | while IFS= read -r -d '' f; do
+            [ -f "$f" ] || continue
+            size=$(stat -c%s "$f")
+            if [ "$size" -gt "$limit" ]; then
+              printf '%s (%s MB)\n' "$f" "$((size / 1024 / 1024))"
+            fi
+          done)
+          if [ -n "$too_big" ]; then
+            echo "The following tracked files exceed the 20 MB limit:"
+            echo "$too_big"
+            echo
+            echo "Keep large data out of git: run"
+            echo "  bash env-scripts/update-large-file-ignores.sh"
+            echo "and remove the files from the index with 'git rm --cached <file>'."
+            exit 1
+          fi
+          echo "All tracked files are within the 20 MB limit."

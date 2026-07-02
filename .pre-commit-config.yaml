@@ -1,0 +1,13 @@
+# Install once per clone with:
+#   pip install pre-commit && pre-commit install
+# Afterwards every commit is checked automatically.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Reject files larger than 20 MB (20480 KB). The same limit is enforced
+      # server-side by .github/workflows/check-file-size.yml, and the ignore
+      # list for existing large example data is maintained with
+      # env-scripts/update-large-file-ignores.sh.
+      - id: check-added-large-files
+        args: ["--maxkb=20480"]
