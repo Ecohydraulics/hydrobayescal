@@ -41,6 +41,16 @@ Configure a calibration in a Python config file and run the TELEMAC driver:
 python templates/bal_telemac.py --config templates/config_Telemac.py
 ```
 
+Simulation results can also be sampled at arbitrary points outside the calibration workflow, including depth-explicit extraction from TELEMAC-3D and OpenFOAM output:
+
+```python
+import hydroBayesCal as hbc
+
+df = hbc.extract_results("r3d_steady.slf", variable="velocity",
+                         x=[371522.5, 371540.0], y=[5345152.0, 5345170.0],
+                         z=0.05)  # height above the local bed
+```
+
 See the [documentation](https://hydrobayescal.readthedocs.io) for the end-to-end workflow, the configuration parameters, the code architecture, and worked examples.
 
 ## Development & releases

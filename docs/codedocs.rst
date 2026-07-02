@@ -62,6 +62,22 @@ Bayesian inference and sequential design
    :members:
    :show-inheritance:
 
+Result extraction
+-----------------
+
+Standalone 2D/3D point extraction from TELEMAC SELAFIN and OpenFOAM VTK
+result files; see :doc:`usage-telemac` for a usage guide.
+
+.. automodule:: hydroBayesCal.extract
+   :members: extract_results
+
+Visualization
+-------------
+
+.. automodule:: hydroBayesCal.visualize.plotter
+   :members:
+   :show-inheritance:
+
 Shared utilities
 -----------------
 

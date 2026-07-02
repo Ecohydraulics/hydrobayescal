@@ -95,6 +95,8 @@ Package layout
    src/hydroBayesCal/
    ├── hysim.py                 # HydroSimulations: abstract base class (the binding contract)
    ├── function_pool.py         # shared helpers (subprocess, IO, logging, mesh utilities)
+   ├── extract.py               # extract_results(): standalone 2D/3D point extraction
+   │                            #   (TELEMAC SELAFIN and OpenFOAM VTK)
    ├── telemac/
    │   ├── control_telemac.py   # TelemacModel(HydroSimulations)
    │   ├── config_telemac.py    # TELEMAC/GAIA keyword templates
@@ -106,9 +108,20 @@ Package layout
    │   ├── gpe_skl.py           # scikit-learn GP training
    │   ├── bal_functions.py     # BayesianInference, SequentialDesign
    │   └── exploration.py       # parameter-space exploration for BAL
-   └── utils/, visualize/, doepy/   # logging/config, plotting, design-of-experiments helpers
+   ├── visualize/               # BayesianPlotter, assembled from thematic plot mixins
+   │   ├── plotter.py           # BayesianPlotter (public API)
+   │   ├── posterior_plots.py   # prior/posterior distributions
+   │   ├── bal_plots.py         # BME/RE evolution, BME surfaces
+   │   ├── model_comparison_plots.py  # surrogate vs complex model vs observations
+   │   ├── metrics_plots.py     # metric evolution and per-location exports
+   │   ├── calibration_assessment.py  # multi-model calibration assessment
+   │   └── axis_utils.py        # shared axis/tick/limit helpers
+   └── utils/, doepy/           # logging/config, design-of-experiments helpers
 
-   templates/bal_telemac.py / bal_openfoam.py   # entry-point drivers (read the config, run the loop)
+   templates/                   # runnable drivers and config templates (copy & adapt)
+   ├── bal_telemac.py / bal_openfoam.py     # entry-point drivers (read the config, run the loop)
+   ├── config_Telemac.py / config_OpenFOAM.py
+   └── telemac_extract.py, main_plots.py, main_validate.py, ...
 
 .. note::
 

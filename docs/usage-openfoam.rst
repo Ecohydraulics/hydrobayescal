@@ -157,6 +157,11 @@ Results are written to the same ``auto-saved-results-HydroBayesCal`` layout as
 for TELEMAC (see :doc:`gpe-bal-telemac`), so post-processing is identical across
 solvers.
 
+To sample fields from OpenFOAM VTK output at arbitrary (x, y, z) points
+outside the calibration workflow, use :func:`hydroBayesCal.extract_results`
+with the case directory or a ``.vtu`` file - see the section
+*Extract & compare 2d/3d simulation data* in :doc:`usage-telemac`.
+
 See also
 --------
 
