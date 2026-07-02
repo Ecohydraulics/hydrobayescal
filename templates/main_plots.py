@@ -12,8 +12,8 @@ import argparse
 import importlib.util
 import numpy as np
 
-from src.hydroBayesCal.telemac.control_telemac import TelemacModel
-from src.hydroBayesCal.plots.plots import BayesianPlotter
+from hydroBayesCal.telemac.control_telemac import TelemacModel
+from hydroBayesCal.visualize import BayesianPlotter
 
 
 def load_config(config_path):

@@ -7,7 +7,6 @@ Author: Andres Heredia
 
 """
 
-import sys
 import os
 import time
 import pandas as pd
@@ -18,12 +17,12 @@ import pandas as pd
 # LOCAL VECTRINO POST-PROCESSING IMPORTS
 # ======================================================================
 
-from src.hydroBayesCal.utils.VectrinoPostproc.get_ascii_data import read_ascii_file
-from src.hydroBayesCal.utils.VectrinoPostproc.transformation import get_transformation_matrix, apply_transformation
-from src.hydroBayesCal.utils.VectrinoPostproc.plot_velocities import plot_instantaneous_velocities
-from src.hydroBayesCal.utils.VectrinoPostproc.compute_tke import compute_tke_data
-from src.hydroBayesCal.utils.VectrinoPostproc.despiking import despike_velocity_dataframe
-from src.hydroBayesCal.utils.VectrinoPostproc.vertical_plots import extract_vertical_plots
+from hydroBayesCal.utils.VectrinoPostproc.get_ascii_data import read_ascii_file
+from hydroBayesCal.utils.VectrinoPostproc.transformation import get_transformation_matrix, apply_transformation
+from hydroBayesCal.utils.VectrinoPostproc.plot_velocities import plot_instantaneous_velocities
+from hydroBayesCal.utils.VectrinoPostproc.compute_tke import compute_tke_data
+from hydroBayesCal.utils.VectrinoPostproc.despiking import despike_velocity_dataframe
+from hydroBayesCal.utils.VectrinoPostproc.vertical_plots import extract_vertical_plots
 
 # ======================================================================
 # USER INPUT
@@ -116,193 +115,200 @@ excluded_depths_cm = []
 # MAIN PROCESSING
 # ======================================================================
 
-start_time = time.time()
-os.makedirs(results_directory, exist_ok=True)
-if not os.path.isdir(data_directory):
-    raise FileNotFoundError(
-        f"ERROR: data_directory does not exist: {data_directory}"
-    )
 
-if len(case_names) == 0:
-    raise ValueError("ERROR: case_names is empty.")
+def main():
+    start_time = time.time()
+    os.makedirs(results_directory, exist_ok=True)
+    if not os.path.isdir(data_directory):
+        raise FileNotFoundError(
+            f"ERROR: data_directory does not exist: {data_directory}"
+        )
 
-summary_rows = []
+    if len(case_names) == 0:
+        raise ValueError("ERROR: case_names is empty.")
 
-original_directory = os.getcwd()
-os.chdir(data_directory)
+    summary_rows = []
 
-try:
-    for case_name in case_names:
+    original_directory = os.getcwd()
+    os.chdir(data_directory)
 
-        file_base_names = [case_name]
+    try:
+        for case_name in case_names:
 
-        case_output_directory = os.path.join(results_directory, case_name)
+            file_base_names = [case_name]
 
-        csv_output_directory = os.path.join(case_output_directory, "processed_csv")
-        plot_output_directory = os.path.join(case_output_directory, "plots")
-        tke_output_directory = os.path.join(case_output_directory, "tke")
+            case_output_directory = os.path.join(results_directory, case_name)
 
-        os.makedirs(csv_output_directory, exist_ok=True)
-        os.makedirs(plot_output_directory, exist_ok=True)
-        os.makedirs(tke_output_directory, exist_ok=True)
+            csv_output_directory = os.path.join(case_output_directory, "processed_csv")
+            plot_output_directory = os.path.join(case_output_directory, "plots")
+            tke_output_directory = os.path.join(case_output_directory, "tke")
 
-        print("============================================================")
-        print(" Vectrino Profiler ASCII post-processing")
-        print("============================================================")
-        print(f" Data directory       : {data_directory}")
-        print(f" Case name            : {case_name}")
-        print(f" File base names      : {file_base_names}")
-        print(f" Point IDs used       : {relevant_point_ids}")
-        print(f" Plot averaging window: {velocity_plot_window} s")
-        print(f" TKE averaging window : {tke_averaging_window} s")
-        print(f" Case output directory: {case_output_directory}")
-        print(f" CSV output directory : {csv_output_directory}")
-        print(f" Plot output directory: {plot_output_directory}")
-        print(f" TKE output directory : {tke_output_directory}")
-        print("============================================================")
+            os.makedirs(csv_output_directory, exist_ok=True)
+            os.makedirs(plot_output_directory, exist_ok=True)
+            os.makedirs(tke_output_directory, exist_ok=True)
 
-        for ascii_file in file_base_names:
-            print(f"\n* processing {ascii_file} ...")
+            print("============================================================")
+            print(" Vectrino Profiler ASCII post-processing")
+            print("============================================================")
+            print(f" Data directory       : {data_directory}")
+            print(f" Case name            : {case_name}")
+            print(f" File base names      : {file_base_names}")
+            print(f" Point IDs used       : {relevant_point_ids}")
+            print(f" Plot averaging window: {velocity_plot_window} s")
+            print(f" TKE averaging window : {tke_averaging_window} s")
+            print(f" Case output directory: {case_output_directory}")
+            print(f" CSV output directory : {csv_output_directory}")
+            print(f" Plot output directory: {plot_output_directory}")
+            print(f" TKE output directory : {tke_output_directory}")
+            print("============================================================")
 
-            dat_file = ascii_file + ".ntk.dat"
-            hdr_file = ascii_file + ".ntk.hdr"
+            for ascii_file in file_base_names:
+                print(f"\n* processing {ascii_file} ...")
 
-            if not os.path.exists(dat_file):
-                print(f"   - WARNING: missing {dat_file}. Skipping.")
-                continue
+                dat_file = ascii_file + ".ntk.dat"
+                hdr_file = ascii_file + ".ntk.hdr"
 
-            if not os.path.exists(hdr_file):
-                print(f"   - WARNING: missing {hdr_file}. Skipping.")
-                continue
+                if not os.path.exists(dat_file):
+                    print(f"   - WARNING: missing {dat_file}. Skipping.")
+                    continue
 
-            vectrino_data = read_ascii_file(ascii_file)
+                if not os.path.exists(hdr_file):
+                    print(f"   - WARNING: missing {hdr_file}. Skipping.")
+                    continue
 
-            M = get_transformation_matrix(ascii_file, scaling_factor=4096)
+                vectrino_data = read_ascii_file(ascii_file)
 
-            vectrino_data = apply_transformation(
-                vectrino_data,
-                transformation_matrix=M,
-                relevant_point_ids=relevant_point_ids
-            )
-        if despike_velocities:
-            print("   - despiking velocity time series using phase-space threshold method...")
+                M = get_transformation_matrix(ascii_file, scaling_factor=4096)
 
-            vectrino_data = despike_velocity_dataframe(
-                vectrino_data,
-                velocity_columns=[
-                    "u (m/s)",
-                    "v (m/s)",
-                    "w1 (m/s)",
-                    "w2 (m/s)",
-                ],
-                replacement="linear",
-                threshold_factor=1.0,
-                keep_original=True,
-                add_flag_columns=True,
-            )
-            output_file = os.path.join(
-                csv_output_directory,
-                ascii_file + ".csv"
-            )
-
-            vectrino_data.to_csv(output_file, index=False)
-            print(f"   - saved processed velocity CSV: {output_file}")
-
-            if make_velocity_plots:
-                plot_instantaneous_velocities(
+                vectrino_data = apply_transformation(
                     vectrino_data,
-                    output_name=ascii_file,
-                    output_directory=plot_output_directory,
-                    averaging_window=velocity_plot_window,
-                    show_plot=False
+                    transformation_matrix=M,
+                    relevant_point_ids=relevant_point_ids
+                )
+            if despike_velocities:
+                print("   - despiking velocity time series using phase-space threshold method...")
+
+                vectrino_data = despike_velocity_dataframe(
+                    vectrino_data,
+                    velocity_columns=[
+                        "u (m/s)",
+                        "v (m/s)",
+                        "w1 (m/s)",
+                        "w2 (m/s)",
+                    ],
+                    replacement="linear",
+                    threshold_factor=1.0,
+                    keep_original=True,
+                    add_flag_columns=True,
+                )
+                output_file = os.path.join(
+                    csv_output_directory,
+                    ascii_file + ".csv"
                 )
 
-            if compute_tke:
-                tke_data = compute_tke_data(
-                    vectrino_data,
-                    output_name=ascii_file,
-                    output_directory=tke_output_directory,
-                    averaging_window=tke_averaging_window,
-                    save_csv=True
-                )
+                vectrino_data.to_csv(output_file, index=False)
+                print(f"   - saved processed velocity CSV: {output_file}")
 
-                print(f"   - TKE rows computed: {len(tke_data)}")
-
-                # ------------------------------------------------------
-                # Extract final MEAN row from TKE table
-                # ------------------------------------------------------
-                mean_row = tke_data[tke_data["time_start (s)"] == "MEAN"]
-
-                if len(mean_row) == 1:
-                    mean_row = mean_row.iloc[0]
-
-                    summary_rows.append({
-                        "case_name": case_name,
-                        "file_name": ascii_file,
-                        "n_samples_total": mean_row["n_samples"],
-
-                        "u_mean (m/s)": mean_row["u_mean (m/s)"],
-                        "v_mean (m/s)": mean_row["v_mean (m/s)"],
-                        "w_mean (m/s)": mean_row["w_mean (m/s)"],
-
-                        "u_var_mean (m2/s2)": mean_row["u_var (m2/s2)"],
-                        "v_var_mean (m2/s2)": mean_row["v_var (m2/s2)"],
-                        "w_var_mean (m2/s2)": mean_row["w_var (m2/s2)"],
-
-                        "TKE_mean (m2/s2)": mean_row["TKE (m2/s2)"],
-                    })
-
-                else:
-                    print(
-                        f"   - WARNING: no unique MEAN row found in TKE table for {ascii_file}"
+                if make_velocity_plots:
+                    plot_instantaneous_velocities(
+                        vectrino_data,
+                        output_name=ascii_file,
+                        output_directory=plot_output_directory,
+                        averaging_window=velocity_plot_window,
+                        show_plot=False
                     )
 
-finally:
-    os.chdir(original_directory)
+                if compute_tke:
+                    tke_data = compute_tke_data(
+                        vectrino_data,
+                        output_name=ascii_file,
+                        output_directory=tke_output_directory,
+                        averaging_window=tke_averaging_window,
+                        save_csv=True
+                    )
+
+                    print(f"   - TKE rows computed: {len(tke_data)}")
+
+                    # ------------------------------------------------------
+                    # Extract final MEAN row from TKE table
+                    # ------------------------------------------------------
+                    mean_row = tke_data[tke_data["time_start (s)"] == "MEAN"]
+
+                    if len(mean_row) == 1:
+                        mean_row = mean_row.iloc[0]
+
+                        summary_rows.append({
+                            "case_name": case_name,
+                            "file_name": ascii_file,
+                            "n_samples_total": mean_row["n_samples"],
+
+                            "u_mean (m/s)": mean_row["u_mean (m/s)"],
+                            "v_mean (m/s)": mean_row["v_mean (m/s)"],
+                            "w_mean (m/s)": mean_row["w_mean (m/s)"],
+
+                            "u_var_mean (m2/s2)": mean_row["u_var (m2/s2)"],
+                            "v_var_mean (m2/s2)": mean_row["v_var (m2/s2)"],
+                            "w_var_mean (m2/s2)": mean_row["w_var (m2/s2)"],
+
+                            "TKE_mean (m2/s2)": mean_row["TKE (m2/s2)"],
+                        })
+
+                    else:
+                        print(
+                            f"   - WARNING: no unique MEAN row found in TKE table for {ascii_file}"
+                        )
+
+    finally:
+        os.chdir(original_directory)
 
 
-# ======================================================================
-# SAVE SUMMARY TABLE
-# ======================================================================
+    # ======================================================================
+    # SAVE SUMMARY TABLE
+    # ======================================================================
 
-if len(summary_rows) > 0:
-    summary_df = pd.DataFrame(summary_rows)
+    if len(summary_rows) > 0:
+        summary_df = pd.DataFrame(summary_rows)
 
-    summary_output_file = os.path.join(
-        results_directory,
-        "summary_mean_velocities_and_tke.csv"
-    )
+        summary_output_file = os.path.join(
+            results_directory,
+            "summary_mean_velocities_and_tke.csv"
+        )
 
-    summary_df.to_csv(summary_output_file, index=False)
+        summary_df.to_csv(summary_output_file, index=False)
+
+        print("\n============================================================")
+        print(" Summary table saved")
+        print(f" File: {summary_output_file}")
+        print("============================================================")
+
+        # ======================================================================
+        # VERTICAL PROFILE PLOTS + LOG-LAW FIT
+        # ======================================================================
+        if make_vertical_profile_plots:
+            extract_vertical_plots(
+                summary_csv_file=summary_output_file,
+                results_directory=results_directory,
+                initial_ks_m=initial_ks_m,
+                kappa=0.41,
+                depth_suffix_is_z_above_bed=True,
+                water_depth_m=None,
+                total_water_depth_m=0.15,
+                fit_depth_limits_cm=fit_depth_limits_cm,
+                excluded_depths_cm=excluded_depths_cm,
+                show_plot=False
+            )
+    else:
+        print("\nWARNING: No summary rows were created.")
+
+
+    elapsed_time = time.time() - start_time
 
     print("\n============================================================")
-    print(" Summary table saved")
-    print(f" File: {summary_output_file}")
+    print(" Processing finished")
+    print(f" Elapsed time: {elapsed_time:.2f} s")
     print("============================================================")
 
-    # ======================================================================
-    # VERTICAL PROFILE PLOTS + LOG-LAW FIT
-    # ======================================================================
-    if make_vertical_profile_plots:
-        extract_vertical_plots(
-            summary_csv_file=summary_output_file,
-            results_directory=results_directory,
-            initial_ks_m=initial_ks_m,
-            kappa=0.41,
-            depth_suffix_is_z_above_bed=True,
-            water_depth_m=None,
-            total_water_depth_m=0.15,
-            fit_depth_limits_cm=fit_depth_limits_cm,
-            excluded_depths_cm=excluded_depths_cm,
-            show_plot=False
-        )
-else:
-    print("\nWARNING: No summary rows were created.")
 
 
-elapsed_time = time.time() - start_time
-
-print("\n============================================================")
-print(" Processing finished")
-print(f" Elapsed time: {elapsed_time:.2f} s")
-print("============================================================")
+if __name__ == "__main__":
+    main()

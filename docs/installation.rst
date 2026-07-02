@@ -159,7 +159,7 @@ template in ``env-scripts/activateHBCtelemac.sh``.
 
       source env-scripts/activateHBCtelemac.sh
       # or
-      python activate_HBC_Telemac.py
+      python env-scripts/activate_HBC_Telemac.py
 
    A successful activation reports that both the HydroBayesCal and TELEMAC
    environments were loaded.

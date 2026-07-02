@@ -10,7 +10,7 @@ import importlib.util
 import os
 
 # Import own scripts
-from src.hydroBayesCal.telemac.control_telemac import TelemacModel
+from hydroBayesCal.telemac.control_telemac import TelemacModel
 
 def load_config(config_path):
     """

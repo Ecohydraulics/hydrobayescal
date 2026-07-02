@@ -9,11 +9,11 @@ located in the ``env-scripts`` directory.
 
 """
 def main():
-    # Directory where this script is located
+    # Directory where this script is located (env-scripts)
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # Path to env-scripts/activateHBCtelemac.sh
-    sh_script = os.path.join(base_dir, "env-scripts", "activateHBCtelemac.sh")
+    # Path to activateHBCtelemac.sh next to this script
+    sh_script = os.path.join(base_dir, "activateHBCtelemac.sh")
 
     if not os.path.exists(sh_script):
         raise FileNotFoundError(f"Script not found: {sh_script}")

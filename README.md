@@ -38,7 +38,7 @@ A calibration additionally requires a working installation of the numerical solv
 Configure a calibration in a Python config file and run the TELEMAC driver:
 
 ```bash
-python bal_telemac.py --config config_Telemac.py
+python templates/bal_telemac.py --config templates/config_Telemac.py
 ```
 
 See the [documentation](https://hydrobayescal.readthedocs.io) for the end-to-end workflow, the configuration parameters, the code architecture, and worked examples.
