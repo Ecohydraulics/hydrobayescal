@@ -1,5 +1,6 @@
 % UML class diagram of HydroBayesCal, drawn with pgf-umlcd.sty
-% UML started on: 2023-04-05, rewritten for v1.0.0 on 2026-07-02
+% UML started on: 2023-04-05, rewritten for v1.0.0 on 2026-07-02,
+% Delft3D-FLOW binding added for v1.1.0 on 2026-07-03
 % written by: Sebastian Schwindt
 %
 % The diagram shows the three cooperating layers:
@@ -46,7 +47,7 @@ keywordstyle=\color{blue}
 
 
 \begin{document}
-\section*{\texttt{\detokenize{HydroBayesCal v1.0}}}
+\section*{\texttt{\detokenize{HydroBayesCal v1.1}}}
 \thispagestyle{empty}
 \begin{tikzpicture}
 
@@ -113,6 +114,29 @@ keywordstyle=\color{blue}
 			\operation{run_simulation(nprocs, solver): None}
 			\operation{convert_to_vtk(): None}
 			\operation{extract_fields_from_vtk(...): (coords, U, k)}
+		\end{class}
+	\end{package}
+
+	\begin{package}{delft3d}
+		\begin{class}[text width=11cm]{Delft3DModel}{14,-26.5}
+			\inherit{HydroSimulations}
+			\attribute{env_script: str (env.sh)}
+			\attribute{d_hydro_config: str (config_d_hydro.xml)}
+			\attribute{roughness_formulation: str (Chezy / Manning / WhiteColebrook)}
+			\operation{run_multiple_simulations(...): np.array}
+			\operation{update_model_controls(controller, params): None}
+			\operation{output_processing(...): np.array}
+			\operation{save_calibration_data(it, ...): None}
+		\end{class}
+		\begin{class}[text width=11cm]{Delft3DController}{14,-33.5}
+			\attribute{case_dir, env_script: str}
+			\attribute{mdf_file, case_name: str (properties)}
+			\operation{update_mdf_parameter(keyword, value): None}
+			\operation{set_roughness(value, formulation): None}
+			\operation{ensure_netcdf_output(): None (NetCDF map output)}
+			\operation{run_simulation(nprocs): None}
+			\operation{check_run(): None}
+			\operation{extract_map_results(n_avg_timesteps): (coords, fields)}
 		\end{class}
 	\end{package}
 
@@ -197,7 +221,8 @@ keywordstyle=\color{blue}
 
 	% drivers note
 	\umlnote[text width=10.5cm] (drivers) at (56,-18) {\textbf{templates/} driver scripts
-		(\texttt{bal\_telemac.py}, \texttt{bal\_openfoam.py}) read a config
+		(\texttt{bal\_telemac.py}, \texttt{bal\_openfoam.py},
+		\texttt{bal\_delft3d.py}) read a config
 		file, instantiate a binding (layer 1), delegate the experimental design
 		to BayesValidRox, and run the GPE training + BAL loop (layer 2).
 		Post-processing (layer 3) works inside and outside this workflow.};
@@ -211,6 +236,8 @@ keywordstyle=\color{blue}
 		(config_telemac) --node[above, sloped, black]{import} (TelemacModel);
 	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
 		(OpenFOAMController) --node[above, sloped, black]{uses} (OpenFOAMModel);
+	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
+		(Delft3DController) --node[above, sloped, black]{uses} (Delft3DModel);
 	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]
 		(Exploration) --node[above, sloped, black]{import} (SequentialDesign);
 	\draw[umlcd style dashed line, opacity=0.58, line width=0.5mm, -stealth]

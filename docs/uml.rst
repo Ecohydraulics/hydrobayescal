@@ -10,7 +10,7 @@ small set of driver scripts:
    outputs at the calibration points. A solver-agnostic abstract base class,
    ``HydroSimulations`` (in :mod:`hydroBayesCal.hysim`), defines the contract;
    each solver provides a concrete subclass (``TelemacModel``,
-   ``OpenFOAMModel``).
+   ``OpenFOAMModel``, ``Delft3DModel``).
 
 2. **Surrogate model and Bayesian Active Learning** — the
    :mod:`hydroBayesCal.surrogate` package builds Gaussian Process Emulators
@@ -23,7 +23,8 @@ small set of driver scripts:
    points, inside and outside the calibration workflow (see
    :doc:`usage-telemac`).
 
-The driver scripts ``templates/bal_telemac.py`` and ``templates/bal_openfoam.py`` wire these layers
+The driver scripts ``templates/bal_telemac.py``, ``templates/bal_openfoam.py``
+and ``templates/bal_delft3d.py`` wire these layers
 together and read all user input from a configuration file. The rendered UML
 class diagram is maintained in the repository under ``UML/BayesCal-UML.pdf``
 (LaTeX/TikZ source next to it).
@@ -35,7 +36,7 @@ The base class owns everything common to a calibration — calibration
 parameters, observations and their variances, and the standard result-folder
 layout — so each binding only implements the two solver-specific steps
 (*running* the model and *processing* its output). This is what keeps the
-TELEMAC and OpenFOAM workflows aligned.
+TELEMAC, OpenFOAM and Delft3D-FLOW workflows aligned.
 
 .. mermaid::
 
@@ -70,6 +71,18 @@ TELEMAC and OpenFOAM workflows aligned.
            +run_simulation()
            +extract_fields_from_vtk()
        }
+       class Delft3DModel {
+           +env_script  "env.sh"
+           +roughness_formulation  "Manning / Chezy / ..."
+           +run_multiple_simulations()
+           +output_processing()
+       }
+       class Delft3DController {
+           +update_mdf_parameter()
+           +ensure_netcdf_output()
+           +run_simulation()
+           +extract_map_results()
+       }
        class BayesianPlotter {
            +plot_posterior_updates()
            +plot_bme_re()
@@ -82,7 +95,9 @@ TELEMAC and OpenFOAM workflows aligned.
        }
        HydroSimulations <|-- TelemacModel : implements
        HydroSimulations <|-- OpenFOAMModel : implements
+       HydroSimulations <|-- Delft3DModel : implements
        OpenFOAMModel ..> OpenFOAMController : uses
+       Delft3DModel ..> Delft3DController : uses
        extract ..> TelemacModel : standalone twin of extract_data_point()
 
 The calibration pipeline
@@ -122,6 +137,8 @@ Package layout
    │   └── pputils/             # SELAFIN result-file IO (ppmodules)
    ├── openfoam/
    │   └── control_openfoam.py  # OpenFOAMModel(HydroSimulations) + OpenFOAMController
+   ├── delft3d/
+   │   └── control_delft3d.py   # Delft3DModel(HydroSimulations) + Delft3DController
    ├── surrogate/               # owned GPE + BAL implementation
    │   ├── gpe_gpytorch.py      # GPyTraining / MultiGPyTraining (single- & multi-output GP)
    │   ├── gpe_skl.py           # scikit-learn GP training
@@ -138,8 +155,8 @@ Package layout
    └── utils/, doepy/           # logging/config, design-of-experiments helpers
 
    templates/                   # runnable drivers and config templates (copy & adapt)
-   ├── bal_telemac.py / bal_openfoam.py     # entry-point drivers (read the config, run the loop)
-   ├── config_Telemac.py / config_OpenFOAM.py
+   ├── bal_telemac.py / bal_openfoam.py / bal_delft3d.py   # entry-point drivers
+   ├── config_Telemac.py / config_OpenFOAM.py / config_Delft3D.py
    └── telemac_extract.py, main_plots.py, main_validate.py, ...
 
 .. note::
