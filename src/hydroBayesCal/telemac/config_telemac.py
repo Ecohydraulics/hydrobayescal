@@ -21,6 +21,7 @@ classification_tm_gaia_dict = {
     "VELOCITY W": "telemac",
     "FROUDE NUMBER": "telemac",
     "TURBULENT ENERG": "telemac",
+    "TURBULENT ENERG.": "telemac",  # real SELAFIN name (16-char, trailing period)
     "BOTTOM SHEAR STRESS": "telemac",
     "FRICTION VELOCI": "telemac",
     "DISSIPATION": "telemac",
