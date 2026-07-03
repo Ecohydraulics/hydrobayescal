@@ -2,7 +2,7 @@
 # User definitions
 TELEMAC_CONFIG_DIR=//home/modelling/telemac/telemac-mascaret/configs
 TELEMAC_CONFIG_NAME=pysource.debian12.sh
-HBCenv_DIR=/home/IWS/hidalgo/Documents/hydrobayescal/HBCenv/
+HBCenv_DIR=$HOME/hydrobayescal/HBCenv/
 
 # SCRIPT ACTIONS - DO NOT MODIFY BELOW
 

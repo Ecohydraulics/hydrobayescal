@@ -97,7 +97,8 @@ def setup_experiment_design(
 
 
 def run_complex_model(complex_model,
-                      experiment_design
+                      experiment_design,
+                      output_extraction_time="mean_last"
                       ):
     """
     Executes the hydrodynamic model for a given experiment design and returns the collocation points,
@@ -131,7 +132,7 @@ def run_complex_model(complex_model,
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                complete_bal_mode=complex_model.complete_bal_mode,
                                                validation=complex_model.validation,
-                                               output_extraction_time=config.extraction['output_extraction_time'], n=80)
+                                               output_extraction_time=output_extraction_time, n=80)
         model_outputs = complex_model.model_evaluations
     else:
         try:
@@ -513,8 +514,8 @@ def main():
     parser.add_argument(
         '--config',
         type=str,
-        default='config_Telemac.py',
-        help='Path to Python configuration file (default: config_Telemac.py)'
+        default='config_Ering.py',
+        help='Path to Python configuration file (default: config_Ering.py)'
     )
     args = parser.parse_args()
     config = load_config(args.config)
@@ -557,7 +558,11 @@ def main():
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
         experiment_design=exp_design,
+        output_extraction_time=config.extraction['output_extraction_time'],
     )
+    if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
+        logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
+        return
     run_bal_model(
         collocation_points=init_collocation_points,
         model_outputs=model_evaluations,

@@ -28,8 +28,8 @@ from hydroBayesCal.utils.VectrinoPostproc.vertical_plots import extract_vertical
 # USER INPUT
 # ======================================================================
 
-data_directory = "/home/IWS/hidalgo/Documents/cylinderModel/measured-dataApril2026/raw_ascii"
-results_directory = "/home/IWS/hidalgo/Documents/cylinderModel/measured-dataApril2026/results"
+data_directory = "/home/user/vectrino-data/raw_ascii"
+results_directory = "/home/user/vectrino-data/results"
 # Base names WITHOUT ".ntk.dat" or ".ntk.hdr"
 case_names = [
     #Calibration points at different locations (Q=50 l/s)

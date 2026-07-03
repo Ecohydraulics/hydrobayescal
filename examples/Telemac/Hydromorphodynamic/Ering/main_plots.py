@@ -35,8 +35,8 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="config.py",
-        help="Path to Python configuration file. Default: config.py"
+        default="config_Ering.py",
+        help="Path to Python configuration file. Default: config_Ering.py"
     )
 
     args = parser.parse_args()

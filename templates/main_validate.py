@@ -8,8 +8,8 @@ from hydroBayesCal.visualize import BayesianPlotter
 def main():
     # Initialize full complexity model
     full_complexity_model = TelemacModel(
-        res_dir="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/",
-        calibration_pts_file_path="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/measurements-calibration-EringCalib.csv",
+        res_dir="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/",
+        calibration_pts_file_path="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/measuredData/measurements-calibration-EringCalib.csv",
         init_runs=30, # Number oF samples for validation
         calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
                                 "gaiaCLASSES SHIELDS PARAMETERS 2",

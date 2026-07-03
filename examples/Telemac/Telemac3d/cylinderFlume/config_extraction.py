@@ -5,7 +5,9 @@ Configuration File for HydroBayesCal - Telemac
 import os
 
 # Base directory
-BASE_DIR = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/Telemac/Telemac3d/cylinderFlume/"
+# Base directory of this example (resolved relative to this file, so the
+# example runs from any clone location)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ============================================================================
 # PATHS AND DIRECTORIES

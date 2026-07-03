@@ -754,7 +754,11 @@ class TelemacModel(HydroSimulations):
                                                                     )
                     logger.info("TELEMAC simulations time for initial runs: " + str(datetime.now() - start_time))
                 if kill_process:
-                    exit()
+                    # Stop after the initial runs without killing the Python
+                    # process: callers (validation and user-parameter
+                    # workflows, drivers) decide themselves whether to
+                    # continue with surrogate training / BAL.
+                    return self.model_evaluations
 
         return self.model_evaluations
 
@@ -970,6 +974,15 @@ class TelemacModel(HydroSimulations):
 
             if delete_slf_files:
                 delete_slf(self.calibration_folder)
+                # Result files are archived in <asr_dir>/saved_slf_files by
+                # extract_data_point; purge them too, otherwise
+                # delete_complex_outputs leaves one copy per run on disk.
+                saved_slf_dir = getattr(
+                    self, "saved_slf_dir",
+                    os.path.join(self.asr_dir, "saved_slf_files")
+                )
+                if os.path.isdir(saved_slf_dir):
+                    delete_slf(saved_slf_dir)
         return model_results_calibration
 
     def extract_data_point(
@@ -1658,19 +1671,21 @@ class TelemacModel(HydroSimulations):
                 else:
                     print(f"GAIA result file not found: {gaia_result_path}")
 
-            # Move TELEMAC 2D result file generated from 3D
-            tm_2d_from_3d_path = os.path.join(
-                model_directory,
-                self.tm_2d_results_filename_from_3d
-            )
-
-            if os.path.exists(tm_2d_from_3d_path):
-                shutil.copy(
-                    tm_2d_from_3d_path,
-                    self.saved_slf_dir
+            # Move TELEMAC 2D result file generated from 3D (Telemac3d only;
+            # the attribute does not exist for Telemac2d runs)
+            if getattr(self, "tm_2d_results_filename_from_3d", None):
+                tm_2d_from_3d_path = os.path.join(
+                    model_directory,
+                    self.tm_2d_results_filename_from_3d
                 )
-            else:
-                print(f"TELEMAC 2D result file not found: {tm_2d_from_3d_path}")
+
+                if os.path.exists(tm_2d_from_3d_path):
+                    shutil.copy(
+                        tm_2d_from_3d_path,
+                        self.saved_slf_dir
+                    )
+                else:
+                    print(f"TELEMAC 2D result file not found: {tm_2d_from_3d_path}")
 
             # Move generated 2D result file if it exists.
             if compute_wall_law_diagnostics:

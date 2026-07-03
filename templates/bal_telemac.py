@@ -558,6 +558,9 @@ def main():
         complex_model=full_complexity_model,
         experiment_design=exp_design,
     )
+    if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
+        logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
+        return
     run_bal_model(
         collocation_points=init_collocation_points,
         model_outputs=model_evaluations,

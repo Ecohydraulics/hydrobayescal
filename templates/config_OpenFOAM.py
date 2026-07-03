@@ -20,7 +20,7 @@ standard HydroBayesCal field names, e.g. "U_x", "U_y", "U_z", "U_MAG", "TKE",
 import os
 
 # Base directory holding the interFoam case template and results.
-BASE_DIR = "/home/IWS/hidalgo/Documents/hydrobayescal/examples/openfoam-case/"
+BASE_DIR = "/home/user/hydrobayescal/examples/openfoam-case/"
 
 # ============================================================================
 # PATHS AND DIRECTORIES

@@ -31,8 +31,8 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="config.py",
-        help="Path to Python configuration file. Default: config.py"
+        default="config_extraction.py",
+        help="Path to Python configuration file. Default: config_extraction.py"
     )
 
     args = parser.parse_args()
@@ -45,7 +45,7 @@ def main():
         calibration_pts_file_path=config.paths["calibration_pts_file_path"],
         calibration_quantities=config.extraction['calibration_quantities'],
         extraction_quantities=config.extraction['extraction_quantities'],
-        n_processors=config.hydrodynamic_simulation['n_processors'],
+        n_cpus=config.hydrodynamic_simulation['n_processors'],
         dict_output_name=config.calibration['dict_output_name'],
     )
 
@@ -59,12 +59,12 @@ def main():
                                           output_extraction_time=config.extraction['output_extraction_time'],
                                           time_index=config.extraction['time_index'],
                                           n=config.extraction['n'],)
-    outputs_calibration_quantities,outputs_extraction_quantities = control_tm.output_processing(output_data_path=os.path.join(control_tm.calibration_folder,f'{control_tm.dict_output_name}-detailed.json'),
+    outputs_calibration_quantities = control_tm.output_processing(output_data_path=os.path.join(control_tm.calibration_folder,f'{control_tm.dict_output_name}-detailed.json'),
                                          calibration_quantities=control_tm.calibration_quantities,
                                          save_extraction_outputs = True,
                                          extraction_mode = True,
                                          calibration_mode = True,
                                          delete_slf_files=True)
-    print(outputs_calibration_quantities,outputs_extraction_quantities)
+    print(outputs_calibration_quantities)
 if __name__ == "__main__":
     main()

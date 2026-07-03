@@ -16,9 +16,9 @@ def main():
                 # General hydrosimulation parameters
                 results_filename_base="results2m3",
                 control_file="tel_ering_initial_NIKU.cas",
-                model_dir="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/simulation2026MU",
-                res_dir="/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/",
-                calibration_pts_file_path = "/home/IWS/hidalgo/Documents/EringMO-GPECalibration/MU2026-AllRange/measurements-calibration-EringCalib.csv",
+                model_dir="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/simulationFiles",
+                res_dir="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/",
+                calibration_pts_file_path = "/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/measuredData/measurements-calibration-EringCalib.csv",
                 n_cpus=16,
                 init_runs=7,
                 calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
