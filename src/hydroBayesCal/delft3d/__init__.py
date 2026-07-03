@@ -1,5 +1,4 @@
-# Delft3D-FLOW bindings for hydroBayesCal (planned -- not yet implemented).
+# Delft3D-FLOW bindings for hydroBayesCal.
 #
-# This sub-package is a placeholder that defines the intended interface for
-# coupling HydroBayesCal to Delft3D-FLOW (Deltares). See
+# Couples HydroBayesCal to Delft3D-FLOW (Deltares, Delft3D 4 suite). See
 # ``control_delft3d.Delft3DModel`` and the ``usage-delft3d`` documentation page.

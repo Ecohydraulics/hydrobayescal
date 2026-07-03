@@ -26,7 +26,7 @@ pre-commit install
 * Branch off `main`; open a pull request rather than pushing to `main`.
 * **Files larger than 20 MB never go into git.** The example folders are tracked, but their large data files are excluded through the auto-generated section at the end of `.gitignore`. After adding new (example) data, run `bash env-scripts/update-large-file-ignores.sh` and commit the updated `.gitignore`. The limit is enforced locally by the `pre-commit` hook and server-side by the `check-file-size` GitHub Actions workflow.
 * Match the surrounding code style. Public classes and functions use **NumPy-style docstrings** (rendered by Sphinx + napoleon).
-* When you add or change a numerical-solver binding, **preserve the solver-specific strings and file conventions** (e.g. TELEMAC `.cas`/SELAFIN keywords, OpenFOAM `system/controlDict`, planned Delft3D-FLOW `.mdf`/NEFIS). The Python attribute names are shared across bindings; the software-facing values are not.
+* When you add or change a numerical-solver binding, **preserve the solver-specific strings and file conventions** (e.g. TELEMAC `.cas`/SELAFIN keywords, OpenFOAM `system/controlDict`, Delft3D-FLOW `.mdf` keywords and NetCDF map output). The Python attribute names are shared across bindings; the software-facing values are not.
 * Run the test suite and the docs build before opening a PR:
 
   ```bash

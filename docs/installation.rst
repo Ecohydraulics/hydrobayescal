@@ -4,7 +4,8 @@ Installation
 ============
 
 HydroBayesCal is a Python package bound to an external numerical model
-(TELEMAC is fully supported, OpenFOAM is in progress, Delft3D-FLOW is planned).
+(TELEMAC is fully supported; OpenFOAM and Delft3D-FLOW bindings are in
+progress).
 It is developed and tested
 on **Debian/Ubuntu Linux**, which we recommend: Linux gives the flexibility to
 configure the environment and TELEMAC together, and a command-line interface
@@ -188,13 +189,21 @@ Delft3D-FLOW
 
 .. note::
 
-   The Delft3D-FLOW (Deltares) binding is **planned and not yet implemented**.
-   A placeholder interface
-   (:class:`hydroBayesCal.delft3d.control_delft3d.Delft3DModel`) records the
-   intended coupling and the Delft3D-specific file conventions (``.mdf`` master
-   definition file, ``config_d_hydro.xml`` / ``d_hydro`` launcher, NEFIS
-   ``trim``/``trih`` output). It raises :class:`NotImplementedError`. See
-   :doc:`usage-delft3d` for the planned workflow.
+   The Delft3D-FLOW (Deltares, Delft3D 4 suite) binding
+   (:class:`hydroBayesCal.delft3d.control_delft3d.Delft3DModel`) requires a
+   Delft3D-FLOW installation compiled from source with its ``env.sh``
+   environment script and the ``run_dflow2d3d.sh`` /
+   ``run_dflow2d3d_parallel.sh`` launchers, following the guide at
+   `hydro-informatics.com/get-started/delft3d
+   <https://hydro-informatics.com/get-started/delft3d.html>`_ (default prefix
+   ``~/opt/delft3d-flow``). Reading the NetCDF map output additionally needs
+   the ``delft3d`` extra:
+
+   .. code-block:: bash
+
+      pip install "hydroBayesCal[delft3d]"
+
+   See :doc:`usage-delft3d` for running a calibration.
 
 Check your installation
 ------------------------

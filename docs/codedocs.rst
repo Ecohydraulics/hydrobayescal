@@ -30,8 +30,8 @@ OpenFOAM binding
    :members:
    :show-inheritance:
 
-Delft3D-FLOW binding (planned)
-++++++++++++++++++++++++++++++
+Delft3D-FLOW binding
+++++++++++++++++++++
 
 .. automodule:: hydroBayesCal.delft3d.control_delft3d
    :members:

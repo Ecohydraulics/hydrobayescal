@@ -20,7 +20,7 @@ binding layer:
 
 * **TELEMAC** (2D and 3D) — fully supported.
 * **OpenFOAM** (interFoam) — binding under active development.
-* **Delft3D-FLOW** — binding planned (placeholder interface in place).
+* **Delft3D-FLOW** (Delft3D 4 suite) - binding under active development.
 
 The architecture is deliberately solver-agnostic: a binding only needs to
 implement how the model is run and how outputs are extracted (see
