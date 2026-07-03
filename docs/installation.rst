@@ -194,8 +194,8 @@ Delft3D-FLOW
    Delft3D-FLOW installation compiled from source with its ``env.sh``
    environment script and the ``run_dflow2d3d.sh`` /
    ``run_dflow2d3d_parallel.sh`` launchers, following the guide at
-   `hydro-informatics.com/get-started/delft3d
-   <https://hydro-informatics.com/get-started/delft3d.html>`_ (default prefix
+   `hydro-informatics.com/delft3d
+   <https://hydro-informatics.com/delft3d>`_ (default prefix
    ``~/opt/delft3d-flow``). Reading the NetCDF map output additionally needs
    the ``delft3d`` extra:
 
