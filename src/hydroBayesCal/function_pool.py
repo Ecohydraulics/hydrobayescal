@@ -344,25 +344,35 @@ def update_json_file(json_path, modeled_values_dict=None, detailed_dict=False, s
                 output_data = json.load(file)
 
                 for key, value in modeled_values_dict.items():
-                    if key in output_data:
+                    # JSON object keys are always strings, so a dict loaded back
+                    # from disk has str keys. Calibration point IDs are often
+                    # integers (e.g. 1, 2, 3), so the caller's modeled_values_dict
+                    # may use int keys - and `int_key in output_data` would then
+                    # be False against the str keys already stored, silently
+                    # RESETTING the point to a single value on every run instead
+                    # of appending. Normalise to str so appends accumulate for
+                    # both int- and str-keyed callers (str keys are unchanged).
+                    skey = str(key)
+                    if skey in output_data:
                         if detailed_dict:
-                            if isinstance(output_data[key], list):
-                                output_data[key].append(value)
+                            if isinstance(output_data[skey], list):
+                                output_data[skey].append(value)
                             else:
-                                output_data[key] = [output_data[key], value]
+                                output_data[skey] = [output_data[skey], value]
                         else:
-                            output_data[key].append(value)
+                            output_data[skey].append(value)
                     else:
-                        output_data[key] = [value]
+                        output_data[skey] = [value]
                 with open(json_path, 'w') as file:
                     json.dump(output_data, file, indent=4)
         else:
             # Save the updated JSON file
             with open(json_path, "w") as file:
-                for key in modeled_values_dict:
-                    # Convert the existing list into a nested list with a single element
-                    modeled_values_dict[key] = [modeled_values_dict[key]]
-                json.dump(modeled_values_dict, file, indent=4)
+                # str-normalise keys so the initial file matches how appends look
+                # them up after a JSON round-trip (see the accumulation note above)
+                initial_data = {str(key): [value]
+                                for key, value in modeled_values_dict.items()}
+                json.dump(initial_data, file, indent=4)
     else:
         if os.path.exists(json_path):
             # File exists, so open it for reading

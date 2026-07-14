@@ -384,6 +384,21 @@ class TelemacModel(HydroSimulations):
         # save the variable of interest without unwanted spaces
         variable_interest = param_name.rstrip().lstrip()
 
+        def keyword_of(line):
+            """Keyword left of the first '=' or ':' assignment separator.
+
+            TELEMAC steering files accept both separators: the classic examples
+            use '=' while generated cases (e.g. hydromate) use ':'. Matching on
+            whichever comes first keeps '='-style files behaving exactly as
+            before and adds ':'-style support.
+            """
+            cut = len(line)
+            for sep in ("=", ":"):
+                pos = line.find(sep)
+                if pos != -1 and pos < cut:
+                    cut = pos
+            return line[:cut].rstrip().lstrip()
+
         # open steering file with read permission and save a temporary copy
         if os.path.isfile(steering_file_name):
             cas_file = open(steering_file_name, "r")
@@ -406,14 +421,14 @@ class TelemacModel(HydroSimulations):
             if not isinstance(line[0], int):
                 temp.append(line)
             else:
-                previous_line = read_steering[i - 1].split("=")[0].rstrip().lstrip()
+                previous_line = keyword_of(read_steering[i - 1])
                 if previous_line != variable_interest:
                     temp.append(line)
 
         # loop through all lines of the temp cas file, until it finds the line with the parameter of interest
         # and substitute it with the new formatted line
         for i, line in enumerate(temp):
-            line_value = line.split("=")[0].rstrip().lstrip()
+            line_value = keyword_of(line)
             if line_value == variable_interest:
                 temp[i] = updated_string + "\n"
 

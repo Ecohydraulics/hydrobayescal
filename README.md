@@ -10,7 +10,7 @@ HydroBayesCal calibrates expensive numerical models without running them thousan
 
 The package couples to open-source modelling software through a common binding layer:
 
-* **TELEMAC** (2D/3D) is fully supported
+* **TELEMAC** (2D/3D) is fully supported, including **multi-discharge** calibration (one shared parameter set against several steady flows at once; see the docs "Multi-discharge calibration with TELEMAC")
 * **OpenFOAM** (interFoam) bindings are under active development
 
 Experimental design and parameter sampling are delegated to [BayesValidRox](https://pages.iws.uni-stuttgart.de/inversemodeling/bayesvalidrox/); the GP emulators and the Bayesian active-learning logic are implemented in-tree.

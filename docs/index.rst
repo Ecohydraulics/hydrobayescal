@@ -53,6 +53,7 @@ redistributed.)
    workflow
    gpe-bal-telemac
    usage-telemac
+   usage-telemac-multiflow
    usage-openfoam
    usage-delft3d
    use-cases

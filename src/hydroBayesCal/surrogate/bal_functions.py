@@ -847,7 +847,9 @@ class SequentialDesign:
         # a) get index of elements that have already been used
         aux1_ = np.where((prior_samples[:self.mc_samples + n_tp, :] == collocation_points[:, None]).all(-1))[1]
         # b) give each element in the prior a True if it has not been used before
-        aux2_ = np.invert(np.in1d(np.arange(prior_samples[:self.mc_samples + n_tp, :].shape[0]), aux1_))
+        # np.in1d was removed in NumPy 2.0; np.isin is the drop-in replacement
+        # (same semantics, available since NumPy 1.13).
+        aux2_ = np.invert(np.isin(np.arange(prior_samples[:self.mc_samples + n_tp, :].shape[0]), aux1_))
         # c) Select the first d_size_bal elements in prior_sample that have not been used before
         al_unique_index = np.arange(prior_samples[:self.mc_samples + n_tp, :].shape[0])[aux2_]
         al_unique_index = al_unique_index[:self.mc_samples]
