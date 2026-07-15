@@ -16,7 +16,7 @@ paths = {
     'case_template_dir': os.path.join(BASE_DIR, ""),
     'model_dir':         os.path.join(BASE_DIR, "simulationFiles"),
     'res_dir':           os.path.join(BASE_DIR),
-    'calibration_pts_file_path': os.path.join(BASE_DIR,"measuredData","measurements-calibration-EringCalib.csv"),
+    'calibration_pts_file_path': os.path.join(BASE_DIR,"measuredData","measurements-calibration-EringCalib-detailed.csv"),
 }
 
 # ============================================================================
@@ -99,8 +99,8 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 7,   # Number of initial parameter samples
-    'max_runs':  7,   # Total runs (initial + BAL iterations)
+    'init_runs': 4,   # Number of initial parameter samples
+    'max_runs':  4,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
@@ -125,9 +125,9 @@ sampling = {
 # EXECUTION MODES
 # ============================================================================
 execution = {
-    'complete_bal_mode':      False,
-    'only_bal_mode':          False,
-    'delete_complex_outputs': True,
+    'complete_bal_mode':  False,
+    'only_bal_mode':         False,
+    'delete_complex_outputs': False,
     'validation':             False,
     'user_param_values':      True,
 }
@@ -151,7 +151,7 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0, 1, 2, 3, 4, 5, 6],
-    'iterations_to_plot': 70,
+    'iterations_to_plot': [70],
 }
 
 # ============================================================================

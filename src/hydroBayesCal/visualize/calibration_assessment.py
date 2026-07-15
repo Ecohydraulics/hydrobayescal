@@ -34,6 +34,7 @@ class CalibrationAssessment:
             sm_upper_ci_split,
             sm_lower_ci_split,
             obs_split,
+            err_split,
             coordinates_df,
             model_names=None,
             quantity_names=None,
@@ -80,6 +81,12 @@ class CalibrationAssessment:
             sm_quantities_matrix = []
             obs_quantities_matrix = []
 
+            # Store all uncertainty-normalized residuals from all quantities.
+            # These arrays are pooled after the quantity loop to calculate
+            # the true overall NRMSE and NMAE for the current model.
+            all_normalized_residuals_cm = []
+            all_normalized_residuals_sm = []
+
             for i in range(n_quantities):
                 cm_vals = cm_outputs_split[f'cm_outputs_{i + 1}'][p]
                 sm_vals = sm_outputs_split[f'sm_outputs_{i + 1}'][p]
@@ -88,6 +95,29 @@ class CalibrationAssessment:
 
                 obs_vals_raw = obs_split[f'obs_{i + 1}']
                 obs_vals = obs_vals_raw[0] if obs_vals_raw.ndim > 1 else obs_vals_raw
+
+                # Measurement uncertainty (standard deviation) at each location.
+                err_vals_raw = err_split[f'err_{i + 1}']
+                err_vals = err_vals_raw[0] if err_vals_raw.ndim > 1 else err_vals_raw
+
+                obs_vals = np.asarray(obs_vals, dtype=float).squeeze()
+                err_vals = np.asarray(err_vals, dtype=float).squeeze()
+
+                if obs_vals.shape != err_vals.shape:
+                    raise ValueError(
+                        f"Observation and uncertainty shapes differ for Q{i + 1}: "
+                        f"{obs_vals.shape} versus {err_vals.shape}"
+                    )
+
+                if np.any(~np.isfinite(err_vals)):
+                    raise ValueError(
+                        f"Non-finite measurement uncertainties found for Q{i + 1}"
+                    )
+
+                if np.any(err_vals <= 0.0):
+                    raise ValueError(
+                        f"Measurement uncertainties must be greater than zero for Q{i + 1}"
+                    )
 
                 cm_quantities_matrix.append(cm_vals)
                 sm_quantities_matrix.append(sm_vals)
@@ -115,20 +145,52 @@ class CalibrationAssessment:
                     else rmse_sm_total / mae_sm_total
                 )
 
-                # Normalized RMSE and normalized MAE.
-                # Both are normalized by the observed standard deviation.
-                obs_std = np.std(obs_vals)
+                # ---------------------------------------------------------
+                # Uncertainty-normalized RMSE and MAE
+                # ---------------------------------------------------------
+                # Normalize each residual with the measurement uncertainty
+                # associated with the same location before aggregating.
+                normalized_residuals_cm = residuals_cm / err_vals
+                normalized_residuals_sm = residuals_sm / err_vals
 
-                if np.isclose(obs_std, 0.0):
-                    nrmse_cm_total = np.nan
-                    nrmse_sm_total = np.nan
-                    nmae_cm_total = np.nan
-                    nmae_sm_total = np.nan
-                else:
-                    nrmse_cm_total = rmse_cm_total / obs_std
-                    nrmse_sm_total = rmse_sm_total / obs_std
-                    nmae_cm_total = mae_cm_total / obs_std
-                    nmae_sm_total = mae_sm_total / obs_std
+                nrmse_cm_total = np.sqrt(
+                    np.mean(normalized_residuals_cm ** 2)
+                )
+                nrmse_sm_total = np.sqrt(
+                    np.mean(normalized_residuals_sm ** 2)
+                )
+
+                nmae_cm_total = np.mean(
+                    np.abs(normalized_residuals_cm)
+                )
+                nmae_sm_total = np.mean(
+                    np.abs(normalized_residuals_sm)
+                )
+
+                # Ratio of uncertainty-normalized RMSE to uncertainty-normalized MAE.
+                # This is different from RMSE / MAE when the measurement
+                # uncertainty varies among observation locations.
+                nrmse_nmae_ratio_cm = (
+                    np.nan
+                    if (
+                        not np.isfinite(nmae_cm_total)
+                        or np.isclose(nmae_cm_total, 0.0)
+                    )
+                    else nrmse_cm_total / nmae_cm_total
+                )
+
+                nrmse_nmae_ratio_sm = (
+                    np.nan
+                    if (
+                        not np.isfinite(nmae_sm_total)
+                        or np.isclose(nmae_sm_total, 0.0)
+                    )
+                    else nrmse_sm_total / nmae_sm_total
+                )
+
+                # Keep the normalized residuals for the pooled overall metrics.
+                all_normalized_residuals_cm.append(normalized_residuals_cm)
+                all_normalized_residuals_sm.append(normalized_residuals_sm)
 
                 spearman_cm = spearmanr(cm_vals, obs_vals).correlation
                 spearman_sm = spearmanr(sm_vals, obs_vals).correlation
@@ -148,8 +210,13 @@ class CalibrationAssessment:
                 model_summary[f"NMAE_CM_Q{i + 1}"] = nmae_cm_total
                 model_summary[f"NMAE_SM_Q{i + 1}"] = nmae_sm_total
 
+                # Raw RMSE / MAE ratio.
                 model_summary[f"RMSE_MAE_CM_Q{i + 1}"] = rmse_mae_ratio_cm
                 model_summary[f"RMSE_MAE_SM_Q{i + 1}"] = rmse_mae_ratio_sm
+
+                # Uncertainty-normalized NRMSE / NMAE ratio.
+                model_summary[f"NRMSE_NMAE_CM_Q{i + 1}"] = nrmse_nmae_ratio_cm
+                model_summary[f"NRMSE_NMAE_SM_Q{i + 1}"] = nrmse_nmae_ratio_sm
 
                 model_summary[f"Spearman_CM_Q{i + 1}"] = spearman_cm
                 model_summary[f"Spearman_SM_Q{i + 1}"] = spearman_sm
@@ -181,6 +248,9 @@ class CalibrationAssessment:
                         "y": coordinates_df.iloc[j]['y'],
                         "residuals_cm": residuals_cm[j],
                         "residuals_sm": residuals_sm[j],
+                        "measurement_error": err_vals[j],
+                        "normalized_residual_cm": normalized_residuals_cm[j],
+                        "normalized_residual_sm": normalized_residuals_sm[j],
                         "ci_width": ci_width,
                         "cm_rank": cm_ranks[j],
                         "sm_rank": sm_ranks[j],
@@ -209,11 +279,70 @@ class CalibrationAssessment:
             overall_spearman_cm = spearmanr(cm_composite, obs_composite).correlation
             overall_spearman_sm = spearmanr(sm_composite, obs_composite).correlation
 
-            model_summary["Overall_NRMSE_CM"] = np.nanmean(total_nrmse_cm)
-            model_summary["Overall_NRMSE_SM"] = np.nanmean(total_nrmse_sm)
+            # ---------------------------------------------------------
+            # Pooled overall uncertainty-normalized metrics
+            # ---------------------------------------------------------
+            # Concatenate the normalized residuals from every quantity and
+            # every measurement location. This does not average the separate
+            # per-quantity NRMSE/NMAE values.
+            pooled_normalized_residuals_cm = np.concatenate(
+                all_normalized_residuals_cm
+            )
+            pooled_normalized_residuals_sm = np.concatenate(
+                all_normalized_residuals_sm
+            )
 
-            model_summary["Overall_NMAE_CM"] = np.nanmean(total_nmae_cm)
-            model_summary["Overall_NMAE_SM"] = np.nanmean(total_nmae_sm)
+            valid_overall_cm = np.isfinite(pooled_normalized_residuals_cm)
+            valid_overall_sm = np.isfinite(pooled_normalized_residuals_sm)
+
+            if np.any(valid_overall_cm):
+                valid_cm_values = pooled_normalized_residuals_cm[valid_overall_cm]
+
+                model_summary["Overall_NRMSE_CM"] = np.sqrt(
+                    np.mean(valid_cm_values ** 2)
+                )
+                model_summary["Overall_NMAE_CM"] = np.mean(
+                    np.abs(valid_cm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_CM"] = np.nan
+                model_summary["Overall_NMAE_CM"] = np.nan
+
+            if np.any(valid_overall_sm):
+                valid_sm_values = pooled_normalized_residuals_sm[valid_overall_sm]
+
+                model_summary["Overall_NRMSE_SM"] = np.sqrt(
+                    np.mean(valid_sm_values ** 2)
+                )
+                model_summary["Overall_NMAE_SM"] = np.mean(
+                    np.abs(valid_sm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_SM"] = np.nan
+                model_summary["Overall_NMAE_SM"] = np.nan
+
+            # Ratio calculated from the pooled overall uncertainty-normalized
+            # metrics. It is not an average of the per-quantity ratios.
+            overall_nmae_cm = model_summary["Overall_NMAE_CM"]
+            overall_nmae_sm = model_summary["Overall_NMAE_SM"]
+
+            model_summary["Overall_NRMSE_NMAE_CM"] = (
+                np.nan
+                if (
+                    not np.isfinite(overall_nmae_cm)
+                    or np.isclose(overall_nmae_cm, 0.0)
+                )
+                else model_summary["Overall_NRMSE_CM"] / overall_nmae_cm
+            )
+
+            model_summary["Overall_NRMSE_NMAE_SM"] = (
+                np.nan
+                if (
+                    not np.isfinite(overall_nmae_sm)
+                    or np.isclose(overall_nmae_sm, 0.0)
+                )
+                else model_summary["Overall_NRMSE_SM"] / overall_nmae_sm
+            )
 
             model_summary["Overall_Spearman_CM"] = overall_spearman_cm
             model_summary["Overall_Spearman_SM"] = overall_spearman_sm

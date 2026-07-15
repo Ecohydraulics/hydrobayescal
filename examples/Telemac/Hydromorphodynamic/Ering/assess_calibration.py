@@ -1,43 +1,63 @@
 import os
 import time
 import numpy as np
+import argparse
+import importlib.util
+
+
 
 from hydroBayesCal.telemac.control_telemac import TelemacModel
 from hydroBayesCal.visualize import BayesianPlotter
 
+def load_config(config_path):
+    """
+    Load configuration from Python file.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the Python configuration file
+
+    Returns
+    -------
+    module
+        Configuration module with all variables
+    """
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config
 
 def main():
     # Initialize full complexity model
+    parser = argparse.ArgumentParser(description="Assess calibraed deterministic models  against measurements.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='config_Ering.py',
+        help='Path to Python configuration file (default: config_Ering.py)'
+    )
+    args = parser.parse_args()
+    config = load_config(args.config)
+
     full_complexity_model = TelemacModel(
                 # Telemac parameters
-                friction_file="friction_ering_MU_initial_NIKU.tbl",
-                tm_xd="1",
-                gaia_steering_file="gaia_ering_initial_NIKU.cas",
+                friction_file=config.hydrodynamic_simulation['friction_file'],
+                tm_xd=config.hydrodynamic_simulation['solver_name'],
+                gaia_steering_file=config.morphodynamic_simulation['gaia_cas'],
                 # General hydrosimulation parameters
-                results_filename_base="results2m3",
-                control_file="tel_ering_initial_NIKU.cas",
-                model_dir="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/simulationFiles",
-                res_dir="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/",
-                calibration_pts_file_path = "/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/measuredData/measurements-calibration-EringCalib.csv",
-                n_cpus=16,
-                init_runs=7,
-                calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                        "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                        "zone2", # Pool
-                                        "zone3", # Slackwater
-                                        "zone4", # Glide
-                                        "zone5", # Riffle
-                                        "zone6"], # Run
-                param_values=[[0.047, 0.070],  # critical shields parameter class 1
-                              [0.047, 0.070],  # critical shields parameter class 2
-                              [0.002, 0.6],  # zone2
-                              [0.002, 0.6],  # zone3
-                              [0.002, 0.6],  # zone4
-                              [0.002, 0.6],  # zone5
-                              [0.002, 0.6]],  # zone6
-                extraction_quantities = ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V","CUMUL BED EVOL"],
-                calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"],
-                dict_output_name="extraction-data",
+                results_filename_base=config.hydrodynamic_simulation['results_filename_base'],
+                control_file=config.hydrodynamic_simulation['control_file'],
+                model_dir=config.paths['model_dir'],
+                res_dir=config.paths['res_dir'],
+                calibration_pts_file_path=config.paths['calibration_pts_file_path'],
+                n_cpus=config.hydrodynamic_simulation['n_processors'],
+                init_runs=config.sampling['init_runs'],
+                calibration_parameters=config.calibration['parameters'],
+                param_values=config.calibration['param_values'],
+                extraction_quantities=config.calibration['extraction_quantities'],
+                calibration_quantities=config.calibration['calibration_quantities'],
+                dict_output_name=config.calibration['dict_output_name'],
                 user_param_values=True,
                 # max_runs=8,
                 # complete_bal_mode=False,
@@ -45,19 +65,20 @@ def main():
                 # delete_complex_outputs=True,
                 # validation=False
                 )
-    surrogate_to_analyze = 30
+    surrogate_to_analyze = 35
     results_folder_path = full_complexity_model.asr_dir
     restart_data_folder = full_complexity_model.restart_data_folder
     plotter = BayesianPlotter(results_folder_path=results_folder_path)
     obs = full_complexity_model.observations
+    # err = np.sqrt(full_complexity_model.variances)
     err = full_complexity_model.measurement_errors
     n_loc = full_complexity_model.nloc
     calibration_names = full_complexity_model.calibration_quantities
     n_quantities = full_complexity_model.num_calibration_quantities
     num_simulations = full_complexity_model.init_runs
-
-    collocation_points = full_complexity_model.user_collocation_points # To be used for the surrogate model predictions.
     coordinates = full_complexity_model.calibration_pts_df[["x", "y"]]
+    collocation_points = full_complexity_model.user_collocation_points # To be used for the surrogate model predictions.
+    # coordinates = full_complexity_model.calibration_pts_df[["x", "y"]]
     # The next block calls the metamodel to use for the predictions. The predictions are done in the collocation points.
     # -------------------------------------------------------------------------
     # Call the surrogate model
@@ -237,7 +258,7 @@ def main():
         sm_lower_ci_split[f'sm_lower_ci_{i+1}'] = sm_predictions["lower_ci"][:, i::n_quantities]
         obs_split[f'obs_{i+1}'] = obs[:, i::n_quantities]
         err_split[f'err_{i+1}'] = err[i::n_quantities]
-
+    print(err_split)
     df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
                 sm_outputs_split,
                 sm_upper_ci_split,
@@ -247,7 +268,7 @@ def main():
                 coordinates,
                 model_names=[
                                      r"MO-GPE: $h, \bar{U}, \delta_{z}$",
-                                     r"MO-GPE: $h, \bar{U}$",
+                                     # r"MO-GPE: $h, \bar{U}$",
                                      r"SO-GPE: $h$",
                                      r"SO-GPE: $\bar{U}$",
                                      r"SO-GPE: $\delta_{z}$",
@@ -255,8 +276,8 @@ def main():
                                      # r"Benchmark: $k_{s} = 3 \times d_{50}$"
                                  ],
                 quantity_names=calibration_names,
-                plot_models=list(range(5)))
-    plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[6,7],
+                plot_models=list(range(4)))
+    plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4],
                                         quantity_names=[
                                             r"$h$",
                                             r"$\bar{U}$",
@@ -266,7 +287,7 @@ def main():
                                         points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
                                                         35, 36, 37]
                                         )
-    plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[6,7],
+    plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4],
                                         quantity_names=[
                                             r"$h$",
                                             r"$\bar{U}$",

@@ -339,13 +339,14 @@ class BayesianInference:
 
             # 2. Get posterior distributions:
             self.post_loglikelihood = np.take(self.log_likelihood, post_index, axis=0)
-
+            print(self.post_loglikelihood)
         else:
             max_likelihood = np.max(self.likelihood)  # Max likelihood
             post_index = np.array(np.where(self.likelihood / max_likelihood > rn)[0])
             self.post_likelihood = np.take(self.likelihood, post_index, axis=0)
             self.post_loglikelihood = np.log(self.post_likelihood)
-
+            print(self.post_loglikelihood)
+            print(self.post_likelihood)
         # Get posterior samples
         self.post_index = post_index
         self.posterior_output = np.take(self.model_predictions, post_index, axis=0)
@@ -354,6 +355,7 @@ class BayesianInference:
         # 4. Get posterior log-pdf values:
         if self.prior_logpdf is not None:
             self.post_logpdf = self.prior_logpdf[post_index]
+            print(self.post_logpdf)
 
     def estimate_bme(self):
         """
