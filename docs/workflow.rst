@@ -206,6 +206,37 @@ For telemac simulations, the following parameters should be defined in the **Tel
     results_filename_base="results"
 
 
+.. note:: **Pre-BAL check: is roughness the identifiable calibration knob?**
+
+    After the initial full-complexity runs (and before BAL), HydroBayesCal reports a
+    physics-based *roughness-identifiability* diagnostic whenever the calibration
+    quantities include both a depth-like and a velocity-like quantity
+    (``diagnose_roughness_identifiability`` / ``log_roughness_identifiability`` in
+    ``hydroBayesCal.function_pool``, invoked from
+    ``templates/prebal_telemac_error_analysis.py``). At a fixed discharge
+    (:math:`Q = U\,A`), raising the bottom roughness slows the flow, so the water
+    deepens to keep passing :math:`Q` -- depth goes up, velocity goes down. Hence the
+    sign pattern of the depth-vs-velocity residuals (simulated minus observed) at the
+    calibration points is diagnostic:
+
+    * **Anti-correlated** residuals (one quantity simulated too high while the other
+      is too low) are the fingerprint of a *roughness* error, and roughness
+      calibration will converge -- the signs even tell you which way to move it:
+      too deep **and** too slow means roughness is too high; too shallow **and** too
+      fast means it is too low.
+    * **Correlated** residuals (both quantities too high, or both too low) *cannot*
+      be produced by roughness alone. Roughness calibration then fights itself and
+      its optimum tends to pin at a prior bound. The diagnostic logs a **warning**
+      recommending a second calibration parameter -- e.g. ``VELOCITY DIFFUSIVITY``,
+      the boundary friction, or the turbulence closure.
+
+    The check is **report-only**: it never alters the sampling or the parameter set.
+    It is model-agnostic (TELEMAC, OpenFOAM, ...) and works for single- and
+    multi-flow calibrations. Heed the warning before committing solver hours to BAL:
+    calibrating a non-identifiable roughness wastes runs and yields a bound-pinned,
+    physically meaningless optimum.
+
+
 Step 2: Bayesian model optimization
 -----------------------------------
 
