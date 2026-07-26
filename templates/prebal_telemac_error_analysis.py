@@ -203,6 +203,20 @@ def main():
     print(model_evaluations.shape)
     print(full_complexity_model.calibration_quantities)
     print(full_complexity_model.observations)
+
+    # Report-only physics check on the initial full-complexity design: is bottom
+    # roughness the identifiable / efficient calibration knob? Anti-correlated depth vs.
+    # velocity residuals (one too high, the other too low) => yes; correlated residuals
+    # (both over or both under) => roughness alone is non-identifiable and a second knob
+    # (velocity diffusivity, boundary friction, turbulence closure) is needed. Logged as a
+    # WARNING in the non-identifiable case; it does not alter sampling or parameters.
+    log_roughness_identifiability(
+        diagnose_roughness_identifiability(
+            model_evaluations,
+            full_complexity_model.observations,
+            full_complexity_model.calibration_quantities,
+        )
+    )
 if __name__ == "__main__":
     main()
 

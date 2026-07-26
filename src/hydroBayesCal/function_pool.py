@@ -314,6 +314,157 @@ def rearrange_array(data, num_quantities):
     return rearranged_data
 
 
+#----------------------------------------------
+def diagnose_roughness_identifiability(
+        model_outputs,
+        observations,
+        calibration_quantities,
+        depth_key="DEPTH",
+        velocity_key="VELOCITY",
+        deadband=0.02,
+):
+    """Judge whether bottom roughness is the identifiable / efficient calibration knob
+    from the depth-vs-velocity residual sign pattern of the initial full-complexity runs.
+
+    Physics (fixed discharge, ``Q = U * A``): raising the roughness slows the flow, so the
+    water deepens to keep passing ``Q`` -> depth up, velocity down. A roughness error
+    therefore shows up as **anti-correlated** depth/velocity residuals (one too high while
+    the other is too low), and roughness calibration converges. A **correlated** error
+    (both too high, or both too low) cannot be produced by roughness alone -> roughness is
+    not identifiable (its optimum pins at a prior bound) and a second knob is needed
+    (velocity diffusivity, boundary friction, or the turbulence closure).
+
+    This is a *report-only* diagnostic: it classifies the initial design and returns a
+    verdict + recommendation; it does not alter the sampling or the parameter set. It is
+    model-agnostic (Telemac, OpenFOAM, ...) and works for single- and multi-flow runs,
+    needing only the interleaved layout (column ``i*nq + j`` = location ``i``, quantity
+    ``j``) that :func:`rearrange_array` and the observations vector share.
+
+    Parameters
+    ----------
+    model_outputs : array-like, shape ``[n_runs, nloc * nq]``
+        Initial-design model outputs, interleaved by quantity.
+    observations : array-like, shape ``[1, nloc * nq]`` or ``[nloc * nq]``
+        Measured values with the same interleaving.
+    calibration_quantities : list of str
+        Quantity names in column order ``j`` (e.g. ``["WATER DEPTH", "SCALAR VELOCITY"]``).
+    depth_key, velocity_key : str
+        Case-insensitive substrings identifying the depth-like and velocity-like quantity.
+    deadband : float
+        A quantity whose central residual is below this fraction of the mean ``|observed|``
+        is treated as ~zero (inconclusive), avoiding a spurious verdict from a near-perfect
+        fit.
+
+    Returns
+    -------
+    dict
+        Keys ``verdict`` (one of ``roughness_too_high``, ``roughness_too_low``,
+        ``not_identifiable``, ``inconclusive``, ``unavailable``), ``identifiable`` (bool or
+        None), ``direction`` (``increase`` / ``decrease`` / None), ``depth_residual``,
+        ``velocity_residual`` (median ``sim - obs`` in physical units), ``depth_rel``,
+        ``velocity_rel`` (those normalised by the mean ``|observed|``), ``message`` and
+        ``recommendation``.
+    """
+    quantities = [str(q) for q in (calibration_quantities or [])]
+    nq = len(quantities)
+    result = {"verdict": "unavailable", "identifiable": None, "direction": None,
+              "depth_residual": None, "velocity_residual": None,
+              "depth_rel": None, "velocity_rel": None, "message": "",
+              "recommendation": ""}
+    if model_outputs is None or observations is None or nq == 0:
+        result["message"] = ("roughness diagnostic skipped: model outputs, observations "
+                             "or calibration quantities unavailable.")
+        return result
+
+    def _find(key):
+        for j, name in enumerate(quantities):
+            if key.lower() in name.lower():
+                return j
+        return None
+
+    jd, jv = _find(depth_key), _find(velocity_key)
+    if jd is None or jv is None:
+        result["message"] = (
+            "roughness diagnostic skipped: it needs both a depth-like "
+            f"('{depth_key}') and a velocity-like ('{velocity_key}') calibration "
+            f"quantity, but the quantities are {quantities}.")
+        return result
+
+    sim = _np.atleast_2d(_np.asarray(model_outputs, dtype=float))
+    obs = _np.asarray(observations, dtype=float).ravel()
+
+    def _residual(j):
+        s = sim[:, j::nq]                       # [n_runs, nloc] simulated for quantity j
+        o = obs[j::nq]                          # [nloc] observed for quantity j
+        med = float(_np.median(s - o[None, :]))  # central residual (sim - obs)
+        scale = float(_np.mean(_np.abs(o))) or 1.0
+        return med, med / scale
+
+    dh, dh_rel = _residual(jd)                  # + => simulated too DEEP
+    du, du_rel = _residual(jv)                  # + => simulated too FAST
+    result.update(depth_residual=dh, velocity_residual=du,
+                  depth_rel=dh_rel, velocity_rel=du_rel)
+
+    def _sign(rel):
+        return 0 if abs(rel) < deadband else (1 if rel > 0 else -1)
+
+    sh, sv = _sign(dh_rel), _sign(du_rel)
+
+    if sh == 0 or sv == 0:
+        result.update(
+            verdict="inconclusive",
+            message=(f"roughness diagnostic inconclusive: depth residual {dh:+.3g} "
+                     f"({dh_rel * 100:+.1f}%), velocity residual {du:+.3g} "
+                     f"({du_rel * 100:+.1f}%); at least one is within the "
+                     f"{deadband * 100:.0f}% deadband."))
+    elif sh > 0 and sv < 0:
+        result.update(
+            verdict="roughness_too_high", identifiable=True, direction="decrease",
+            message=("roughness IS the efficient knob and is currently TOO HIGH: "
+                     f"simulated too deep ({dh_rel * 100:+.1f}%) and too slow "
+                     f"({du_rel * 100:+.1f}%). Lower ks / raise Strickler Kst."),
+            recommendation="decrease bottom roughness (lower ks / higher Strickler Kst)")
+    elif sh < 0 and sv > 0:
+        result.update(
+            verdict="roughness_too_low", identifiable=True, direction="increase",
+            message=("roughness IS the efficient knob and is currently TOO LOW: "
+                     f"simulated too shallow ({dh_rel * 100:+.1f}%) and too fast "
+                     f"({du_rel * 100:+.1f}%). Raise ks / lower Strickler Kst."),
+            recommendation="increase bottom roughness (higher ks / lower Strickler Kst)")
+    else:
+        both = "too deep AND too fast" if sh > 0 else "too shallow AND too slow"
+        result.update(
+            verdict="not_identifiable", identifiable=False,
+            message=("roughness is NOT the correct / efficient knob: depth and velocity "
+                     f"residuals are CORRELATED (simulated {both}: depth "
+                     f"{dh_rel * 100:+.1f}%, velocity {du_rel * 100:+.1f}%). Roughness "
+                     "alone cannot fix both and its optimum will pin at a prior bound. "
+                     "Add a second parameter - VELOCITY DIFFUSIVITY, boundary friction, "
+                     "or the turbulence closure - to the calibration set."),
+            recommendation=("add VELOCITY DIFFUSIVITY / boundary friction / turbulence "
+                            "parameter; roughness alone is non-identifiable here"))
+    return result
+
+
+def log_roughness_identifiability(diagnosis, logger_obj=None):
+    """Log a :func:`diagnose_roughness_identifiability` result at the right level.
+
+    A ``not_identifiable`` verdict is logged as a WARNING (it flags that the chosen
+    parameter set cannot converge); everything else is INFO. Returns the diagnosis so it
+    can be chained."""
+    lg = logger_obj or logger
+    header = "ROUGHNESS IDENTIFIABILITY (initial design): "
+    msg = header + (diagnosis.get("message") or "no verdict")
+    if diagnosis.get("verdict") == "not_identifiable":
+        lg.warning(msg)
+        if diagnosis.get("recommendation"):
+            lg.warning("  -> recommendation: %s", diagnosis["recommendation"])
+    else:
+        lg.info(msg)
+        if diagnosis.get("recommendation"):
+            lg.info("  -> recommendation: %s", diagnosis["recommendation"])
+    return diagnosis
+
 
 #----------------------------------------------
 def update_json_file(json_path, modeled_values_dict=None, detailed_dict=False, save_dict=False, saving_path=None):
