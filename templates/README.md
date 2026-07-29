@@ -11,6 +11,7 @@ and adapt them to your project; they are not part of the installable
 | `config_Telemac.py` | Configuration template consumed by `bal_telemac.py --config` |
 | `config_OpenFOAM.py` | Configuration template consumed by `bal_openfoam.py --config` |
 | `prebal_telemac_error_analysis.py` | Pre-calibration error analysis for TELEMAC setups |
+| `derive_calibrated_parameters.py` | Post-calibration: per-parameter marginal optima, joint posterior optimum, equifinality diagnostic, and the candidate parameter sets for the final full-complexity runs |
 | `telemac_extract.py` | Extract model outputs from a TELEMAC result file (.slf) at calibration points |
 | `assess_calibration.py` | Post-calibration assessment of surrogate and full-complexity model outputs |
 | `main_plots.py` | Plot BAL posterior results (BME/RE evolution, posterior histograms) |

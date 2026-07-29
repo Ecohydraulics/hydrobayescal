@@ -19,6 +19,7 @@ from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialD
 from hydroBayesCal.surrogate.gpe_skl import *
 from hydroBayesCal.surrogate.gpe_gpytorch import *
 from hydroBayesCal.function_pool import *
+from hydroBayesCal.surrogate.posterior_analysis import ITERATION_KEYS, record_iteration
 
 
 
@@ -97,7 +98,9 @@ def setup_experiment_design(
 
 
 def run_complex_model(complex_model,
-                      experiment_design
+                      experiment_design,
+                      output_extraction_time="mean_last",
+                      n_last=80,
                       ):
     """
     Executes the hydrodynamic model for a given experiment design and returns the collocation points,
@@ -109,6 +112,11 @@ def run_complex_model(complex_model,
         Instance representing the hydrodynamic model to be evaluated.
     experiment_design : obj
         Instance of the experiment design object that specifies the settings for the experimental runs.
+    output_extraction_time : str
+        Time mode for extracting the model outputs, one of "mean_last", "last" or
+        "index". Set from the optional ``extraction`` block of the configuration.
+    n_last : int
+        Number of final time steps averaged when ``output_extraction_time="mean_last"``.
 
     Returns
     -------
@@ -131,7 +139,8 @@ def run_complex_model(complex_model,
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                complete_bal_mode=complex_model.complete_bal_mode,
                                                validation=complex_model.validation,
-                                               output_extraction_time="mean_last", n=80)
+                                               output_extraction_time=output_extraction_time,
+                                               n=n_last)
         model_outputs = complex_model.model_evaluations
     else:
         try:
@@ -159,6 +168,7 @@ def run_bal_model(collocation_points,
                   mc_samples_al=5000,  # By default
                   mc_exploration=1000,  # By default
                   gp_library="gpy",  # By default
+                  include_surrogate_error=False,  # By default
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -217,6 +227,15 @@ def run_bal_model(collocation_points,
     # INITIALIZATION GPE AND RESULTS FOLDERS
     # Creates folder for specific case ....................................................................
     logger.info(f"<<< Will run ({n_iter + 1}) GP training iterations and ({n_evals}) GP evaluations. >>> ")
+    if include_surrogate_error:
+        logger.info("Bayesian inference includes the surrogate predictive variance "
+                    "(sampling['include_surrogate_error'] = True).")
+        if getattr(complex_model, 'gpe_error', 0.0):
+            logger_warn.warning(
+                f"include_surrogate_error is on while gpe_error is "
+                f"{complex_model.gpe_error:.3f}: the surrogate error is counted twice, "
+                f"once as the actual GPE predictive variance and once as a flat "
+                f"fraction of every measured value. Set calibration['gpe_error'] = 0.0.")
 
     # Auto-saved-results folder
     gpe_results_folder = os.path.join(complex_model.asr_dir, 'surrogate-gpe')
@@ -237,7 +256,15 @@ def run_bal_model(collocation_points,
                      'posterior': [None] * (n_iter + 1),
                      f'{experiment_design.exploit_method}_{experiment_design.util_func}': np.zeros(n_iter),
                      'util_func': np.empty(n_iter, dtype=object), 'prior': prior, 'observations': complex_model.observations,
-                     'errors': complex_model.measurement_errors}
+                     'errors': complex_model.measurement_errors,
+                     # Makes the stored dictionary self-describing: without these no
+                     # consumer can recover the parameter names or calibration ranges.
+                     'calibration_parameters': complex_model.calibration_parameters,
+                     'param_values': complex_model.param_values}
+    # Per-iteration posterior diagnostics (keep in sync with templates/bal_telemac.py,
+    # the canonical driver). Additive keys: existing consumers read by key.
+    for _key in ITERATION_KEYS:
+        bayesian_dict[_key] = [None] * (n_iter + 1)
     # SURROGATE MODEL
     # Train the GPE a maximum of "iteration_limit" times
     for it in range(0, n_iter + 1):
@@ -434,9 +461,15 @@ def run_bal_model(collocation_points,
         logger.info(
             f'------------ Executing Bayesian Inference of {prior_samples} prior samples for prior updating.-------------------')
         start_time_inference = time.time()
+        # Without model_error the inference treats the surrogate predictions as exact
+        # and the posterior comes out sharper than the emulator actually supports,
+        # which visually exaggerates a unique optimum. Opt in through the config key
+        # sampling['include_surrogate_error'].
         bi_gpe = BayesianInference(model_predictions=model_predictions,
                                    observations=complex_model.observations,
                                    error=total_error,
+                                   model_error=(surrogate_output['std']
+                                                if include_surrogate_error else None),
                                    sampling_method='rejection_sampling',
                                    prior=prior,
                                    ) #prior_log_pdf=prior_logpdf This was here
@@ -448,6 +481,12 @@ def run_bal_model(collocation_points,
         bayesian_dict['ELPD'][it], bayesian_dict['IE'][it] = bi_gpe.ELPD, bi_gpe.IE
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
         bayesian_dict['posterior'][it] = bi_gpe.posterior
+        # Report-only: where each calibration parameter's own optimum currently sits,
+        # how well the data constrain it, and whether those per-parameter optima form
+        # a jointly plausible parameter set. Never raises, never touches sampling.
+        record_iteration(bayesian_dict, it, bi_gpe.posterior, prior=prior,
+                         parameter_names=complex_model.calibration_parameters,
+                         prior_bounds=complex_model.param_values)
         try:
             with open(os.path.join(complex_model.calibration_folder,
                                 'BAL_dictionary.pkl'), 'wb') as pickle_file:
@@ -538,6 +577,7 @@ def main():
             extraction_quantities=config.calibration['extraction_quantities'],
             calibration_quantities=config.calibration['calibration_quantities'],
             dict_output_name=config.calibration['dict_output_name'],
+            gpe_error=config.calibration.get('gpe_error', 0.10),
             user_param_values=config.execution['user_param_values'],
             max_runs=config.sampling['max_runs'],
             complete_bal_mode=config.execution['complete_bal_mode'],
@@ -554,9 +594,12 @@ def main():
         parameter_sampling_method=config.sampling['parameter_sampling_method']
     )
     # pdb.set_trace()
+    extraction = getattr(config, 'extraction', {})
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
         experiment_design=exp_design,
+        output_extraction_time=extraction.get('output_extraction_time', "mean_last"),
+        n_last=extraction.get('n_last', extraction.get('n', 80)),
     )
     if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
         logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
@@ -570,7 +613,8 @@ def main():
         prior_samples=config.sampling['prior_samples'],
         mc_samples_al=config.sampling['mc_samples_al'],
         mc_exploration=config.sampling['mc_exploration'],
-        gp_library=config.sampling['gp_library']
+        gp_library=config.sampling['gp_library'],
+        include_surrogate_error=config.sampling.get('include_surrogate_error', False)
     )
 
 if __name__ == "__main__":

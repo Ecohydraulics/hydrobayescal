@@ -72,6 +72,12 @@ calibration = {
     # Quantities used for BAL calibration - must match columns in measurements.csv.
     'calibration_quantities': ["U_x", "U_y", "U_z"],
 
+    # Surrogate-model error, as a fraction of each measured value, added to the
+    # observation variance. Flat stand-in for the emulator uncertainty. Set to 0.0
+    # when sampling['include_surrogate_error'] is True, otherwise the surrogate error
+    # is counted twice.
+    'gpe_error': 0.10,
+
     'dict_output_name': "extraction-data",
 }
 
@@ -94,6 +100,12 @@ sampling = {
     'mc_samples_al':  2000,
     'mc_exploration': 1000,
     'gp_library':     "gpy",
+
+    # Feed the GPE predictive standard deviation into the Bayesian inference instead
+    # of treating the surrogate predictions as exact. Off by default because it
+    # changes the posterior: switching it on widens the posterior to what the
+    # surrogate actually supports. Pair it with calibration['gpe_error'] = 0.0.
+    'include_surrogate_error': False,
 }
 
 # ============================================================================

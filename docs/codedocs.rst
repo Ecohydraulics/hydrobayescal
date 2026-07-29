@@ -62,6 +62,16 @@ Bayesian inference and sequential design
    :members:
    :show-inheritance:
 
+Calibrated parameters from the posterior
+++++++++++++++++++++++++++++++++++++++++
+
+Per-parameter marginal optima, the joint posterior optimum, identifiability flags
+and the equifinality diagnostic; see :ref:`calibrated-parameters` for the workflow.
+
+.. automodule:: hydroBayesCal.surrogate.posterior_analysis
+   :members:
+   :show-inheritance:
+
 Result extraction
 -----------------
 

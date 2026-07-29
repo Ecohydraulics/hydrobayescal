@@ -13,8 +13,228 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
 
+from hydroBayesCal.surrogate.posterior_analysis import marginal_optima, track_iteration
+
+
+def _latex_safe(text):
+    """Escape characters that break the LaTeX text renderer enabled in PlotterBase."""
+    return str(text).replace('\\', ' ').replace('_', r'\_').replace('%', r'\%')
+
 
 class PosteriorPlots:
+    @staticmethod
+    def _iteration_series(bayesian_dict, parameter_names, param_values=None):
+        """Per-iteration marginal optima, either as stored or rebuilt from the posteriors.
+
+        The diagnostics are written into ``bayesian_dict`` by the BAL drivers. Result
+        files produced before those keys existed carry only ``posterior``, which is
+        enough to reconstruct the whole series after the fact, so archived
+        calibrations can be plotted without being re-run.
+
+        Returns
+        -------
+        dict
+            ``n_tp``, ``peak`` ``[n_iter, ndim]``, ``hdi`` ``[n_iter, ndim, 2]``,
+            ``variance_reduction`` ``[n_iter, ndim]``, ``density_percentile``
+            ``[n_iter]``, ``max_abs_correlation`` ``[n_iter]`` and ``iterations``.
+        """
+        posteriors = bayesian_dict.get('posterior', [])
+        ndim = len(parameter_names)
+        stored = bayesian_dict.get('marginal_optima')
+        rebuild = stored is None or all(entry is None for entry in stored)
+
+        iterations, peaks, hdis, reductions, percentiles, correlations = [], [], [], [], [], []
+        for it, posterior in enumerate(posteriors):
+            if posterior is None or np.asarray(posterior).size == 0:
+                continue
+            if rebuild:
+                summary = track_iteration(posterior, prior=bayesian_dict.get('prior'),
+                                          parameter_names=parameter_names,
+                                          prior_bounds=param_values)
+                peak = summary['peak']
+                hdi = summary['hdi']
+                reduction = summary['variance_reduction']
+                gap = summary['gap']
+            else:
+                peak = stored[it]
+                if peak is None:
+                    continue
+                hdi = bayesian_dict['marginal_hdi'][it]
+                reduction = bayesian_dict['variance_reduction'][it]
+                gap = bayesian_dict['marginal_joint_gap'][it] or {}
+            iterations.append(it)
+            peaks.append(np.asarray(peak, dtype=float))
+            hdis.append(np.asarray(hdi, dtype=float).reshape(ndim, 2))
+            reductions.append(np.asarray(reduction, dtype=float))
+            percentiles.append(float(gap.get('density_percentile', np.nan)))
+            correlations.append(float(gap.get('max_abs_correlation', np.nan)))
+
+        if not iterations:
+            raise ValueError("No iteration with accepted posterior samples to plot.")
+
+        n_tp = bayesian_dict.get('N_tp')
+        x_values = (np.asarray(n_tp, dtype=float)[iterations] if n_tp is not None
+                    else np.asarray(iterations, dtype=float))
+
+        return {
+            'iterations': np.asarray(iterations),
+            'n_tp': x_values,
+            'peak': np.asarray(peaks),
+            'hdi': np.asarray(hdis),
+            'variance_reduction': np.asarray(reductions),
+            'density_percentile': np.asarray(percentiles),
+            'max_abs_correlation': np.asarray(correlations),
+        }
+
+    def plot_parameter_optimum_convergence(
+            self,
+            bayesian_dict,
+            parameter_names,
+            param_values=None,
+            parameter_units=None,
+            num_rows=3,
+            show_hdi=True,
+            plot_variance_reduction=True,
+            file_stem='parameter_optimum_convergence',
+    ):
+        """Trace each calibration parameter's own optimum over the BAL iterations.
+
+        One panel per parameter showing the peak of that parameter's posterior
+        marginal against the number of training points, with its credible interval
+        and the calibration range. A trace that is still drifting means the
+        calibration has not converged for that parameter; a trace that sits on a
+        prior bound means the parameter is pinned and the range or the parameter
+        choice needs revisiting.
+
+        The companion figure shows the posterior-to-prior variance reduction, i.e.
+        how much the measurements actually constrain each parameter.
+        """
+        series = self._iteration_series(bayesian_dict, parameter_names, param_values)
+        ndim = len(parameter_names)
+        if parameter_units is None:
+            parameter_units = [''] * ndim
+
+        num_cols = math.ceil(ndim / num_rows)
+        fig, axes = plt.subplots(num_rows, num_cols,
+                                 figsize=(6.5 * num_cols, 4.5 * num_rows),
+                                 squeeze=False)
+        axes = axes.flatten()
+
+        for i, name in enumerate(parameter_names):
+            ax = axes[i]
+            ax.plot(series['n_tp'], series['peak'][:, i], color='tab:blue',
+                    marker='o', markersize=4, linewidth=2, label='marginal optimum')
+            if show_hdi:
+                ax.fill_between(series['n_tp'], series['hdi'][:, i, 0],
+                                series['hdi'][:, i, 1], color='tab:blue', alpha=0.18,
+                                label='credible interval')
+            if param_values is not None:
+                low, high = param_values[i]
+                ax.axhline(low, color='grey', linestyle=':', linewidth=1.5)
+                ax.axhline(high, color='grey', linestyle=':', linewidth=1.5,
+                           label='calibration range')
+                margin = 0.05 * (high - low)
+                pinned = ((series['peak'][:, i] - low < margin)
+                          | (high - series['peak'][:, i] < margin))
+                if np.any(pinned):
+                    ax.plot(series['n_tp'][pinned], series['peak'][pinned, i],
+                            linestyle='none', marker='x', markersize=11,
+                            color='tab:red', label='pinned at bound')
+
+            unit = f" [{_latex_safe(parameter_units[i])}]" if parameter_units[i] else ''
+            ax.set_title(_latex_safe(name))
+            ax.set_xlabel('number of training points')
+            ax.set_ylabel(f"optimum{unit}")
+            ax.grid(alpha=0.3)
+            if i == 0:
+                ax.legend(loc='best', fontsize='small')
+
+        for ax in axes[ndim:]:
+            ax.set_visible(False)
+
+        plt.tight_layout()
+        for extension in ('pdf', 'png'):
+            fig.savefig(os.path.join(self.save_folder, f'{file_stem}.{extension}'),
+                        bbox_inches='tight', dpi=300)
+        plt.close(fig)
+
+        if not plot_variance_reduction:
+            return
+
+        fig, ax = plt.subplots(figsize=(9, 6))
+        for i, name in enumerate(parameter_names):
+            ax.plot(series['n_tp'], 100.0 * series['variance_reduction'][:, i],
+                    marker='o', markersize=4, linewidth=2, label=_latex_safe(name))
+        ax.axhline(10.0, color='tab:red', linestyle='--', linewidth=1.5,
+                   label='non-identifiable below')
+        ax.set_xlabel('number of training points')
+        ax.set_ylabel(r'posterior variance reduction [\%]')
+        ax.set_ylim(0, 100)
+        ax.grid(alpha=0.3)
+        ax.legend(loc='best', fontsize='small', ncol=2)
+        plt.tight_layout()
+        for extension in ('pdf', 'png'):
+            fig.savefig(os.path.join(self.save_folder,
+                                     f'{file_stem}_variance_reduction.{extension}'),
+                        bbox_inches='tight', dpi=300)
+        plt.close(fig)
+
+    def plot_marginal_vs_joint(
+            self,
+            bayesian_dict,
+            parameter_names,
+            param_values=None,
+            alarm_percentile=10.0,
+            file_stem='marginal_vs_joint',
+    ):
+        """Is the combination of the per-parameter optima a plausible parameter set?
+
+        Each parameter has its own posterior marginal and therefore its own optimum,
+        but stacking those optima into one vector assumes the parameters are
+        independent. This plot tracks where that assembled vector sits in the joint
+        posterior density, as a percentile of the accepted samples, together with the
+        strongest parameter correlation driving the discrepancy.
+
+        A trace that stays near the top means the per-parameter optima do form a
+        valid calibrated parameter set. A trace that stays low is a quantitative
+        equifinality warning: the parameters trade off against each other and only a
+        jointly selected parameter vector is defensible.
+        """
+        series = self._iteration_series(bayesian_dict, parameter_names, param_values)
+
+        fig, ax_density = plt.subplots(figsize=(9, 6))
+        ax_density.plot(series['n_tp'], series['density_percentile'], color='tab:blue',
+                        marker='o', markersize=5, linewidth=2)
+        ax_density.axhspan(0, alarm_percentile, color='tab:red', alpha=0.12)
+        ax_density.axhline(alarm_percentile, color='tab:red', linestyle='--',
+                           linewidth=1.5)
+        ax_density.set_xlabel('number of training points')
+        ax_density.set_ylabel(r'joint posterior density percentile of the '
+                              r'marginal-peak vector [\%]')
+        ax_density.set_ylim(0, 100)
+        ax_density.grid(alpha=0.3)
+
+        ax_corr = ax_density.twinx()
+        ax_corr.plot(series['n_tp'], series['max_abs_correlation'], color='tab:orange',
+                     marker='s', markersize=4, linewidth=1.5, linestyle='--')
+        ax_corr.set_ylabel(r'largest $|r|$ between calibration parameters')
+        ax_corr.set_ylim(0, 1)
+
+        ax_density.legend(handles=[
+            Line2D([], [], color='tab:blue', marker='o',
+                   label='density percentile of the marginal-peak vector'),
+            Line2D([], [], color='tab:orange', marker='s', linestyle='--',
+                   label=r'largest $|r|$ between parameters'),
+            mpatches.Patch(color='tab:red', alpha=0.12,
+                           label='marginal peaks not jointly plausible'),
+        ], loc='best', fontsize='small')
+
+        plt.tight_layout()
+        for extension in ('pdf', 'png'):
+            fig.savefig(os.path.join(self.save_folder, f'{file_stem}.{extension}'),
+                        bbox_inches='tight', dpi=300)
+        plt.close(fig)
+
     def plot_prior_posterior_kde(self, bayesian_data, parameter_names, iterations_to_plot):
         """
         Generates and saves prior and posterior distribution plots using KDEs and histograms.
@@ -254,9 +474,20 @@ class PosteriorPlots:
                     value = mean_value
                 elif best_estimate_value == "posterior_MAP":
                     value = map_value
+                elif best_estimate_value == "posterior_marginal_peak":
+                    # Same histogram estimate as above, but with the bin count derived
+                    # from the sample size and the posterior spread instead of the
+                    # `bins` used for drawing, which fixes the reported optimum to one
+                    # drawing bin width (a tenth of the range at the former bins=10).
+                    value = marginal_optima(
+                        posterior_vector.reshape(-1, 1),
+                        prior_bounds=[x_limits[col]],
+                        parameter_names=[parameter_names[param_idx]],
+                    )["peak"][0]
                 else:
                     raise ValueError(
-                        "best_estimate_value must be either 'posterior_MAP' or 'posterior_mean'"
+                        "best_estimate_value must be 'posterior_MAP', 'posterior_mean' "
+                        "or 'posterior_marginal_peak'"
                     )
 
                 ax.axvline(

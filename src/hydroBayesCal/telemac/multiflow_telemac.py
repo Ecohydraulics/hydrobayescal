@@ -173,6 +173,7 @@ class MultiflowTelemacModel:
         self.validation = first.validation
         self.delete_complex_outputs = first.delete_complex_outputs
         self.user_param_values = first.user_param_values
+        self.gpe_error = getattr(first, "gpe_error", 0.10)
         self.user_collocation_points = first.user_collocation_points
         self.restart_collocation_points = first.restart_collocation_points
         self.dict_output_name = "extraction-data-multiflow"
