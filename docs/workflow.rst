@@ -395,6 +395,12 @@ The same diagnostics are recorded at every BAL iteration, so
 Both are reconstructed from the stored posteriors when a result file predates these
 diagnostics, so archived calibrations can be analysed without being re-run.
 
+.. note::
+
+   All figures are rendered through LaTeX, which needs a few system packages that
+   ``pip`` cannot install. If a plotting call fails with a ``RuntimeError`` quoting a
+   LaTeX error, see :ref:`latex-for-plots`.
+
 Accounting for the surrogate uncertainty
 +++++++++++++++++++++++++++++++++++++++++
 

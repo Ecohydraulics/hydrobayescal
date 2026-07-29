@@ -15,6 +15,14 @@ pip install -e ".[dev,docs,mesh]"
 
 The `dev` extra provides `pytest`, `build`, `twine`, `ruff` and `pre-commit`; `docs` provides Sphinx and the Read the Docs theme; `mesh` adds the geospatial/VTK IO used by some bindings.
 
+The plotting code renders text with LaTeX (`BayesianPlotter` sets `text.usetex = True`), which is a **system** dependency that `pip` cannot install. Without it every plotting call raises a `RuntimeError` quoting a LaTeX error such as ``File `type1cm.sty' not found``. On Debian/Ubuntu:
+
+```bash
+sudo apt install texlive-latex-base texlive-latex-extra texlive-fonts-recommended cm-super dvipng
+```
+
+See the [installation guide](https://hydrobayescal.readthedocs.io/en/latest/installation.html#latex-for-plots) for what each package provides and how to switch the LaTeX mode off where it cannot be installed.
+
 Enable the git hooks once per clone:
 
 ```bash

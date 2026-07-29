@@ -119,6 +119,72 @@ For example, a developer install with documentation and mesh tools:
    (~hundreds of MB). On clusters without a working MPI toolchain, omit the
    ``mpi`` extra.
 
+.. _latex-for-plots:
+
+LaTeX for the plots (system packages)
+-------------------------------------
+
+Every figure is rendered with matplotlib's LaTeX text mode: ``BayesianPlotter``
+sets ``text.usetex = True`` and a Times serif font. This is a **system**
+dependency, not a Python one, so ``pip`` cannot supply it. Without it every
+plotting call fails with a ``RuntimeError`` from matplotlib quoting a LaTeX
+error such as ``File 'type1cm.sty' not found``, no matter which Python
+environment is active.
+
+On Debian/Ubuntu:
+
+.. code-block:: bash
+
+   sudo apt install texlive-latex-base texlive-latex-extra \
+                    texlive-fonts-recommended cm-super dvipng
+
+What each one is for:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Package
+     - Why it is needed
+   * - ``texlive-latex-base``
+     - the ``latex`` binary itself, plus ``fix-cm``, ``inputenc``, ``textcomp``
+   * - ``texlive-latex-extra``
+     - provides ``type1cm.sty``, which matplotlib loads to scale the fonts to
+       arbitrary sizes; missing it is the most common failure
+   * - ``texlive-fonts-recommended``
+     - the Times font (``mathptmx``) selected by the plotting style
+   * - ``cm-super``
+     - scalable Type 1 versions of the Computer Modern fonts, required for the
+       axis label sizes used here
+   * - ``dvipng``
+     - converts the LaTeX output to raster images; matplotlib needs it for the
+       ``Agg`` backend used in headless and batch runs
+
+To check an installation before running a long calibration:
+
+.. code-block:: bash
+
+   python -c "import matplotlib; matplotlib.use('Agg'); \
+              import matplotlib.pyplot as plt; plt.rcParams['text.usetex']=True; \
+              plt.plot([0,1]); plt.xlabel(r'test \$\\alpha\$'); \
+              plt.savefig('/tmp/tex-check.png'); print('LaTeX rendering OK')"
+
+.. tip::
+
+   On a machine where the LaTeX stack cannot be installed (no root access on a
+   cluster, for instance), the calibration itself still runs; only the plotting
+   is affected. Disable the LaTeX text mode after creating the plotter:
+
+   .. code-block:: python
+
+      import matplotlib.pyplot as plt
+      plotter = BayesianPlotter(results_folder_path=..., variable_name=...)
+      plt.rcParams.update({"text.usetex": False})
+
+   The figures then use matplotlib's built-in font renderer. Set it *after*
+   constructing the plotter, because ``BayesianPlotter`` enables the LaTeX mode
+   in its constructor.
+
 Numerical-model bindings
 ------------------------
 

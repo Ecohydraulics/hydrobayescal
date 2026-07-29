@@ -72,6 +72,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   repository root.
 - `CLAUDE.md`, a repository guide (commands, architecture, solver-facing conventions)
   for AI coding assistants.
+- **The LaTeX system dependencies of the plotting code are now documented**
+  (`docs/installation.rst`, cross-referenced from CONTRIBUTING and the workflow page).
+  `BayesianPlotter` renders all text through LaTeX, which pip cannot install, so on a
+  machine without `texlive-latex-extra`, `cm-super` and `dvipng` every plotting call
+  failed with a `RuntimeError` quoting a missing `.sty` file and nothing said why. The
+  page lists what each package provides, a one-line check, and how to switch the LaTeX
+  mode off where it cannot be installed.
 
 ### Fixed
 - **Multi-output GPE output columns could be silently mis-ordered.**
