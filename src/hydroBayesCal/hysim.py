@@ -39,6 +39,8 @@ class HydroSimulations(ABC):
             delete_complex_outputs=True,
             validation=False,
             multitask_selection="variables",
+            gpe_error=0.10,
+            measurement_error=0.10,
             *args,
             **kwargs,
     ):
@@ -123,6 +125,17 @@ class HydroSimulations(ABC):
             True              | True, with init_runs > max_runs | Surrogate construction + Bayesian Active Learning
         validation : bool, optional (Default: False)
             If True, creates output files (inputs and outputs) corresponding to validation process.
+        gpe_error : float, optional (Default: 0.10)
+            Surrogate-model error, as a fraction of each measured value, added to the
+            observation variance. It is a flat stand-in for the emulator uncertainty,
+            which the Bayesian inference otherwise ignores. Set it to 0.0 when the
+            driver is run with ``include_surrogate_error=True``, which feeds the
+            actual GPE predictive standard deviation into the likelihood instead;
+            keeping both double-counts the surrogate error.
+        measurement_error : float, optional (Default: 0.10)
+            Measurement error, as a fraction of each measured value, added to the
+            observation variance on top of the absolute ``<quantity>_ERROR`` column
+            of the calibration-points file.
         *args : tuple, optional
             Additional positional arguments.
         **kwargs : dict, optional
@@ -240,6 +253,8 @@ class HydroSimulations(ABC):
         self.validation=validation
         self.multitask_selection = multitask_selection
         self.user_param_values = user_param_values
+        self.gpe_error = gpe_error
+        self.measurement_error = measurement_error
         if self.validation:
             self.dict_output_name = dict_output_name + "-validation"
         else:
@@ -262,7 +277,8 @@ class HydroSimulations(ABC):
             self.param_dic, self.ndim = self.set_calibration_parameters(calibration_parameters, param_values)
         if calibration_pts_file_path:
             self.observations,self.variances, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_variances(
-                calibration_pts_file_path, calibration_quantities, extraction_quantities)
+                calibration_pts_file_path, calibration_quantities, extraction_quantities,
+                gpe_error=self.gpe_error, measurement_error=self.measurement_error)
 
         self.asr_dir = os.path.join(res_dir,
                                     f"auto-saved-results-HydroBayesCal")

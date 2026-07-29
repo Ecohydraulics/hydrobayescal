@@ -37,8 +37,14 @@ class BayesianInference:
         parameter sample in ``prior``. If ``None`` (default), the information
         entropy (IE) is not estimated. May be supplied with or without
         ``prior``.
-    model_error : optional
-        Additional model-error term (default ``None``).
+    model_error : numpy.ndarray, optional
+        Array of shape ``[MC_size, n_observations]`` with the **standard deviation**
+        of each model prediction, typically the surrogate predictive standard
+        deviation ``surrogate_output['std']``. Note the asymmetry with ``error``,
+        which is a **variance** vector: they are combined as
+        ``error + model_error ** 2``. When given, the likelihood accounts for the
+        surrogate's own uncertainty instead of treating its predictions as exact,
+        which broadens the posterior. Default ``None``.
     sampling_method : str, optional
         Method used to sample from the posterior distribution, one of
         ``"rejection_sampling"`` (default) or ``"bayesian_weighting"``.
@@ -179,6 +185,47 @@ class BayesianInference:
         self.likelihood = likelihood
 
 
+    def _has_diagonal_augmented_covariance(self):
+        """True when the augmented covariance is diagonal, i.e. the fast path applies.
+
+        ``cov_mat`` is built with ``np.diag`` in :meth:`calculate_constants`, and
+        ``model_error`` holds one standard deviation per output, so the augmented
+        covariance is diagonal for every call the drivers make. It is checked anyway
+        in case a caller supplied a full covariance matrix.
+        """
+        if self.model_error is None:
+            return False
+        model_error = np.asarray(self.model_error)
+        if model_error.shape != np.shape(self.model_predictions):
+            return False
+        return not np.any(self.cov_mat - np.diag(np.diagonal(self.cov_mat)))
+
+    def calculate_likelihood_with_error_diagonal(self):
+        """Augmented-covariance likelihood for a diagonal observation covariance.
+
+        Mathematically identical to :meth:`calculate_likelihood_with_error` for the
+        (always satisfied) case of a diagonal ``cov_mat`` and one surrogate standard
+        deviation per model output, but O(MC x n_obs) in both time and memory instead
+        of O(MC x n_obs^2) memory and O(MC x n_obs^3) time.
+
+        The dense version materialises four ``[MC, n_obs, n_obs]`` arrays and inverts
+        one matrix per Monte Carlo sample. At the shipped ``prior_samples = 25000``
+        and a calibration with 37 points and 3 quantities that is several gigabytes
+        per array, so the dense path is not usable on a realistic case.
+
+        Notes
+        -----
+        ``error`` holds variances while ``model_error`` holds standard deviations,
+        matching :meth:`calculate_likelihood_with_error`.
+        """
+        variances = (np.diagonal(self.cov_mat)[np.newaxis, :]
+                     + np.asarray(self.model_error, dtype=float) ** 2)
+        difference = self.observations[0, :][np.newaxis, :] - self.model_predictions
+
+        self.log_likelihood = -0.5 * np.sum(
+            difference ** 2 / variances + np.log(2 * math.pi * variances), axis=1)
+        self.likelihood = np.exp(self.log_likelihood)
+
     def calculate_likelihood_with_error(self):
         """
         Function calculates likelihood between observations and the model output manually, using numpy calculations. It
@@ -189,6 +236,12 @@ class BayesianInference:
         * Likelihood function is multivariate normal distribution, considering independent and Gaussian-distributed
         errors.
         * Method is faster than using stats module ('calculate_likelihood' function).
+        * Unlike 'calculate_likelihood_manual', this keeps the normalising constant,
+          which is required because the augmented covariance differs per sample. BME
+          values are therefore not comparable between runs with and without a model
+          error; RE is, since the constant cancels.
+        * Materialises [MC, n_obs, n_obs] arrays. Prefer
+          'calculate_likelihood_with_error_diagonal' whenever it applies.
         """
         # Calculate augmented covariance:
         mc_size = self.model_predictions.shape[0]
@@ -282,6 +335,8 @@ class BayesianInference:
         # 1. Prior Likelihood
         if self.model_error is None:
             self.calculate_likelihood_manual()
+        elif self._has_diagonal_augmented_covariance():
+            self.calculate_likelihood_with_error_diagonal()
         else:
             self.calculate_likelihood_with_error()
 

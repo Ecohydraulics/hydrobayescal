@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydroBayesCal"
-version = "1.2.0"
+version = "1.3.0"
 description = "Surrogate-assisted Bayesian calibration for hydrodynamic and morphodynamic models (Telemac, OpenFOAM, Delft3D)."
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -74,7 +74,7 @@ dependencies = [
 
 [project.urls]
 Documentation = "https://hydrobayescal.readthedocs.io"
-Source = "https://github.com/sschwindt/hydrobayescal"
+Source = "https://github.com/Ecohydraulics/hydrobayescal"
 
 [project.optional-dependencies]
 # Extra mesh / geospatial IO used by some post-processing utilities only.
@@ -108,6 +108,9 @@ dev = [
     "ruff>=0.5",
     "pre-commit>=3.5",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

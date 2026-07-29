@@ -20,6 +20,8 @@ from gpytorch.means import MultitaskMean, ConstantMean
 from gpytorch.kernels import MultitaskKernel, RBFKernel, LinearKernel, ScaleKernel, ProductKernel, AdditiveKernel, MaternKernel, PeriodicKernel
 from scipy.optimize import dual_annealing, differential_evolution
 
+from hydroBayesCal.utils.config_logging import logger, logger_warn
+
 
 class MyExactGPyModel(gpytorch.models.ExactGP):
     """
@@ -602,6 +604,11 @@ class MultiGPyTraining:
         self.n_params = collocation_points.shape[1]
         self.gp_list = []
         self.normalization_params = []
+        # Which train_tasks_* method produced ``gp_list``: "variables", "locations"
+        # or "all". ``predict_`` dispatches on this instead of on len(gp_list),
+        # which is ambiguous whenever nloc == number_quantities or nloc == 1.
+        self.task_mode = None
+        self._warned_locations_cov = False
 
         # Initialize likelihood and other hyperparameters
         self.likelihood = likelihood
@@ -620,7 +627,11 @@ class MultiGPyTraining:
     def train_tasks_variables(self):#Training variables at each location separately
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
+
+        One multitask GP per location; the tasks are the calibration quantities, so
+        the cross-quantity correlation at a location is modelled explicitly.
         """
+        self.task_mode = "variables"
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
         # Number of locations
@@ -642,12 +653,17 @@ class MultiGPyTraining:
             # Convert normalized Y_loc to torch
             Y_loc_norm = torch.tensor(Y_loc_norm, dtype=torch.float32)
 
-            # Initialize multitask GP model
-            model = MultitaskGPModel(X, Y_loc_norm, self.likelihood, self.kernel,self.number_quantities)
+            # Initialize multitask GP model. The likelihood and the kernel are
+            # deep-copied per location: sharing one instance across the loop lets
+            # every model overwrite the previous one's fitted noise and
+            # lengthscales, so only the last location's hyperparameters survived.
+            likelihood = copy.deepcopy(self.likelihood)
+            kernel = copy.deepcopy(self.kernel)
+            model = MultitaskGPModel(X, Y_loc_norm, likelihood, kernel, self.number_quantities)
 
             # Set model and likelihood to training mode
             model.train()
-            self.likelihood.train()
+            likelihood.train()
 
             # Set optimizer
             if self.optimizer_ == "adam":
@@ -656,7 +672,7 @@ class MultiGPyTraining:
                 raise ValueError(f"Optimizer '{self.optimizer_}' not supported.")
 
             # Set MLL objective
-            mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
+            mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
             converged = False
             plateau_count = 0  # Counter for consecutive small changes in loss
             threshold = 1e-3  # Convergence threshold for loss
@@ -676,7 +692,7 @@ class MultiGPyTraining:
                 optimizer.step()
 
                 self.losses.append(loss.item())
-                noise = self.likelihood.noise.detach().cpu().numpy()
+                noise = likelihood.noise.detach().cpu().numpy()
                 self.noise_values.append(noise)
 
                 # Track lengthscale
@@ -708,60 +724,55 @@ class MultiGPyTraining:
                     if lengthscale_plateau_count >= required_plateau:
                         lengthscale_converged = True
 
-            self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std)})
+            self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std),
+                                 'likelihood': likelihood})
 
     def train_tasks_locations(self):
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
-        Trains the model for each output variable (water depth OR velocity) at all locations simultaneously.
+        Trains one model per calibration quantity, with all locations as the tasks.
+
+        Note that with this task layout the cross-quantity correlation at a given
+        location is not modelled (the tasks are the locations), so ``predict_``
+        can only return a diagonal per-location covariance.
         """
+        self.task_mode = "locations"
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
+
+        if self.n_obs % self.number_quantities:
+            raise ValueError(
+                f"Number of model outputs ({self.n_obs}) is not a multiple of the "
+                f"number of calibration quantities ({self.number_quantities}).")
 
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities  # Total number of locations
 
-        # Reorganize the tensor so that:
-        # - The 0, 2, 4, 6, ... columns are for the first output (water depth)
-        # - The 1, 3, 5, 7, ... columns are for the second output (velocity)
+        # The model outputs interleave the quantities per location, so quantity q
+        # occupies columns q, q + n_quantities, q + 2*n_quantities, ...
+        for q in range(self.number_quantities):
+            Y_output_var = Y[:, q::self.number_quantities]
+            y_mean = torch.mean(Y_output_var, dim=0)
+            y_std = torch.std(Y_output_var, dim=0)
+            Y_output_var_norm = ((Y_output_var - y_mean) / y_std).to(torch.float32)
+            self.normalization_params.append((f'output_{q + 1}', y_mean, y_std))
 
-        Y_output_1 = Y[:, ::2]  # First output: water depth (even columns: 0, 2, 4, ...)
-        Y_output_2 = Y[:, 1::2]  # Second output: velocity (odd columns: 1, 3, 5, ...)
-
-        # Train the multitask GP model for the first output (water depth)
-        for var in range(2):  # 0: water depth, 1: velocity
-            if var == 0:
-                Y_output_var = Y_output_1
-                y_mean = torch.mean(Y_output_var, dim=0)
-                y_std = torch.std(Y_output_var, dim=0)
-                Y_output_var_norm = (Y_output_var - y_mean) / y_std
-                self.normalization_params.append(('output_1', y_mean, y_std))
-            else:
-                Y_output_var = Y_output_2
-                y_mean = torch.mean(Y_output_var, dim=0)
-                y_std = torch.std(Y_output_var, dim=0)
-                Y_output_var_norm = (Y_output_var - y_mean) / y_std
-                self.normalization_params.append(('output_2', y_mean, y_std))
-
-            # Normalize and convert to torch tensor
-            Y_output_var_norm = torch.tensor(Y_output_var_norm, dtype=torch.float32)
-
-            # Ensure the output has the correct shape
-
-
-            # Initialize multitask GP model for the entire set of locations (tasks)
-            model = MultitaskGPModel(X, Y_output_var_norm, self.likelihood, self.kernel,
+            # Initialize multitask GP model for the entire set of locations (tasks).
+            # Deep copies keep each quantity's noise and lengthscales its own.
+            likelihood = copy.deepcopy(self.likelihood)
+            kernel = copy.deepcopy(self.kernel)
+            model = MultitaskGPModel(X, Y_output_var_norm, likelihood, kernel,
                                      number_tasks=num_locations)  # num_tasks = num_locations
 
             # Set model and likelihood to training mode
             model.train()
-            self.likelihood.train()
+            likelihood.train()
 
             # Set optimizer
             optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
 
             # Set MLL objective
-            mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
+            mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
             # Training loop for the entire set of N locations (tasks) for this variable
             for _ in range(self.training_iter):
@@ -774,14 +785,16 @@ class MultiGPyTraining:
                 loss.backward()
                 optimizer.step()
 
-            # Store trained model for the current variable (water depth or velocity)
-            self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std)})
+            # Store trained model for the current calibration quantity
+            self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std),
+                                 'likelihood': likelihood})
 
     def train_tasks_all(self):
         """
         Train a single multitask Gaussian Process model using all outputs (water depth and velocity)
         at all locations simultaneously.
         """
+        self.task_mode = "all"
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
 
@@ -796,18 +809,21 @@ class MultiGPyTraining:
         # Save normalization parameters
         self.normalization_params = {'y_mean': y_mean, 'y_std': y_std}
 
-        # Initialize multitask GP model
-        model = MultitaskGPModel(X, Y_norm, self.likelihood, self.kernel, number_tasks=self.n_obs)
+        # Initialize multitask GP model. Copied for symmetry with the other two
+        # task layouts, so that self.likelihood/self.kernel stay untrained templates.
+        likelihood = copy.deepcopy(self.likelihood)
+        kernel = copy.deepcopy(self.kernel)
+        model = MultitaskGPModel(X, Y_norm, likelihood, kernel, number_tasks=self.n_obs)
 
         # Set model and likelihood to training mode
         model.train()
-        self.likelihood.train()
+        likelihood.train()
 
         # Set optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
 
         # Set MLL objective
-        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
 
         # Training loop
         for _ in range(self.training_iter):
@@ -820,36 +836,156 @@ class MultiGPyTraining:
             optimizer.step()
 
         # Store trained model
-        self.gp_list = [{'gp': model, 'y_norm': (y_mean, y_std)}]
+        self.gp_list = [{'gp': model, 'y_norm': (y_mean, y_std),
+                         'likelihood': likelihood}]
+
+    @staticmethod
+    def _as_numpy(value):
+        """Return ``value`` as a numpy array, accepting torch tensors."""
+        if isinstance(value, torch.Tensor):
+            return value.detach().cpu().numpy()
+        return np.asarray(value)
+
+    def _model_likelihood(self, model_info):
+        """Return the likelihood belonging to one trained sub-model.
+
+        Surrogates pickled before the per-sub-model likelihood fix stored a single
+        shared instance on the class, so fall back to the model's own attribute and
+        then to the template.
+        """
+        likelihood = model_info.get('likelihood')
+        if likelihood is None:
+            likelihood = getattr(model_info['gp'], 'likelihood', None)
+        if likelihood is None:
+            likelihood = self.likelihood
+        return likelihood
+
+    @staticmethod
+    def _task_kernel(gp, n_tasks):
+        """Task covariance matrix of a multitask GP, shape ``[n_tasks, n_tasks]``."""
+        task_indices = torch.arange(n_tasks)
+        task_kernel = gp.covar_module.task_covar_module(task_indices).evaluate()
+        return task_kernel.detach().cpu().numpy()
+
+    @staticmethod
+    def _input_kernel_diag(gp, input_sets):
+        """k(x, x) at every prediction point, shape ``[n_samples]``."""
+        base_kernel = gp.covar_module.data_covar_module.base_kernel
+        try:
+            diag = base_kernel(input_sets, input_sets, diag=True)
+            return MultiGPyTraining._as_numpy(diag).reshape(-1)
+        except (TypeError, RuntimeError):
+            # Fall back to the per-point evaluation used before vectorisation.
+            values = np.empty(input_sets.shape[0])
+            for j in range(input_sets.shape[0]):
+                x = input_sets[j].unsqueeze(0)
+                values[j] = float(base_kernel(x, x).evaluate().squeeze())
+            return values
+
+    def _resolve_task_mode(self, n_locations):
+        """Return the task layout of the trained models.
+
+        Uses ``self.task_mode`` (set by the ``train_tasks_*`` method that filled
+        ``gp_list``). Surrogates pickled before that attribute existed fall back to
+        the historical heuristic based on ``len(gp_list)``, which is ambiguous when
+        ``n_locations`` equals the number of quantities or equals 1, so the fallback
+        warns.
+        """
+        mode = getattr(self, "task_mode", None)
+        if mode is not None:
+            return mode
+
+        n_models = len(self.gp_list)
+        if n_models == 1:
+            mode = "all"
+        elif n_models == self.number_quantities:
+            mode = "locations"
+        elif n_models == n_locations:
+            mode = "variables"
+        else:
+            raise ValueError(
+                f"Mismatch in gp_list length ({n_models}). Expected {n_locations} "
+                f"(locations) or {self.number_quantities} (quantities).")
+
+        message = (
+            f"MultiGPyTraining has no 'task_mode' attribute (surrogate trained with an "
+            f"earlier version); assuming task layout '{mode}' from "
+            f"len(gp_list)={n_models}.")
+        if n_locations == self.number_quantities or n_locations == 1:
+            message += (
+                " This is ambiguous because the number of locations equals the number "
+                "of calibration quantities (or is 1), so the output column order may "
+                "be wrong. Retrain the surrogate to remove the ambiguity.")
+        logger_warn.warning(message)
+        return mode
 
     def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
         """
         Predict the outputs and their standard deviations for given input sets using the trained GP models.
-        Automatically selects the appropriate method based on the structure of self.gp_list.
+
+        The task layout is taken from ``self.task_mode``, i.e. from the
+        ``train_tasks_*`` method that produced ``self.gp_list``.
+
+        Parameters
+        ----------
+        input_sets : array
+            Parameter sets to predict at, shape ``[n_samples, n_params]``.
+        get_conf_int : bool
+            Additionally return the 2-sigma confidence bounds.
+        multitask_cov : bool
+            Additionally return the per-location task covariance consumed by the
+            Bayesian active-learning utility, as a nested list
+            ``[n_samples][n_locations]`` of ``[n_quantities, n_quantities]`` arrays.
+            ``scipy.linalg.block_diag`` over one sample's entry reproduces the
+            interleaved (location, quantity) column order of the model outputs.
+
+        Returns
+        -------
+        dict
+            ``output`` and ``std``, each ``[n_samples, nloc * n_quantities]`` in the
+            interleaved (location, quantity) order, plus ``upper_ci``/``lower_ci``
+            and ``multitask_cov`` when requested.
+
+        Note
+        ----
+        The returned task covariance is the prior Kronecker term (task kernel times
+        the input kernel at the prediction point), not the posterior predictive
+        covariance. With ``task_mode="locations"`` the tasks are the locations, so
+        the cross-quantity covariance is not part of the model at all and a diagonal
+        covariance built from the marginal standard deviations is returned instead.
         """
         input_sets = torch.tensor(input_sets, dtype=torch.float32)
         n_samples = input_sets.shape[0]
         n_obs = self.n_obs
-        n_locations = n_obs // self.number_quantities
+        n_quantities = self.number_quantities
+        n_locations = n_obs // n_quantities
 
-        # Initialize storage for predictions
-        surrogate_prediction = np.zeros((n_samples, n_obs))
-        surrogate_std = np.zeros((n_samples, n_obs))
+        # NaN-initialised so that any column left unwritten by a wrong dispatch
+        # fails loudly at the check below instead of silently predicting zeros.
+        surrogate_prediction = np.full((n_samples, n_obs), np.nan)
+        surrogate_std = np.full((n_samples, n_obs), np.nan)
+        multitask_cov_list = None
 
         if get_conf_int:
-            upper_ci = np.zeros((n_samples, n_obs))
-            lower_ci = np.zeros((n_samples, n_obs))
+            upper_ci = np.full((n_samples, n_obs), np.nan)
+            lower_ci = np.full((n_samples, n_obs), np.nan)
 
-        if len(self.gp_list) == 1:
+        if multitask_cov:
+            multitask_cov_list = [[None] * n_locations for _ in range(n_samples)]
+
+        mode = self._resolve_task_mode(n_locations)
+
+        if mode == "all":
             model_info = self.gp_list[0]
             gp = model_info['gp']
             y_mean, y_std = model_info['y_norm']
+            likelihood = self._model_likelihood(model_info)
 
             gp.eval()
-            self.likelihood.eval()
+            likelihood.eval()
 
             with torch.no_grad():
-                predictions = self.likelihood(gp(input_sets))
+                predictions = likelihood(gp(input_sets))
                 mean = predictions.mean  # PyTorch tensor of shape (n_samples, n_obs)
                 std = predictions.stddev  # PyTorch tensor of shape (n_samples, n_obs)
 
@@ -858,106 +994,128 @@ class MultiGPyTraining:
                 std = std * y_std
 
                 # Convert to NumPy arrays and store in the respective matrices
-                surrogate_prediction[:] = mean.numpy()
-                surrogate_std[:] = std.numpy()
+                surrogate_prediction[:] = self._as_numpy(mean)
+                surrogate_std[:] = self._as_numpy(std)
 
                 if get_conf_int:
                     upper_ci[:] = surrogate_prediction + 2 * surrogate_std
                     lower_ci[:] = surrogate_prediction - 2 * surrogate_std
 
-        elif len(self.gp_list) == self.number_quantities:
-            # Use logic from predict__
-            for m, model_info in enumerate(self.gp_list):
+                if multitask_cov:
+                    # The single model's tasks span all outputs; the BAL utility
+                    # consumes only the per-location (quantity x quantity) diagonal
+                    # blocks, which are sample-independent up to the input kernel.
+                    scale = self._input_kernel_diag(gp, input_sets)
+                    task_kernel = self._task_kernel(gp, n_obs)
+                    y_std_np = self._as_numpy(y_std)
+                    blocks = []
+                    for i in range(n_locations):
+                        sl = slice(i * n_quantities, (i + 1) * n_quantities)
+                        scaling = np.diag(y_std_np[sl])
+                        blocks.append(scaling @ task_kernel[sl, sl] @ scaling)
+                    for j in range(n_samples):
+                        for i in range(n_locations):
+                            multitask_cov_list[j][i] = scale[j] * blocks[i]
+
+        elif mode == "locations":
+            for q, model_info in enumerate(self.gp_list):
                 gp = model_info['gp']
                 y_mean, y_std = model_info['y_norm']
+                likelihood = self._model_likelihood(model_info)
 
                 gp.eval()
-                self.likelihood.eval()
+                likelihood.eval()
 
                 with torch.no_grad():
-                    predictions = self.likelihood(gp(input_sets))
+                    predictions = likelihood(gp(input_sets))
                     mean = predictions.mean  # This is a PyTorch tensor
                     std = predictions.stddev  # This is a PyTorch tensor
 
-                    # Back-transform normalized predictions (make sure everything is a tensor)
-                    mean = y_std * mean + y_mean  # y_std and y_mean should be tensors already
-
-                    # If y_std is a NumPy array, convert it to a PyTorch tensor (assuming y_std and y_mean are NumPy arrays)
+                    # Make sure the normalisation constants are tensors as well
                     if isinstance(y_std, np.ndarray):
                         y_std = torch.tensor(y_std, dtype=torch.float32)
                     if isinstance(y_mean, np.ndarray):
                         y_mean = torch.tensor(y_mean, dtype=torch.float32)
 
-                    # Now, std is a PyTorch tensor
-                    std = std * y_std
-
-                    # Store predictions in even and odd columns based on the iteration
-                    for i in range(n_locations):  # Assuming mean has shape (20, 42)
-                        if m == 0:
-                            surrogate_prediction[:, 2 * (i)] = mean[:, i].numpy()
-                        else:
-                            surrogate_prediction[:, 2 * (i) + 1] = mean[:, i].numpy()
-                    # Store std similarly
-                    for i in range(n_locations):
-                        if m == 0:
-                            surrogate_std[:, 2 * (i)] = std[:, i].numpy()
-                        else:
-                            surrogate_std[:, 2 * (i) + 1] = std[:, i].numpy()
-                    if get_conf_int:
-                        for i in range(n_locations):
-                            if m == 0:
-                                upper_ci[:, 2 * i] = mean[:, i].numpy() + 2 * std[:, i].numpy()
-                                lower_ci[:, 2 * i] = mean[:, i].numpy() - 2 * std[:, i].numpy()
-                            else:
-                                upper_ci[:, 2 * i + 1] = mean[:, i].numpy() + 2 * std[:, i].numpy()
-                                lower_ci[:, 2 * i + 1] = mean[:, i].numpy() - 2 * std[:, i].numpy()
-
-        elif len(self.gp_list) == n_locations:
-            multitask_cov_list = [[None for _ in range(n_locations)] for _ in range(n_samples)]
-            for i, model_info in enumerate(self.gp_list):
-                gp = model_info['gp']
-                y_mean, y_std = model_info['y_norm']
-                D = np.diag(y_std)
-                gp.eval()
-                self.likelihood.eval()
-
-                with torch.no_grad():
-                    predictions = self.likelihood(gp(input_sets))
-                    mean = predictions.mean.numpy()
-                    std = predictions.stddev.numpy()
                     # Back-transform normalized predictions
-
                     mean = y_std * mean + y_mean
                     std = std * y_std
 
-                    # Store predictions
-
-                    surrogate_prediction[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean
-                    surrogate_std[:, i * self.number_quantities:(i + 1) * self.number_quantities] = std
+                    # Tasks are the locations, so calibration quantity q occupies
+                    # every n_quantities-th output column starting at q.
+                    surrogate_prediction[:, q::n_quantities] = self._as_numpy(mean)
+                    surrogate_std[:, q::n_quantities] = self._as_numpy(std)
                     if get_conf_int:
-                        upper_ci[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean + 2 * std
-                        lower_ci[:, i * self.number_quantities:(i + 1) * self.number_quantities] = mean - 2 * std
+                        upper_ci[:, q::n_quantities] = self._as_numpy(mean + 2 * std)
+                        lower_ci[:, q::n_quantities] = self._as_numpy(mean - 2 * std)
+
+            if multitask_cov:
+                if not getattr(self, "_warned_locations_cov", False):
+                    logger_warn.warning(
+                        "multitask_selection='locations' models the locations as tasks, "
+                        "so a cross-quantity covariance at a location does not exist in "
+                        "this layout. Bayesian active learning falls back to a diagonal "
+                        "per-location covariance built from the marginal standard "
+                        "deviations. Use multitask_selection='variables' to model "
+                        "cross-quantity correlation.")
+                    self._warned_locations_cov = True
+                for j in range(n_samples):
+                    for i in range(n_locations):
+                        sl = slice(i * n_quantities, (i + 1) * n_quantities)
+                        multitask_cov_list[j][i] = np.diag(surrogate_std[j, sl] ** 2)
+
+        elif mode == "variables":
+            for i, model_info in enumerate(self.gp_list):
+                gp = model_info['gp']
+                y_mean, y_std = model_info['y_norm']
+                likelihood = self._model_likelihood(model_info)
+
+                gp.eval()
+                likelihood.eval()
+
+                with torch.no_grad():
+                    predictions = likelihood(gp(input_sets))
+                    mean = self._as_numpy(predictions.mean)
+                    std = self._as_numpy(predictions.stddev)
+
+                    # Back-transform normalized predictions
+                    y_mean_np = self._as_numpy(y_mean)
+                    y_std_np = self._as_numpy(y_std)
+                    mean = y_std_np * mean + y_mean_np
+                    std = std * y_std_np
+
+                    # Tasks are the quantities, so this location's quantities occupy
+                    # one contiguous block of output columns.
+                    sl = slice(i * n_quantities, (i + 1) * n_quantities)
+                    surrogate_prediction[:, sl] = mean
+                    surrogate_std[:, sl] = std
+                    if get_conf_int:
+                        upper_ci[:, sl] = mean + 2 * std
+                        lower_ci[:, sl] = mean - 2 * std
 
                     if multitask_cov:
-
-                        # Now compute multitask covariance for all samples at this location
-                        task_covar_module = gp.covar_module.task_covar_module
-                        base_kernel = gp.covar_module.data_covar_module.base_kernel
-                        task_indices = torch.arange(self.number_quantities)
+                        # The (n_quantities x n_quantities) task covariance is
+                        # genuinely available in this layout. It does not depend on
+                        # the sample, so build it once per location and only scale it
+                        # by the input kernel at each prediction point.
+                        scaling = np.diag(y_std_np)
+                        task_kernel = self._task_kernel(gp, n_quantities)
+                        block = scaling @ task_kernel @ scaling
+                        scale = self._input_kernel_diag(gp, input_sets)
                         for j in range(n_samples):
-                            x = input_sets[j].unsqueeze(0)  # (1, n_inputs)
-                            input_kernel = base_kernel(x, x).evaluate().squeeze()
-                            task_kernel = task_covar_module(task_indices).evaluate()
-                            full_cov = (input_kernel * task_kernel).detach().cpu().numpy()  # (Q, Q)
-                            # Back-transform covariance to original scale
-                            D = np.diag(y_std if isinstance(y_std, np.ndarray) else y_std.numpy())
-                            full_cov_orig = D @ full_cov @ D
-                            multitask_cov_list[j][i] = full_cov_orig  # j: sample, i: location
+                            multitask_cov_list[j][i] = scale[j] * block
 
         else:
             raise ValueError(
-                f"Mismatch in gp_list length ({len(self.gp_list)}). Expected {n_locations} (locations) or {self.number_quantities} (quantities)."
-            )
+                f"Unknown task_mode '{mode}'. Expected 'variables', 'locations' or 'all'.")
+
+        n_unwritten = int(np.isnan(surrogate_prediction).sum() + np.isnan(surrogate_std).sum())
+        if n_unwritten:
+            raise RuntimeError(
+                f"Surrogate prediction left {n_unwritten} output entries unwritten with "
+                f"task_mode='{mode}' and len(gp_list)={len(self.gp_list)}. The trained "
+                f"task layout does not match the expected output shape "
+                f"({n_samples}, {n_obs}).")
 
         # Prepare output dictionary
         if multitask_cov:

@@ -265,7 +265,16 @@ With the initial model setup and the measurement points, the Bayesian model opti
 
    * Find the best-performing calibration parameter values (maximum BME/RE scores) and set them as the new parameter set for the deterministic (TELEMAC) model.
    * Run the complex model (i.e., TELEMAC) with the best-performing calibration parameter values.
-4.  Repeat the process until the maximum number of iterations or a convergence in BME/RE is reached. The last iteration step corresponds to the supposedly best solution. Consider trying more iteration steps, other calibration parameters, or other value ranges if the calibration results in physical non-sense combinations.
+4.  Repeat the process until the maximum number of iterations or a convergence in BME/RE is reached. Consider trying more iteration steps, other calibration parameters, or other value ranges if the calibration results in physical non-sense combinations.
+
+.. warning::
+
+    The last training point of the calibration is **not** the calibrated parameter set.
+    Bayesian active learning selects every training point by *information gain*: the
+    parameter combination that most reduces uncertainty about the posterior, which is
+    not the combination that best reproduces the measurements. The calibrated
+    parameter sets are derived from the posterior itself, see
+    :ref:`calibrated-parameters`.
 
 
 Step 3: Post-calibration data
@@ -279,3 +288,125 @@ Inside this directory, you will find four subfolders containing all the necessar
 for analyzing the calibration process, including the trained GPR metamodels.
 
 For a detailed explanation of the saved data, please refer to :ref:`outputs-folder`.
+
+
+.. _calibrated-parameters:
+
+Step 4: Derive the calibrated parameter sets
+--------------------------------------------
+
+The BAL loop stores, for every iteration, a **joint** posterior sample in
+``BAL_dictionary.pkl``: the prior samples accepted by rejection sampling against the
+joint likelihood over all calibration points and quantities. That sample, not any
+single training point, is the calibration result.
+
+Run the derivation on a finished calibration:
+
+.. code-block:: bash
+
+   python templates/derive_calibrated_parameters.py --config config_Telemac.py
+
+It reports, for every calibration parameter:
+
+* the **peak of that parameter's own posterior marginal**, with the credible interval.
+  The peak is read directly off a histogram of the accepted posterior samples (the
+  most populated bin, refined to the mean of the samples inside it), with no
+  smoothing, so the reported optimum is a property of the posterior rather than of a
+  fitted curve. The number of bins follows from the sample size and the spread of the
+  posterior instead of being fixed in advance, see
+  :func:`~hydroBayesCal.surrogate.posterior_analysis.marginal_bin_count`;
+* the **variance reduction** relative to the prior, i.e. how strongly the measurements
+  constrain that parameter at all;
+* flags for parameters whose optimum is **pinned at a prior bound** (the range is too
+  narrow, or that parameter alone cannot compensate the model error), whose marginal is
+  **multimodal**, or that are **not identifiable** from the calibration targets.
+
+Why the per-parameter optima are not automatically a parameter set
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Each calibration parameter has its own posterior marginal and therefore its own
+optimum. Stacking those optima into one vector, however, implicitly assumes the
+parameters are independent. Under equifinality they are not: a friction zone and a
+critical Shields parameter can trade off along a ridge in parameter space, so the
+combination of their individual peaks falls in the empty middle of that ridge, a
+parameter set the posterior considers implausible even though each component is
+individually optimal.
+
+The script therefore also reports:
+
+* the **joint posterior optimum**, i.e. the parameter vector of highest joint posterior
+  density, which is an actual posterior sample and hence jointly consistent by
+  construction;
+* an **equifinality verdict** based on the posterior correlation between the
+  parameters, the Mahalanobis distance of the marginal-peak vector under the posterior
+  covariance, and the joint posterior density at that vector relative to the accepted
+  samples. ``consistent`` and ``acceptable`` mean the per-parameter optima can be used
+  as a parameter set; ``coupled`` means they happen to be compatible but the parameters
+  trade off so tightly that the marginals do not determine the combination;
+  ``inconsistent`` means the assembled vector sits in a low-density region and is not a
+  valid parameter set at all;
+* representatives of the **distinct posterior modes**, where several different parameter
+  combinations explain the measurements comparably well. Where that happens, no single
+  optimum is a defensible answer. A continuous trade-off *ridge* is reported as one
+  mode rather than several, since every combination along it is about as good; only
+  solutions separated by a genuine drop in posterior density are counted separately.
+
+Running the full complexity model at the candidates
++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+With ``--write-csv`` the candidate parameter sets (marginal peaks, joint optimum,
+posterior mean and one representative per posterior mode) are written to
+``restart_data/user-collocation-points.csv``, together with two labelled report files
+that carry the diagnostics. Then set in the configuration:
+
+.. code-block:: python
+
+   execution['user_param_values']  = True
+   execution['complete_bal_mode']  = False
+   execution['only_bal_mode']      = False
+   sampling['init_runs']           = <number of candidates>
+
+``init_runs`` matters: the run loop is bounded by it, not by the number of rows in the
+CSV file. Then run the full complexity model at each candidate and compare the outputs
+against the measurements:
+
+.. code-block:: bash
+
+   python templates/bal_telemac.py --config config_Telemac.py
+   python templates/assess_calibration.py --config config_Telemac.py
+
+Letting the full complexity model arbitrate between a handful of labelled candidates is
+the honest way to close a calibration whose posterior is equifinal.
+
+Watching the optima converge
++++++++++++++++++++++++++++++
+
+The same diagnostics are recorded at every BAL iteration, so
+``templates/plot_posteriors.py`` produces two additional figures:
+
+* ``parameter_optimum_convergence``: each parameter's own optimum against the number of
+  training points, with its credible interval and the calibration range. A trace still
+  drifting at the end means the calibration has not converged for that parameter; a trace
+  sitting on a bound means it is pinned.
+* ``marginal_vs_joint``: where the combination of the per-parameter optima sits in the
+  joint posterior density, per iteration. A trace that stays low is a quantitative
+  equifinality warning.
+
+Both are reconstructed from the stored posteriors when a result file predates these
+diagnostics, so archived calibrations can be analysed without being re-run.
+
+Accounting for the surrogate uncertainty
++++++++++++++++++++++++++++++++++++++++++
+
+By default the Bayesian inference treats the surrogate predictions as exact and only
+adds a flat ``calibration['gpe_error']`` (10 % of each measured value) to the
+observation variance. The posterior is then sharper than the emulator actually supports,
+which visually exaggerates a unique optimum. Setting
+
+.. code-block:: python
+
+   sampling['include_surrogate_error'] = True
+   calibration['gpe_error']            = 0.0
+
+feeds the GPE predictive standard deviation into the likelihood instead. This changes
+the posterior (it broadens it), so it is off by default.

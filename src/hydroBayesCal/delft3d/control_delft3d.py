@@ -909,9 +909,44 @@ class Delft3DModel(HydroSimulations):
             "ELPD": bayesian_dict["ELPD"][it],
             "post_size": int(bayesian_dict["post_size"][it]),
         }
+        # Per-iteration posterior diagnostics, when the driver recorded them
+        # (hydroBayesCal.surrogate.posterior_analysis.record_iteration).
+        gap = (bayesian_dict.get("marginal_joint_gap") or [None] * (it + 1))[it]
+        if gap:
+            scores_row.update({
+                "marginal_peak_density_percentile": gap.get("density_percentile"),
+                "max_abs_parameter_correlation": gap.get("max_abs_correlation"),
+                "equifinality_verdict": gap.get("verdict"),
+            })
         scores_df = pd.DataFrame([scores_row])
         write_header = not os.path.isfile(scores_path)
         scores_df.to_csv(scores_path, mode="a", header=write_header, index=False)
+
+
+        # 5. Per-parameter marginal optima (one growing file, one row per parameter
+        #    and iteration). These are the per-parameter optima the calibration is
+        #    actually after; the collocation points above are information-gain picks.
+        optima = (bayesian_dict.get("marginal_optima") or [None] * (it + 1))[it]
+        if optima is not None:
+            hdi = (bayesian_dict.get("marginal_hdi") or [None] * (it + 1))[it]
+            reduction = (bayesian_dict.get("variance_reduction") or [None] * (it + 1))[it]
+            flags = (bayesian_dict.get("identifiability_flags") or [None] * (it + 1))[it]
+            optima_path = os.path.join(folder, "marginal_optima.csv")
+            rows = []
+            for index, name in enumerate(self.calibration_parameters):
+                rows.append({
+                    "iteration": it,
+                    "N_tp": n_tp,
+                    "parameter": name,
+                    "marginal_peak": optima[index],
+                    "hdi_low": None if hdi is None else hdi[index][0],
+                    "hdi_high": None if hdi is None else hdi[index][1],
+                    "variance_reduction": None if reduction is None else reduction[index],
+                    "flags": "" if not flags else "|".join(flags[index]),
+                })
+            optima_df = pd.DataFrame(rows)
+            write_optima_header = not os.path.isfile(optima_path)
+            optima_df.to_csv(optima_path, mode="a", header=write_optima_header, index=False)
 
         logger.info(
             f"Saved calibration-data for iteration {it} "

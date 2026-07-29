@@ -120,10 +120,27 @@ def main():
         prior=prior,
         param_values=full_complexity_model.param_values,
         iterations_to_plot=[iterations_to_plot],
-        bins=10,
+        bins=40,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
         parameter_indices = config.plotting["parameter_indices"],
+        best_estimate_value="posterior_marginal_peak",
+    )
+
+    # ---------------------------------------------------------------------
+    # Per-parameter optimum over the BAL iterations, and whether the combination
+    # of those per-parameter optima is a jointly plausible parameter set.
+    # Both work on result files written before these diagnostics existed.
+    # ---------------------------------------------------------------------
+    plotter.plot_parameter_optimum_convergence(
+        bayesian_dict=bayesian_data,
+        parameter_names=config.calibration["parameters"],
+        param_values=full_complexity_model.param_values,
+    )
+    plotter.plot_marginal_vs_joint(
+        bayesian_dict=bayesian_data,
+        parameter_names=config.calibration["parameters"],
+        param_values=full_complexity_model.param_values,
     )
 
 

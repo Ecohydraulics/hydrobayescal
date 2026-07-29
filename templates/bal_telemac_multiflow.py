@@ -78,6 +78,7 @@ def build_multiflow_model(config):
         param_values=config.calibration["param_values"],
         extraction_quantities=config.calibration["extraction_quantities"],
         calibration_quantities=config.calibration["calibration_quantities"],
+        gpe_error=config.calibration.get("gpe_error", 0.10),
         user_param_values=config.execution["user_param_values"],
         max_runs=config.sampling["max_runs"],
         complete_bal_mode=config.execution["complete_bal_mode"],
@@ -126,6 +127,7 @@ def main():
         mc_samples_al=config.sampling["mc_samples_al"],
         mc_exploration=config.sampling["mc_exploration"],
         gp_library=config.sampling["gp_library"],
+        include_surrogate_error=config.sampling.get("include_surrogate_error", False),
     )
 
 
