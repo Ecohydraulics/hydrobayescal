@@ -1,12 +1,24 @@
-.,/KJM,LNIKJUUUUUUUUUUUUUUKJILLLLLLLLLLL"""
-Configuration File for HydroBayesCal - Telemac
+"""
+Configuration File for HydroBayesCal - OpenFOAM InterFoam
+Calibration of Cmu turbulence parameter using velocity measurements
+
+Cylinder in Channel Case:
+  - ADV measurements 115cm behind cylinder center (x = 4.15m)
+  - Two measurement depths: z = 3cm and z = 9cm
+
+Standard Names Reference:
+  - U_x, U_y, U_z      -> Velocity components (OpenFOAM: U[0,1,2])
+  - U_MAG              -> Velocity magnitude
+  - WATER_DEPTH        -> Water depth
+  - FREE_SURFACE       -> Free surface elevation
+  - ALPHA_WATER        -> Volume fraction (OpenFOAM only)
+  - TKE                -> Turbulent kinetic energy (OpenFOAM: k)
+  - CMU                -> k-epsilon Cmu parameter
 """
 
 import os
 
 # Base directory
-# Base directory of this example (resolved relative to this file, so the
-# example runs from any clone location)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ============================================================================
@@ -14,9 +26,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ============================================================================
 paths = {
     'case_template_dir': os.path.join(BASE_DIR, ""),
-    'model_dir':         os.path.join(BASE_DIR,"simulationFiles"),
-    'res_dir':           os.path.join(BASE_DIR),
-    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measuredData_Flume3d.csv"),
+    'model_dir':         os.path.join(BASE_DIR, "simulationFiles"),
+    'res_dir':           os.path.join(BASE_DIR,""),
+    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measuredData_Flume3d_correction.csv"),
 }
 
 # ============================================================================
@@ -28,7 +40,7 @@ hydrodynamic_simulation = {
     'results_filename_base': "3d-ref-2cm-0.5-3d-BAL",
     'control_file':          "3d_cylinder_2cm_BAL.cas",
     'friction_file':         None, #Telemac friction file (if needed)
-    'fortran_file':          "cstkep.f",
+    'fortran_file':          "cstkep.f"
 }
 morphodynamic_simulation= {
     'gaia_cas':                     None,
@@ -55,12 +67,13 @@ calibration = {
     'param_values': [[0.01,0.06]],
 
     # Quantities to extract from simulation - USE STANDARD NAMES
-    'extraction_quantities': ['VELOCITY U','VELOCITY V','VELOCITY W','TURBULENT ENERG','DISSIPATION','3D VELOCITY MAGNITUDE'],
+    'extraction_quantities': ["TURBULENT ENERG", "VELOCITY U", "VELOCITY V", "VELOCITY W","3D VELOCITY MAGNITUDE"],
 
     # Quantities used for BAL calibration - must match columns in measurements.csv
-    #'calibration_quantities': ["TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
-    'calibration_quantities': ['VELOCITY U','VELOCITY V','3D VELOCITY MAGNITUDE'],
+    'calibration_quantities': ["TURBULENT ENERG", "3D VELOCITY MAGNITUDE"],
     # 'calibration_quantities': ["3D VELOCITY MAGNITUDE"],
+    #'calibration_quantities': ["3D VELOCITY MAGNITUDE","VELOCITY U"],
+    #'calibration_quantities': ["TURBULENT ENERG"],
 
 
     'dict_output_name': "extraction-data",
@@ -70,8 +83,8 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 2,   # Number of initial parameter samples
-    'max_runs':  40,   # Total runs (initial + BAL iterations)
+    'init_runs': 10,   # Number of initial parameter samples
+    'max_runs':  25,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
@@ -91,11 +104,28 @@ sampling = {
 # ============================================================================
 execution = {
     'complete_bal_mode':      True,
-    'only_bal_mode':          True,
+    'only_bal_mode':          False,
     'delete_complex_outputs': True,
     'validation':             False,
     'user_param_values':      False,
 }
+# ============================================================================
+# PLOTTING AND REPORTING SETTINGS
+# ============================================================================
+plotting = {
+
+    # Used for plotting and reporting - must be in same order as 'parameters'
+    'parameter_names': [
+        r"$k_{\mathrm{s,bed}}$"
+    ],
+    # Units for reporting and plotting - must be in same order as 'parameters'
+    'parameter_units': ["m"],
+    # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
+    # When all parameters are plotted all indices must be included.
+    'parameter_indices': [0],
+    'iterations_to_plot': 15,
+}
+
 # ============================================================================
 # EXTRACTION OPTIONS
 # ============================================================================
@@ -114,5 +144,4 @@ extraction = {
     'extraction_quantities': ['VELOCITY U','VELOCITY V','FROUDE NUMBER','FRICTION VELOCI','WATER DEPTH'],
     'calibration_quantities': ['VELOCITY U','VELOCITY V'],
     'input_slf_file': '3d-ref-2cm-0.5-2d.slf'  # Use this when extracting data from a .slf file independent from BAL
-
-}
+}  

@@ -1677,7 +1677,7 @@ class TelemacModel(HydroSimulations):
             tm_result_path = os.path.join(model_directory, self.tm_results_filename)
 
             if os.path.exists(tm_result_path):
-                shutil.copy(
+                shutil.move(
                     tm_result_path,
                     self.saved_slf_dir
                 )
@@ -1690,7 +1690,7 @@ class TelemacModel(HydroSimulations):
                 gaia_result_path = os.path.join(model_directory, self.gaia_results_filename)
 
                 if os.path.exists(gaia_result_path):
-                    shutil.copy(
+                    shutil.move(
                         gaia_result_path,
                         self.saved_slf_dir
                     )
@@ -1706,7 +1706,7 @@ class TelemacModel(HydroSimulations):
                 )
 
                 if os.path.exists(tm_2d_from_3d_path):
-                    shutil.copy(
+                    shutil.move(
                         tm_2d_from_3d_path,
                         self.saved_slf_dir
                     )
@@ -1732,7 +1732,7 @@ class TelemacModel(HydroSimulations):
                 )
 
                 if os.path.exists(tm_2d_result_path):
-                    shutil.copy(
+                    shutil.move(
                         tm_2d_result_path,
                         self.saved_slf_dir
                     )

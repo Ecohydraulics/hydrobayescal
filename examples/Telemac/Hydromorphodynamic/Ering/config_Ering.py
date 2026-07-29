@@ -99,12 +99,12 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 4,   # Number of initial parameter samples
-    'max_runs':  4,   # Total runs (initial + BAL iterations)
+    'init_runs': 100,   # Number of initial parameter samples
+    'max_runs': 100 ,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
-    'parameter_sampling_method': "user",
+    'parameter_sampling_method': "sobol",
     'tp_selection_criteria':    "dkl",
 
     # BAL specific
@@ -126,10 +126,10 @@ sampling = {
 # ============================================================================
 execution = {
     'complete_bal_mode':  False,
-    'only_bal_mode':         False,
+    'only_bal_mode':         True,
     'delete_complex_outputs': False,
     'validation':             False,
-    'user_param_values':      True,
+    'user_param_values':      False,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS
@@ -151,7 +151,7 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0, 1, 2, 3, 4, 5, 6],
-    'iterations_to_plot': [70],
+    'iterations_to_plot': [0],
 }
 
 # ============================================================================

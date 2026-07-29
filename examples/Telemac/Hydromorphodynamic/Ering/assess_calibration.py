@@ -65,7 +65,7 @@ def main():
                 # delete_complex_outputs=True,
                 # validation=False
                 )
-    surrogate_to_analyze = 35
+    surrogate_to_analyze = 100
     results_folder_path = full_complexity_model.asr_dir
     restart_data_folder = full_complexity_model.restart_data_folder
     plotter = BayesianPlotter(results_folder_path=results_folder_path)
