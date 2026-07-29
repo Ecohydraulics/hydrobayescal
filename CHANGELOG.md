@@ -62,7 +62,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   path needs several GB per array at `prior_samples=25000`). `calibration['gpe_error']`
   and the measurement-error fraction are now real constructor arguments of
   `HydroSimulations` instead of silent defaults, and the driver warns when the flat
-  `gpe_error` and the actual surrogate variance would be counted twice.
+  `gpe_error` and the actual surrogate variance would be counted twice. Both settings
+  are threaded through the multi-discharge driver as well.
+- **A test suite** (`tests/`, 65 tests), the first in the repository, covering the
+  posterior analysis on synthetic posteriors, the likelihood paths, the multi-output
+  GPE task layouts and the `user-collocation-points.csv` contract. It runs in minutes
+  without a solver. `pyproject.toml` gains `[tool.pytest.ini_options] testpaths`, so
+  the bare `pytest` that CONTRIBUTING has always advertised now works from the
+  repository root.
+- `CLAUDE.md`, a repository guide (commands, architecture, solver-facing conventions)
+  for AI coding assistants.
 
 ### Fixed
 - **Multi-output GPE output columns could be silently mis-ordered.**
@@ -87,6 +96,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the noise and lengthscales fitted for the last location or quantity were applied to
   all of them. Each sub-model now trains and predicts with its own copy. **Results
   differ for existing multi-output runs.**
+- `docs/conf.py` still declared version 1.1.0 while the package was at 1.2.0. The two
+  are back in sync, as CONTRIBUTING requires.
+- The `Source` project URL pointed at a non-canonical repository. It now matches the
+  git remote and the Trusted Publishing configuration
+  (`Ecohydraulics/hydrobayescal`), so the link shown on PyPI resolves correctly.
 
 ### Changed
 - `docs/workflow.rst` no longer states that the last BAL iteration "corresponds to the
