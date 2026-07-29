@@ -25,13 +25,29 @@ def _outputs(x, n_locations, n_quantities):
 
     Column ``i * n_quantities + q`` is the interleaved layout used throughout the
     package (see ``HydroSimulations.model_evaluations``).
+
+    The coefficients deliberately vary in sign and direction. Columns that are all
+    increasing functions of the same inputs come out almost perfectly correlated with
+    each other, and then no test can tell which column is which.
     """
     columns = []
     for i in range(n_locations):
         for q in range(n_quantities):
             k = i * n_quantities + q
-            columns.append((k + 1) * x[:, 0] + (k + 1) ** 2 * x[:, 1] + k)
+            columns.append(np.cos(k) * x[:, 0] + np.sin(2.0 * k) * x[:, 1] + k)
     return np.column_stack(columns)
+
+
+def _column_match(predicted, truth):
+    """Index of the true column each predicted column is closest to.
+
+    Absolute distance, not correlation: correlation is blind to offset and scale, so
+    two columns of the same shape but different level look identical to it.
+    """
+    distance = np.array([[np.mean(np.abs(predicted[:, k] - truth[:, j]))
+                          for j in range(truth.shape[1])]
+                         for k in range(predicted.shape[1])])
+    return np.argmin(distance, axis=1)
 
 
 def _train(n_locations, n_quantities, mode, seed=0):
@@ -75,10 +91,26 @@ def test_predict_column_order_nloc_equals_nq(mode):
     assert predicted.shape == y.shape
     assert not np.isnan(predicted).any()
 
-    # Every predicted column must track its own true column more closely than any
-    # other, i.e. the argmax of the column-wise correlation matrix is the diagonal.
-    corr = np.corrcoef(predicted.T, y.T)[:y.shape[1], y.shape[1]:]
-    assert np.array_equal(np.argmax(corr, axis=1), np.arange(y.shape[1]))
+    # Each predicted column must be closest to its own true column.
+    assert np.array_equal(_column_match(predicted, y), np.arange(y.shape[1]))
+
+
+def test_column_order_test_detects_the_legacy_mis_dispatch():
+    """The check above must actually be able to fail, or it guards nothing.
+
+    Dropping ``task_mode`` reinstates the old length-based heuristic. With
+    ``n_locations == n_quantities`` it resolves a "variables"-trained model to the
+    "locations" writer, which is exactly the bug, so the columns come out permuted.
+    """
+    n_locations = n_quantities = 3
+    sm, x, y = _train(n_locations, n_quantities, "variables")
+
+    correct = _column_match(sm.predict_(input_sets=x)["output"], y)
+    assert np.array_equal(correct, np.arange(y.shape[1]))
+
+    del sm.task_mode  # legacy pickle: falls back to len(gp_list), ambiguous here
+    mis_dispatched = _column_match(sm.predict_(input_sets=x)["output"], y)
+    assert not np.array_equal(mis_dispatched, np.arange(y.shape[1]))
 
 
 @pytest.mark.parametrize("mode", ["variables", "locations", "all"])

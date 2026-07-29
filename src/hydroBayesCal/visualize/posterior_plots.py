@@ -168,7 +168,7 @@ class PosteriorPlots:
         ax.axhline(10.0, color='tab:red', linestyle='--', linewidth=1.5,
                    label='non-identifiable below')
         ax.set_xlabel('number of training points')
-        ax.set_ylabel(r'posterior variance reduction [\%]')
+        ax.set_ylabel('posterior variance reduction (0-100)')
         ax.set_ylim(0, 100)
         ax.grid(alpha=0.3)
         ax.legend(loc='best', fontsize='small', ncol=2)
@@ -202,22 +202,23 @@ class PosteriorPlots:
         """
         series = self._iteration_series(bayesian_dict, parameter_names, param_values)
 
-        fig, ax_density = plt.subplots(figsize=(9, 6))
+        fig, ax_density = plt.subplots(figsize=(12, 7))
         ax_density.plot(series['n_tp'], series['density_percentile'], color='tab:blue',
                         marker='o', markersize=5, linewidth=2)
         ax_density.axhspan(0, alarm_percentile, color='tab:red', alpha=0.12)
         ax_density.axhline(alarm_percentile, color='tab:red', linestyle='--',
                            linewidth=1.5)
         ax_density.set_xlabel('number of training points')
-        ax_density.set_ylabel(r'joint posterior density percentile of the '
-                              r'marginal-peak vector [\%]')
+        # Kept short: at the package's default label size a full sentence does not
+        # fit along the axis and is clipped. The legend carries the meaning.
+        ax_density.set_ylabel('density percentile (0-100)')
         ax_density.set_ylim(0, 100)
         ax_density.grid(alpha=0.3)
 
         ax_corr = ax_density.twinx()
         ax_corr.plot(series['n_tp'], series['max_abs_correlation'], color='tab:orange',
                      marker='s', markersize=4, linewidth=1.5, linestyle='--')
-        ax_corr.set_ylabel(r'largest $|r|$ between calibration parameters')
+        ax_corr.set_ylabel(r'largest $|r|$')
         ax_corr.set_ylim(0, 1)
 
         ax_density.legend(handles=[
