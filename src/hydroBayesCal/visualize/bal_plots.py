@@ -23,9 +23,17 @@ class BALPlots:
         ax.set_ylabel(ylabel)
         ax.grid(True, linestyle='--', color='lightgrey', linewidth=0.5)
 
-        slope, intercept, _, _, _ = linregress(iterations, values)
-        trend = [slope * x + intercept for x in iterations]
-        ax.plot(iterations, trend, color=trend_color, linestyle='--', linewidth=trend_linewidth)
+        # Fit on the finite points only. A single inf or nan in the series makes
+        # linregress return nan for every coefficient, which silently removes the
+        # trend line from the figure without any indication that it failed.
+        x_values = np.asarray(iterations, dtype=float)
+        y_values = np.asarray(values, dtype=float)
+        finite = np.isfinite(x_values) & np.isfinite(y_values)
+        if finite.sum() >= 2:
+            slope, intercept, _, _, _ = linregress(x_values[finite], y_values[finite])
+            trend = slope * x_values + intercept
+            ax.plot(iterations, trend, color=trend_color, linestyle='--',
+                    linewidth=trend_linewidth)
 
         ax.set_xlim(iterations[0], iterations[-1])
         ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
@@ -62,13 +70,22 @@ class BALPlots:
         save_folder.mkdir(parents=True, exist_ok=True)
 
         iterations = list(range(num_bal_iterations))
-        bme_values = [bayesian_dict['BME'][it] for it in iterations]
+        # Prefer log_BME where the result file has it. The linear BME underflows to
+        # 0.0 and overflows to inf at realistic problem sizes, and a series spanning
+        # many orders of magnitude is unreadable on a linear axis. Result files
+        # written before log_BME existed fall back to BME and render as before.
+        if bayesian_dict.get('log_BME') is not None:
+            bme_values = [bayesian_dict['log_BME'][it] for it in iterations]
+            bme_label = r'$\log$ BME'
+        else:
+            bme_values = [bayesian_dict['BME'][it] for it in iterations]
+            bme_label = r'BME'
         re_values = [bayesian_dict['RE'][it] for it in iterations]
 
         if plot_type == 'both':
             fig, axes = plt.subplots(1, 2, figsize=(15, 5))
 
-            self._plot_series_with_trend(axes[0], iterations, bme_values, r'BME',
+            self._plot_series_with_trend(axes[0], iterations, bme_values, bme_label,
                                          marker='.', trend_color='darkslategray', trend_linewidth=0.8)
             self._plot_series_with_trend(axes[1], iterations, re_values, r'RE',
                                          marker='.', trend_color='dimgray', trend_linewidth=0.5)
@@ -80,7 +97,7 @@ class BALPlots:
         elif plot_type == 'BME':
             fig, ax = plt.subplots(figsize=(8, 6))
 
-            self._plot_series_with_trend(ax, iterations, bme_values, r'BME',
+            self._plot_series_with_trend(ax, iterations, bme_values, bme_label,
                                          marker='+', trend_color='darkslategray', trend_linewidth=0.5)
 
             plt.tight_layout()

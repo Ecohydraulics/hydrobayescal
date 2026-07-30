@@ -53,20 +53,33 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   per-iteration equifinality diagnostics into `bayesian_scores.csv` and the
   per-parameter optima into a new `marginal_optima.csv`. Result dictionaries without
   those keys are handled unchanged.
-- **Opt-in surrogate uncertainty in the Bayesian inference**
-  (`sampling['include_surrogate_error']`, default `False`). The inference previously
-  ignored the GPE predictive variance while the BAL utility used it, making the
-  posterior sharper than the surrogate supports. Enabling the flag passes
-  `surrogate_output['std']` as `model_error`, backed by a new diagonal fast path in
-  `BayesianInference` (`O(MC * n_obs)` instead of `O(MC * n_obs**2)` memory; the dense
-  path needs several GB per array at `prior_samples=25000`). `calibration['gpe_error']`
-  and the measurement-error fraction are now real constructor arguments of
-  `HydroSimulations` instead of silent defaults, and the driver warns when the flat
-  `gpe_error` and the actual surrogate variance would be counted twice. Both settings
-  are threaded through the multi-discharge driver as well.
-- **A test suite** (`tests/`, 65 tests), the first in the repository, covering the
-  posterior analysis on synthetic posteriors, the likelihood paths, the multi-output
-  GPE task layouts and the `user-collocation-points.csv` contract. It runs in minutes
+- **The Bayesian inference now accounts for the surrogate's own predictive variance**
+  (`sampling['include_surrogate_error']`, **default `True`**). The inference previously
+  ignored the GPE predictive variance while the BAL utility used it, so the posterior
+  came out sharper than the surrogate supports. It now passes `surrogate_output['std']`
+  as `model_error`, backed by a new diagonal fast path in `BayesianInference`
+  (`O(MC * n_obs)` instead of `O(MC * n_obs**2)` memory; the dense path needs several
+  GB per array at `prior_samples=25000`).
+- **The observation-error budget is now three named terms instead of one fudge factor.**
+  `calibration['measurement_error']` (0.10, instrument imprecision),
+  `calibration['gpe_error']` (**now 0.0**, a flat stand-in for emulator uncertainty that
+  is redundant while `include_surrogate_error` is on) and the new
+  `calibration['model_structural_error']` (0.0, the solver being an imperfect
+  description of the site, which `include_surrogate_error` does **not** supply). All
+  three are real constructor arguments of `HydroSimulations` and are read from the
+  configuration by every driver, including the multi-discharge one; `measurement_error`
+  previously existed but no driver read it. **Expect posteriors to become sharper, not
+  broader**: the old defaults added a flat 10 % emulator term on top of the 10 %
+  measurement term, and a trained GPE is usually tighter than that. To reproduce the
+  old behaviour exactly, set `include_surrogate_error = False` **and**
+  `gpe_error = 0.10`; setting only the first represents the emulator uncertainty
+  nowhere at all, which the drivers now warn about. The effective settings are logged
+  on every run.
+- **A test suite** (`tests/`, 89 tests), the first in the repository, covering the
+  posterior analysis on synthetic posteriors, the likelihood paths and their numerical
+  limits, the multi-output GPE task layouts, the `user-collocation-points.csv` contract,
+  and the shipped default values themselves (including the `.get()` fallbacks in the
+  drivers, which is what an existing configuration file actually hits). It runs in minutes
   without a solver. `pyproject.toml` gains `[tool.pytest.ini_options] testpaths`, so
   the bare `pytest` that CONTRIBUTING has always advertised now works from the
   repository root.
@@ -105,6 +118,39 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the noise and lengthscales fitted for the last location or quantity were applied to
   all of them. Each sub-model now trains and predicts with its own copy. **Results
   differ for existing multi-output runs.**
+- **The Bayesian model evidence was computed in linear space and broke at both ends.**
+  `BME = mean(exp(log_likelihood))` **underflowed to exactly 0.0** on the ordinary
+  default path once a calibration had a few hundred outputs and a mediocre fit (300
+  outputs at a 2.2 sigma mean residual, 600 at 1.7 sigma). `BME == 0` gave `RE = nan`,
+  the nan was caught in `bayesian_active_learning` and replaced by `0.0` **for every
+  candidate**, and the training point was then chosen arbitrarily rather than by
+  information gain. Affected runs are identifiable: `bayesian_dict['util_func']` is
+  relabelled `'global_mc'` for those iterations. The evidence is now computed with
+  `logsumexp` and exposed as a new `log_BME`, from which `RE` and `IE` are derived, so
+  neither end can poison the scores. `BME` is retained for backward compatibility and
+  may still read `0.0` or `inf`.
+- **The likelihood conventions of the two paths disagreed.** The default path dropped
+  the normalising constant while the model-error path kept it, so the log-likelihood
+  went large and *positive* and `exp()` overflowed to `inf` at realistic sizes. Both
+  paths are now normalised against the observation covariance, which cancels the `2*pi`,
+  keeps the sample-dependent `log(v/e)` term in full, makes the result non-positive **by
+  construction**, and reduces exactly to the old default path at zero model error. BME
+  is therefore comparable across the setting.
+- **`calculate_likelihood_manual` crashed with `ZeroDivisionError`** on any calibration
+  with a few hundred outputs: it formed `1/sqrt(np.linalg.det(cov_mat))`, and the
+  determinant of a few hundred small variances underflows to exactly `0.0`. The value
+  was computed only to be discarded, since the line consuming it had been commented out,
+  and it is now gone. The dense `calculate_likelihood_with_error` uses `slogdet` for the
+  same reason.
+- Non-positive observation variances now raise a clear `ValueError` naming the offending
+  entries, instead of an opaque `LinAlgError` from a matrix inverse.
+- `bayesian_scores.csv` silently misaligned every column when an appended row carried a
+  different column set, which already happened within a single run because the
+  per-iteration diagnostics only appear once a posterior exists. The file is now
+  rewritten with the union of columns.
+- `plot_bme_re` fits its trend line on the finite points only; a single `inf` or `nan`
+  previously made `linregress` return `nan` and the trend line vanished silently. It
+  also prefers `log_BME` when the result file has it.
 - `docs/conf.py` still declared version 1.1.0 while the package was at 1.2.0. The two
   are back in sync, as CONTRIBUTING requires.
 - The `Source` project URL pointed at a non-canonical repository. It now matches the

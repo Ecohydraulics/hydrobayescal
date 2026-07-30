@@ -5,6 +5,7 @@ TO DO: ADD DESCRIPTION
 import numpy as np
 import scipy.stats as stats
 from scipy.linalg import block_diag
+from scipy.special import logsumexp
 import math
 from joblib import Parallel, delayed
 from tqdm import tqdm
@@ -109,6 +110,7 @@ class BayesianInference:
         self.post_logpdf = None 
 
         self.BME = None
+        self.log_BME = None
         self.ELPD = None
         self.RE = None
         self.IE = None
@@ -125,6 +127,17 @@ class BayesianInference:
         # self.cov_mat = np.array([np.diag(self.error[:, var]) for var in range(self.observations.shape[0])])
         if type(self.error) is not np.ndarray:
             self.error = np.array([self.error])
+        # Every likelihood path divides by these and takes their logarithm, so a
+        # non-positive entry is fatal. It is reachable: a measured value of exactly
+        # 0.0 with a 0.0 `_ERROR` column and no relative error terms gives variance
+        # 0, which used to surface as an opaque LinAlgError from the matrix inverse.
+        non_positive = np.flatnonzero(np.asarray(self.error, dtype=float) <= 0.0)
+        if non_positive.size:
+            raise ValueError(
+                f"Observation variance must be positive, but entries {non_positive.tolist()} "
+                f"are <= 0. This usually means a measured value of 0 with a 0 "
+                f"'<target>_ERROR' column while measurement_error, gpe_error and "
+                f"model_structural_error are all 0.")
         self.cov_mat = np.diag(self.error)
         if self.model_predictions.ndim == 1:
             self.model_predictions = np.reshape(self.model_predictions, (-1, 1))
@@ -154,9 +167,13 @@ class BayesianInference:
         * Method is faster than using stats module ('calculate_likelihood' function).
         """
         # Calculate constants:
-        det_R = np.linalg.det(self.cov_mat)
         invR = np.linalg.inv(self.cov_mat)
-        const_mvn = pow(2 * math.pi, - self.observations.shape[1] / 2) * (1 / math.sqrt(det_R))  # ###########
+        # The normalising constant is deliberately not formed here: this likelihood is
+        # referenced against the observation covariance, so the constant is 1 by
+        # construction (see calculate_likelihood_with_error_diagonal). Computing it
+        # anyway used to crash with ZeroDivisionError, because np.linalg.det of a few
+        # hundred small variances underflows to exactly 0.0, and the value was then
+        # discarded unused.
 
         # vectorize means:
         means_vect = self.observations[:, np.newaxis]  # ############
@@ -173,8 +190,8 @@ class BayesianInference:
         total_inside_exponent = np.reshape(total_inside_exponent,
                                            (total_inside_exponent.shape[1], total_inside_exponent.shape[2]))
 
-        # likelihood = const_mvn * np.exp(-0.5 * total_inside_exponent)
-        likelihood = np.exp(-0.5 * total_inside_exponent)
+        with np.errstate(under="ignore"):
+            likelihood = np.exp(-0.5 * total_inside_exponent)
         log_likelihood = -0.5 * total_inside_exponent
 
         # Convert likelihoods to vector:
@@ -218,13 +235,16 @@ class BayesianInference:
         ``error`` holds variances while ``model_error`` holds standard deviations,
         matching :meth:`calculate_likelihood_with_error`.
         """
-        variances = (np.diagonal(self.cov_mat)[np.newaxis, :]
-                     + np.asarray(self.model_error, dtype=float) ** 2)
+        reference = np.diagonal(self.cov_mat)[np.newaxis, :]
+        variances = reference + np.asarray(self.model_error, dtype=float) ** 2
         difference = self.observations[0, :][np.newaxis, :] - self.model_predictions
 
+        # Normalised against the observation covariance rather than against 1, see
+        # the note above: the 2*pi cancels, the sample-dependent log(v/e) is kept.
         self.log_likelihood = -0.5 * np.sum(
-            difference ** 2 / variances + np.log(2 * math.pi * variances), axis=1)
-        self.likelihood = np.exp(self.log_likelihood)
+            difference ** 2 / variances + np.log(variances / reference), axis=1)
+        with np.errstate(under="ignore"):
+            self.likelihood = np.exp(self.log_likelihood)
 
     def calculate_likelihood_with_error(self):
         """
@@ -251,11 +271,16 @@ class BayesianInference:
         std_3d = np.array([np.diag(row) for row in self.model_error])     # make 3D matrix for std
         self.augmented_cov = cov_3d + std_3d**2                           # combine covariances
 
-        det_R = np.linalg.det(self.augmented_cov)
         invR = np.linalg.inv(self.augmented_cov)
-        # Can't ignore constant
-        const_mvn = pow(2 * math.pi, - self.observations.shape[1] / 2) * (1 / np.sqrt(det_R)).reshape(-1, 1)
-        log_constant = self.observations.shape[1] * math.log(2 * math.pi) + np.log(det_R.reshape(-1, 1))
+        # slogdet, not det: the determinant of a 150x150 diagonal of 0.0025 underflows
+        # to exactly 0.0, which made log(det) = -inf and the log-likelihood +inf.
+        _, log_det = np.linalg.slogdet(self.augmented_cov)
+        _, log_det_reference = np.linalg.slogdet(self.cov_mat)
+        # Normalised against the observation covariance (see the diagonal fast path),
+        # so the 2*pi cancels and only the sample-dependent part of the determinant
+        # term survives.
+        log_constant = (log_det.reshape(-1, 1) - log_det_reference)
+        const_mvn = np.exp(-0.5 * log_constant)
 
         # vectorize means:
         means_vect = self.observations[:, np.newaxis]  # ############
@@ -272,7 +297,8 @@ class BayesianInference:
         total_inside_exponent = np.reshape(total_inside_exponent,
                                            (total_inside_exponent.shape[1], total_inside_exponent.shape[2]))
 
-        likelihood = const_mvn * np.exp(-0.5 * total_inside_exponent)
+        with np.errstate(under="ignore"):
+            likelihood = const_mvn * np.exp(-0.5 * total_inside_exponent)
         log_likelihood = -0.5*(log_constant + total_inside_exponent)
 
         # Convert likelihoods to vector:
@@ -344,37 +370,47 @@ class BayesianInference:
 
         # Posterior sampling:
         if 'bayesian_weighting' in self.post_sampling_method.lower():  # Bayesian weighting
-            # 3. Posterior estimation using Bayesian weighting
-            non_zero_lk = self.likelihood[np.where(self.likelihood != 0)]
-            post_w = non_zero_lk / np.sum(non_zero_lk)
-
-            # 4. Posterior-based scores
-            self.BME = np.mean(self.likelihood)
-            self.ELPD = np.sum(post_w * np.log(non_zero_lk))
+            # 3./4. Posterior estimation and scores, in log space. The linear form
+            # (mean of the likelihood, weights from the likelihood) silently
+            # underflows to zero for a few hundred outputs.
+            log_likelihood = np.ravel(self.log_likelihood)
+            finite = np.isfinite(log_likelihood)
+            self.log_BME = float(logsumexp(log_likelihood[finite])
+                                 - np.log(log_likelihood.size))
+            weights = np.exp(log_likelihood[finite] - logsumexp(log_likelihood[finite]))
+            self.ELPD = float(np.sum(weights * log_likelihood[finite]))
 
         elif 'rejection_sampling' in self.post_sampling_method.lower():  # rejection sampling
             # 3. Posterior estimation/sampling
             self.rejection_sampling()
 
-            # 2. prior-based BME
+            # 2. prior-based BME, computed in log space. mean(exp(.)) underflows
+            # to exactly 0 for a few hundred outputs and overflows to inf when a
+            # model error is included, and both used to poison RE.
             if self.log_likelihood is not None and self.use_log:  # estimate using log-likelihoods
-                self.BME = np.mean(np.exp(self.log_likelihood))
-                self.ELPD = np.mean(self.post_loglikelihood)
+                log_likelihood = np.ravel(self.log_likelihood)
+                self.log_BME = float(logsumexp(log_likelihood) - np.log(log_likelihood.size))
+                self.ELPD = float(np.mean(self.post_loglikelihood))
 
             else:
-                self.BME = np.mean(self.likelihood)
-                self.ELPD = np.mean(np.log(self.post_likelihood))
+                mean_likelihood = float(np.mean(self.likelihood))
+                self.log_BME = np.log(mean_likelihood) if mean_likelihood > 0 else -np.inf
+                self.ELPD = float(np.mean(np.log(self.post_likelihood)))
 
-        # If BME is 0:
-        if self.BME == 0:
-            # print('BME is 0, so we use stupid number ***********************')
-            # RE = ELPD - np.log(1e-300)
+        # BME is retained for backward compatibility (it is written to
+        # BAL_dictionary.pkl and to bayesian_scores.csv), but it is the lossy view:
+        # it may be 0.0 or inf at realistic problem sizes. log_BME is always exact,
+        # and is what the scores below are derived from.
+        with np.errstate(over="ignore"):
+            self.BME = float(np.exp(self.log_BME)) if self.log_BME is not None else None
+
+        if self.log_BME is None or not np.isfinite(self.log_BME):
             self.RE = math.nan
             self.IE = math.nan
         else:
-            self.RE = self.ELPD - np.log(self.BME)
+            self.RE = self.ELPD - self.log_BME
             if self.prior_logpdf is not None:
-                self.IE = np.log(self.BME) - np.mean(self.post_logpdf) - self.ELPD
+                self.IE = self.log_BME - np.mean(self.post_logpdf) - self.ELPD
             else:
                 self.IE = None
 
@@ -616,6 +652,9 @@ class SequentialDesign:
         y_mc = rv.rvs(size=self.mc_exploration)                 # sample from posterior space
         logPriorLikelihoods = rv.logpdf(y_mc)                   # get prior probability
 
+        # No model_error here, deliberately: y_mc is drawn *from* the GP predictive
+        # distribution just above, so the emulator uncertainty is already carried by
+        # the sampling. Passing model_error as well would count it twice.
         bi_bal = BayesianInference(model_predictions=y_mc, observations=observations, error=error,
                                    prior_log_pdf=logPriorLikelihoods,                    # Needed to estimate IE
                                    sampling_method='rejection_sampling')
@@ -624,16 +663,21 @@ class SequentialDesign:
         if utility_function.lower() == 'dkl':    # '''ToDo: Make it prior/posterior based'''
             u_j_d = bi_bal.RE           # Max is better: leave as positive
         elif utility_function.lower() == 'bme':  # '''ToDo: Make it prior/posterior based'''
-            u_j_d = bi_bal.BME          # Max is better: leave as positive
+            # log_BME, not BME: the linear evidence underflows to 0.0 for every
+            # candidate at a few hundred outputs, which collapses the ranking. log is
+            # monotone, so the selection is unchanged wherever BME was representable.
+            u_j_d = bi_bal.log_BME      # Max is better: leave as is
         elif utility_function.lower() == 'ie':
             u_j_d = bi_bal.IE * -1      # Min is better: multiply by -1 to maximize
         else:
             print('The selected utility function is not yet available. ')
             # '''ToDO: add BIC, DIC, KIC (from BayesValidRox) and posterior-based criteria.'''
 
-        # Catch if U_j_d is nan or inf, and replace by 0, since we are maximizing
-        if np.isnan(u_j_d) or u_j_d == -np.inf or u_j_d == np.inf:
-            u_j_d = 0.0
+        # Catch if U_j_d is nan or inf. A failed candidate must score worse than
+        # every real one, so the replacement is -inf: log_BME is <= 0, and the old
+        # 0.0 would have made a failure the best candidate.
+        if u_j_d is None or np.isnan(u_j_d) or np.isinf(u_j_d):
+            u_j_d = -np.inf
 
         return u_j_d
 
