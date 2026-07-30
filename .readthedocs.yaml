@@ -1,5 +1,11 @@
 # Read the Docs configuration file for Sphinx projects.
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details.
+# NOTE: this file must stay at the repository ROOT. Read the Docs only searches
+# the root for .readthedocs.yaml (and the legacy .readthedocs.yml /
+# readthedocs.yaml / readthedocs.yml names); it does not look in subdirectories.
+# A config placed in docs/ is silently ignored unless the project defines a
+# custom "Path for .readthedocs.yaml" in its RTD admin settings. All paths below
+# are relative to the repository root, regardless of where this file sits.
 
 version: 2
 
