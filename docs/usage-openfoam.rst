@@ -112,7 +112,7 @@ dictionary entries that ``OpenFOAMController`` writes into the case, for example
 names, e.g. ``"U_x"``, ``"U_y"``, ``"U_z"``, ``"U_MAG"`` (velocity components /
 magnitude), ``"TKE"`` (turbulent kinetic energy ``k``), ``"WATER_DEPTH"`` and
 ``"FREE_SURFACE"``. As for TELEMAC, the calibration CSV provides a
-``<quantity>_DATA`` and ``<quantity>_ERROR`` column per quantity, together with
+``<target>_DATA`` and ``<target>_ERROR`` column per calibration target, together with
 the ``X``, ``Y`` (and ``Z``) coordinates of the measurement points.
 
 Running the calibration

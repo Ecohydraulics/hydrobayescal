@@ -90,17 +90,17 @@ The measured data, stored in a `.csv` file, should consists of water depth and s
 
     calibration_quantities=["WATER DEPTH", "SCALAR VELOCITY"]
 
-For more details on the assignment of complex model parameters, please refer to the section :ref:`HydroSimulations_class`.
+For more details on the assignment of calibration parameters, please refer to the section :ref:`HydroSimulations_class`.
 
 
 Experiment Design Definition
 ----------------------------
 
-The calibration model parameters are associated with uncertainty and are described as probability distributions.
-To define the values of the input parameters, **HydroBayesCal** uses the classes `ExpDesigns` and `Input` from BayesValidRox:
+The calibration parameters are associated with uncertainty and are described as probability distributions.
+To define the value ranges of the calibration parameters, **HydroBayesCal** uses the classes `ExpDesigns` and `Input` from BayesValidRox:
 `Priors, input space and experimental design <https://pages.iws.uni-stuttgart.de/inversemodeling/bayesvalidrox/input_description.html>`_
 
-If the uncertain parameters are defined as distribution types, they must be specified as follows:
+If the calibration parameters are defined as distribution types, they must be specified as follows:
 
 Example Usage
 +++++++++++++
@@ -163,7 +163,7 @@ Run Numerical Model with Experiment Design
 
 This step executes the hydrodynamic model for a given experiment design and returns
 the collocation points (previously obtained in the experiment design) and the model outputs.
-The collocation points serve as the input parameters for the initial model runs.
+The collocation points are the calibration parameter sets used for the initial model runs.
 
 Example Usage
 +++++++++++++
@@ -192,11 +192,11 @@ Returns
     ``[number of runs x number of calibration parameters]`` used for model evaluations.
 
 **model_outputs** : array
-    Contains the model outputs. The shape of the array depends on the number of quantities:
+    Contains the model outputs. The shape of the array depends on the number of calibration targets:
 
-    - **For 1 quantity**: ``[number of runs x number of locations]``
-    - **For 2 quantities**: ``[number of runs x 2 * number of locations]``
-      *(Each pair of columns contains the two quantities for each location.)*
+    - **For 1 calibration target**: ``[number of runs x number of locations]``
+    - **For 2 calibration targets**: ``[number of runs x 2 * number of locations]``
+      *(Each pair of columns contains the two calibration targets for each location.)*
 
 Run BAL Calibration
 -------------------
@@ -207,7 +207,7 @@ This step performs **stochastic calibration** of the Telemac hydrodynamic model 
 
 This approach enables:
 
-- **Bayesian Model Inversion**, allowing uncertainty quantification of model input parameters
+- **Bayesian Model Inversion**, allowing uncertainty quantification of the calibration parameters
   through **Bayesian Inference**.
 - **Iterative surrogate training**, where the GP metamodel is refined dynamically by adding new training points using
   **Bayesian Active Learning (BAL)** to improve calibration efficiency. The criteria for adding new training points is selected from **DKL (relative entropy)**, **BME (Bayesian Model Evidence)**
@@ -238,7 +238,7 @@ Parameters
     ``[number of initial runs x number of calibration parameters]``.
 
 **model_outputs** : array
-    Contains the outputs from the hydrodynamic model, with shape dependent on the number of quantities and locations.
+    Contains the outputs from the hydrodynamic model, with shape dependent on the number of calibration targets and locations.
 
 **complex_model** : obj
     An instance representing the hydrodynamic model instance to be evaluated.
@@ -297,27 +297,27 @@ Each folder contains essential data that can be extracted or used for further an
 The generated folders and their contents are as follows:
 
 **1. Calibration Data**
-   Contains all calibration-related data for the specified calibration quantity/quantities.
+   Contains all calibration-related data for the specified calibration target(s).
 
    - **``BAL_dictionary.pkl``**:
      Stores Bayesian Active Learning data after iterations, including prior/posterior distributions, observations, errors,
      Bayesian Model Evidence (BME), and Relative Entropy (RE).
 
-   - **``collocation-points-<CALIBRATION_QUANTITY>.csv``**:
-     Lists the collocation points used during calibration, including both initial and BAL-added points for the specified ``<CALIBRATION_QUANTITY>``.
+   - **``collocation-points-<CALIBRATION_TARGET>.csv``**:
+     Lists the collocation points used during calibration, including both initial and BAL-added points for the specified ``<CALIBRATION_TARGET>``.
 
    - **``extraction-data-detailed.json``**:
      A JSON dictionary containing the output data from the complex model simulations for all collocation points
      and the variables in ``extraction_quantities``.
 
-   - **``model-results-calibration-<CALIBRATION_QUANTITY>.csv``**:
-     A CSV file storing model results for all collocation points and the specified ``<CALIBRATION_QUANTITY>``.
+   - **``model-results-calibration-<CALIBRATION_TARGET>.csv``**:
+     A CSV file storing model results for all collocation points and the specified ``<CALIBRATION_TARGET>``.
 
    - **``model-results-extraction.csv``**:
      Extracted model results from simulations for the variables defined in ``extraction_quantities``.
 
-   - **``<CALIBRATION_QUANTITY>-detailed.json``**:
-     A detailed JSON file containing extracted data for ``<CALIBRATION_QUANTITY>`` at each collocation point and location.
+   - **``<CALIBRATION_TARGET>-detailed.json``**:
+     A detailed JSON file containing extracted data for ``<CALIBRATION_TARGET>`` at each collocation point and location.
 
 **2. Plots**
    This folder stores plots generated after the calibration process.

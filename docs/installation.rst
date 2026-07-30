@@ -131,36 +131,120 @@ plotting call fails with a ``RuntimeError`` from matplotlib quoting a LaTeX
 error such as ``File 'type1cm.sty' not found``, no matter which Python
 environment is active.
 
-On Debian/Ubuntu:
+What is required, independently of the platform:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Component
+     - Why it is needed
+   * - a LaTeX engine
+     - the ``latex`` binary that typesets the text, plus the base packages
+       ``fix-cm``, ``inputenc`` and ``textcomp``
+   * - ``type1cm``
+     - lets matplotlib scale the fonts to arbitrary sizes; **missing this is by
+       far the most common failure**, reported as
+       ``File 'type1cm.sty' not found``
+   * - ``cm-super``
+     - scalable Type 1 versions of the Computer Modern fonts, needed at the
+       axis-label sizes used here
+   * - ``psnfss`` / Times
+     - the ``mathptmx`` Times font selected by the plotting style
+   * - ``dvipng``
+     - converts the LaTeX output to raster images; required for the ``Agg``
+       backend used in headless and batch runs
+   * - Ghostscript
+     - used by matplotlib for some output formats
+
+Platform-specific commands
+++++++++++++++++++++++++++
+
+**Debian / Ubuntu**
 
 .. code-block:: bash
 
    sudo apt install texlive-latex-base texlive-latex-extra \
-                    texlive-fonts-recommended cm-super dvipng
+                    texlive-fonts-recommended cm-super dvipng ghostscript
 
-What each one is for:
+(``type1cm`` lives in ``texlive-latex-extra``, which is *not* pulled in by
+``texlive-latex-base``.)
 
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
+**Fedora / RHEL / Rocky / AlmaLinux**
 
-   * - Package
-     - Why it is needed
-   * - ``texlive-latex-base``
-     - the ``latex`` binary itself, plus ``fix-cm``, ``inputenc``, ``textcomp``
-   * - ``texlive-latex-extra``
-     - provides ``type1cm.sty``, which matplotlib loads to scale the fonts to
-       arbitrary sizes; missing it is the most common failure
-   * - ``texlive-fonts-recommended``
-     - the Times font (``mathptmx``) selected by the plotting style
-   * - ``cm-super``
-     - scalable Type 1 versions of the Computer Modern fonts, required for the
-       axis label sizes used here
-   * - ``dvipng``
-     - converts the LaTeX output to raster images; matplotlib needs it for the
-       ``Agg`` backend used in headless and batch runs
+.. code-block:: bash
 
-To check an installation before running a long calibration:
+   sudo dnf install texlive-scheme-medium texlive-type1cm texlive-cm-super \
+                    texlive-dvipng ghostscript
+
+**openSUSE**
+
+.. code-block:: bash
+
+   sudo zypper install texlive-latex texlive-type1cm texlive-cm-super \
+                       texlive-dvipng ghostscript
+
+**Arch Linux**
+
+.. code-block:: bash
+
+   sudo pacman -S texlive-latexextra texlive-fontsrecommended \
+                  texlive-fontsextra ghostscript
+   # dvipng ships with texlive-bin on current Arch; install the dvipng package
+   # separately on older installations
+
+**macOS**
+
+The simplest route is the full MacTeX distribution, which already contains
+everything above:
+
+.. code-block:: bash
+
+   brew install --cask mactex          # ~4 GB
+
+For a small install, use BasicTeX and add the pieces:
+
+.. code-block:: bash
+
+   brew install --cask basictex
+   sudo tlmgr update --self
+   sudo tlmgr install type1cm cm-super psnfss dvipng underscore
+
+**Windows**
+
+Install `MiKTeX <https://miktex.org/>`_ or `TeX Live
+<https://tug.org/texlive/>`_, and make sure the installation directory is on
+``PATH``. MiKTeX is configured by default to fetch missing packages on demand,
+so ``type1cm`` and ``cm-super`` are installed automatically the first time a
+figure is drawn; leave that setting enabled. With TeX Live, install the pieces
+explicitly as in the ``tlmgr`` command below.
+
+**conda / mamba (any platform, no root access)**
+
+.. code-block:: bash
+
+   conda install -c conda-forge texlive-core dvipng
+
+``texlive-core`` provides a large TeX Live subset. If a ``.sty`` file is still
+reported missing, add it with ``tlmgr`` as below.
+
+**Any TeX Live installation (universal fallback)**
+
+TeX Live ships its own package manager, which works the same on Linux, macOS
+and Windows:
+
+.. code-block:: bash
+
+   tlmgr install type1cm cm-super psnfss dvipng underscore
+
+Prefix with ``sudo`` for a system-wide installation. This does **not** apply to
+Debian/Ubuntu, where TeX Live is managed by ``apt`` and ``tlmgr`` is disabled
+for system packages; use the ``apt`` command above instead.
+
+Verifying the installation
+++++++++++++++++++++++++++
+
+To check before starting a long calibration:
 
 .. code-block:: bash
 

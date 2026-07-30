@@ -75,10 +75,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The LaTeX system dependencies of the plotting code are now documented**
   (`docs/installation.rst`, cross-referenced from CONTRIBUTING and the workflow page).
   `BayesianPlotter` renders all text through LaTeX, which pip cannot install, so on a
-  machine without `texlive-latex-extra`, `cm-super` and `dvipng` every plotting call
-  failed with a `RuntimeError` quoting a missing `.sty` file and nothing said why. The
-  page lists what each package provides, a one-line check, and how to switch the LaTeX
-  mode off where it cannot be installed.
+  machine without `type1cm` (`texlive-latex-extra`), `cm-super` and `dvipng` every
+  plotting call failed with a `RuntimeError` quoting a missing `.sty` file and nothing
+  said why. The new section states the requirement functionally, then gives commands
+  for Debian/Ubuntu, Fedora/RHEL, openSUSE, Arch, macOS, Windows and conda-forge, plus
+  the universal `tlmgr` fallback, a one-line verification command, and how to switch
+  the LaTeX mode off where it cannot be installed at all.
 
 ### Fixed
 - **Multi-output GPE output columns could be silently mis-ordered.**
@@ -113,6 +115,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `docs/workflow.rst` no longer states that the last BAL iteration "corresponds to the
   supposedly best solution", and gains a step on deriving the calibrated parameter sets
   from the posterior.
+- **The documentation terminology is now consistent**: the model parameters being
+  adjusted are always *calibration parameters*, and the measured variables the model is
+  fitted against are always *calibration targets* (previously "calibration quantities",
+  and in one place mislabelled a calibration parameter). Everything read out of the
+  model results is an *extracted variable*, a superset of the calibration targets. A new
+  terminology section in the introduction defines all three. The configuration keys keep
+  their existing names (`calibration_quantities`, `extraction_quantities`), and the
+  section states that mapping explicitly, so no configuration file needs changing.
 - The Ering example driver and plotting script (`examples/Telemac/Hydromorphodynamic/
   Ering/bal_telemac.py`, `main_plots.py`) had drifted from the templates they were
   copied from. They are now byte-identical to `templates/bal_telemac.py` and

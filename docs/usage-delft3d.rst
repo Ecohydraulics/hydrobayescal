@@ -95,15 +95,15 @@ Measurement / calibration points
 
 The calibration targets are provided in a CSV file
 (``calibration_pts_file_path``) with one row per measurement location. The
-header uses the ``X``, ``Y`` coordinates and, for each calibration quantity, a
-``<quantity>_DATA`` and a ``<quantity>_ERROR`` column (matched
+header uses the ``X``, ``Y`` coordinates and, for each calibration target, a
+``<target>_DATA`` and a ``<target>_ERROR`` column (matched
 case-insensitively)::
 
     X, Y, WATER_DEPTH_DATA, WATER_DEPTH_ERROR, U_MAG_DATA, U_MAG_ERROR
     ...
 
 The ``_ERROR`` column holds the measurement error in the physical units of the
-quantity. Measurements and the computational grid (``.grd``) must use the same
+calibration target. Measurements and the computational grid (``.grd``) must use the same
 coordinate reference system. Model values are sampled at the nearest active
 grid cell (zeta point) of each measurement location.
 
@@ -184,7 +184,7 @@ and launch the Delft3D driver:
 The driver builds a ``Delft3DModel``, sets up the experimental design, runs
 the initial simulations (source ``env.sh``, then ``run_dflow2d3d.sh`` in a
 fresh copy ``run_0000``, ``run_0001``, ... of the case template), extracts the
-requested quantities from ``trim-<case>.nc`` at the calibration points, trains
+requested variables from ``trim-<case>.nc`` at the calibration points, trains
 the GPE and performs Bayesian Active Learning. Each run is checked for
 ``*** ERROR`` lines in ``tri-diag.<case>`` and for the presence of the map
 output before extraction. Equivalently, in a script:
