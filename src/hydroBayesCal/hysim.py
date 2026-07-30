@@ -39,8 +39,9 @@ class HydroSimulations(ABC):
             delete_complex_outputs=True,
             validation=False,
             multitask_selection="variables",
-            gpe_error=0.10,
+            gpe_error=0.0,
             measurement_error=0.10,
+            model_structural_error=0.0,
             *args,
             **kwargs,
     ):
@@ -125,17 +126,25 @@ class HydroSimulations(ABC):
             True              | True, with init_runs > max_runs | Surrogate construction + Bayesian Active Learning
         validation : bool, optional (Default: False)
             If True, creates output files (inputs and outputs) corresponding to validation process.
-        gpe_error : float, optional (Default: 0.10)
-            Surrogate-model error, as a fraction of each measured value, added to the
-            observation variance. It is a flat stand-in for the emulator uncertainty,
-            which the Bayesian inference otherwise ignores. Set it to 0.0 when the
-            driver is run with ``include_surrogate_error=True``, which feeds the
-            actual GPE predictive standard deviation into the likelihood instead;
-            keeping both double-counts the surrogate error.
+        gpe_error : float, optional (Default: 0.0)
+            Flat stand-in for the emulator's own uncertainty, as a fraction of each
+            measured value. It defaults to 0.0 because the drivers now run with
+            ``include_surrogate_error=True``, which feeds the actual per-prediction
+            GPE standard deviation into the likelihood; a non-zero value here would
+            count the same uncertainty a second time. Set it only when deliberately
+            running with ``include_surrogate_error=False``.
         measurement_error : float, optional (Default: 0.10)
             Measurement error, as a fraction of each measured value, added to the
-            observation variance on top of the absolute ``<quantity>_ERROR`` column
-            of the calibration-points file.
+            observation variance on top of the absolute ``<target>_ERROR`` column of
+            the calibration-points file. Instrument and campaign imprecision only.
+        model_structural_error : float, optional (Default: 0.0)
+            Model structural error, as a fraction of each measured value: the extent
+            to which the solver is an imperfect description of the site (unresolved
+            processes, geometry, boundary conditions). This is a different thing from
+            the emulator uncertainty and is **not** supplied by
+            ``include_surrogate_error``, which only accounts for the surrogate's
+            approximation of the solver, never for the solver's own error. Defaults
+            to 0.0, so it changes nothing until a value can be defended.
         *args : tuple, optional
             Additional positional arguments.
         **kwargs : dict, optional
@@ -255,6 +264,7 @@ class HydroSimulations(ABC):
         self.user_param_values = user_param_values
         self.gpe_error = gpe_error
         self.measurement_error = measurement_error
+        self.model_structural_error = model_structural_error
         if self.validation:
             self.dict_output_name = dict_output_name + "-validation"
         else:
@@ -278,7 +288,8 @@ class HydroSimulations(ABC):
         if calibration_pts_file_path:
             self.observations,self.variances, self.measurement_errors, self.nloc, self.num_calibration_quantities, self.calibration_pts_df, self.num_extraction_quantities = self.set_observations_and_variances(
                 calibration_pts_file_path, calibration_quantities, extraction_quantities,
-                gpe_error=self.gpe_error, measurement_error=self.measurement_error)
+                gpe_error=self.gpe_error, measurement_error=self.measurement_error,
+                model_structural_error=self.model_structural_error)
 
         self.asr_dir = os.path.join(res_dir,
                                     f"auto-saved-results-HydroBayesCal")
@@ -452,21 +463,32 @@ class HydroSimulations(ABC):
             calibration_pts_file_path,
             calibration_quantities,
             extraction_quantities,
-            gpe_error=0.10,
-            measurement_error=0.10):
+            gpe_error=0.0,
+            measurement_error=0.10,
+            model_structural_error=0.0):
         """
         Reads calibration point data and constructs observation variances.
 
         Total variance is computed as::
 
-            variance = measurement_error**2 + gpe_error**2 + site_specific_error**2
+            variance = (measurement_error**2 + gpe_error**2
+                        + model_structural_error**2 + site_specific_error**2)
 
-        where:
+        The three relative terms are deliberately kept apart, because they describe
+        different things and lumping them into one flat factor is what allowed the
+        emulator uncertainty to be counted twice:
 
-        - ``measurement_error`` is assigned as a percentage of the measured value.
-        - ``gpe_error`` is assigned as a percentage of the measured value.
-        - ``site_specific_error`` is read from ``<quantity>_ERROR`` columns and should
-          already be in the physical units of the corresponding calibration quantity.
+        - ``measurement_error``: the instrument or campaign is imprecise. A fraction
+          of the measured value.
+        - ``gpe_error``: flat stand-in for the emulator's own uncertainty, a fraction
+          of the measured value. Leave at 0.0 while the driver runs with
+          ``include_surrogate_error=True``, which supplies the real per-prediction
+          GPE standard deviation.
+        - ``model_structural_error``: the solver itself is an imperfect description
+          of the site. A fraction of the measured value, independent of the emulator
+          and never supplied by ``include_surrogate_error``.
+        - ``site_specific_error`` is read from the ``<target>_ERROR`` columns and is
+          already in the physical units of the corresponding calibration target.
         """
 
         calibration_pts_df = pd.read_csv(calibration_pts_file_path)
@@ -506,16 +528,19 @@ class HydroSimulations(ABC):
 
         measurement_errors_2d = abs_observations_2d * measurement_error
         gpe_errors_2d = abs_observations_2d * gpe_error
+        structural_errors_2d = abs_observations_2d * model_structural_error
 
         observations = observations_2d.flatten().reshape(1, -1)
 
         measurement_errors = measurement_errors_2d.flatten()
         gpe_errors = gpe_errors_2d.flatten()
+        structural_errors = structural_errors_2d.flatten()
         site_specific_errors = site_specific_errors_2d.flatten()
 
         variances = (
                 measurement_errors ** 2
                 + gpe_errors ** 2
+                + structural_errors ** 2
                 + site_specific_errors ** 2
         )
 

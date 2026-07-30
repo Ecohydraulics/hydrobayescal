@@ -406,15 +406,65 @@ diagnostics, so archived calibrations can be analysed without being re-run.
 Accounting for the surrogate uncertainty
 +++++++++++++++++++++++++++++++++++++++++
 
-By default the Bayesian inference treats the surrogate predictions as exact and only
-adds a flat ``calibration['gpe_error']`` (10 % of each measured value) to the
-observation variance. The posterior is then sharper than the emulator actually supports,
-which visually exaggerates a unique optimum. Setting
+The Bayesian inference accounts for the emulator's own predictive uncertainty by
+default (``sampling['include_surrogate_error'] = True``): the GPE standard deviation at
+each predicted point is added to the observation variance, so a parameter set the
+emulator is unsure about is not treated as if it had been simulated exactly. This is
+also what the active-learning utility has always done, so the inference and the point
+selection now make the same assumption.
+
+The observation variance is built from three *relative* terms, each a fraction of every
+measured value, plus the absolute ``<target>_ERROR`` column of the calibration-points
+file:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 15 55
+
+   * - Setting
+     - Default
+     - Represents
+   * - ``calibration['measurement_error']``
+     - 0.10
+     - The instrument or campaign is imprecise.
+   * - ``calibration['gpe_error']``
+     - 0.0
+     - Flat stand-in for the emulator's uncertainty. Zero because
+       ``include_surrogate_error`` now supplies the real per-prediction value; a
+       non-zero value here would count the same uncertainty twice.
+   * - ``calibration['model_structural_error']``
+     - 0.0
+     - The solver itself is an imperfect description of the site: unresolved
+       processes, geometry, boundary conditions. Independent of the emulator and
+       **not** supplied by ``include_surrogate_error``, which only ever accounts for
+       the surrogate's approximation of the solver, never for the solver's own error.
+       Set it if you can defend a value.
+
+.. warning::
+
+   Expect the posterior to become **sharper**, not broader, relative to earlier
+   versions. The old defaults added a flat 10 % emulator term on top of the 10 %
+   measurement term, i.e. 14.1 % of each measured value before any site-specific
+   error. A trained GPE is usually a good deal tighter than 10 %, so the total
+   variance typically falls. Turning the flag on *while holding* ``gpe_error`` at 0.10
+   would broaden the posterior, but that is the double-counted combination.
+
+To reproduce the behaviour of earlier versions exactly, set **both**:
 
 .. code-block:: python
 
-   sampling['include_surrogate_error'] = True
-   calibration['gpe_error']            = 0.0
+   sampling['include_surrogate_error'] = False
+   calibration['gpe_error']            = 0.10
 
-feeds the GPE predictive standard deviation into the likelihood instead. This changes
-the posterior (it broadens it), so it is off by default.
+Setting only the first leaves the emulator uncertainty represented nowhere at all,
+which gives the sharpest and least defensible posterior of the four combinations. The
+drivers warn about that case, and log the effective settings on every run so an
+archived ``logfile.log`` records which convention produced its numbers.
+
+.. note::
+
+   ``RE`` (relative entropy) is the score to compare across runs: it is invariant to a
+   sample-independent rescaling of the likelihood. ``BME`` and ``ELPD`` are on a
+   different scale depending on whether a model error was included, so compare those
+   only within a run. The stored ``log_BME`` is the exact evidence; ``BME`` is kept for
+   backward compatibility and can reach ``0.0`` or ``inf`` on large problems.

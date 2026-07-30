@@ -966,6 +966,9 @@ class OpenFOAMModel(HydroSimulations):
             "IE":   bayesian_dict['IE'][it],
             "ELPD": bayesian_dict['ELPD'][it],
             "post_size": int(bayesian_dict['post_size'][it]),
+            # log_BME is the exact evidence; BME above may be 0.0 or inf at large
+            # problem sizes and is kept only for backward compatibility.
+            "log_BME": (bayesian_dict.get('log_BME') or [None] * (it + 1))[it],
         }
         # Per-iteration posterior diagnostics, when the driver recorded them
         # (hydroBayesCal.surrogate.posterior_analysis.record_iteration).
@@ -977,8 +980,18 @@ class OpenFOAMModel(HydroSimulations):
                 "equifinality_verdict": gap.get('verdict'),
             })
         scores_df = pd.DataFrame([scores_row])
-        write_header = not os.path.isfile(scores_path)
-        scores_df.to_csv(scores_path, mode='a', header=write_header, index=False)
+        # Rewrite the file rather than appending. to_csv writes columns in DataFrame
+        # order but only emits a header for a new file, so appending a row with a
+        # different set of columns silently shifts every value into the wrong one.
+        # That already happens within a single run, because the per-iteration
+        # diagnostics are only added once a posterior exists. concat aligns on
+        # column names and fills the gaps, and the file is one row per iteration.
+        if os.path.isfile(scores_path):
+            combined = pd.concat([pd.read_csv(scores_path), scores_df],
+                                 ignore_index=True)
+        else:
+            combined = scores_df
+        combined.to_csv(scores_path, mode='w', header=True, index=False)
 
 
         # 5. Per-parameter marginal optima (one growing file, one row per parameter
@@ -1006,9 +1019,11 @@ class OpenFOAMModel(HydroSimulations):
             write_optima_header = not os.path.isfile(optima_path)
             optima_df.to_csv(optima_path, mode="a", header=write_optima_header, index=False)
 
+        log_bme = (bayesian_dict.get('log_BME') or [None] * (it + 1))[it]
         logger.info(
             f"Saved calibration-data for iteration {it} "
-            f"(N_tp={n_tp}, BME={bayesian_dict['BME'][it]:.4e}, "
+            f"(N_tp={n_tp}, "
+            f"log BME={'n/a' if log_bme is None else f'{log_bme:.4f}'}, "
             f"RE={bayesian_dict['RE'][it]:.4f})"
         )
 

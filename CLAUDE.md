@@ -64,10 +64,17 @@ Key data contract, assumed everywhere downstream: `model_evaluations` is a 2D ar
 quantities, two locations => columns 1-2 are location 1, columns 3-4 are location 2). Keep this
 ordering when touching extraction, `rearrange_array()` or the surrogate code.
 
-The calibration-points CSV must carry `Point, X, Y` plus a `<QUANTITY>_DATA` and `<QUANTITY>_ERROR`
-column per calibration quantity (resolved case-insensitively). Total variance is
-`measurement_error**2 + gpe_error**2 + site_specific_error**2`, where the first two default to 10%
-of the measured value and the third comes from the `_ERROR` column in physical units.
+The calibration-points CSV must carry `Point, X, Y` plus a `<TARGET>_DATA` and `<TARGET>_ERROR`
+column per calibration target (resolved case-insensitively). Total variance is
+`measurement_error**2 + gpe_error**2 + model_structural_error**2 + site_specific_error**2`. The
+three relative terms default to 0.10 / 0.0 / 0.0 as fractions of the measured value; the last comes
+from the `_ERROR` column in physical units. `gpe_error` is 0.0 because the drivers default to
+`include_surrogate_error=True`, which feeds the real GPE predictive standard deviation into the
+likelihood as `model_error`; a non-zero `gpe_error` would count that twice.
+
+Terminology in the docs: **calibration parameters** are the model parameters being adjusted,
+**calibration targets** are the measured variables fitted against. The config keys keep the older
+`calibration_quantities` / `extraction_quantities` names.
 
 ### The driver scripts
 

@@ -145,7 +145,7 @@ def run_bal_model(collocation_points,
                   mc_samples_al=5000,
                   mc_exploration=1000,
                   gp_library="gpy",
-                  include_surrogate_error=False,
+                  include_surrogate_error=True,
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -177,6 +177,12 @@ def run_bal_model(collocation_points,
     gp_library : str, optional
         The Gaussian Process library to be used for modeling. Options may include "gpy" or "skl".
         Default is "gpy" for GPyTorch or "skl" for SciKitLearn.
+    include_surrogate_error : bool, optional
+        Whether the Bayesian inference accounts for the GPE's own predictive variance
+        by passing it as ``model_error``. Default ``True``. With ``False`` the
+        surrogate predictions are treated as exact and the posterior comes out
+        sharper than the emulator supports; pair that with a non-zero
+        ``calibration['gpe_error']`` so the uncertainty is represented somewhere.
 
     Returns
     -------
@@ -204,15 +210,27 @@ def run_bal_model(collocation_points,
         n_evals = math.ceil(n_iter / eval_steps) + 1
     new_tp = None
     logger.info(f"<<< Will run ({n_iter + 1}) GP training iterations and ({n_evals}) GP evaluations. >>> ")
-    if include_surrogate_error:
-        logger.info("Bayesian inference includes the surrogate predictive variance "
-                    "(sampling['include_surrogate_error'] = True).")
-        if getattr(complex_model, 'gpe_error', 0.0):
-            logger_warn.warning(
-                f"include_surrogate_error is on while gpe_error is "
-                f"{complex_model.gpe_error:.3f}: the surrogate error is counted twice, "
-                f"once as the actual GPE predictive variance and once as a flat "
-                f"fraction of every measured value. Set calibration['gpe_error'] = 0.0.")
+    # Logged unconditionally so an archived logfile.log records which likelihood
+    # convention produced its numbers.
+    _gpe_error = getattr(complex_model, 'gpe_error', 0.0)
+    logger.info(f"Bayesian inference: include_surrogate_error={include_surrogate_error}, "
+                f"gpe_error={_gpe_error:.3f}, "
+                f"measurement_error={getattr(complex_model, 'measurement_error', 0.10):.3f}, "
+                f"model_structural_error="
+                f"{getattr(complex_model, 'model_structural_error', 0.0):.3f}.")
+    if include_surrogate_error and _gpe_error:
+        logger_warn.warning(
+            f"include_surrogate_error is on while gpe_error is {_gpe_error:.3f}: the "
+            f"surrogate error is counted twice, once as the actual GPE predictive "
+            f"variance and once as a flat fraction of every measured value. Set "
+            f"calibration['gpe_error'] = 0.0.")
+    elif not include_surrogate_error and not _gpe_error:
+        logger_warn.warning(
+            "include_surrogate_error is off and gpe_error is 0.0, so the emulator's "
+            "uncertainty is represented nowhere at all and the posterior will be "
+            "sharper than the surrogate supports. Either set "
+            "sampling['include_surrogate_error'] = True (the default) or give "
+            "calibration['gpe_error'] a non-zero value.")
 
     # surrogate-gpe subfolders (created here since bal method/util_func are only known at runtime)
     gpe_results_folder = os.path.join(complex_model.asr_dir, 'surrogate-gpe')
@@ -229,7 +247,13 @@ def run_bal_model(collocation_points,
                      # Makes the stored dictionary self-describing: without these no
                      # consumer can recover the parameter names or calibration ranges.
                      'calibration_parameters': complex_model.calibration_parameters,
-                     'param_values': complex_model.param_values}
+                     'param_values': complex_model.param_values,
+                     # log_BME is the exact evidence; BME above is the lossy view and
+                     # may be 0.0 or inf at large problem sizes. The two settings
+                     # record which likelihood convention produced these numbers.
+                     'log_BME': np.zeros(n_iter + 1),
+                     'include_surrogate_error': include_surrogate_error,
+                     'gpe_error': getattr(complex_model, 'gpe_error', 0.0)}
     # Per-iteration posterior diagnostics (keep in sync with templates/bal_telemac.py,
     # the canonical driver). Additive keys: existing consumers read by key.
     for _key in ITERATION_KEYS:
@@ -396,10 +420,11 @@ def run_bal_model(collocation_points,
                 except Exception as e:
                     print(f"An error occurred while saving the dictionary: {e}")
 
-        # Without model_error the inference treats the surrogate predictions as exact
-        # and the posterior comes out sharper than the emulator actually supports,
-        # which visually exaggerates a unique optimum. Opt in through the config key
-        # sampling['include_surrogate_error'].
+        # The surrogate predictive variance is part of the inference by default: the
+        # emulator's uncertainty is genuine uncertainty, and the BAL utility already
+        # accounts for it. Setting sampling['include_surrogate_error'] = False treats
+        # the surrogate predictions as exact, which yields a posterior sharper than
+        # the emulator supports and visually exaggerates a unique optimum.
         bi_gpe = BayesianInference(model_predictions=model_predictions,
                                    observations=complex_model.observations,
                                    error=total_error,
@@ -412,6 +437,7 @@ def run_bal_model(collocation_points,
         bayesian_dict['N_tp'][it] = collocation_points.shape[0]
         bayesian_dict['BME'][it], bayesian_dict['RE'][it] = bi_gpe.BME, bi_gpe.RE
         bayesian_dict['ELPD'][it], bayesian_dict['IE'][it] = bi_gpe.ELPD, bi_gpe.IE
+        bayesian_dict['log_BME'][it] = bi_gpe.log_BME
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
         bayesian_dict['posterior'][it] = bi_gpe.posterior
         # Report-only: where each calibration parameter's own optimum currently sits,
@@ -552,7 +578,9 @@ def main():
             extraction_quantities=config.calibration['extraction_quantities'],
             calibration_quantities=calibration_quantities,
             dict_output_name=config.calibration['dict_output_name'],
-            gpe_error=config.calibration.get('gpe_error', 0.10),
+            gpe_error=config.calibration.get('gpe_error', 0.0),
+            measurement_error=config.calibration.get('measurement_error', 0.10),
+            model_structural_error=config.calibration.get('model_structural_error', 0.0),
             user_param_values=config.execution['user_param_values'],
             max_runs=config.sampling['max_runs'],
             complete_bal_mode=complete_bal_mode,
@@ -590,7 +618,7 @@ def main():
         mc_samples_al=config.sampling['mc_samples_al'],
         mc_exploration=config.sampling['mc_exploration'],
         gp_library=config.sampling['gp_library'],
-        include_surrogate_error=config.sampling.get('include_surrogate_error', False)
+        include_surrogate_error=config.sampling.get('include_surrogate_error', True)
     )
 
 
