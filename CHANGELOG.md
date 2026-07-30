@@ -110,6 +110,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `Source` project URL pointed at a non-canonical repository. It now matches the
   git remote and the Trusted Publishing configuration
   (`Ecohydraulics/hydrobayescal`), so the link shown on PyPI resolves correctly.
+- **The documentation build was broken in two ways.** `.readthedocs.yaml` sat in
+  `docs/`, but Read the Docs only searches the repository root, so the file was found
+  only through a custom path setting; it now lives at the root. And `formats: [pdf]`
+  ran the Sphinx LaTeX builder, which must rasterise the mermaid diagrams in
+  `docs/uml.rst` with `mmdc` (mermaid-cli). That tool is absent from the build
+  environment, so with `fail_on_warning: true` the PDF step failed the whole build.
+  The documentation is now HTML only; mermaid renders in the browser and is
+  unaffected. The comment claiming the PDF was linked from the docs was wrong: the
+  only PDF referenced is `UML/BayesCal-UML.pdf`, a file committed in the repository.
 
 ### Changed
 - `docs/workflow.rst` no longer states that the last BAL iteration "corresponds to the

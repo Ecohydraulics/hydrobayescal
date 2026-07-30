@@ -19,9 +19,28 @@ sphinx:
   # The docs build clean; fail the build on any new warning to catch regressions.
   fail_on_warning: true
 
-# Build additional formats (the PDF is linked from the docs).
-formats:
-  - pdf
+# No additional output formats: HTML only.
+#
+# The PDF format is deliberately not built. It runs the Sphinx LaTeX builder,
+# which has to rasterise the mermaid diagrams in docs/uml.rst with `mmdc`
+# (mermaid-cli, a Node tool that pulls in Puppeteer and a headless Chromium).
+# That tool is not available in the build environment, so the LaTeX builder
+# emits "command 'mmdc' cannot be run", and with fail_on_warning above that
+# fails the whole build. HTML is unaffected: mermaid renders in the browser.
+#
+# Note that ``UML/BayesCal-UML.pdf``, referenced from docs/uml.rst, is a file
+# committed in the repository and has nothing to do with this setting.
+#
+# To restore the PDF, install mermaid-cli in the build instead of removing
+# fail_on_warning, by adding a nodejs tool and a post_install job:
+#
+#   build:
+#     tools:
+#       nodejs: "20"
+#     jobs:
+#       post_install:
+#         - npm install -g @mermaid-js/mermaid-cli
+formats: []
 
 # Only the lightweight documentation requirements are installed; the heavy
 # runtime dependencies are mocked in conf.py (autodoc_mock_imports).
