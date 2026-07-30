@@ -546,6 +546,17 @@ class OpenFOAMModel(HydroSimulations):
         # Check that k is written to VTK output
         self._check_k_in_controldict()
 
+        # Auto-detect which patch in 0/nut carries the roughness wall function,
+        # instead of hardcoding a patch name that varies between case templates.
+        self.ks_patch = self._detect_ks_patch()
+        if self.ks_patch:
+            logger.info(f"Auto-detected ks roughness patch: '{self.ks_patch}' (from the case template's 0/nut)")
+        else:
+            logger.warning(
+                "Could not auto-detect a nutkRoughWallFunction patch in the case template's 0/nut; "
+                "a 'ks' calibration parameter will fail if used."
+            )
+
         # Results storage
         self.model_evaluations = None
 
@@ -582,6 +593,30 @@ class OpenFOAMModel(HydroSimulations):
             )
         else:
             logger.info("controlDict check passed: 'k' field appears to be available for VTK output.")
+
+    def _detect_ks_patch(self):
+        """Find the patch in ``0/nut`` that uses ``nutkRoughWallFunction``.
+
+        Case templates name the bed patch differently (``base``, ``bottom``, ...),
+        so the name is read from the case template rather than hardcoded: the
+        roughness patch is whichever one is actually configured with the wall
+        function that the ``ks`` calibration parameter writes to.
+
+        Returns
+        -------
+        str or None
+            The patch name, or ``None`` if ``0/nut`` is missing or declares no
+            ``nutkRoughWallFunction`` patch.
+        """
+        nut_path = os.path.join(self.case_template_dir, "0", "nut")
+        if not os.path.isfile(nut_path):
+            return None
+
+        with open(nut_path, "r") as f:
+            content = f.read()
+
+        match = re.search(r"(\w+)\s*\{\s*[^{}]*?type\s+nutkRoughWallFunction\s*;", content, re.DOTALL)
+        return match.group(1) if match else None
 
     def _load_control_points(self):
         """Read the XYZ coordinates of the calibration points.
@@ -656,7 +691,7 @@ class OpenFOAMModel(HydroSimulations):
                 elif pname.lower() == "ks":
                     update_params["ks"] = {
                         "file": "0/nut",
-                        "patch": "bottom",
+                        "patch": self.ks_patch,
                         "field_type": "scalar",
                         "bc_type": "nutkRoughWallFunction",
                         "value": float(pval),

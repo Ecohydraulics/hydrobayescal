@@ -96,6 +96,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the LaTeX mode off where it cannot be installed at all.
 
 ### Fixed
+- **Resuming a calibration ran zero BAL iterations.** The documented
+  `complete_bal_mode=True` + `only_bal_mode=True` mode is meant to rebuild the surrogate
+  from the stored runs and then *continue* BAL, but `bal_openfoam.py` and
+  `bal_delft3d.py` zeroed `n_iter` on `only_bal_mode` alone, so a resume silently did
+  nothing beyond re-fitting the emulator, and their simulation call was additionally
+  guarded by `not only_bal_mode`. The three drivers had drifted apart here:
+  `bal_telemac.py` (and the Ering example copy) had no `n_iter` guard at all and instead
+  ran new simulations in pure re-analysis mode (`only_bal_mode` without
+  `complete_bal_mode`), which is the opposite failure. All of them now share one
+  contract: iterations are skipped only for pure re-analysis, and `complete_bal_mode`
+  alone decides whether new simulations run. `bal_telemac_multiflow.py` imports
+  `run_bal_model` from `bal_telemac.py`, so it inherits the fix.
+- **The OpenFOAM `ks` calibration parameter wrote to a hardcoded `bottom` patch.**
+  Case templates name the bed patch differently (`base`, `bed`, ...), so calibrating
+  `ks` against any template that does not happen to call it `bottom` wrote the roughness
+  to a patch that does not exist. `OpenFOAMModel` now reads the patch name out of the
+  case template's `0/nut`, selecting whichever patch actually declares
+  `nutkRoughWallFunction`, and warns at construction time when there is none.
 - **Multi-output GPE output columns could be silently mis-ordered.**
   `MultiGPyTraining.predict_` dispatched on `len(gp_list)`, which is ambiguous when the
   number of calibration points equals the number of quantities (or is 1): a model
