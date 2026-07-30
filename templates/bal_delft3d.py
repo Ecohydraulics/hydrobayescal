@@ -192,9 +192,13 @@ def run_bal_model(collocation_points,
     #Prior sampling
     prior = experiment_design.generate_samples(prior_samples)
     prior_logpdf = np.log(experiment_design.JDist.pdf(prior.T)).reshape(-1)
-    # Number of BAL (Bayesian Active Learning iterations)
-    # In only_bal_mode, skip iterations - just compute BME once
-    if complex_model.only_bal_mode:
+    # Number of BAL (Bayesian Active Learning) iterations.
+    # only_bal_mode=True  + complete_bal_mode=False -> pure re-analysis of stored runs,
+    #                                                  no new simulations, so no iterations
+    # only_bal_mode=True  + complete_bal_mode=True  -> resume: rebuild the surrogate from the
+    #                                                  stored runs, then continue BAL
+    # only_bal_mode=False                           -> run the initial simulations, then BAL
+    if complex_model.only_bal_mode and not complex_model.complete_bal_mode:
         n_iter = 0
     else:
         n_iter = experiment_design.n_max_samples - experiment_design.n_init_samples
@@ -468,7 +472,10 @@ def run_bal_model(collocation_points,
 
             # Evaluate model in new TP
 
-            if complex_model.complete_bal_mode and not complex_model.only_bal_mode:
+            # A resume run (only_bal_mode=True, complete_bal_mode=True) must still simulate
+            # the new training points selected above; only pure re-analysis
+            # (complete_bal_mode=False) skips new simulations.
+            if complex_model.complete_bal_mode:
                 bal_iteration = it + 1
                 complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                        bal_iteration=bal_iteration,
@@ -478,7 +485,7 @@ def run_bal_model(collocation_points,
 
                 model_outputs = complex_model.model_evaluations
 
-            if not complex_model.only_bal_mode:
+            if not complex_model.only_bal_mode or complex_model.complete_bal_mode:
                 if experiment_design.exploit_method == 'sobol':
                     collocation_points = new_tp
                 else:

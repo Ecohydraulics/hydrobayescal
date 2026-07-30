@@ -223,8 +223,16 @@ def run_bal_model(collocation_points,
 
     #Prior sampling
     prior = experiment_design.generate_samples(prior_samples)
-    # Number of BAL (Bayesian Active Learning iterations)
-    n_iter = experiment_design.n_max_samples - experiment_design.n_init_samples
+    # Number of BAL (Bayesian Active Learning) iterations.
+    # only_bal_mode=True  + complete_bal_mode=False -> pure re-analysis of stored runs,
+    #                                                  no new simulations, so no iterations
+    # only_bal_mode=True  + complete_bal_mode=True  -> resume: rebuild the surrogate from the
+    #                                                  stored runs, then continue BAL
+    # only_bal_mode=False                           -> run the initial simulations, then BAL
+    if complex_model.only_bal_mode and not complex_model.complete_bal_mode:
+        n_iter = 0
+    else:
+        n_iter = experiment_design.n_max_samples - experiment_design.n_init_samples
     # Number of evaluations:
     if eval_steps == 1 or experiment_design.exploit_method == 'sobol':
         n_evals = n_iter + 1
@@ -554,7 +562,10 @@ def run_bal_model(collocation_points,
                 print(f"An error occurred while saving utility data: {e}")
             # Evaluate model in new TP
 
-            if complex_model.complete_bal_mode or complex_model.only_bal_mode:
+            # A resume run (only_bal_mode=True, complete_bal_mode=True) must still simulate
+            # the new training points selected above; only pure re-analysis
+            # (complete_bal_mode=False) skips new simulations.
+            if complex_model.complete_bal_mode:
                 bal_iteration = it + 1
                 complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                        bal_iteration=bal_iteration,
@@ -568,11 +579,12 @@ def run_bal_model(collocation_points,
 
             # -------------------------------------------------------
             # Update collocation points:
-            if experiment_design.exploit_method == 'sobol':
-                collocation_points = new_tp
-            else:
-                collocation_points = np.vstack((collocation_points, new_tp))
-                logger.info(f'------------ Finished iteration {it + 1}/{n_iter} -------------------')
+            if not complex_model.only_bal_mode or complex_model.complete_bal_mode:
+                if experiment_design.exploit_method == 'sobol':
+                    collocation_points = new_tp
+                else:
+                    collocation_points = np.vstack((collocation_points, new_tp))
+                    logger.info(f'------------ Finished iteration {it + 1}/{n_iter} -------------------')
 
     updated_collocation_points = collocation_points
     return bayesian_dict, updated_collocation_points
