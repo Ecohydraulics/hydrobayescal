@@ -231,17 +231,19 @@ class BayesianInference:
         Function calculates likelihood between observations and the model output manually, using numpy calculations. It
         considers model error, with an error associated to each model prediction.
 
-        Notes:
-        * Generates likelihood array with size [MCxN], where N is the number of measurement data sets.
-        * Likelihood function is multivariate normal distribution, considering independent and Gaussian-distributed
-        errors.
+        Notes
+        -----
+        * Generates likelihood array with size [MCxN], where N is the number of
+          measurement data sets.
+        * Likelihood function is multivariate normal distribution, considering
+          independent and Gaussian-distributed errors.
         * Method is faster than using stats module ('calculate_likelihood' function).
-        * Unlike 'calculate_likelihood_manual', this keeps the normalising constant,
+        * Unlike ``calculate_likelihood_manual``, this keeps the normalising constant,
           which is required because the augmented covariance differs per sample. BME
           values are therefore not comparable between runs with and without a model
           error; RE is, since the constant cancels.
-        * Materialises [MC, n_obs, n_obs] arrays. Prefer
-          'calculate_likelihood_with_error_diagonal' whenever it applies.
+        * Materialises ``[MC, n_obs, n_obs]`` arrays. Prefer
+          :meth:`calculate_likelihood_with_error_diagonal` whenever it applies.
         """
         # Calculate augmented covariance:
         mc_size = self.model_predictions.shape[0]

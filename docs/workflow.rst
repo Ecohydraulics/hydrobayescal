@@ -26,12 +26,13 @@ be adapted to `wet (steady or unsteady hotstart) initial conditions <https://hyd
     To expedite surrogate-assisted calibration, it is recommended to perform one dry model initialization. Afterwards, switch to fast-converging hotstart (wet initial) conditions.
 
 
-Step 1: Assign user input parameters
--------------------------------------
+Step 1: Assign the calibration settings
+---------------------------------------
 
-As it was mentioned before the calibration process involves two well defined parts in the code. Both processes depend on the user defined input parameters, which are essential
+As it was mentioned before the calibration process involves two well defined parts in the code. Both processes depend on the user-defined settings, i.e. the calibration parameters to adjust
+and the calibration targets to fit against (see :ref:`terminology`), which are essential
 to run the code properly.
-Firstly, the initialization of all input parameters must be done in the ``templates/bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
+Firstly, the initialization of all settings must be done in the ``templates/bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
 calls the necessary instances of the classes that run the hydrodynamic model, creation of surrogate models and BAL.
 
 
@@ -96,22 +97,23 @@ This class contains the general attributes that a hydrodynamic simulation requir
 
        param_values = [[min1, max1], [min2, max2], ...]
 
-* **calibration_quantities**: Names of the calibration targets (model outputs) used for calibration.
+* **calibration_quantities**: Names of the calibration targets, i.e. the measured variables
+  the model is fitted against (see :ref:`terminology`).
 
     .. code-block:: python
 
-       calibration_quantities = ['WATER DEPTH']  # Single quantity
-       calibration_quantities = ['WATER DEPTH', 'SCALAR VELOCITY']  # Multiple quantities
+       calibration_quantities = ['WATER DEPTH']  # Single calibration target
+       calibration_quantities = ['WATER DEPTH', 'SCALAR VELOCITY']  # Multiple calibration targets
 
 
-* **extraction_quantities**: Quantities to be extracted from the model output files. Generally, these are the same as or more than the **calibration_quantities**. These quantities will be extracted from the model and used for calibration purposes (using any quantity) when restarting it with the option ``only_bal_mode = True``.
+* **extraction_quantities**: Variables to be extracted from the model output files. Generally the same as, or more than, the calibration targets. Any extracted variable can be promoted to a calibration target when restarting with ``only_bal_mode = True``, without re-running the model.
 
     .. code-block:: python
 
-      calibration_quantities = ['WATER DEPTH'] # WATER DEPTH as a calibration parameter.
-      extraction_quantities = ['WATER DEPTH', 'SCALAR VELOCITY', 'TURBULENT ENERG', 'VELOCITY U', 'VELOCITY V'] # Calibration and additional quantities to be extracted.
+      calibration_quantities = ['WATER DEPTH'] # WATER DEPTH as the calibration target.
+      extraction_quantities = ['WATER DEPTH', 'SCALAR VELOCITY', 'TURBULENT ENERG', 'VELOCITY U', 'VELOCITY V'] # Calibration and additional variables to be extracted.
 
-    Any of these additional extracted quantities can be used for calibration purposes.
+    Any of these additional extracted variables can be used for calibration purposes.
 * **dict_output_name**: Base name for output dictionary files where the outputs are saved as `.json` files.
 
 * **user_param_values**: (Default: ``False``). Boolean variable that enables the use of user-defined collocation points taken from a .csv file located in the restart folder.
@@ -210,7 +212,7 @@ For telemac simulations, the following parameters should be defined in the **Tel
 
     After the initial full-complexity runs (and before BAL), HydroBayesCal reports a
     physics-based *roughness-identifiability* diagnostic whenever the calibration
-    quantities include both a depth-like and a velocity-like quantity
+    targets include both a depth-like and a velocity-like target
     (``diagnose_roughness_identifiability`` / ``log_roughness_identifiability`` in
     ``hydroBayesCal.function_pool``, invoked from
     ``templates/prebal_telemac_error_analysis.py``). At a fixed discharge
@@ -219,12 +221,12 @@ For telemac simulations, the following parameters should be defined in the **Tel
     sign pattern of the depth-vs-velocity residuals (simulated minus observed) at the
     calibration points is diagnostic:
 
-    * **Anti-correlated** residuals (one quantity simulated too high while the other
+    * **Anti-correlated** residuals (one target simulated too high while the other
       is too low) are the fingerprint of a *roughness* error, and roughness
       calibration will converge -- the signs even tell you which way to move it:
       too deep **and** too slow means roughness is too high; too shallow **and** too
       fast means it is too low.
-    * **Correlated** residuals (both quantities too high, or both too low) *cannot*
+    * **Correlated** residuals (both targets too high, or both too low) *cannot*
       be produced by roughness alone. Roughness calibration then fights itself and
       its optimum tends to pin at a prior bound. The diagnostic logs a **warning**
       recommending a second calibration parameter -- e.g. ``VELOCITY DIFFUSIVITY``,
@@ -297,7 +299,7 @@ Step 4: Derive the calibrated parameter sets
 
 The BAL loop stores, for every iteration, a **joint** posterior sample in
 ``BAL_dictionary.pkl``: the prior samples accepted by rejection sampling against the
-joint likelihood over all calibration points and quantities. That sample, not any
+joint likelihood over all calibration points and calibration targets. That sample, not any
 single training point, is the calibration result.
 
 Run the derivation on a finished calibration:
@@ -394,6 +396,12 @@ The same diagnostics are recorded at every BAL iteration, so
 
 Both are reconstructed from the stored posteriors when a result file predates these
 diagnostics, so archived calibrations can be analysed without being re-run.
+
+.. note::
+
+   All figures are rendered through LaTeX, which needs a few system packages that
+   ``pip`` cannot install. If a plotting call fails with a ``RuntimeError`` quoting a
+   LaTeX error, see :ref:`latex-for-plots`.
 
 Accounting for the surrogate uncertainty
 +++++++++++++++++++++++++++++++++++++++++

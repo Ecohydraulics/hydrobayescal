@@ -31,7 +31,7 @@ full-complexity model **once per flow**. Each flow has:
 
 The per-flow observations and model outputs are concatenated along the location
 axis into one combined observation/output space, so the Gaussian Process
-Emulator learns ``quantity(location, flow; parameters)`` and the Bayesian
+Emulator learns ``target(location, flow; parameters)`` and the Bayesian
 inference uses every flow's measurements simultaneously.
 
 Components

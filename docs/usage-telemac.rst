@@ -72,14 +72,14 @@ Measurement / calibration points
 
 The calibration targets are provided in a CSV file (``calibration_pts_file_path``)
 with one row per measurement location. The header uses the coordinates and, for
-each calibration quantity, a ``<quantity>_DATA`` and a ``<quantity>_ERROR``
+each calibration target, a ``<target>_DATA`` and a ``<target>_ERROR``
 column (matched case-insensitively)::
 
     X, Y, WATER DEPTH_DATA, WATER DEPTH_ERROR, SCALAR VELOCITY_DATA, SCALAR VELOCITY_ERROR
     ...
 
 The ``_ERROR`` column holds the measurement error in the physical units of the
-quantity. Measurements and the computational mesh (``.slf``) must use the same
+calibration target. Measurements and the computational mesh (``.slf``) must use the same
 coordinate reference system so modelled and measured values can be compared.
 
 TELEMAC-specific parameters

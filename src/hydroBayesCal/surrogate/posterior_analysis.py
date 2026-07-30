@@ -4,8 +4,8 @@ Derivation of calibrated parameter sets from a Bayesian Active Learning posterio
 The BAL loop stores, for every iteration, a *joint* posterior sample in
 ``BAL_dictionary.pkl`` (``bayesian_dict['posterior'][it]``): the rows of the prior
 sample accepted by rejection sampling against the joint likelihood over all
-calibration points and quantities. This module turns that sample into the
-quantities a modeller actually needs at the end of a calibration:
+calibration points and calibration targets. This module turns that sample into
+the results a modeller actually needs at the end of a calibration:
 
 * the **per-parameter marginal optimum**, i.e. the peak of each parameter's own
   posterior marginal, together with credible intervals and identifiability flags;
@@ -577,7 +577,7 @@ def marginal_optima(
             "marginal is essentially the prior.")
         recommendation = (
             "The calibration targets carry no information about these parameters. "
-            "Revisit the choice of calibration quantities, the measurement errors, "
+            "Revisit the choice of calibration targets, the measurement errors, "
             "or the parameter ranges before interpreting any optimum.")
     else:
         verdict = "partially_identified"

@@ -35,6 +35,45 @@ implement how the model is run and how outputs are extracted (see
       <https://hydro-informatics.com/install-telemac/>`_
     - `TELEMAC tutorial <https://hydro-informatics.com/numerics/telemac.html>`_
 
+.. _terminology:
+
+Terminology
+-----------
+
+Two terms are used consistently throughout this documentation, and it is worth
+separating them clearly because a calibration always involves both:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Term
+     - Meaning
+   * - **Calibration parameters**
+     - The *model* parameters that HydroBayesCal adjusts, i.e. the uncertain
+       inputs being calibrated: bed-friction zones, critical Shields parameters,
+       turbulent viscosity, and so on. They are what the sampling explores and
+       what a calibrated result finally states values for.
+   * - **Calibration targets**
+     - The *measured* variables that the calibration is fitted against, i.e. the
+       model outputs compared with observations at the measurement points, such
+       as water depth :math:`h` or flow velocity :math:`U`. They define what
+       "a good fit" means.
+
+In short, calibration parameters are the knobs; calibration targets are the
+readings you are trying to match. A third group appears in the configuration:
+*extracted variables* are everything read out of the model results, which is
+usually a superset of the calibration targets, so that another variable can be
+used as a target later without re-running the model.
+
+.. note::
+
+   For backward compatibility the configuration keys and the Python arguments
+   keep their original names: calibration targets are set through
+   ``calibration_quantities`` and extracted variables through
+   ``extraction_quantities``. Wherever this documentation writes "calibration
+   target", the corresponding setting is ``calibration_quantities``.
+
 Purpose and motivation
 ----------------------
 

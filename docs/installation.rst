@@ -119,6 +119,156 @@ For example, a developer install with documentation and mesh tools:
    (~hundreds of MB). On clusters without a working MPI toolchain, omit the
    ``mpi`` extra.
 
+.. _latex-for-plots:
+
+LaTeX for the plots (system packages)
+-------------------------------------
+
+Every figure is rendered with matplotlib's LaTeX text mode: ``BayesianPlotter``
+sets ``text.usetex = True`` and a Times serif font. This is a **system**
+dependency, not a Python one, so ``pip`` cannot supply it. Without it every
+plotting call fails with a ``RuntimeError`` from matplotlib quoting a LaTeX
+error such as ``File 'type1cm.sty' not found``, no matter which Python
+environment is active.
+
+What is required, independently of the platform:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Component
+     - Why it is needed
+   * - a LaTeX engine
+     - the ``latex`` binary that typesets the text, plus the base packages
+       ``fix-cm``, ``inputenc`` and ``textcomp``
+   * - ``type1cm``
+     - lets matplotlib scale the fonts to arbitrary sizes; **missing this is by
+       far the most common failure**, reported as
+       ``File 'type1cm.sty' not found``
+   * - ``cm-super``
+     - scalable Type 1 versions of the Computer Modern fonts, needed at the
+       axis-label sizes used here
+   * - ``psnfss`` / Times
+     - the ``mathptmx`` Times font selected by the plotting style
+   * - ``dvipng``
+     - converts the LaTeX output to raster images; required for the ``Agg``
+       backend used in headless and batch runs
+   * - Ghostscript
+     - used by matplotlib for some output formats
+
+Platform-specific commands
+++++++++++++++++++++++++++
+
+**Debian / Ubuntu**
+
+.. code-block:: bash
+
+   sudo apt install texlive-latex-base texlive-latex-extra \
+                    texlive-fonts-recommended cm-super dvipng ghostscript
+
+(``type1cm`` lives in ``texlive-latex-extra``, which is *not* pulled in by
+``texlive-latex-base``.)
+
+**Fedora / RHEL / Rocky / AlmaLinux**
+
+.. code-block:: bash
+
+   sudo dnf install texlive-scheme-medium texlive-type1cm texlive-cm-super \
+                    texlive-dvipng ghostscript
+
+**openSUSE**
+
+.. code-block:: bash
+
+   sudo zypper install texlive-latex texlive-type1cm texlive-cm-super \
+                       texlive-dvipng ghostscript
+
+**Arch Linux**
+
+.. code-block:: bash
+
+   sudo pacman -S texlive-latexextra texlive-fontsrecommended \
+                  texlive-fontsextra ghostscript
+   # dvipng ships with texlive-bin on current Arch; install the dvipng package
+   # separately on older installations
+
+**macOS**
+
+The simplest route is the full MacTeX distribution, which already contains
+everything above:
+
+.. code-block:: bash
+
+   brew install --cask mactex          # ~4 GB
+
+For a small install, use BasicTeX and add the pieces:
+
+.. code-block:: bash
+
+   brew install --cask basictex
+   sudo tlmgr update --self
+   sudo tlmgr install type1cm cm-super psnfss dvipng underscore
+
+**Windows**
+
+Install `MiKTeX <https://miktex.org/>`_ or `TeX Live
+<https://tug.org/texlive/>`_, and make sure the installation directory is on
+``PATH``. MiKTeX is configured by default to fetch missing packages on demand,
+so ``type1cm`` and ``cm-super`` are installed automatically the first time a
+figure is drawn; leave that setting enabled. With TeX Live, install the pieces
+explicitly as in the ``tlmgr`` command below.
+
+**conda / mamba (any platform, no root access)**
+
+.. code-block:: bash
+
+   conda install -c conda-forge texlive-core dvipng
+
+``texlive-core`` provides a large TeX Live subset. If a ``.sty`` file is still
+reported missing, add it with ``tlmgr`` as below.
+
+**Any TeX Live installation (universal fallback)**
+
+TeX Live ships its own package manager, which works the same on Linux, macOS
+and Windows:
+
+.. code-block:: bash
+
+   tlmgr install type1cm cm-super psnfss dvipng underscore
+
+Prefix with ``sudo`` for a system-wide installation. This does **not** apply to
+Debian/Ubuntu, where TeX Live is managed by ``apt`` and ``tlmgr`` is disabled
+for system packages; use the ``apt`` command above instead.
+
+Verifying the installation
+++++++++++++++++++++++++++
+
+To check before starting a long calibration:
+
+.. code-block:: bash
+
+   python -c "import matplotlib; matplotlib.use('Agg'); \
+              import matplotlib.pyplot as plt; plt.rcParams['text.usetex']=True; \
+              plt.plot([0,1]); plt.xlabel(r'test \$\\alpha\$'); \
+              plt.savefig('/tmp/tex-check.png'); print('LaTeX rendering OK')"
+
+.. tip::
+
+   On a machine where the LaTeX stack cannot be installed (no root access on a
+   cluster, for instance), the calibration itself still runs; only the plotting
+   is affected. Disable the LaTeX text mode after creating the plotter:
+
+   .. code-block:: python
+
+      import matplotlib.pyplot as plt
+      plotter = BayesianPlotter(results_folder_path=..., variable_name=...)
+      plt.rcParams.update({"text.usetex": False})
+
+   The figures then use matplotlib's built-in font renderer. Set it *after*
+   constructing the plotter, because ``BayesianPlotter`` enables the LaTeX mode
+   in its constructor.
+
 Numerical-model bindings
 ------------------------
 
