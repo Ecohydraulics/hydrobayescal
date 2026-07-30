@@ -11,7 +11,7 @@ jobs:
   file-size:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Fail on tracked files larger than 20 MB
         run: |
