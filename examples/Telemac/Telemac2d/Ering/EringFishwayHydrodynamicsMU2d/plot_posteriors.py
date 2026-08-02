@@ -65,7 +65,7 @@ def main():
     # ---------------------------------------------------------------------
     # User settings
     # ---------------------------------------------------------------------
-    iterations_to_plot = config.plotting["iterations_to_plot"]  # BAL iteration to plot (0-based index)
+    iterations_to_plot = config.plotting["iterations_to_plot"] # BAL iteration to plot (0-based index)
 
 
 
@@ -98,13 +98,12 @@ def main():
         )
         iterations_to_plot = last_valid_iteration
     print(f"Plotting posterior iteration: {iterations_to_plot}")
-
     # ---------------------------------------------------------------------
     # Plot BME and RE evolution
     # ---------------------------------------------------------------------
     # plotter.plot_bme_re(
     #     bayesian_dict=bayesian_data,
-    #     num_bal_iterations=iterations_to_plot,
+    #     num_bal_iterations=config.plotting["parameter_indices"][0],
     #     plot_type="both"
     # )
 
@@ -117,7 +116,7 @@ def main():
         prior=prior,
         param_values=full_complexity_model.param_values,
         iterations_to_plot=config.plotting["iterations_to_plot"],
-        bins=40,
+        bins=15,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
         parameter_indices = config.plotting["parameter_indices"],
