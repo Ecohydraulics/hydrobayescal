@@ -4,7 +4,32 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] - 2026-08-03
+
+A correctness release for the OpenFOAM and Delft3D bindings. Both drivers were unable
+to start against the current `bayesvalidrox`, and OpenFOAM calibrations on velocity
+magnitude were training the surrogate on `NaN` without saying so. Users on 1.3.0 with
+an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected.
+
+### Added
+- **`OpenFOAMModel.EXTRACTABLE_QUANTITIES`**, the explicit list of field names the
+  OpenFOAM extraction can produce (`U_x`, `U_y`, `U_z`, `U_MAG`, `TKE`, the
+  fluctuation components, and the `U_magnitude` legacy alias). Both return paths of
+  `_extract_at_control_points` are built from it, so they can no longer drift apart.
+
+### Changed
+- **Minimum `bayesvalidrox` is now 2.2** (was 2.1). 2.2 renamed the API the drivers
+  depend on and the old names were removed, so 2.1 cannot run any driver. Upgrade with
+  `pip install -U "bayesvalidrox>=2.2"` if your environment pinned the older release.
+- **Unknown OpenFOAM calibration targets now raise instead of being silently
+  substituted with `NaN`.** `OpenFOAMModel` validates `calibration_quantities` in its
+  constructor and raises `ValueError` naming both the offending entry and the valid
+  ones, before any simulation starts. This is deliberately breaking: a config that
+  previously appeared to run while producing an all-`NaN` output column now fails
+  immediately. It also rejects `WATER_DEPTH` and `FREE_SURFACE`, which
+  `docs/usage-openfoam.rst` and `config_OpenFOAM.py` advertised for OpenFOAM even
+  though the binding never extracted them; both are now documented as
+  Delft3D/TELEMAC-only. The `NaN` row written when a run genuinely fails is unchanged.
 
 ### Fixed
 - **Velocity magnitude was never extracted in OpenFOAM calibrations.**
@@ -16,22 +41,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   failing. `U_MAG` is now the primary key, with `U_magnitude` retained as an alias so
   result files written by earlier versions stay readable. Reported and fixed by
   Federica Scolari.
-- **Unknown calibration targets are rejected instead of silently becoming `NaN`.**
-  `OpenFOAMModel` validates `calibration_quantities` against the new
-  `EXTRACTABLE_QUANTITIES` class attribute in its constructor and raises `ValueError`
-  naming both the offending entry and the valid ones, before any simulation starts.
-  The `NaN` fallback in the extraction filter is gone; the `NaN` row written when a
-  run genuinely fails is unchanged. This also catches `WATER_DEPTH` and
-  `FREE_SURFACE`, which `docs/usage-openfoam.rst` and `config_OpenFOAM.py` previously
-  advertised for OpenFOAM even though the binding never extracted them; both are now
-  documented as Delft3D/TELEMAC-only.
 - **The OpenFOAM and Delft3D drivers now run against bayesvalidrox 2.2.** That release
   renamed `Input.Marginals` to `marginals`, `ExpDesigns.X` to `x`, `ExpDesigns.JDist`
   to `j_dist`, and `generate_ED(n_samples=...)` to `generate_ed()` without the sample
   count, which it now reads from `n_init_samples`. The old names no longer exist, so
   `bal_openfoam.py` and `bal_delft3d.py` raised `AttributeError` before the first
-  simulation. The TELEMAC drivers had already been migrated. The dependency floor in
-  `pyproject.toml` moves to `bayesvalidrox>=2.2` accordingly. OpenFOAM side reported
+  simulation. The TELEMAC drivers had already been migrated. OpenFOAM side reported
   and fixed by Federica Scolari.
 
 ## [1.3.0] - 2026-07-30
@@ -292,6 +307,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.4.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.1.0
