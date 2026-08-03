@@ -13,8 +13,12 @@ is ``config_Telemac.py``.
 Note the OpenFOAM-specific schema differences from the TELEMAC config:
 ``simulation`` (not ``hydrodynamic_simulation``), an ``interfoam`` block with
 real values, and ``n_cpus`` living in ``sampling``. Quantity names use the
-standard HydroBayesCal field names, e.g. "U_x", "U_y", "U_z", "U_MAG", "TKE",
-"WATER_DEPTH", "FREE_SURFACE".
+standard HydroBayesCal field names. The OpenFOAM binding extracts "U_x", "U_y",
+"U_z", "U_MAG", "TKE" and the fluctuation components "u_fluct", "v_fluct",
+"w_fluct"; anything else in ``calibration_quantities`` is rejected at model
+construction (see ``OpenFOAMModel.EXTRACTABLE_QUANTITIES``). Free-surface
+quantities such as "WATER_DEPTH" and "FREE_SURFACE" are available in the
+Delft3D and TELEMAC bindings but are not yet extracted here.
 """
 
 import os
