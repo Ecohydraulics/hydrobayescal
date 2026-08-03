@@ -68,20 +68,20 @@ def setup_experiment_design(
     Inputs = bvr.Input()
     for i in range(complex_model.ndim):
         Inputs.add_marginals()
-        Inputs.Marginals[i].name = complex_model.calibration_parameters[i]
-        Inputs.Marginals[i].dist_type = parameter_distribution  # see exp_design.py --> build_dist()
-        Inputs.Marginals[i].parameters = complex_model.param_values[i]
+        Inputs.marginals[i].name = complex_model.calibration_parameters[i]
+        Inputs.marginals[i].dist_type = parameter_distribution  # see exp_design.py --> build_dist()
+        Inputs.marginals[i].parameters = complex_model.param_values[i]
 
     exp_design = bvr.ExpDesigns(Inputs)
     exp_design.n_init_samples = complex_model.init_runs
     exp_design.sampling_method = parameter_sampling_method
     exp_design.n_new_samples = 1
-    exp_design.X=complex_model.user_collocation_points
+    exp_design.x=complex_model.user_collocation_points
     exp_design.n_max_samples = complex_model.max_runs
     exp_design.explore_method = 'random'
     exp_design.exploit_method = 'bal'
     exp_design.util_func = tp_selection_criteria
-    exp_design.generate_ED(n_samples=exp_design.n_init_samples)
+    exp_design.generate_ed()
 
     return exp_design
 
@@ -114,7 +114,7 @@ def run_complex_model(complex_model,
     if not complex_model.only_bal_mode:
         logger.info(
             f"Sampling {complex_model.init_runs} collocation points for the selected calibration parameters with {experiment_design.sampling_method} sampling method.")
-        collocation_points = experiment_design.X
+        collocation_points = experiment_design.x
         complex_model.run_multiple_simulations(collocation_points=collocation_points,
                                                complete_bal_mode=complex_model.complete_bal_mode,
                                                validation=complex_model.validation)
@@ -191,7 +191,7 @@ def run_bal_model(collocation_points,
 
     #Prior sampling
     prior = experiment_design.generate_samples(prior_samples)
-    prior_logpdf = np.log(experiment_design.JDist.pdf(prior.T)).reshape(-1)
+    prior_logpdf = np.log(experiment_design.j_dist.pdf(prior.T)).reshape(-1)
     # Number of BAL (Bayesian Active Learning) iterations.
     # only_bal_mode=True  + complete_bal_mode=False -> pure re-analysis of stored runs,
     #                                                  no new simulations, so no iterations

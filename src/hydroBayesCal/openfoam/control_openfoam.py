@@ -449,6 +449,17 @@ class OpenFOAMModel(HydroSimulations):
     your existing OpenFOAMController for the actual OpenFOAM operations.
     """
 
+    #: Field names ``_extract_at_control_points`` returns, and therefore the only
+    #: valid entries in ``calibration_quantities``. ``U_magnitude`` is a legacy
+    #: alias of ``U_MAG``, kept so the detailed result CSVs and per-run JSONs
+    #: written by earlier versions stay readable.
+    EXTRACTABLE_QUANTITIES = (
+        "U_x", "U_y", "U_z",
+        "U_MAG", "U_magnitude",
+        "u_fluct", "v_fluct", "w_fluct",
+        "TKE",
+    )
+
     def __init__(
         self,
         case_template_dir,
@@ -531,6 +542,13 @@ class OpenFOAMModel(HydroSimulations):
         # Alias consumed by the GP layer (see bal_openfoam.py).
         self.parameter_ranges = self.param_values
 
+        # Reject unknown calibration targets here, before any simulation runs.
+        # The extraction filter in run_multiple_simulations used to fall back to
+        # NaN for a quantity it could not find, so a name the binding does not
+        # produce yielded an all-NaN output column that trained the GPE on
+        # nothing and only surfaced much later as a nonsensical surrogate.
+        self._validate_calibration_quantities()
+
         # The base class sets these only when a calibration file is present;
         # provide robust fallbacks so the BAL driver never sees None.
         if self.num_calibration_quantities is None:
@@ -561,6 +579,26 @@ class OpenFOAMModel(HydroSimulations):
         self.model_evaluations = None
 
         logger.info(f"OpenFOAMModel initialized: {self.ndim} parameter(s), {self.nloc} locations")
+
+    def _validate_calibration_quantities(self):
+        """Check every calibration target against what the extraction can produce.
+
+        Raises
+        ------
+        ValueError
+            If ``calibration_quantities`` names a field absent from
+            :attr:`EXTRACTABLE_QUANTITIES`, listing the offending names and the
+            valid ones.
+        """
+        unknown = [
+            q for q in (self.calibration_quantities or [])
+            if q not in self.EXTRACTABLE_QUANTITIES
+        ]
+        if unknown:
+            raise ValueError(
+                f"Unknown calibration_quantities for the OpenFOAM binding: {unknown}. "
+                f"Valid field names are: {', '.join(self.EXTRACTABLE_QUANTITIES)}."
+            )
 
     def _check_k_in_controldict(self):
         """Check that the k field is written in the case template controlDict.
@@ -749,13 +787,14 @@ class OpenFOAMModel(HydroSimulations):
                     # Measurements file exists  interpolate to control points as normal
                     results = self._extract_at_control_points(coords, U, k)
 
+                    # calibration_quantities is validated against
+                    # EXTRACTABLE_QUANTITIES in __init__, so a missing key here
+                    # means the extraction itself is broken and must not be
+                    # papered over with NaN.
                     run_results = []
                     for loc_idx in range(self.nloc):
                         for qty in self.calibration_quantities:
-                            if qty in results:
-                                run_results.append(float(results[qty][loc_idx]))
-                            else:
-                                run_results.append(np.nan)
+                            run_results.append(float(results[qty][loc_idx]))
 
                     all_results.append(run_results)
 
@@ -841,15 +880,14 @@ class OpenFOAMModel(HydroSimulations):
             k: RANS turbulent kinetic energy array from OpenFOAM k field, or None
 
         Returns:
-            dict with U_x, U_y, U_z, U_magnitude, u_fluct, v_fluct, w_fluct, TKE at control points
+            dict keyed by :attr:`EXTRACTABLE_QUANTITIES`: U_x, U_y, U_z, U_MAG
+            (with U_magnitude retained as a legacy alias of the same values),
+            u_fluct, v_fluct, w_fluct and TKE at the control points
         """
         if len(self.control_points) == 0:
-            return {
-                "U_x": np.array([]), "U_y": np.array([]), "U_z": np.array([]),
-                "U_magnitude": np.array([]),
-                "u_fluct": np.array([]), "v_fluct": np.array([]), "w_fluct": np.array([]),
-                "TKE": np.array([]),
-            }
+            # Built from the constant so both return paths always expose the
+            # same keys.
+            return {q: np.array([]) for q in self.EXTRACTABLE_QUANTITIES}
 
         tree = spatial.cKDTree(coords)
         _, indices = tree.query(self.control_points)
@@ -865,11 +903,14 @@ class OpenFOAMModel(HydroSimulations):
             k_cp = np.full(len(self.control_points), np.nan)
             fluct = np.full(len(self.control_points), np.nan)
 
+        u_mag = np.linalg.norm(U_cp, axis=1)
+
         return {
             "U_x": U_cp[:, 0],
             "U_y": U_cp[:, 1],
             "U_z": U_cp[:, 2],
-            "U_magnitude": np.linalg.norm(U_cp, axis=1),
+            "U_MAG": u_mag,        # the documented name, shared with the Delft3D binding
+            "U_magnitude": u_mag,  # legacy alias, keeps older result files readable
             "u_fluct": fluct,
             "v_fluct": fluct,
             "w_fluct": fluct,

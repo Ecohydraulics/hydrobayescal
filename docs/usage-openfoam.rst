@@ -108,10 +108,15 @@ dictionary entries that ``OpenFOAMController`` writes into the case, for example
 * Other **boundary-condition values** or **dictionary entries**, updated via
   ``update_boundary_condition`` / ``update_dictionary_entry``.
 
-``calibration_quantities`` / ``extraction_quantities`` use the standard field
-names, e.g. ``"U_x"``, ``"U_y"``, ``"U_z"``, ``"U_MAG"`` (velocity components /
-magnitude), ``"TKE"`` (turbulent kinetic energy ``k``), ``"WATER_DEPTH"`` and
-``"FREE_SURFACE"``. As for TELEMAC, the calibration CSV provides a
+``calibration_quantities`` uses the standard field names. The OpenFOAM binding
+extracts ``"U_x"``, ``"U_y"``, ``"U_z"``, ``"U_MAG"`` (velocity components and
+magnitude), ``"TKE"`` (turbulent kinetic energy ``k``) and the isotropic
+fluctuation components ``"u_fluct"``, ``"v_fluct"``, ``"w_fluct"``. These are
+listed in ``OpenFOAMModel.EXTRACTABLE_QUANTITIES``, and any other name raises a
+``ValueError`` when the model is constructed, before a simulation starts.
+Free-surface quantities such as ``"WATER_DEPTH"`` and ``"FREE_SURFACE"`` are
+available in the Delft3D and TELEMAC bindings but are not yet extracted here.
+As for TELEMAC, the calibration CSV provides a
 ``<target>_DATA`` and ``<target>_ERROR`` column per calibration target, together with
 the ``X``, ``Y`` (and ``Z``) coordinates of the measurement points.
 
