@@ -870,6 +870,7 @@ class OpenFOAMModel(HydroSimulations):
             "U_y": U_cp[:, 1],
             "U_z": U_cp[:, 2],
             "U_magnitude": np.linalg.norm(U_cp, axis=1),
+            "U_MAG": np.linalg.norm(U_cp, axis=1),
             "u_fluct": fluct,
             "v_fluct": fluct,
             "w_fluct": fluct,
