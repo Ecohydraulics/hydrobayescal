@@ -68,8 +68,12 @@ dependencies = [
     # uncertainty quantification / sampling (numpoly comes in transitively via chaospy)
     "emcee>=3.1",
     "chaospy>=4.3",
-    # coupling: experimental design / sampling
-    "bayesvalidrox>=2.1",
+    # coupling: experimental design / sampling.
+    # 2.2 renamed the public API the drivers rely on (Input.Marginals -> marginals,
+    # ExpDesigns.X -> x, .JDist -> j_dist, generate_ED() -> generate_ed(), which also
+    # dropped its n_samples argument). The old names no longer exist, so 2.1 fails
+    # with an AttributeError before the first simulation starts.
+    "bayesvalidrox>=2.2",
 ]
 
 [project.urls]
