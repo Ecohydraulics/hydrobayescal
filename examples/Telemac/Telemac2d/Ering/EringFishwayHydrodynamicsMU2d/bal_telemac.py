@@ -517,7 +517,7 @@ def run_bal_model(collocation_points,
         bayesian_dict['log_BME'][it] = bi_gpe.log_BME
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
         bayesian_dict['posterior'][it] = bi_gpe.posterior
-        bayesian_dict['post_loglikelihood'] = bi_gpe.post_loglikelihood
+        bayesian_dict['post_loglikelihood'][it] = bi_gpe.post_loglikelihood
         # Report-only: where each calibration parameter's own optimum currently sits,
         # how well the data constrain it, and whether those per-parameter optima form
         # a jointly plausible parameter set. Never raises, never touches sampling.

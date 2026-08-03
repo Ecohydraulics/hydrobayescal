@@ -68,7 +68,7 @@ calibration = {
     'extraction_quantities': ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
 
     # Quantities used for BAL calibration - must match columns in measurements.csv
-    'calibration_quantities': ["WATER DEPTH","SCALAR VELOCITY"],
+    'calibration_quantities': ["SCALAR VELOCITY"],
 
     # Three relative error terms, each a fraction of every measured value, added to
     # the observation variance alongside the absolute <target>_ERROR column:
@@ -154,5 +154,12 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0, 1, 2, 3, 4],
-    'iterations_to_plot': [5],
+    'iterations_to_plot': [38],
+    #-------------------------
+    #posterior plotting options
+    #-------------------------
+    # "posterior_mean",
+    # "posterior_marginal_peak",
+    # "joint_posterior_MAP"
+    'posterior_plotting_option': 'posterior_marginal_peak'	    
 }

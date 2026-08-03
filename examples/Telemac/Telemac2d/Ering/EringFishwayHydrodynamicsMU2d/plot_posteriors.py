@@ -79,6 +79,8 @@ def main():
 
     posterior_arrays = bayesian_data["posterior"]
     prior = bayesian_data["prior"]
+    post_loglikelihood = bayesian_data["post_loglikelihood"]
+    # print(post_loglikelihood)
 
     # ---------------------------------------------------------------------
     # Find last valid posterior if requested iteration is empty
@@ -110,19 +112,26 @@ def main():
     # ---------------------------------------------------------------------
     # Plot posterior updates
     # ---------------------------------------------------------------------
-    plotter.plot_posterior_updates(
+# plotting posterior options
+    # "posterior_mean",
+    # "posterior_marginal_peak",
+    # "joint_posterior_MAP"
+
+    map_results = plotter.plot_posterior_updates(
         posterior_arrays=posterior_arrays,
         parameter_names=config.plotting["parameter_names"],
         prior=prior,
         param_values=full_complexity_model.param_values,
         iterations_to_plot=config.plotting["iterations_to_plot"],
         bins=15,
+        density=True,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
-        parameter_indices = config.plotting["parameter_indices"],
-        best_estimate_value="posterior_marginal_peak",
+        parameter_indices=config.plotting["parameter_indices"],
+        best_estimate_value=config.plotting['posterior_plotting_option'],
+        post_loglikelihood_arrays=post_loglikelihood
     )
-
+    
     # ---------------------------------------------------------------------
     # Per-parameter optimum over the BAL iterations, and whether the combination
     # of those per-parameter optima is a jointly plausible parameter set.

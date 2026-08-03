@@ -389,75 +389,572 @@ class PosteriorPlots:
             plot_prior=False,
             parameter_units=None,
             parameter_indices=None,
-            best_estimate_value="posterior_MAP"  # "posterior_MAP" or "posterior_mean"
+            best_estimate_value="posterior_marginal_peak",
+            post_loglikelihood_arrays=None
     ):
+        """
+        Plot marginal posterior distributions for selected Bayesian iterations.
+
+        Parameters
+        ----------
+        posterior_arrays : list of array-like
+            Posterior parameter samples for each Bayesian iteration.
+
+            Each valid entry must have shape:
+
+                (number_of_posterior_samples, number_of_parameters)
+
+        parameter_names : list of str
+            Names of all calibration parameters.
+
+        prior : array-like
+            Original prior parameter samples with shape:
+
+                (number_of_prior_samples, number_of_parameters)
+
+        param_values : array-like, optional
+            Parameter bounds with shape:
+
+                (number_of_parameters, 2)
+
+        iterations_to_plot : iterable of int, optional
+            Bayesian iterations to plot.
+
+        bins : int, default=40
+            Number of histogram bins.
+
+        density : bool, default=True
+            Whether the histogram represents probability density.
+
+        plot_prior : bool, default=False
+            Whether to plot the prior histograms.
+
+        parameter_units : list of str, optional
+            Units corresponding to each calibration parameter.
+
+        parameter_indices : list of int, optional
+            Indices of parameters to plot.
+
+        best_estimate_value : str, default="posterior_marginal_peak"
+            Estimate represented by the vertical red line.
+
+            Available options:
+
+            - "posterior_mean"
+            - "posterior_marginal_peak"
+            - "joint_posterior_MAP"
+
+            Backward-compatible aliases:
+
+            - "posterior_peak" -> "posterior_marginal_peak"
+            - "posterior_MAP" -> "joint_posterior_MAP"
+
+        post_loglikelihood_arrays : list of array-like or array-like, optional
+            Post-rejection log-likelihood values.
+
+            For an iteration-indexed object:
+
+                post_loglikelihood_arrays[i][j]
+
+            must correspond exactly to:
+
+                posterior_arrays[i][j, :]
+
+            A direct one-dimensional log-likelihood vector can also be passed
+            when only one iteration is plotted.
+
+        Returns
+        -------
+        dict
+            Estimated parameter values for every plotted iteration.
+        """
 
         save_folder = self.save_folder
 
-        # Select indices of parameters to plot
-        if parameter_indices is None:
-            selected_indices = list(range(len(parameter_names)))
+        # ------------------------------------------------------------------
+        # Backward-compatible estimator names
+        # ------------------------------------------------------------------
+        estimate_aliases = {
+            "posterior_peak": "posterior_marginal_peak",
+            "posterior_MAP": "joint_posterior_MAP"
+        }
+
+        best_estimate_value = estimate_aliases.get(
+            best_estimate_value,
+            best_estimate_value
+        )
+
+        valid_estimate_options = {
+            "posterior_mean",
+            "posterior_marginal_peak",
+            "joint_posterior_MAP"
+        }
+
+        if best_estimate_value not in valid_estimate_options:
+            raise ValueError(
+                "best_estimate_value must be one of: "
+                "'posterior_mean', "
+                "'posterior_marginal_peak', or "
+                "'joint_posterior_MAP'."
+            )
+
+        # ------------------------------------------------------------------
+        # Determine iterations to plot
+        # ------------------------------------------------------------------
+        if iterations_to_plot is None:
+
+            iterations_to_plot = [
+                iteration_idx
+                for iteration_idx, posterior in enumerate(
+                    posterior_arrays
+                )
+                if (
+                        posterior is not None
+                        and np.asarray(posterior).size > 0
+                )
+            ]
+
+        elif np.isscalar(iterations_to_plot):
+
+            iterations_to_plot = [
+                int(iterations_to_plot)
+            ]
+
         else:
-            selected_indices = parameter_indices
+
+            iterations_to_plot = list(
+                iterations_to_plot
+            )
+
+        if len(iterations_to_plot) == 0:
+            raise ValueError(
+                "No posterior iterations were selected for plotting."
+            )
+
+        # ------------------------------------------------------------------
+        # Select parameters
+        # ------------------------------------------------------------------
+        if parameter_indices is None:
+
+            selected_indices = list(
+                range(len(parameter_names))
+            )
+
+        else:
+
+            selected_indices = list(
+                parameter_indices
+            )
 
         parameter_num = len(selected_indices)
 
+        if parameter_num == 0:
+            raise ValueError(
+                "No parameter indices were selected."
+            )
+
+        for param_idx in selected_indices:
+
+            if (
+                    param_idx < 0
+                    or param_idx >= len(parameter_names)
+            ):
+                raise IndexError(
+                    f"Parameter index {param_idx} is outside the "
+                    f"valid range 0 to "
+                    f"{len(parameter_names) - 1}."
+                )
+
         if parameter_units is None:
-            parameter_units = [''] * len(parameter_names)
+            parameter_units = [
+                                  ''
+                              ] * len(parameter_names)
 
+        if len(parameter_units) != len(parameter_names):
+            raise ValueError(
+                "parameter_units and parameter_names must have "
+                "the same length."
+            )
+
+        # ------------------------------------------------------------------
+        # Validate prior
+        # ------------------------------------------------------------------
+        prior = np.asarray(
+            prior,
+            dtype=float
+        )
+
+        if prior.ndim != 2:
+            raise ValueError(
+                "prior must be a two-dimensional array with shape "
+                "(number_of_samples, number_of_parameters)."
+            )
+
+        if prior.shape[1] != len(parameter_names):
+            raise ValueError(
+                "The number of prior columns does not match the "
+                "number of parameter names. "
+                f"Prior columns: {prior.shape[1]}; "
+                f"parameter names: {len(parameter_names)}."
+            )
+
+        # ------------------------------------------------------------------
         # Determine x-axis limits
-        x_limits = np.zeros((parameter_num, 2))
+        # ------------------------------------------------------------------
+        x_limits = np.zeros(
+            (parameter_num, 2),
+            dtype=float
+        )
+
         if param_values is None:
-            for idx, param_idx in enumerate(selected_indices):
-                x_limits[idx] = (prior[:, param_idx].min(), prior[:, param_idx].max())
+
+            for col, param_idx in enumerate(
+                    selected_indices
+            ):
+                x_limits[col] = (
+                    np.nanmin(prior[:, param_idx]),
+                    np.nanmax(prior[:, param_idx])
+                )
+
         else:
-            for idx, param_idx in enumerate(selected_indices):
-                x_limits[idx] = param_values[param_idx]
 
-        # Loop over iterations
-        for plot_index, iteration_idx in enumerate(iterations_to_plot):
+            param_values = np.asarray(
+                param_values,
+                dtype=float
+            )
 
+            if (
+                    param_values.ndim != 2
+                    or param_values.shape[0] != len(parameter_names)
+                    or param_values.shape[1] != 2
+            ):
+                raise ValueError(
+                    "param_values must have shape "
+                    "(number_of_parameters, 2)."
+                )
+
+            for col, param_idx in enumerate(
+                    selected_indices
+            ):
+                x_limits[col] = param_values[
+                    param_idx
+                ]
+
+        # Results returned by the function
+        estimate_results = {}
+
+        # ------------------------------------------------------------------
+        # Loop over Bayesian iterations
+        # ------------------------------------------------------------------
+        for iteration_idx in iterations_to_plot:
+
+            if (
+                    iteration_idx < 0
+                    or iteration_idx >= len(posterior_arrays)
+            ):
+                raise IndexError(
+                    f"Posterior iteration {iteration_idx} is outside "
+                    f"the valid range 0 to "
+                    f"{len(posterior_arrays) - 1}."
+                )
+
+            if posterior_arrays[iteration_idx] is None:
+                raise ValueError(
+                    f"Posterior iteration {iteration_idx} is None."
+                )
+
+            posterior_matrix = np.asarray(
+                posterior_arrays[iteration_idx],
+                dtype=float
+            )
+
+            if posterior_matrix.ndim != 2:
+                raise ValueError(
+                    f"posterior_arrays[{iteration_idx}] must be a "
+                    "two-dimensional array with shape "
+                    "(number_of_samples, number_of_parameters)."
+                )
+
+            if posterior_matrix.shape[0] == 0:
+                raise ValueError(
+                    f"Posterior iteration {iteration_idx} contains "
+                    "no samples."
+                )
+
+            if posterior_matrix.shape[1] != len(parameter_names):
+                raise ValueError(
+                    f"The posterior at iteration {iteration_idx} has "
+                    f"{posterior_matrix.shape[1]} parameter columns, "
+                    f"but {len(parameter_names)} parameter names were "
+                    "provided."
+                )
+
+            print(
+                f"Plotting posterior iteration: "
+                f"{iteration_idx}"
+            )
+
+            # --------------------------------------------------------------
+            # Determine the joint posterior MAP
+            # --------------------------------------------------------------
+            joint_map_vector = None
+            joint_map_sample_index = None
+            maximum_loglikelihood = None
+
+            if best_estimate_value == "joint_posterior_MAP":
+
+                if post_loglikelihood_arrays is None:
+                    raise ValueError(
+                        "post_loglikelihood_arrays must be provided "
+                        "when best_estimate_value="
+                        "'joint_posterior_MAP'."
+                    )
+
+                direct_loglikelihood_vector = None
+
+                # ----------------------------------------------------------
+                # Case 1:
+                # A direct one-dimensional log-likelihood vector was passed
+                # ----------------------------------------------------------
+                try:
+
+                    converted_scores = np.asarray(
+                        post_loglikelihood_arrays,
+                        dtype=float
+                    )
+
+                    if (
+                            converted_scores.ndim == 1
+                            and converted_scores.size
+                            == posterior_matrix.shape[0]
+                    ):
+                        direct_loglikelihood_vector = (
+                            converted_scores.reshape(-1)
+                        )
+
+                except (TypeError, ValueError):
+
+                    # Expected when the complete object is a list containing
+                    # arrays of different lengths.
+                    direct_loglikelihood_vector = None
+
+                if direct_loglikelihood_vector is not None:
+
+                    if len(iterations_to_plot) != 1:
+                        raise ValueError(
+                            "A single log-likelihood vector was passed "
+                            "while multiple iterations were requested. "
+                            "Pass the complete iteration-indexed "
+                            "post_loglikelihood_arrays object."
+                        )
+
+                    log_likelihood_vector = (
+                        direct_loglikelihood_vector
+                    )
+
+                # ----------------------------------------------------------
+                # Case 2:
+                # Complete iteration-indexed object was passed
+                # ----------------------------------------------------------
+                else:
+
+                    try:
+                        iteration_loglikelihood = (
+                            post_loglikelihood_arrays[
+                                iteration_idx
+                            ]
+                        )
+
+                    except (IndexError, TypeError) as error:
+                        raise ValueError(
+                            "Could not extract post-rejection "
+                            "log-likelihood values for iteration "
+                            f"{iteration_idx}."
+                        ) from error
+
+                    if iteration_loglikelihood is None:
+                        raise ValueError(
+                            "No post-rejection log-likelihood values "
+                            f"were stored for iteration "
+                            f"{iteration_idx}."
+                        )
+
+                    log_likelihood_vector = np.asarray(
+                        iteration_loglikelihood,
+                        dtype=float
+                    ).reshape(-1)
+
+                # ----------------------------------------------------------
+                # Confirm row alignment
+                # ----------------------------------------------------------
+                if (
+                        log_likelihood_vector.size
+                        != posterior_matrix.shape[0]
+                ):
+                    raise ValueError(
+                        "The posterior samples and post-rejection "
+                        "log-likelihood values are not aligned for "
+                        f"iteration {iteration_idx}. "
+                        f"Posterior samples: "
+                        f"{posterior_matrix.shape[0]}; "
+                        f"log-likelihood values: "
+                        f"{log_likelihood_vector.size}. "
+                        "Each log-likelihood value must correspond to "
+                        "the posterior sample at the same row index."
+                    )
+
+                valid_scores = ~np.isnan(
+                    log_likelihood_vector
+                )
+
+                if not np.any(valid_scores):
+                    raise ValueError(
+                        "All post-rejection log-likelihood values are "
+                        f"NaN for iteration {iteration_idx}."
+                    )
+
+                valid_sample_indices = np.flatnonzero(
+                    valid_scores
+                )
+
+                joint_map_sample_index = int(
+                    valid_sample_indices[
+                        np.argmax(
+                            log_likelihood_vector[
+                                valid_scores
+                            ]
+                        )
+                    ]
+                )
+
+                maximum_loglikelihood = float(
+                    log_likelihood_vector[
+                        joint_map_sample_index
+                    ]
+                )
+
+                # All parameter components are taken from the same
+                # posterior sample.
+                joint_map_vector = posterior_matrix[
+                                   joint_map_sample_index,
+                                   :
+                                   ].copy()
+
+                print(
+                    f"Joint posterior MAP for iteration "
+                    f"{iteration_idx}:"
+                )
+                print(
+                    f"  posterior sample index: "
+                    f"{joint_map_sample_index}"
+                )
+                print(
+                    f"  maximum log-likelihood: "
+                    f"{maximum_loglikelihood}"
+                )
+                print(
+                    f"  parameter combination: "
+                    f"{joint_map_vector}"
+                )
+
+            # --------------------------------------------------------------
+            # Create figure
+            # --------------------------------------------------------------
             num_rows = 3
-            num_cols = math.ceil(parameter_num / num_rows)
+            num_cols = math.ceil(
+                parameter_num / num_rows
+            )
 
             fig, axes = plt.subplots(
                 num_rows,
                 num_cols,
-                figsize=(6.5 * num_cols, 5 * num_rows)
+                figsize=(
+                    6.5 * num_cols,
+                    5 * num_rows
+                )
             )
 
-            axes = axes.flatten()
+            axes = np.asarray(
+                axes
+            ).reshape(-1)
 
-            for col, param_idx in enumerate(selected_indices):
+            iteration_parameter_estimates = {}
+
+            # --------------------------------------------------------------
+            # Loop over selected parameters
+            # --------------------------------------------------------------
+            for col, param_idx in enumerate(
+                    selected_indices
+            ):
 
                 ax = axes[col]
-                posterior_vector = posterior_arrays[iteration_idx][:, param_idx]
 
-                # --------------------------------------------------
-                # Histogram values for normalization
-                # --------------------------------------------------
-                hist_values, _ = np.histogram(
-                    posterior_vector,
+                posterior_vector = posterior_matrix[
+                                   :,
+                                   param_idx
+                                   ]
+
+                finite_posterior_values = posterior_vector[
+                    np.isfinite(posterior_vector)
+                ]
+
+                if finite_posterior_values.size == 0:
+                    raise ValueError(
+                        f"Parameter "
+                        f"'{parameter_names[param_idx]}' contains no "
+                        f"finite posterior samples at iteration "
+                        f"{iteration_idx}."
+                    )
+
+                # ----------------------------------------------------------
+                # Histogram values used for common normalization
+                # ----------------------------------------------------------
+                posterior_hist_values, _ = np.histogram(
+                    finite_posterior_values,
                     bins=bins,
                     density=density
                 )
 
-                max_density = max(hist_values)
+                max_density = (
+                    float(np.max(posterior_hist_values))
+                    if posterior_hist_values.size > 0
+                    else 0.0
+                )
+
+                finite_prior_values = None
 
                 if plot_prior:
-                    prior_vector = prior[:, param_idx]
+
+                    prior_vector = prior[
+                                   :,
+                                   param_idx
+                                   ]
+
+                    finite_prior_values = prior_vector[
+                        np.isfinite(prior_vector)
+                    ]
+
                     prior_hist_values, _ = np.histogram(
-                        prior_vector,
+                        finite_prior_values,
                         bins=bins,
                         density=density
                     )
-                    max_density = max(max_density, max(prior_hist_values))
 
-                # --------------------------------------------------
-                # Posterior histogram
-                # --------------------------------------------------
-                hist_values, bins_edges, patches = ax.hist(
-                    posterior_vector,
+                    if prior_hist_values.size > 0:
+                        max_density = max(
+                            max_density,
+                            float(np.max(prior_hist_values))
+                        )
+
+                # ----------------------------------------------------------
+                # Plot posterior histogram
+                # ----------------------------------------------------------
+                (
+                    posterior_hist_values,
+                    posterior_bin_edges,
+                    posterior_patches
+                ) = ax.hist(
+                    finite_posterior_values,
                     bins=bins,
                     density=density,
                     alpha=0.75,
@@ -467,54 +964,124 @@ class PosteriorPlots:
                 )
 
                 if max_density > 0:
-                    for patch in patches:
-                        patch.set_height(patch.get_height() / max_density)
+                    for patch in posterior_patches:
+                        patch.set_height(
+                            patch.get_height()
+                            / max_density
+                        )
 
-                # --------------------------------------------------
-                # MAP directly from posterior vector
-                # --------------------------------------------------
-                mean_value = np.mean(posterior_vector)
+                # ----------------------------------------------------------
+                # Calculate selected best estimate
+                # ----------------------------------------------------------
+                if best_estimate_value == "posterior_mean":
 
-                hist_counts, hist_bin_edges = np.histogram(
-                    posterior_vector,
-                    bins=bins,
-                    density=False
-                )
+                    value = float(
+                        np.mean(
+                            finite_posterior_values
+                        )
+                    )
 
-                map_bin_index = np.argmax(hist_counts)
+                elif (
+                        best_estimate_value
+                        == "posterior_marginal_peak"
+                ):
 
-                # Samples inside the most populated bin
-                bin_left = hist_bin_edges[map_bin_index]
-                bin_right = hist_bin_edges[map_bin_index + 1]
+                    # ------------------------------------------------------
+                    # Marginal posterior peak
+                    # ------------------------------------------------------
+                    # Find the histogram bin containing the highest posterior
+                    # density. This uses the same histogram and the same bins
+                    # that are displayed in the figure.
+                    peak_bin_index = int(
+                        np.argmax(
+                            posterior_hist_values
+                        )
+                    )
 
-                samples_in_map_bin = posterior_vector[
-                    (posterior_vector >= bin_left) &
-                    (posterior_vector <= bin_right)
+                    peak_bin_left = posterior_bin_edges[
+                        peak_bin_index
                     ]
 
-                # Empirical MAP value from posterior samples
-                # Using the mean of samples inside the most populated bin
-                map_value = np.mean(samples_in_map_bin)
+                    peak_bin_right = posterior_bin_edges[
+                        peak_bin_index + 1
+                        ]
 
-                if best_estimate_value == "posterior_mean":
-                    value = mean_value
-                elif best_estimate_value == "posterior_MAP":
-                    value = map_value
-                elif best_estimate_value == "posterior_marginal_peak":
-                    # Same histogram estimate as above, but with the bin count derived
-                    # from the sample size and the posterior spread instead of the
-                    # `bins` used for drawing, which fixes the reported optimum to one
-                    # drawing bin width (a tenth of the range at the former bins=10).
-                    value = marginal_optima(
-                        posterior_vector.reshape(-1, 1),
-                        prior_bounds=[x_limits[col]],
-                        parameter_names=[parameter_names[param_idx]],
-                    )["peak"][0]
-                else:
-                    raise ValueError(
-                        "best_estimate_value must be 'posterior_MAP', 'posterior_mean' "
-                        "or 'posterior_marginal_peak'"
+                    # NumPy histograms include the right edge only for the
+                    # final histogram bin.
+                    if (
+                            peak_bin_index
+                            == len(posterior_hist_values) - 1
+                    ):
+
+                        samples_in_peak_bin = (
+                            finite_posterior_values[
+                                (
+                                        finite_posterior_values
+                                        >= peak_bin_left
+                                )
+                                & (
+                                        finite_posterior_values
+                                        <= peak_bin_right
+                                )
+                                ]
+                        )
+
+                    else:
+
+                        samples_in_peak_bin = (
+                            finite_posterior_values[
+                                (
+                                        finite_posterior_values
+                                        >= peak_bin_left
+                                )
+                                & (
+                                        finite_posterior_values
+                                        < peak_bin_right
+                                )
+                                ]
+                        )
+
+                    # Use the mean of the actual posterior samples located
+                    # inside the densest marginal posterior region.
+                    if samples_in_peak_bin.size > 0:
+
+                        value = float(
+                            np.mean(
+                                samples_in_peak_bin
+                            )
+                        )
+
+                    else:
+
+                        # Defensive fallback: use the center of the densest
+                        # histogram bin.
+                        value = float(
+                            0.5 * (
+                                    peak_bin_left
+                                    + peak_bin_right
+                            )
+                        )
+
+                elif (
+                        best_estimate_value
+                        == "joint_posterior_MAP"
+                ):
+
+                    value = float(
+                        joint_map_vector[
+                            param_idx
+                        ]
                     )
+
+                else:
+
+                    raise RuntimeError(
+                        "Unsupported best-estimate option."
+                    )
+
+                iteration_parameter_estimates[
+                    parameter_names[param_idx]
+                ] = value
 
                 ax.axvline(
                     value,
@@ -534,12 +1101,17 @@ class PosteriorPlots:
                     horizontalalignment='right'
                 )
 
-                # --------------------------------------------------
-                # Prior histogram optional
-                # --------------------------------------------------
+                # ----------------------------------------------------------
+                # Optional prior histogram
+                # ----------------------------------------------------------
                 if plot_prior:
-                    prior_hist_values, prior_bins_edges, prior_patches = ax.hist(
-                        prior_vector,
+
+                    (
+                        prior_hist_values,
+                        prior_bin_edges,
+                        prior_patches
+                    ) = ax.hist(
+                        finite_prior_values,
                         bins=bins,
                         density=density,
                         alpha=0.35,
@@ -550,16 +1122,35 @@ class PosteriorPlots:
 
                     if max_density > 0:
                         for patch in prior_patches:
-                            patch.set_height(patch.get_height() / max_density)
+                            patch.set_height(
+                                patch.get_height()
+                                / max_density
+                            )
 
-                # --------------------------------------------------
-                # Axis labels
-                # --------------------------------------------------
-                unit = f' [{parameter_units[param_idx]}]' if parameter_units[param_idx] else ''
-                ax.set_xlabel(f'{parameter_names[param_idx]}{unit}', fontsize=40)
-                ax.set_ylabel('Posterior\n density [-]', fontsize=40)
+                # ----------------------------------------------------------
+                # Axis labels and formatting
+                # ----------------------------------------------------------
+                unit = (
+                    f' [{parameter_units[param_idx]}]'
+                    if parameter_units[param_idx]
+                    else ''
+                )
 
-                ax.tick_params(axis='both', which='major', labelsize=35)
+                ax.set_xlabel(
+                    f'{parameter_names[param_idx]}{unit}',
+                    fontsize=40
+                )
+
+                ax.set_ylabel(
+                    'Posterior\n density [-]',
+                    fontsize=40
+                )
+
+                ax.tick_params(
+                    axis='both',
+                    which='major',
+                    labelsize=35
+                )
 
                 ax.set_xticks(
                     np.round(
@@ -572,8 +1163,14 @@ class PosteriorPlots:
                     )
                 )
 
-                ax.set_xlim(x_limits[col])
-                ax.set_ylim(0, 1.2)
+                ax.set_xlim(
+                    x_limits[col]
+                )
+
+                ax.set_ylim(
+                    0,
+                    1.2
+                )
 
                 ax.grid(
                     True,
@@ -593,26 +1190,44 @@ class PosteriorPlots:
                     color='grey'
                 )
 
+            # --------------------------------------------------------------
             # Remove unused axes
-            for j in range(parameter_num, len(axes)):
-                fig.delaxes(axes[j])
+            # --------------------------------------------------------------
+            for axis_idx in range(
+                    parameter_num,
+                    len(axes)
+            ):
+                fig.delaxes(
+                    axes[axis_idx]
+                )
 
-            # --------------------------------------------------
-            # Global horizontal legend
-            # --------------------------------------------------
-            estimate_label = (
-                'Posterior MAP'
-                if best_estimate_value == "posterior_MAP"
-                else 'Posterior mean'
-            )
+            # --------------------------------------------------------------
+            # Global legend
+            # --------------------------------------------------------------
+            estimate_labels = {
+                "posterior_mean":
+                    "Marginal posterior mean",
 
-            legend_elements = [
-                mpatches.Patch(
-                    facecolor='0.75',
-                    edgecolor='0.6',
-                    alpha=0.35,
-                    label='Prior'
-                ),
+                "posterior_marginal_peak":
+                    "Marginal posterior peak",
+
+                "joint_posterior_MAP":
+                    "Joint posterior MAP"
+            }
+
+            legend_elements = []
+
+            if plot_prior:
+                legend_elements.append(
+                    mpatches.Patch(
+                        facecolor='0.75',
+                        edgecolor='0.6',
+                        alpha=0.35,
+                        label='Prior'
+                    )
+                )
+
+            legend_elements.extend([
                 mpatches.Patch(
                     facecolor='0.35',
                     edgecolor='black',
@@ -623,31 +1238,64 @@ class PosteriorPlots:
                     [0],
                     [0],
                     color='red',
-                    lw=2,
+                    linewidth=2,
                     linestyle='--',
-                    label=estimate_label
+                    label=estimate_labels[
+                        best_estimate_value
+                    ]
                 )
-            ]
+            ])
 
             fig.legend(
                 handles=legend_elements,
                 loc='upper center',
-                ncol=3,
+                ncol=len(legend_elements),
                 fontsize=28,
                 frameon=False,
                 bbox_to_anchor=(0.5, 1.02)
             )
 
-            fig.tight_layout(rect=[0, 0.01, 1, 0.95])
+            fig.tight_layout(
+                rect=[0, 0.01, 1, 0.95]
+            )
 
             fig.savefig(
-                save_folder / f'posterior_distributions_iteration_{iteration_idx + 1}.svg',
+                save_folder
+                / (
+                    f'posterior_distributions_iteration_'
+                    f'{iteration_idx + 1}.svg'
+                ),
                 format='svg',
                 bbox_inches='tight',
-                transparent=True,
+                transparent=True
             )
 
             plt.close(fig)
+
+            # --------------------------------------------------------------
+            # Store returned results
+            # --------------------------------------------------------------
+            estimate_results[iteration_idx] = {
+                "estimate_type":
+                    best_estimate_value,
+
+                "parameters":
+                    iteration_parameter_estimates
+            }
+
+            if best_estimate_value == "joint_posterior_MAP":
+                estimate_results[iteration_idx].update({
+                    "sample_index":
+                        joint_map_sample_index,
+
+                    "log_likelihood":
+                        maximum_loglikelihood,
+
+                    "parameter_vector":
+                        joint_map_vector.copy()
+                })
+
+        return estimate_results
 
 
     def plot_posterior_iteration(self, posterior_samples, parameter_names, param_values):
