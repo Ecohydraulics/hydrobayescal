@@ -14,7 +14,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from hydroBayesCal.utils.config_logging import logger_error
+from hydroBayesCal.utils.config_logging import logger, logger_error
 
 
 class HydroSimulations(ABC):
@@ -713,3 +713,93 @@ class HydroSimulations(ABC):
             of initial runs and Bayesian active learning iterations. The array is also saved to a CSV file
             in the specified directory.
         """
+
+    def _save_all_results(self, collocation_points, detailed_results=None):
+        """Save all results of the full-complexity runs to the calibration folder.
+
+        Solver-independent bookkeeping shared by every binding: it only touches
+        attributes owned by this base class, so a binding gets it for free by
+        calling ``self._save_all_results(...)`` at the end of
+        ``run_multiple_simulations()``.
+
+        Writes into ``calibration_folder``:
+
+        - ``collocation_points.npy``: calibration parameter values tested,
+          shape ``(n_runs, n_params)``
+        - ``model_evaluations.npy``: flat model outputs, shape
+          ``(n_runs, nloc * n_quantities)``
+        - ``initial-model-outputs.json``: the same data as JSON, also copied to
+          ``restart_data_folder`` so ``only_bal_mode`` can reload it
+        - ``collocation-points-{quantities}.csv``: parameter values as CSV
+        - ``results-detailed-{quantities}.csv``: one row per run x calibration
+          point, with the point coordinates and every extracted quantity
+        - ``results-detailed-{quantities}.npy``: the same table as a structured
+          array
+
+        Parameters
+        ----------
+        collocation_points : numpy.ndarray
+            Calibration parameter values tested so far, shape
+            ``(n_runs, n_params)``.
+        detailed_results : list of dict, optional
+            Rows to append to the detailed results table, one dict per run x
+            calibration point. All values must be numeric. When omitted, only
+            the array/JSON/CSV outputs above are written.
+
+        Returns
+        -------
+        None
+        """
+        np.save(os.path.join(self.calibration_folder, "collocation_points.npy"), collocation_points)
+        np.save(os.path.join(self.calibration_folder, "model_evaluations.npy"), self.model_evaluations)
+
+        output = {
+            "collocation_points": collocation_points.tolist(),
+            "model_evaluations": self.model_evaluations.tolist(),
+            "calibration_parameters": self.calibration_parameters,
+            "calibration_quantities": self.calibration_quantities,
+            "n_runs": int(collocation_points.shape[0]),
+        }
+        with open(os.path.join(self.calibration_folder, "initial-model-outputs.json"), "w") as f:
+            json.dump(output, f, indent=2)
+
+        # Also save to restart_data_folder so only_bal_mode can find it
+        with open(os.path.join(self.restart_data_folder, "initial-model-outputs.json"), "w") as f:
+            json.dump(output, f, indent=2)
+        logger.info("Saved initial-model-outputs.json to restart_data folder for BAL restart.")
+
+        # Collocation points CSV (calibration parameter values)
+        quantities_str = "_".join(self.calibration_quantities)
+        csv_path = os.path.join(self.calibration_folder, f"collocation-points-{quantities_str}.csv")
+        with open(csv_path, mode="w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(self.calibration_parameters)
+            writer.writerows(collocation_points.tolist())
+        logger.info(f"Saved collocation points CSV to {csv_path}")
+
+        # Comprehensive results CSV and npy (run x calibration point rows)
+        if detailed_results:
+            detailed_csv_path = os.path.join(
+                self.calibration_folder, f"results-detailed-{quantities_str}.csv"
+            )
+            fieldnames = list(detailed_results[0].keys())
+            # Append if file exists, write fresh if not
+            file_exists = os.path.isfile(detailed_csv_path)
+            with open(detailed_csv_path, mode="a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerows(detailed_results)
+            logger.info(f"Saved detailed results CSV to {detailed_csv_path}")
+
+            # Also save as npy structured array. Rebuilt from the full CSV (not just
+            # this call's new rows) so the .npy reflects the complete history across
+            # all calls/BAL iterations, matching what's on disk in the CSV.
+            full_rows = list(csv.DictReader(open(detailed_csv_path, newline="")))
+            dtype = [(k, "f8") for k in fieldnames]
+            arr = np.array([tuple(float(r[k]) for k in fieldnames) for r in full_rows], dtype=dtype)
+            npy_path = os.path.join(
+                self.calibration_folder, f"results-detailed-{quantities_str}.npy"
+            )
+            np.save(npy_path, arr)
+            logger.info(f"Saved detailed results npy to {npy_path}")

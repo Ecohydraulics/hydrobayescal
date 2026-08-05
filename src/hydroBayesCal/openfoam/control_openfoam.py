@@ -149,6 +149,11 @@ class OpenFOAMController:
         ks_written = False
         brace_level = 0
         skip_multiline_value = False  # True while consuming a nonuniform list after 'value'
+        # Ks/Cs are roughness settings of nutkRoughWallFunction and are meaningless on
+        # any other boundary condition, so they are only written for that wall function.
+        # Without this gate every patch carrying a 'value' entry and a non-None value
+        # would have Ks/Cs injected into it.
+        is_rough_wall = bc_type == "nutkRoughWallFunction"
 
         for i, line in enumerate(lines):
             stripped = line.strip()
@@ -199,13 +204,13 @@ class OpenFOAMController:
                         ks_written = True
                         continue
 
-                    if re.match(r"\s*Cs\s+", line):
-                        new_lines.append(f"        Cs uniform 0.5;\n")
+                    if is_rough_wall and re.match(r"\s*Cs\s+", line):
+                        new_lines.append("        Cs uniform 0.5;\n")
                         continue
 
                     if re.match(r"\s*value\s+", line):
                         # Insert Ks/Cs before value line if not yet written
-                        if not ks_written and value is not None:
+                        if is_rough_wall and not ks_written and value is not None:
                             new_lines.append(f"        Ks uniform {float(value):.5f};\n")
                             new_lines.append(f"        Cs uniform 0.5;\n")
                             ks_written = True
@@ -219,7 +224,7 @@ class OpenFOAMController:
 
                     if "}" in line:
                         # Last resort: insert before closing brace
-                        if not ks_written and value is not None:
+                        if is_rough_wall and not ks_written and value is not None:
                             new_lines.append(f"        Ks uniform {float(value):.5f};\n")
                             new_lines.append(f"        Cs uniform 0.5;\n")
                             ks_written = True
@@ -1037,72 +1042,6 @@ class OpenFOAMModel(HydroSimulations):
         }
         with open(os.path.join(case_dir, f"{self.dict_output_name}.json"), 'w') as f:
             json.dump(output, f, indent=2)
-
-    def _save_all_results(self, collocation_points, detailed_results=None):
-        """Save all results to calibration folder.
-
-        Saves:
-        - collocation_points.npy: calibration parameter values tested, shape (n_runs, n_params)
-        - model_evaluations.npy: flat model outputs, shape (n_runs, nloc * n_quantities)
-        - initial-model-outputs.json: same data as JSON
-        - collocation-points-{quantities}.csv: calibration parameter values as CSV
-        - results-detailed-{quantities}.csv: comprehensive table with one row per
-          run x control point, including coordinates, U, fluctuations and TKE
-        - results-detailed-{quantities}.npy: same data as structured numpy array
-        """
-        np.save(os.path.join(self.calibration_folder, "collocation_points.npy"), collocation_points)
-        np.save(os.path.join(self.calibration_folder, "model_evaluations.npy"), self.model_evaluations)
-
-        output = {
-            "collocation_points": collocation_points.tolist(),
-            "model_evaluations": self.model_evaluations.tolist(),
-            "calibration_parameters": self.calibration_parameters,
-            "calibration_quantities": self.calibration_quantities,
-            "n_runs": int(collocation_points.shape[0])
-        }
-        with open(os.path.join(self.calibration_folder, "initial-model-outputs.json"), 'w') as f:
-            json.dump(output, f, indent=2)
-
-        # Also save to restart_data_folder so only_bal_mode can find it
-        with open(os.path.join(self.restart_data_folder, "initial-model-outputs.json"), 'w') as f:
-            json.dump(output, f, indent=2)
-        logger.info(f"Saved initial-model-outputs.json to restart_data folder for BAL restart.")
-
-        # Collocation points CSV (calibration parameter values)
-        quantities_str = '_'.join(self.calibration_quantities)
-        csv_path = os.path.join(self.calibration_folder, f"collocation-points-{quantities_str}.csv")
-        with open(csv_path, mode='w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(self.calibration_parameters)
-            writer.writerows(collocation_points.tolist())
-        logger.info(f"Saved collocation points CSV to {csv_path}")
-
-        # Comprehensive results CSV and npy (run x control point rows)
-        if detailed_results:
-            detailed_csv_path = os.path.join(
-                self.calibration_folder, f"results-detailed-{quantities_str}.csv"
-            )
-            fieldnames = list(detailed_results[0].keys())
-            # Append if file exists, write fresh if not
-            file_exists = os.path.isfile(detailed_csv_path)
-            with open(detailed_csv_path, mode='a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                if not file_exists:
-                    writer.writeheader()
-                writer.writerows(detailed_results)
-            logger.info(f"Saved detailed results CSV to {detailed_csv_path}")
-
-            # Also save as npy structured array. Rebuilt from the full CSV (not just
-            # this call's new rows) so the .npy reflects the complete history across
-            # all calls/BAL iterations, matching what's on disk in the CSV.
-            full_rows = list(csv.DictReader(open(detailed_csv_path, newline='')))
-            dtype = [(k, 'f8') for k in fieldnames]
-            arr = np.array([tuple(float(r[k]) for k in fieldnames) for r in full_rows], dtype=dtype)
-            npy_path = os.path.join(
-                self.calibration_folder, f"results-detailed-{quantities_str}.npy"
-            )
-            np.save(npy_path, arr)
-            logger.info(f"Saved detailed results npy to {npy_path}")
 
     def save_calibration_data(self, it, collocation_points, bayesian_dict):
         """Write per-iteration CSV files to ``calibration-data/<quantities>/``.

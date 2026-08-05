@@ -156,3 +156,82 @@ def test_a_patch_without_the_roughness_wall_function_is_not_selected(tmp_path):
 def test_missing_nut_file_is_reported_as_no_patch(tmp_path):
     """A case template without 0/nut yields None rather than raising."""
     assert _detect(tmp_path, None) is None
+
+
+# --------------------------------------------------------------------------------
+# boundary-condition writing
+# --------------------------------------------------------------------------------
+
+def _write_bc(tmp_path, contents, patch, bc_type, value):
+    """Run update_boundary_condition over a field file and return the result."""
+    from hydroBayesCal.openfoam.control_openfoam import OpenFOAMController
+
+    field = tmp_path / "0" / "nut"
+    field.parent.mkdir(parents=True, exist_ok=True)
+    field.write_text(textwrap.dedent(contents))
+
+    OpenFOAMController(str(tmp_path)).update_boundary_condition(
+        file="0/nut", patch=patch, field_type="scalar", bc_type=bc_type, value=value,
+    )
+    return field.read_text()
+
+
+def test_roughness_patch_gets_the_new_ks(tmp_path):
+    """The calibrated ks reaches the rough-wall patch, and Cs is written alongside it."""
+    out = _write_bc(
+        tmp_path, BOUNDARY_FIELD.format(patch="bottom"),
+        patch="bottom", bc_type="nutkRoughWallFunction", value=0.042,
+    )
+    assert "Ks uniform 0.04200;" in out
+    assert "Cs uniform 0.5;" in out
+    assert "uniform 0.01" not in out          # the template value is gone
+
+
+def test_ks_is_not_injected_into_a_non_roughness_patch(tmp_path):
+    """Ks/Cs are nutkRoughWallFunction settings and must not leak into other patches.
+
+    They are inserted ahead of a patch's ``value`` line, so without a gate on the
+    wall-function type any boundary condition updated with a non-None value would
+    silently acquire roughness entries that OpenFOAM does not expect there.
+    """
+    out = _write_bc(
+        tmp_path, BOUNDARY_FIELD.format(patch="bottom"),
+        patch="inlet", bc_type="fixedValue", value=1.5,
+    )
+    inlet = out.split("inlet")[1].split("}")[0]
+    assert "Ks" not in inlet
+    assert "Cs" not in inlet
+    assert "type fixedValue;" in inlet
+
+
+def test_a_multiline_nonuniform_value_list_is_consumed(tmp_path):
+    """A nonuniform value list is replaced wholesale, not left dangling.
+
+    Hot-started fields carry ``value nonuniform List<scalar>`` blocks spanning many
+    lines. Rewriting only the first line used to leave the list body behind, which
+    OpenFOAM then read as stray tokens.
+    """
+    out = _write_bc(tmp_path, """\
+        boundaryField
+        {
+            bottom
+            {
+                type            nutkRoughWallFunction;
+                Ks              uniform 0.01;
+                Cs              uniform 0.5;
+                value           nonuniform List<scalar>
+        3
+        (
+        0.1
+        0.2
+        0.3
+        )
+        ;
+            }
+        }
+    """, patch="bottom", bc_type="nutkRoughWallFunction", value=0.02)
+
+    assert "value uniform 0;" in out
+    assert "nonuniform" not in out
+    assert "0.1" not in out and "0.3" not in out   # list body consumed
+    assert "Ks uniform 0.02000;" in out
