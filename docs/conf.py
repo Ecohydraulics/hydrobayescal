@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "HydroBayesCal"
 copyright = "2022-2026, the HydroBayesCal authors"
 author = "Andrés Heredia, Federica Scolari, Sebastian Schwindt"
-release = "1.4.0"
+release = "1.4.1"
 version = "1.4"
 
 # Look for template overrides (e.g. the sidebar "View on GitHub" button) in

@@ -4,6 +4,58 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-08-05
+
+A correctness release for the OpenFOAM binding, from bugs Federica Scolari found while
+running real calibrations. Two of them are silent: a hot-started case ignored the
+calibrated roughness altogether, and the extraction could average the wrong timesteps,
+so an OpenFOAM calibration could complete and report results that owed nothing to the
+parameters it was varying. Anyone running OpenFOAM calibrations on 1.4.0 should upgrade
+and re-run. Delft3D users get one shared fix; TELEMAC workflows are unaffected.
+
+### Fixed
+- **A hot-started OpenFOAM case ignored the calibrated `ks` entirely.** The roughness
+  update only ever wrote `0/nut`, but when `startTime > 0` OpenFOAM reads boundary
+  conditions from `{startTime}/nut`. Every run therefore simulated the template
+  roughness, and the surrogate was trained on outputs that did not vary with the
+  parameter at all. `update_model_controls` now propagates `Ks` to every numeric time
+  directory in the case. Reported and fixed by Federica Scolari.
+- **The VTK timestep list could be sorted into the wrong order.**
+  `extract_fields_from_vtk` sorted by the step index in the folder name, but a
+  hot-start step index (e.g. 78496) outranks the indices of a freshly written run, so
+  the `t=600` restart field sorted last and was pulled into the averaging window as if
+  it were the final state. Sorting now uses the real simulation time read from each
+  `.vtm`. Reported and fixed by Federica Scolari.
+- **A leftover `VTK/` folder in the case template leaked into the results.**
+  `convert_to_vtk` did not clear it before running `foamToVTK`, so a stale timestep
+  from whenever the template was built could enter the timestep list and be averaged
+  into a run's output. Reported and fixed by Federica Scolari.
+- **`update_boundary_condition` had stopped writing `Cs` and mishandled multi-line
+  values.** Only single-line `value uniform ...` entries were rewritten; a
+  `value nonuniform List<scalar>` block, which is what hot-started fields carry, had
+  its first line replaced and its body left behind as stray tokens. The list is now
+  consumed as a unit and `Cs` is written alongside `Ks` again. Reported and fixed by
+  Federica Scolari.
+- **`results-detailed-<quantities>.npy` held only the most recent batch of rows.**
+  The `.csv` is appended to across BAL iterations while the `.npy` is rewritten, and
+  the array was rebuilt from the current call's rows rather than from the accumulated
+  file, so the two copies of the same table disagreed after the first iteration. The
+  `.npy` is now rebuilt from the full `.csv`. Reported and fixed by Federica Scolari
+  in the OpenFOAM binding; **this also fixes Delft3D**, which carried a verbatim copy
+  of the same method and so the same bug.
+- **`Ks`/`Cs` could be written into boundary conditions that are not rough walls.**
+  They are inserted ahead of a patch's `value` line, which fired for any patch updated
+  with a non-`None` value instead of only for `nutkRoughWallFunction` patches. Not
+  reachable from the shipped configs, whose dispatch builds only `Cmu` and `ks`
+  entries, but wrong for code driving `OpenFOAMController` directly.
+
+### Changed
+- **`_save_all_results` now lives on `HydroSimulations`** instead of being duplicated
+  verbatim in the OpenFOAM and Delft3D bindings, which is how the two copies came to
+  carry the same `.npy` bug. It uses only base-class attributes, so every binding
+  shares one implementation and TELEMAC gains the method. No call-site or output
+  changes.
+
 ## [1.4.0] - 2026-08-03
 
 A correctness release for the OpenFOAM and Delft3D bindings. Both drivers were unable
@@ -307,6 +359,7 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.4.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.1
 [1.4.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.2.0
