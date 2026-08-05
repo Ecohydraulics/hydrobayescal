@@ -146,10 +146,28 @@ class OpenFOAMController:
         inside_boundary_field = False
         inside_patch = False
         patch_found = False
+        ks_written = False
         brace_level = 0
+        skip_multiline_value = False  # True while consuming a nonuniform list after 'value'
+        # Ks/Cs are roughness settings of nutkRoughWallFunction and are meaningless on
+        # any other boundary condition, so they are only written for that wall function.
+        # Without this gate every patch carrying a 'value' entry and a non-None value
+        # would have Ks/Cs injected into it.
+        is_rough_wall = bc_type == "nutkRoughWallFunction"
 
         for i, line in enumerate(lines):
             stripped = line.strip()
+
+            # ----------------------------------------------------------------
+            # Skip lines that are part of a multi-line 'value nonuniform ...'
+            # list that we already replaced with 'value uniform 0;'.
+            # We stop skipping once we see the standalone semicolon that ends
+            # the list (i.e. a line whose only non-whitespace content is ';').
+            # ----------------------------------------------------------------
+            if skip_multiline_value:
+                if stripped == ";":
+                    skip_multiline_value = False
+                continue
 
             if not inside_boundary_field and stripped.startswith("boundaryField"):
                 inside_boundary_field = True
@@ -163,12 +181,14 @@ class OpenFOAMController:
                     if re.match(rf"^\s*{re.escape(patch)}\s*\{{\s*$", line):
                         inside_patch = True
                         patch_found = True
+                        ks_written = False
                         new_lines.append(line)
                         continue
                     if re.match(rf"^\s*{re.escape(patch)}\s*$", line):
                         if i + 1 < len(lines) and lines[i + 1].strip() == "{":
                             inside_patch = True
                             patch_found = True
+                            ks_written = False
                             new_lines.append(line)
                             continue
 
@@ -181,13 +201,33 @@ class OpenFOAMController:
                         if value is None:
                             raise ValueError(f"Missing 'value' for patch '{patch}' in {file}")
                         new_lines.append(f"        Ks uniform {float(value):.5f};\n")
+                        ks_written = True
+                        continue
+
+                    if is_rough_wall and re.match(r"\s*Cs\s+", line):
+                        new_lines.append("        Cs uniform 0.5;\n")
                         continue
 
                     if re.match(r"\s*value\s+", line):
+                        # Insert Ks/Cs before value line if not yet written
+                        if is_rough_wall and not ks_written and value is not None:
+                            new_lines.append(f"        Ks uniform {float(value):.5f};\n")
+                            new_lines.append(f"        Cs uniform 0.5;\n")
+                            ks_written = True
                         new_lines.append("        value uniform 0;\n")
+                        # If the original value was a multi-line nonuniform list
+                        # (i.e. the line does NOT end with ';'), activate the
+                        # skip mode so the list body is consumed and discarded.
+                        if not stripped.endswith(";"):
+                            skip_multiline_value = True
                         continue
 
                     if "}" in line:
+                        # Last resort: insert before closing brace
+                        if is_rough_wall and not ks_written and value is not None:
+                            new_lines.append(f"        Ks uniform {float(value):.5f};\n")
+                            new_lines.append(f"        Cs uniform 0.5;\n")
+                            ks_written = True
                         inside_patch = False
                         new_lines.append(line)
                         continue
@@ -285,7 +325,7 @@ class OpenFOAMController:
 
             if patch == "ks":
                 value = float(param["value"])
-                print(f"Updating Ks={value} on patch 'bottom' in 0/nut...")
+                print(f"Updating Ks={value} on patch '{param['patch']}' in 0/nut...")
                 self.update_boundary_condition(
                     file=param["file"],
                     patch=param["patch"],
@@ -293,6 +333,47 @@ class OpenFOAMController:
                     bc_type=param["bc_type"],
                     value=value,
                 )
+                # Also update nut in every other time directory present in the case
+                # (e.g. 600/nut for a hot-start case).
+                # When startTime > 0, OpenFOAM reads boundary conditions from
+                # {startTime}/nut, NOT from 0/nut.  If only 0/nut is updated, the
+                # simulation sees the template Ks for every run and produces
+                # identical results regardless of the calibration parameter.
+                for entry in sorted(os.listdir(self.case_dir)):
+                    if entry == "0":
+                        continue
+                    try:
+                        float(entry)   # skip non-numeric dirs (constant, system, …)
+                    except ValueError:
+                        continue
+                    nut_path = os.path.join(self.case_dir, entry, "nut")
+                    if os.path.isfile(nut_path):
+                        print(f"  Also updating Ks={value} in {entry}/nut (hot-start time dir)...")
+                        # Use a simple targeted line replacement instead of the full
+                        # update_boundary_condition parser.  The full-field file has a
+                        # massive internalField + nonuniform value lists in the
+                        # boundaryField that the parser struggles with.  Here we only
+                        # need to change one line: "Ks  uniform <old>;" inside the
+                        # bottom patch.  Ks only appears in nutkRoughWallFunction patches
+                        # so a global scan is safe.
+                        with open(nut_path, "r") as fh:
+                            raw_lines = fh.readlines()
+                        ks_re = re.compile(r"^(\s*Ks\s+uniform\s+)[0-9eE.+\-]+(\s*;.*)$")
+                        updated = False
+                        new_raw = []
+                        for ln in raw_lines:
+                            m = ks_re.match(ln)
+                            if m and not updated:
+                                new_raw.append(f"{m.group(1)}{value:.5f}{m.group(2)}\n")
+                                updated = True
+                            else:
+                                new_raw.append(ln)
+                        if updated:
+                            with open(nut_path, "w") as fh:
+                                fh.writelines(new_raw)
+                            print(f"    Ks updated to {value:.5f} in {entry}/nut.")
+                        else:
+                            print(f"    WARNING: Ks line not found in {entry}/nut — file unchanged.")
                 continue
 
             field_type = param.get("field_type", "")
@@ -330,6 +411,13 @@ class OpenFOAMController:
 
     # Converts only the latest time directory to VTK format using foamToVTK.
     def convert_to_vtk(self) -> None:
+        # Remove any pre-existing VTK folder (e.g. copied from case template)
+        # to ensure foamToVTK only converts this run's own time directories.
+        vtk_dir_pre = os.path.join(self.case_dir, "VTK")
+        if os.path.isdir(vtk_dir_pre):
+            import shutil
+            shutil.rmtree(vtk_dir_pre)
+            print(f"Removed pre-existing VTK folder: {vtk_dir_pre}", flush=True)
         print("Converting to VTK...")
         cmd = (
             f"source $HOME/OpenFOAM/OpenFOAM-v2412/etc/bashrc && "
@@ -367,14 +455,42 @@ class OpenFOAMController:
         if not os.path.isdir(vtk_dir):
             raise FileNotFoundError(f"VTK directory does not exist: {vtk_dir}")
 
-        # Collect and sort all available VTK files by timestep index.
-        # OpenFOAM v2412 foamToVTK creates: VTK/<casename>_<stepIndex>/internal.vtu
-        # Sort by the numeric suffix of the parent folder (step index, not simulation time).
-        vtk_files_sorted = sorted(
-            glob.glob(os.path.join(vtk_dir, "**", "internal.vtu"), recursive=True),
-            key=lambda p: int(os.path.basename(os.path.dirname(p)).rsplit("_", 1)[-1])
-            if os.path.basename(os.path.dirname(p)).rsplit("_", 1)[-1].isdigit() else 0
-        )
+        # Collect and sort VTK files by actual simulation time.
+        # OpenFOAM v2412 foamToVTK creates one .vtm per timestep in VTK/.
+        # Each .vtm contains <!-- time='T' --> giving the real simulation time.
+        # Sorting by step index is WRONG because hot-start step indices (e.g. 78496)
+        # are larger than new run step indices, causing the hot-start t=600 field
+        # to be sorted last and incorrectly included in the averaging window.
+
+        def _get_vtm_time(vtm_path):
+            try:
+                with open(vtm_path, "r") as f:
+                    for line in f:
+                        m = re.search(r"time='([0-9.eE+\-]+)'", line)
+                        if m:
+                            return float(m.group(1))
+            except Exception:
+                pass
+            return 0.0
+
+        vtm_files = [
+            f for f in glob.glob(os.path.join(vtk_dir, "*.vtm"))
+            if not f.endswith(".series")
+        ]
+        if not vtm_files:
+            raise FileNotFoundError(f"No .vtm files found in: {vtk_dir}")
+
+        # Sort by real simulation time
+        vtm_files_sorted = sorted(vtm_files, key=_get_vtm_time)
+
+        # Build list of internal.vtu paths in time order
+        vtk_files_sorted = []
+        for vtm in vtm_files_sorted:
+            stem = os.path.splitext(os.path.basename(vtm))[0]
+            vtu = os.path.join(vtk_dir, stem, "internal.vtu")
+            if os.path.isfile(vtu):
+                vtk_files_sorted.append(vtu)
+
         if not vtk_files_sorted:
             raise FileNotFoundError(f"No internal.vtu files found in: {vtk_dir}")
         print(f"Found {len(vtk_files_sorted)} VTK timesteps, averaging last {n_avg_timesteps}", flush=True)
@@ -926,69 +1042,6 @@ class OpenFOAMModel(HydroSimulations):
         }
         with open(os.path.join(case_dir, f"{self.dict_output_name}.json"), 'w') as f:
             json.dump(output, f, indent=2)
-
-    def _save_all_results(self, collocation_points, detailed_results=None):
-        """Save all results to calibration folder.
-
-        Saves:
-        - collocation_points.npy: calibration parameter values tested, shape (n_runs, n_params)
-        - model_evaluations.npy: flat model outputs, shape (n_runs, nloc * n_quantities)
-        - initial-model-outputs.json: same data as JSON
-        - collocation-points-{quantities}.csv: calibration parameter values as CSV
-        - results-detailed-{quantities}.csv: comprehensive table with one row per
-          run x control point, including coordinates, U, fluctuations and TKE
-        - results-detailed-{quantities}.npy: same data as structured numpy array
-        """
-        np.save(os.path.join(self.calibration_folder, "collocation_points.npy"), collocation_points)
-        np.save(os.path.join(self.calibration_folder, "model_evaluations.npy"), self.model_evaluations)
-
-        output = {
-            "collocation_points": collocation_points.tolist(),
-            "model_evaluations": self.model_evaluations.tolist(),
-            "calibration_parameters": self.calibration_parameters,
-            "calibration_quantities": self.calibration_quantities,
-            "n_runs": int(collocation_points.shape[0])
-        }
-        with open(os.path.join(self.calibration_folder, "initial-model-outputs.json"), 'w') as f:
-            json.dump(output, f, indent=2)
-
-        # Also save to restart_data_folder so only_bal_mode can find it
-        with open(os.path.join(self.restart_data_folder, "initial-model-outputs.json"), 'w') as f:
-            json.dump(output, f, indent=2)
-        logger.info(f"Saved initial-model-outputs.json to restart_data folder for BAL restart.")
-
-        # Collocation points CSV (calibration parameter values)
-        quantities_str = '_'.join(self.calibration_quantities)
-        csv_path = os.path.join(self.calibration_folder, f"collocation-points-{quantities_str}.csv")
-        with open(csv_path, mode='w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(self.calibration_parameters)
-            writer.writerows(collocation_points.tolist())
-        logger.info(f"Saved collocation points CSV to {csv_path}")
-
-        # Comprehensive results CSV and npy (run x control point rows)
-        if detailed_results:
-            detailed_csv_path = os.path.join(
-                self.calibration_folder, f"results-detailed-{quantities_str}.csv"
-            )
-            fieldnames = list(detailed_results[0].keys())
-            # Append if file exists, write fresh if not
-            file_exists = os.path.isfile(detailed_csv_path)
-            with open(detailed_csv_path, mode='a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                if not file_exists:
-                    writer.writeheader()
-                writer.writerows(detailed_results)
-            logger.info(f"Saved detailed results CSV to {detailed_csv_path}")
-
-            # Also save as npy structured array
-            dtype = [(k, 'f8') for k in fieldnames]
-            arr = np.array([tuple(r[k] for k in fieldnames) for r in detailed_results], dtype=dtype)
-            npy_path = os.path.join(
-                self.calibration_folder, f"results-detailed-{quantities_str}.npy"
-            )
-            np.save(npy_path, arr)
-            logger.info(f"Saved detailed results npy to {npy_path}")
 
     def save_calibration_data(self, it, collocation_points, bayesian_dict):
         """Write per-iteration CSV files to ``calibration-data/<quantities>/``.
