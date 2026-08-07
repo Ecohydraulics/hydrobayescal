@@ -1,9 +1,9 @@
 """
-Code that trains a Gaussian Process Emulator (GPE) for any full complexity model (i.e., hydrodynamic models) of OpenFOAM
+Code that trains a Gaussian Process Emulator (GPE) for any full complexity model (i.e., hydrodynamic models) of Delft3D-FLOW
 Possible to couple with any other open source hydrodynamic software.
 Can use normal training (once) or sequential training (BAL, SF, Sobol)
 
-Author: Adapted for OpenFOAM from Telemac version by Andres Heredia Hidalgo MSc
+Author: Adapted for Delft3D-FLOW from the Telemac/OpenFOAM versions by the HydroBayesCal team
 """
 import sys
 import os
@@ -13,7 +13,7 @@ import bayesvalidrox as bvr
 
 
 # Import own scripts
-from hydroBayesCal.openfoam.control_openfoam import OpenFOAMModel
+from hydroBayesCal.delft3d.control_delft3d import Delft3DModel
 from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
 from hydroBayesCal.surrogate.gpe_skl import *
 from hydroBayesCal.surrogate.gpe_gpytorch import *
@@ -23,12 +23,12 @@ from hydroBayesCal.surrogate.posterior_analysis import ITERATION_KEYS, record_it
 def load_config(config_path):
     """
     Load configuration from Python file.
-    
+
     Parameters
     ----------
     config_path : str
         Path to the Python configuration file
-    
+
     Returns
     -------
     module
@@ -122,12 +122,7 @@ def run_complex_model(complex_model,
     else:
         try:
             model_outputs = complex_model.output_processing(output_data_path=os.path.join(complex_model.restart_data_folder,
-                                                                                          f'initial-model-outputs.json'),
-                                                            delete_slf_files=complex_model.delete_complex_outputs,
-                                                            validation=complex_model.validation,
-                                                            filter_outputs=True,
-                                                            save_extraction_outputs=True,
-                                                            run_range_filtering=(1, complex_model.init_runs))
+                                                                                          f'initial-model-outputs.json'))
             collocation_points = complex_model.restart_collocation_points
 
         except FileNotFoundError:
@@ -163,7 +158,7 @@ def run_bal_model(collocation_points,
     experiment_design : obj
         Contains the experiment design object specifying the settings for the experimental runs.
     eval_steps : int, optional
-        Every ow many iterations the surrogate model is evaluated and saved in surrogate model folder.
+        Every how many iterations the surrogate model is evaluated and saved in surrogate model folder.
         Default is 1. Every BAL iteration the surrogate model will be evaluated.
     prior_samples : int, optional
         The number of samples drawn from the prior distribution.
@@ -258,7 +253,7 @@ def run_bal_model(collocation_points,
                      'log_BME': np.zeros(n_iter + 1),
                      'include_surrogate_error': include_surrogate_error,
                      'gpe_error': getattr(complex_model, 'gpe_error', 0.0)}
-    # Per-iteration posterior diagnostics (keep in sync with templates/bal_telemac.py,
+    # Per-iteration posterior diagnostics (keep in sync with src/hydroBayesCal/drivers/bal_telemac.py,
     # the canonical driver). Additive keys: existing consumers read by key.
     for _key in ITERATION_KEYS:
         bayesian_dict[_key] = [None] * (n_iter + 1)
@@ -273,33 +268,33 @@ def run_bal_model(collocation_points,
             if it == 0:
                 length_scales = []
                 length_scales_bounds = []
-                
+
                 # Calculate length scales and bounds
                 for param_range in complex_model.parameter_ranges:
-					# Ensure the calculated length scale is positive
+                    # Ensure the calculated length scale is positive
                     length_scale = max(sum(param_range) / len(param_range), 1e-5)
                     length_scales.append(length_scale)
-                    
+
                     # Ensure bounds are positive and finite
                     lower_bound, upper_bound = max(param_range[0], 1e-5), max(param_range[1], 1e-5)
                     length_scales_bounds.append((lower_bound, upper_bound))
             kernel = 1 * RBF(length_scale=length_scales, length_scale_bounds=length_scales_bounds)
-            
+
             # 1.2. Setup a GPR: initialize the general SKL class
             sm = SklTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                              noise=True, kernel=kernel, alpha=1e-6, n_restarts=10, parallelize=False)
 
         elif gp_library == 'gpy':
-			
-			# 1.2. Set up Likelihood
+
+            # 1.2. Set up Likelihood
             if complex_model.num_calibration_quantities == 1:
                 kernel = gpytorch.kernels.ScaleKernel(
                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim))
-                # Modify default kernel/likelihood values:    
+                # Modify default kernel/likelihood values:
                 likelihood = gpytorch.likelihoods.GaussianLikelihood(
                     noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
                 likelihood.noise = 1e-5
-                
+
                 # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
                 sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                                  likelihood=likelihood, kernel=kernel, training_iter=100,
@@ -390,7 +385,7 @@ def run_bal_model(collocation_points,
                 with open(save_name, "wb") as file:
                     pickle.dump(sm, file)
             else:
-				# Construct the save_name path for multiple quantities
+                # Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
                                          f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}_{complex_model.multitask_selection}.pkl')
@@ -458,7 +453,7 @@ def run_bal_model(collocation_points,
         if it < n_iter:
             logger.info(
                 f'Selecting {experiment_design.n_new_samples} additional TP using {experiment_design.exploit_method}')
-                
+
             # gaussian_assumption = True (Assumes Analytical Function Bayesian Active Learning )
             # gaussian assumption = False (General Bayesian Active Learning)
 
@@ -474,9 +469,9 @@ def run_bal_model(collocation_points,
             new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
             logger.info(f"The new collocation point after rejection sampling is {new_tp} obtained with {util_fun}")
             bayesian_dict['util_func'][it] = util_fun
-            
+
             # Evaluate model in new TP
-            
+
             # A resume run (only_bal_mode=True, complete_bal_mode=True) must still simulate
             # the new training points selected above; only pure re-analysis
             # (complete_bal_mode=False) skips new simulations.
@@ -505,18 +500,18 @@ def run_bal_model(collocation_points,
     return bayesian_dict, collocation_points
 
 def main():
-    parser = argparse.ArgumentParser(description="Run OpenFOAM (interFoam) Model with calibration parameters.")
+    parser = argparse.ArgumentParser(description="Run Delft3D-FLOW Model with calibration parameters.")
     parser.add_argument(
         '--config',
         type=str,
-        default='config_OpenFOAM.py',
-        help='Path to Python configuration file (default: config_OpenFOAM.py)'
+        default='config_Delft3D.py',
+        help='Path to Python configuration file (default: config_Delft3D.py)'
     )
     parser.add_argument(
         '--calibration_quantities',
         type=str,
         nargs='+',
-        help='Override calibration quantities from config, e.g., "WATER DEPTH" "U_x".'
+        help='Override calibration quantities from config, e.g., "WATER_DEPTH" "U_MAG".'
     )
     parser.add_argument(
         '--only_bal_mode',
@@ -540,20 +535,20 @@ def main():
     print(f"Loading configuration from: {args.config}")
     config = load_config(args.config)
 
-    # config_OpenFOAM.py uses standard names (e.g. U_x, TKE, WATER_DEPTH) for both solvers.
-    # No translation needed here - control_openfoam.py works with standard names internally.
-    
+    # config_Delft3D.py uses standard names (e.g. WATER_DEPTH, U_x, U_MAG) shared across
+    # solvers. No translation needed here - control_delft3d.py works with standard names internally.
+
     if args.calibration_quantities:
         calibration_quantities = args.calibration_quantities
         print(f"Overriding calibration_quantities: {calibration_quantities}")
     else:
         calibration_quantities = config.calibration['calibration_quantities']
-    
+
     if args.only_bal_mode:
         only_bal_mode = args.only_bal_mode.lower() == 'true'
     else:
         only_bal_mode = config.execution['only_bal_mode']
-    
+
     if args.complete_bal_mode:
         complete_bal_mode = args.complete_bal_mode.lower() == 'true'
     else:
@@ -566,15 +561,12 @@ def main():
     print(f"Complete BAL Mode: {complete_bal_mode}")
     print(f"Only Init Mode: {only_init_mode}")
 
-    full_complexity_model = OpenFOAMModel(
+    full_complexity_model = Delft3DModel(
             case_template_dir=config.paths['case_template_dir'],
-            solver_name=config.simulation['solver_name'],
+            env_script=config.simulation['env_script'],
+            d_hydro_config=config.simulation['d_hydro_config'],
             n_processors=config.simulation['n_processors'],
-            results_filename_base=config.simulation['results_filename_base'],
-            alpha_water_name=config.interfoam['alpha_water_name'],
-            water_surface_alpha=config.interfoam['water_surface_alpha'],
-            reference_z=config.interfoam['reference_z'],
-            control_file=config.simulation['control_file'],
+            roughness_formulation=config.delft3d['roughness_formulation'],
             model_dir=config.paths['model_dir'],
             res_dir=config.paths['res_dir'],
             calibration_pts_file_path=config.paths['calibration_pts_file_path'],
@@ -604,7 +596,7 @@ def main():
         parameter_distribution=config.sampling['parameter_distribution'],
         parameter_sampling_method=config.sampling['parameter_sampling_method']
     )
-    
+
     init_collocation_points, model_evaluations = run_complex_model(
         complex_model=full_complexity_model,
         experiment_design=exp_design,
@@ -630,4 +622,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydroBayesCal"
-version = "1.4.1"
+version = "1.4.2"
 description = "Surrogate-assisted Bayesian calibration for hydrodynamic and morphodynamic models (Telemac, OpenFOAM, Delft3D)."
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -125,4 +125,13 @@ where = ["src"]
 "hydroBayesCal" = [
     "telemac/templates/*.csv",
     "telemac/templates/*",
+    # The calibration drivers. They are scripts, not importable modules (the
+    # multiflow driver imports its single-flow sibling by file name), so they ship
+    # as package DATA and are meant to be copied out next to a config before being
+    # run - see hydroBayesCal.drivers_dir() / driver_path().
+    # Shipping them matters for downstream packages: without this, pip installing
+    # hydroBayesCal gives you the library but not the thing you actually run, and
+    # the caller has to be told where a source checkout lives.
+    "drivers/*.py",
+    "drivers/*.md",
 ]

@@ -4,6 +4,31 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-08-07
+
+The calibration drivers now ship **with the installed package**. Until now
+`pip install hydroBayesCal` gave you the library but not the scripts you actually run,
+so any downstream tool had to be told where a source checkout lived - an environment
+variable pointing at a directory, which breaks as soon as the checkout moves or is
+absent. The drivers are now package data, discoverable through a small API, so an
+installed package is self-sufficient.
+
+### Added
+- `hydroBayesCal.copy_driver(name, dest_dir)` copies a driver next to a config and
+  brings any sibling it imports with it (`bal_telemac_multiflow.py` needs
+  `bal_telemac.py` beside it). This is the supported way to use a driver: they are
+  scripts meant to run from a working directory holding the config, not importable
+  modules.
+- `hydroBayesCal.drivers_dir()`, `driver_path(name)` and `available_drivers()` for
+  callers that only need the location. `driver_path` names what *is* available when
+  asked for something that is not, since a typo would otherwise surface much later as
+  a confusing missing-file error.
+
+### Changed
+- **The drivers moved from `templates/` to `src/hydroBayesCal/drivers/`** so setuptools
+  ships them. Running a checkout's copy directly still works, at the new path; the
+  documented commands were updated. Nothing about how a driver behaves changed.
+
 ## [1.4.1] - 2026-08-05
 
 A correctness release for the OpenFOAM binding, from bugs Federica Scolari found while
@@ -359,6 +384,7 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.4.2]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.2
 [1.4.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.1
 [1.4.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.3.0

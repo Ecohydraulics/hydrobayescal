@@ -174,12 +174,12 @@ directions to east/north components using the local grid orientation
 Running the calibration
 -----------------------
 
-Define a configuration file (see the example ``templates/config_Delft3D.py``)
+Define a configuration file (see the example ``src/hydroBayesCal/drivers/config_Delft3D.py``)
 and launch the Delft3D driver:
 
 .. code-block:: bash
 
-   python templates/bal_delft3d.py --config templates/config_Delft3D.py
+   python src/hydroBayesCal/drivers/bal_delft3d.py --config src/hydroBayesCal/drivers/config_Delft3D.py
 
 The driver builds a ``Delft3DModel``, sets up the experimental design, runs
 the initial simulations (source ``env.sh``, then ``run_dflow2d3d.sh`` in a

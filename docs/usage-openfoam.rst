@@ -127,7 +127,7 @@ Define a configuration file and launch the OpenFOAM driver:
 
 .. code-block:: bash
 
-   python templates/bal_openfoam.py --config templates/config_OpenFOAM.py
+   python src/hydroBayesCal/drivers/bal_openfoam.py --config src/hydroBayesCal/drivers/config_OpenFOAM.py
 
 The driver builds an ``OpenFOAMModel``, runs the initial simulations
 (``decomposePar`` → ``interFoam`` → ``reconstructPar`` → ``foamToVTK``),

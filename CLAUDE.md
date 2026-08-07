@@ -20,18 +20,18 @@ pip install -e ".[dev,docs,mesh]"       # editable dev install (Python >= 3.10, 
 pre-commit install                       # once per clone (20 MB file-size gate)
 pytest                                   # test runner of record (no test files exist in-tree yet)
 sphinx-build -b html -W docs docs/_build/html
-ruff check src templates                 # linter declared in the dev extra
+ruff check src                           # linter declared in the dev extra
 python -m build && twine check dist/*    # local release sanity check
 ```
 
-Running a calibration (drivers live in `templates/`, they are not part of the installed package):
+Running a calibration (drivers ship WITH the installed package as data; copy one next to your config with `hydroBayesCal.copy_driver`, or run a source checkout's copy directly):
 
 ```bash
-python templates/bal_telemac.py           --config templates/config_Telemac.py
-python templates/bal_telemac_multiflow.py --config <config with a `multiflow` block>
-python templates/bal_openfoam.py          --config templates/config_OpenFOAM.py
-python templates/bal_delft3d.py           --config templates/config_Delft3D.py
-python templates/prebal_telemac_error_analysis.py --config <config>   # pre-BAL diagnostics only
+python src/hydroBayesCal/drivers/bal_telemac.py           --config src/hydroBayesCal/drivers/config_Telemac.py
+python src/hydroBayesCal/drivers/bal_telemac_multiflow.py --config <config with a `multiflow` block>
+python src/hydroBayesCal/drivers/bal_openfoam.py          --config src/hydroBayesCal/drivers/config_OpenFOAM.py
+python src/hydroBayesCal/drivers/bal_delft3d.py           --config src/hydroBayesCal/drivers/config_Delft3D.py
+python src/hydroBayesCal/drivers/prebal_telemac_error_analysis.py --config <config>   # pre-BAL diagnostics only
 ```
 
 TELEMAC must be on `PATH` before a TELEMAC run: the binding shells out to `telemac2d.py` /
@@ -78,7 +78,7 @@ Terminology in the docs: **calibration parameters** are the model parameters bei
 
 ### The driver scripts
 
-`templates/bal_*.py` are the orchestrators, not library code. Each one does the same four steps and
+`src/hydroBayesCal/drivers/bal_*.py` are the orchestrators, not library code. Each one does the same four steps and
 they are near-duplicates across solvers, so a change to the workflow usually has to be mirrored:
 
 1. `load_config()` imports the `--config` Python file as a module (dicts `paths`,

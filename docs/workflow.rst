@@ -32,7 +32,7 @@ Step 1: Assign the calibration settings
 As it was mentioned before the calibration process involves two well defined parts in the code. Both processes depend on the user-defined settings, i.e. the calibration parameters to adjust
 and the calibration targets to fit against (see :ref:`terminology`), which are essential
 to run the code properly.
-Firstly, the initialization of all settings must be done in the ``templates/bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
+Firstly, the initialization of all settings must be done in the ``src/hydroBayesCal/drivers/bal_telemac.py`` Python script. ``bal_telemac.py`` is the main script that runs the calibration process and
 calls the necessary instances of the classes that run the hydrodynamic model, creation of surrogate models and BAL.
 
 
@@ -215,7 +215,7 @@ For telemac simulations, the following parameters should be defined in the **Tel
     targets include both a depth-like and a velocity-like target
     (``diagnose_roughness_identifiability`` / ``log_roughness_identifiability`` in
     ``hydroBayesCal.function_pool``, invoked from
-    ``templates/prebal_telemac_error_analysis.py``). At a fixed discharge
+    ``src/hydroBayesCal/drivers/prebal_telemac_error_analysis.py``). At a fixed discharge
     (:math:`Q = U\,A`), raising the bottom roughness slows the flow, so the water
     deepens to keep passing :math:`Q` -- depth goes up, velocity goes down. Hence the
     sign pattern of the depth-vs-velocity residuals (simulated minus observed) at the
@@ -306,7 +306,7 @@ Run the derivation on a finished calibration:
 
 .. code-block:: bash
 
-   python templates/derive_calibrated_parameters.py --config config_Telemac.py
+   python src/hydroBayesCal/drivers/derive_calibrated_parameters.py --config config_Telemac.py
 
 It reports, for every calibration parameter:
 
@@ -374,8 +374,8 @@ against the measurements:
 
 .. code-block:: bash
 
-   python templates/bal_telemac.py --config config_Telemac.py
-   python templates/assess_calibration.py --config config_Telemac.py
+   python src/hydroBayesCal/drivers/bal_telemac.py --config config_Telemac.py
+   python src/hydroBayesCal/drivers/assess_calibration.py --config config_Telemac.py
 
 Letting the full complexity model arbitrate between a handful of labelled candidates is
 the honest way to close a calibration whose posterior is equifinal.
@@ -384,7 +384,7 @@ Watching the optima converge
 +++++++++++++++++++++++++++++
 
 The same diagnostics are recorded at every BAL iteration, so
-``templates/plot_posteriors.py`` produces two additional figures:
+``src/hydroBayesCal/drivers/plot_posteriors.py`` produces two additional figures:
 
 * ``parameter_optimum_convergence``: each parameter's own optimum against the number of
   training points, with its credible interval and the calibration range. A trace still

@@ -1,5 +1,5 @@
 """
-Ering case plots: copy of templates/plot_posteriors.py with config_Ering.py as the
+Ering case plots: copy of src/hydroBayesCal/drivers/plot_posteriors.py with config_Ering.py as the
 default configuration. Keep in sync with the template.
 
 Code that plots BAL posterior results.

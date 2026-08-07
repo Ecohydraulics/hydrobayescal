@@ -1,5 +1,5 @@
 """
-Ering case driver: copy of templates/bal_telemac.py with config_Ering.py as the
+Ering case driver: copy of src/hydroBayesCal/drivers/bal_telemac.py with config_Ering.py as the
 default configuration. Keep in sync with the template.
 
 Code that trains a Gaussian Process Emulator (GPE) for any deterministic numerical model (i.e., hydrodynamic models) of Telemac
@@ -296,7 +296,7 @@ def run_bal_model(collocation_points,
                      'log_BME': np.zeros(n_iter + 1),
                      'include_surrogate_error': include_surrogate_error,
                      'gpe_error': getattr(complex_model, 'gpe_error', 0.0)}
-    # Per-iteration posterior diagnostics (keep in sync with templates/bal_telemac.py,
+    # Per-iteration posterior diagnostics (keep in sync with src/hydroBayesCal/drivers/bal_telemac.py,
     # the canonical driver). Additive keys: existing consumers read by key.
     for _key in ITERATION_KEYS:
         bayesian_dict[_key] = [None] * (n_iter + 1)

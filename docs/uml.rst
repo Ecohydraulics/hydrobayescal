@@ -23,8 +23,8 @@ small set of driver scripts:
    points, inside and outside the calibration workflow (see
    :doc:`usage-telemac`).
 
-The driver scripts ``templates/bal_telemac.py``, ``templates/bal_openfoam.py``
-and ``templates/bal_delft3d.py`` wire these layers
+The driver scripts ``src/hydroBayesCal/drivers/bal_telemac.py``, ``src/hydroBayesCal/drivers/bal_openfoam.py``
+and ``src/hydroBayesCal/drivers/bal_delft3d.py`` wire these layers
 together and read all user input from a configuration file. The rendered UML
 class diagram is maintained in the repository under ``UML/BayesCal-UML.pdf``
 (LaTeX/TikZ source next to it).
@@ -139,6 +139,10 @@ Package layout
    │   └── control_openfoam.py  # OpenFOAMModel(HydroSimulations) + OpenFOAMController
    ├── delft3d/
    │   └── control_delft3d.py   # Delft3DModel(HydroSimulations) + Delft3DController
+   ├── drivers/                 # runnable drivers + configs, shipped as package data
+   │   ├── bal_telemac.py / bal_openfoam.py / bal_delft3d.py    # entry-point drivers
+   │   ├── config_Telemac.py / config_OpenFOAM.py / config_Delft3D.py
+   │   └── telemac_extract.py, plot_posteriors.py, assess_calibration.py, ...
    ├── surrogate/               # owned GPE + BAL implementation
    │   ├── gpe_gpytorch.py      # GPyTraining / MultiGPyTraining (single- & multi-output GP)
    │   ├── gpe_skl.py           # scikit-learn GP training
@@ -154,10 +158,10 @@ Package layout
    │   └── axis_utils.py        # shared axis/tick/limit helpers
    └── utils/, doepy/           # logging/config, design-of-experiments helpers
 
-   templates/                   # runnable drivers and config templates (copy & adapt)
-   ├── bal_telemac.py / bal_openfoam.py / bal_delft3d.py   # entry-point drivers
-   ├── config_Telemac.py / config_OpenFOAM.py / config_Delft3D.py
-   └── telemac_extract.py, main_plots.py, main_validate.py, ...
+The drivers are scripts rather than importable modules, so they are shipped as
+package *data* and are meant to be copied next to a configuration file before
+being run: ``hydroBayesCal.copy_driver("bal_telemac.py", my_run_dir)``. Running a
+source checkout's copy in place works just as well.
 
 .. note::
 
