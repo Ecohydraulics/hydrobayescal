@@ -29,7 +29,7 @@ Requirements on the flows:
   files) and differ in the hydraulic forcing (e.g. PRESCRIBED FLOWRATES /
   ELEVATIONS); each flow must use a distinct ``results_filename_base``.
 
-Example flow specification (see ``templates/bal_telemac_multiflow.py``)::
+Example flow specification (see ``src/hydroBayesCal/drivers/bal_telemac_multiflow.py``)::
 
     flows = [
         {"name": "q47-3", "control_file": "steady2d.cas",

@@ -119,6 +119,40 @@ For example, a developer install with documentation and mesh tools:
    (~hundreds of MB). On clusters without a working MPI toolchain, omit the
    ``mpi`` extra.
 
+.. _packaged-drivers:
+
+Getting the calibration drivers
+-------------------------------
+
+A calibration is launched from a *driver* script (``bal_telemac.py``,
+``bal_openfoam.py``, ``bal_delft3d.py``, …) which reads a configuration file. The
+drivers ship with the installed package, so an installed HydroBayesCal is
+self-sufficient: nothing has to be told where a source checkout lives.
+
+They are scripts rather than importable modules, so the supported use is to copy
+one into the working directory that holds your configuration file and run it
+there:
+
+.. code-block:: python
+
+   import hydroBayesCal as hbc
+
+   driver = hbc.copy_driver("bal_telemac.py", "/path/to/my_run")
+
+.. code-block:: bash
+
+   cd /path/to/my_run
+   python bal_telemac.py --config config_Telemac.py
+
+``copy_driver`` brings along any sibling the driver imports:
+``bal_telemac_multiflow.py`` needs ``bal_telemac.py`` beside it. Use
+``hbc.available_drivers()`` to list what is packaged and ``hbc.driver_path(name)``
+or ``hbc.drivers_dir()`` when only the location is wanted. The packaged copy may
+sit in a read-only ``site-packages`` tree, so do not edit it in place.
+
+Working from a clone, the drivers live in ``src/hydroBayesCal/drivers/`` and can
+be run where they are.
+
 .. _latex-for-plots:
 
 LaTeX for the plots (system packages)

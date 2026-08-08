@@ -41,7 +41,7 @@ import argparse
 import os
 import sys
 
-# bal_telemac.py lives next to this driver (hydrobayescal/templates/ or a
+# bal_telemac.py lives next to this driver (hydrobayescal/src/hydroBayesCal/drivers/ or a
 # staged copy of both files); make it importable regardless of the CWD.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

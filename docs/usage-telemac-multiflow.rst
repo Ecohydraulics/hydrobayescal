@@ -52,7 +52,7 @@ Components
     identical across every run) so a silent extraction failure surfaces in
     minutes instead of after days of compute.
 
-``templates/bal_telemac_multiflow.py``
+``src/hydroBayesCal/drivers/bal_telemac_multiflow.py``
     The driver. It **imports and reuses** ``bal_telemac.py`` (the experiment
     design, the initial-runs loop and the Bayesian-Active-Learning loop) and
     only swaps the single-flow model for a ``MultiflowTelemacModel``. Run it

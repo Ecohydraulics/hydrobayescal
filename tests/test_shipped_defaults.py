@@ -15,17 +15,21 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
+#: The drivers ship as package data, so they live inside the package, not in a
+#: top-level templates/ directory.
+DRIVERS_DIR = REPO / "src" / "hydroBayesCal" / "drivers"
+
 CONFIGS = [
-    REPO / "templates" / "config_Telemac.py",
-    REPO / "templates" / "config_OpenFOAM.py",
-    REPO / "templates" / "config_Delft3D.py",
+    DRIVERS_DIR / "config_Telemac.py",
+    DRIVERS_DIR / "config_OpenFOAM.py",
+    DRIVERS_DIR / "config_Delft3D.py",
     REPO / "examples" / "Telemac" / "Hydromorphodynamic" / "Ering" / "config_Ering.py",
 ]
 DRIVERS = [
-    REPO / "templates" / "bal_telemac.py",
-    REPO / "templates" / "bal_openfoam.py",
-    REPO / "templates" / "bal_delft3d.py",
-    REPO / "templates" / "bal_telemac_multiflow.py",
+    DRIVERS_DIR / "bal_telemac.py",
+    DRIVERS_DIR / "bal_openfoam.py",
+    DRIVERS_DIR / "bal_delft3d.py",
+    DRIVERS_DIR / "bal_telemac_multiflow.py",
     REPO / "examples" / "Telemac" / "Hydromorphodynamic" / "Ering" / "bal_telemac.py",
 ]
 
@@ -109,7 +113,7 @@ def test_ering_driver_matches_the_template():
 
     Keeps the "keep in sync" convention from drifting back into a stale copy.
     """
-    template = (REPO / "templates" / "bal_telemac.py").read_text().splitlines()
+    template = (DRIVERS_DIR / "bal_telemac.py").read_text().splitlines()
     example = (REPO / "examples" / "Telemac" / "Hydromorphodynamic" / "Ering"
                / "bal_telemac.py").read_text().splitlines()
 

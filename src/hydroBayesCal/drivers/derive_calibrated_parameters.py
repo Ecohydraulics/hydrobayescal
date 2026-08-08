@@ -24,11 +24,11 @@ The script is report-only and never launches a simulation. With ``--write-csv`` 
 writes the candidates to ``restart_data/user-collocation-points.csv``, so the final
 full-complexity runs use the existing ``user_param_values`` path:
 
-    python templates/derive_calibrated_parameters.py --config config_Telemac.py --write-csv
+    python src/hydroBayesCal/drivers/derive_calibrated_parameters.py --config config_Telemac.py --write-csv
     # then, in the config: user_param_values=True, complete_bal_mode=False,
     # only_bal_mode=False, init_runs=<number of candidates>
-    python templates/bal_telemac.py --config config_Telemac.py
-    python templates/assess_calibration.py
+    python src/hydroBayesCal/drivers/bal_telemac.py --config config_Telemac.py
+    python src/hydroBayesCal/drivers/assess_calibration.py
 
 Only ``paths``, ``calibration`` and ``sampling`` are read from the configuration, so
 the same script works for the OpenFOAM and Delft3D bindings by swapping the imported
@@ -176,8 +176,8 @@ def main():
         logger.info("    execution['only_bal_mode']      = False")
         logger.info("    sampling['init_runs']           = %d", n_candidates)
         logger.info("and then run:")
-        logger.info("    python templates/bal_telemac.py --config %s", args.config)
-        logger.info("    python templates/assess_calibration.py --config %s", args.config)
+        logger.info("    python src/hydroBayesCal/drivers/bal_telemac.py --config %s", args.config)
+        logger.info("    python src/hydroBayesCal/drivers/assess_calibration.py --config %s", args.config)
         if config.sampling["init_runs"] != n_candidates:
             logger_warn.warning(
                 f"init_runs is currently {config.sampling['init_runs']} but "

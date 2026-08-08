@@ -38,7 +38,7 @@ A calibration additionally requires a working installation of the numerical solv
 Configure a calibration in a Python config file and run the TELEMAC driver:
 
 ```bash
-python templates/bal_telemac.py --config templates/config_Telemac.py
+python -m hydroBayesCal.drivers.bal_telemac --config config_Telemac.py
 ```
 
 Simulation results can also be sampled at arbitrary points outside the calibration workflow, including depth-explicit extraction from TELEMAC-3D and OpenFOAM output:

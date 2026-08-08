@@ -17,12 +17,16 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
+#: The drivers ship as package data, so they live inside the package, not in a
+#: top-level templates/ directory.
+DRIVERS_DIR = REPO / "src" / "hydroBayesCal" / "drivers"
+
 #: Every driver that owns a copy of ``run_bal_model``. ``bal_telemac_multiflow.py`` is
 #: deliberately absent: it imports ``run_bal_model`` from ``bal_telemac.py`` verbatim.
 DRIVERS = [
-    REPO / "templates" / "bal_telemac.py",
-    REPO / "templates" / "bal_openfoam.py",
-    REPO / "templates" / "bal_delft3d.py",
+    DRIVERS_DIR / "bal_telemac.py",
+    DRIVERS_DIR / "bal_openfoam.py",
+    DRIVERS_DIR / "bal_delft3d.py",
     REPO / "examples" / "Telemac" / "Hydromorphodynamic" / "Ering" / "bal_telemac.py",
 ]
 

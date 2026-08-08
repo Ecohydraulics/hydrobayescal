@@ -376,7 +376,7 @@ def select_posterior_iteration(bayesian_dict, iteration=-1):
 
     Rejection sampling can accept nothing in an early iteration, so
     ``bayesian_dict['posterior']`` legitimately contains ``None`` entries. This
-    mirrors the guard that ``templates/plot_posteriors.py`` applies before plotting.
+    mirrors the guard that ``src/hydroBayesCal/drivers/plot_posteriors.py`` applies before plotting.
 
     Parameters
     ----------

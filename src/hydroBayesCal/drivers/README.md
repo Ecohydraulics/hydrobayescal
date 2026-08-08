@@ -22,7 +22,7 @@ Run a driver with the repository root or any working directory of your choice,
 for example:
 
 ```bash
-python templates/bal_telemac.py --config templates/config_Telemac.py
+python src/hydroBayesCal/drivers/bal_telemac.py --config src/hydroBayesCal/drivers/config_Telemac.py
 ```
 
 All scripts import from the installed `hydroBayesCal` package
