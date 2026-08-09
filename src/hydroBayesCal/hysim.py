@@ -777,6 +777,18 @@ class HydroSimulations(ABC):
             writer.writerows(collocation_points.tolist())
         logger.info(f"Saved collocation points CSV to {csv_path}")
 
+        # Also save to restart_data_folder under the name __init__ looks for when
+        # only_bal_mode=True (np.loadtxt(..., delimiter=',', skiprows=1, ...)).
+        # Without this, only_bal_mode=True raises FileNotFoundError before any
+        # BAL iteration can start, for any binding that didn't already write this
+        # file itself (e.g. OpenFOAM never has).
+        restart_cp_path = os.path.join(self.restart_data_folder, "initial-collocation-points.csv")
+        with open(restart_cp_path, mode="w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(self.calibration_parameters)
+            writer.writerows(collocation_points.tolist())
+        logger.info(f"Saved initial-collocation-points.csv to restart_data folder for BAL restart.")
+
         # Comprehensive results CSV and npy (run x calibration point rows)
         if detailed_results:
             detailed_csv_path = os.path.join(

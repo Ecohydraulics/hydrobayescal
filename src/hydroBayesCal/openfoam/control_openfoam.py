@@ -147,6 +147,7 @@ class OpenFOAMController:
         inside_patch = False
         patch_found = False
         ks_written = False
+        cs_present = False  # True once we've seen (and preserved) an existing Cs line
         brace_level = 0
         skip_multiline_value = False  # True while consuming a nonuniform list after 'value'
         # Ks/Cs are roughness settings of nutkRoughWallFunction and are meaningless on
@@ -161,11 +162,11 @@ class OpenFOAMController:
             # ----------------------------------------------------------------
             # Skip lines that are part of a multi-line 'value nonuniform ...'
             # list that we already replaced with 'value uniform 0;'.
-            # We stop skipping once we see the standalone semicolon that ends
-            # the list (i.e. a line whose only non-whitespace content is ';').
+            # We stop skipping once we see the line that ends the list: either
+            # a standalone ';' or the closing ');' of a bracketed list.
             # ----------------------------------------------------------------
             if skip_multiline_value:
-                if stripped == ";":
+                if stripped in (";", ");"):
                     skip_multiline_value = False
                 continue
 
@@ -182,6 +183,7 @@ class OpenFOAMController:
                         inside_patch = True
                         patch_found = True
                         ks_written = False
+                        cs_present = False
                         new_lines.append(line)
                         continue
                     if re.match(rf"^\s*{re.escape(patch)}\s*$", line):
@@ -189,6 +191,7 @@ class OpenFOAMController:
                             inside_patch = True
                             patch_found = True
                             ks_written = False
+                            cs_present = False
                             new_lines.append(line)
                             continue
 
@@ -205,15 +208,20 @@ class OpenFOAMController:
                         continue
 
                     if is_rough_wall and re.match(r"\s*Cs\s+", line):
-                        new_lines.append("        Cs uniform 0.5;\n")
+                        # Preserve whatever Cs value the template already sets rather
+                        # than overwriting it with a hardcoded default.
+                        cs_present = True
+                        new_lines.append(line)
                         continue
 
                     if re.match(r"\s*value\s+", line):
                         # Insert Ks/Cs before value line if not yet written
                         if is_rough_wall and not ks_written and value is not None:
                             new_lines.append(f"        Ks uniform {float(value):.5f};\n")
-                            new_lines.append(f"        Cs uniform 0.5;\n")
                             ks_written = True
+                            if not cs_present:
+                                new_lines.append(f"        Cs uniform 0.5;\n")
+                                cs_present = True
                         new_lines.append("        value uniform 0;\n")
                         # If the original value was a multi-line nonuniform list
                         # (i.e. the line does NOT end with ';'), activate the
@@ -226,8 +234,10 @@ class OpenFOAMController:
                         # Last resort: insert before closing brace
                         if is_rough_wall and not ks_written and value is not None:
                             new_lines.append(f"        Ks uniform {float(value):.5f};\n")
-                            new_lines.append(f"        Cs uniform 0.5;\n")
                             ks_written = True
+                            if not cs_present:
+                                new_lines.append(f"        Cs uniform 0.5;\n")
+                                cs_present = True
                         inside_patch = False
                         new_lines.append(line)
                         continue
@@ -463,15 +473,20 @@ class OpenFOAMController:
         # to be sorted last and incorrectly included in the averaging window.
 
         def _get_vtm_time(vtm_path):
-            try:
-                with open(vtm_path, "r") as f:
-                    for line in f:
-                        m = re.search(r"time='([0-9.eE+\-]+)'", line)
-                        if m:
-                            return float(m.group(1))
-            except Exception:
-                pass
-            return 0.0
+            # Deliberately does not swallow a missing/unparseable time attribute into
+            # a default value: a silent fallback here would degrade the sort back to
+            # arbitrary order for the affected file(s) - the exact failure mode this
+            # time-based sort exists to prevent. Fail loudly instead.
+            with open(vtm_path, "r") as f:
+                for line in f:
+                    m = re.search(r"time='([0-9.eE+\-]+)'", line)
+                    if m:
+                        return float(m.group(1))
+            raise ValueError(
+                f"Could not find a parseable time attribute in {vtm_path}. "
+                f"Refusing to fall back to a default time, since that would "
+                f"silently reintroduce the stale/wrong-timestep bug this sort exists to fix."
+            )
 
         vtm_files = [
             f for f in glob.glob(os.path.join(vtk_dir, "*.vtm"))
@@ -1085,6 +1100,16 @@ class OpenFOAMModel(HydroSimulations):
             post_path = os.path.join(folder, f"posterior_N{n_tp:03d}.npy")
             np.save(post_path, posterior)
 
+        # Safe accessor for optional per-iteration diagnostics. `d.get(key) or
+        # default` raises "truth value of an array is ambiguous" the moment the
+        # stored value is a numpy array (e.g. log_BME, which is np.zeros(n_iter+1))
+        # rather than a plain list - bool() is undefined for a multi-element
+        # array. Checking `is not None` avoids evaluating the array's truthiness
+        # at all, and still falls back correctly for a genuinely missing key.
+        def _iter_val(d, key):
+            seq = d.get(key)
+            return seq[it] if seq is not None else None
+
         # 4. Bayesian scores CSV (one growing file, appended each call)
         scores_path = os.path.join(folder, "bayesian_scores.csv")
         scores_row = {
@@ -1097,11 +1122,11 @@ class OpenFOAMModel(HydroSimulations):
             "post_size": int(bayesian_dict['post_size'][it]),
             # log_BME is the exact evidence; BME above may be 0.0 or inf at large
             # problem sizes and is kept only for backward compatibility.
-            "log_BME": (bayesian_dict.get('log_BME') or [None] * (it + 1))[it],
+            "log_BME": _iter_val(bayesian_dict, 'log_BME'),
         }
         # Per-iteration posterior diagnostics, when the driver recorded them
         # (hydroBayesCal.surrogate.posterior_analysis.record_iteration).
-        gap = (bayesian_dict.get('marginal_joint_gap') or [None] * (it + 1))[it]
+        gap = _iter_val(bayesian_dict, 'marginal_joint_gap')
         if gap:
             scores_row.update({
                 "marginal_peak_density_percentile": gap.get('density_percentile'),
@@ -1126,11 +1151,11 @@ class OpenFOAMModel(HydroSimulations):
         # 5. Per-parameter marginal optima (one growing file, one row per parameter
         #    and iteration). These are the per-parameter optima the calibration is
         #    actually after; the collocation points above are information-gain picks.
-        optima = (bayesian_dict.get("marginal_optima") or [None] * (it + 1))[it]
+        optima = _iter_val(bayesian_dict, "marginal_optima")
         if optima is not None:
-            hdi = (bayesian_dict.get("marginal_hdi") or [None] * (it + 1))[it]
-            reduction = (bayesian_dict.get("variance_reduction") or [None] * (it + 1))[it]
-            flags = (bayesian_dict.get("identifiability_flags") or [None] * (it + 1))[it]
+            hdi = _iter_val(bayesian_dict, "marginal_hdi")
+            reduction = _iter_val(bayesian_dict, "variance_reduction")
+            flags = _iter_val(bayesian_dict, "identifiability_flags")
             optima_path = os.path.join(folder, "marginal_optima.csv")
             rows = []
             for index, name in enumerate(self.calibration_parameters):
@@ -1148,7 +1173,7 @@ class OpenFOAMModel(HydroSimulations):
             write_optima_header = not os.path.isfile(optima_path)
             optima_df.to_csv(optima_path, mode="a", header=write_optima_header, index=False)
 
-        log_bme = (bayesian_dict.get('log_BME') or [None] * (it + 1))[it]
+        log_bme = _iter_val(bayesian_dict, 'log_BME')
         logger.info(
             f"Saved calibration-data for iteration {it} "
             f"(N_tp={n_tp}, "
