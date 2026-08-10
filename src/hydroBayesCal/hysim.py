@@ -730,6 +730,8 @@ class HydroSimulations(ABC):
           ``(n_runs, nloc * n_quantities)``
         - ``initial-model-outputs.json``: the same data as JSON, also copied to
           ``restart_data_folder`` so ``only_bal_mode`` can reload it
+        - ``initial-collocation-points.csv``: written to ``restart_data_folder``,
+          the companion file ``__init__`` reads under ``only_bal_mode``
         - ``collocation-points-{quantities}.csv``: parameter values as CSV
         - ``results-detailed-{quantities}.csv``: one row per run x calibration
           point, with the point coordinates and every extracted quantity
@@ -777,6 +779,22 @@ class HydroSimulations(ABC):
             writer.writerows(collocation_points.tolist())
         logger.info(f"Saved collocation points CSV to {csv_path}")
 
+        # Also save to restart_data_folder under the name __init__ looks for when
+        # only_bal_mode=True (np.loadtxt(..., delimiter=',', skiprows=1, ...)).
+        # Without this, only_bal_mode=True raises FileNotFoundError before any
+        # BAL iteration can start, for any binding that didn't already write this
+        # file itself (e.g. OpenFOAM never has).
+        # This is rewritten on every call, so during BAL it holds the accumulated
+        # set rather than the initial design alone. That is safe because the
+        # reader takes max_rows=init_runs and the accumulated array keeps the
+        # initial design in its leading rows.
+        restart_cp_path = os.path.join(self.restart_data_folder, "initial-collocation-points.csv")
+        with open(restart_cp_path, mode="w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(self.calibration_parameters)
+            writer.writerows(collocation_points.tolist())
+        logger.info(f"Saved collocation points for BAL restart to {restart_cp_path}")
+
         # Comprehensive results CSV and npy (run x calibration point rows)
         if detailed_results:
             detailed_csv_path = os.path.join(
@@ -803,3 +821,149 @@ class HydroSimulations(ABC):
             )
             np.save(npy_path, arr)
             logger.info(f"Saved detailed results npy to {npy_path}")
+
+    def save_calibration_data(self, it, collocation_points, bayesian_dict):
+        """Write the per-iteration BAL bookkeeping to ``calibration-data/<quantities>/``.
+
+        Solver-independent, like :meth:`_save_all_results`: it reads only
+        attributes owned by this base class, so every binding gets it by
+        inheritance. Called once per BAL iteration from the driver, after
+        ``estimate_bme()``. Produces, per iteration::
+
+            collocation_points_N{n_tp}.csv   parameter values tested so far
+            model_results_N{n_tp}.csv        simulation outputs (model_evaluations)
+            posterior_N{n_tp}.npy            accepted posterior samples
+            bayesian_scores.csv              BME, RE, IE, ELPD for all iterations
+            marginal_optima.csv              per-parameter optima, when recorded
+
+        ``bayesian_scores.csv`` holds one row per iteration and is rewritten
+        rather than appended, because the per-iteration diagnostics only appear
+        once a posterior exists and ``to_csv`` in append mode would silently
+        shift values into the wrong columns. The posterior goes to its own
+        ``.npy`` because rejection sampling makes it variable-length.
+
+        Parameters
+        ----------
+        it : int
+            Index of the current BAL iteration.
+        collocation_points : numpy.ndarray
+            Calibration parameter values tested so far, shape
+            ``(n_runs, n_params)``.
+        bayesian_dict : dict
+            Per-iteration BAL scores. ``BME``, ``RE``, ``IE``, ``ELPD``,
+            ``post_size`` and ``posterior`` are required; the diagnostics keys
+            are optional and may be absent.
+
+        Returns
+        -------
+        None
+        """
+        n_tp = int(collocation_points.shape[0])
+        folder = self.calibration_folder
+
+        # 1. Collocation points CSV
+        cp_path = os.path.join(folder, f"collocation_points_N{n_tp:03d}.csv")
+        cp_df = pd.DataFrame(collocation_points, columns=self.calibration_parameters)
+        cp_df.index.name = "run_idx"
+        cp_df.to_csv(cp_path)
+
+        # 2. Model evaluations CSV. Quantities are interleaved per location, so the
+        #    column order has to match the [n_runs, nloc * n_quantities] contract.
+        col_names = [
+            f"{qty}_z{i}"
+            for i in range(self.nloc)
+            for qty in self.calibration_quantities
+        ]
+        if self.model_evaluations is not None:
+            me_path = os.path.join(folder, f"model_results_N{n_tp:03d}.csv")
+            me_df = pd.DataFrame(self.model_evaluations, columns=col_names)
+            me_df.index.name = "run_idx"
+            me_df.to_csv(me_path)
+
+        # 3. Posterior npy (variable size, one file per iteration)
+        posterior = bayesian_dict["posterior"][it]
+        if posterior is not None and len(posterior) > 0:
+            post_path = os.path.join(folder, f"posterior_N{n_tp:03d}.npy")
+            np.save(post_path, posterior)
+
+        def _iter_val(d, key):
+            """Value of an optional per-iteration diagnostic, or None if absent.
+
+            ``d.get(key) or default`` raises "truth value of an array is
+            ambiguous" as soon as the stored value is a numpy array rather than
+            a list, which is what ``log_BME`` is. Testing ``is not None`` never
+            evaluates the array's truthiness and still falls back for a
+            genuinely missing key.
+            """
+            seq = d.get(key)
+            return seq[it] if seq is not None else None
+
+        # 4. Bayesian scores CSV (one growing file, one row per iteration)
+        scores_path = os.path.join(folder, "bayesian_scores.csv")
+        scores_row = {
+            "iteration": it,
+            "N_tp": n_tp,
+            "BME": bayesian_dict["BME"][it],
+            "RE": bayesian_dict["RE"][it],
+            "IE": bayesian_dict["IE"][it],
+            "ELPD": bayesian_dict["ELPD"][it],
+            "post_size": int(bayesian_dict["post_size"][it]),
+            # log_BME is the exact evidence; BME above may be 0.0 or inf at large
+            # problem sizes and is kept only for backward compatibility.
+            "log_BME": _iter_val(bayesian_dict, "log_BME"),
+        }
+        # Per-iteration posterior diagnostics, when the driver recorded them
+        # (hydroBayesCal.surrogate.posterior_analysis.record_iteration).
+        gap = _iter_val(bayesian_dict, "marginal_joint_gap")
+        if gap:
+            scores_row.update({
+                "marginal_peak_density_percentile": gap.get("density_percentile"),
+                "max_abs_parameter_correlation": gap.get("max_abs_correlation"),
+                "equifinality_verdict": gap.get("verdict"),
+            })
+        scores_df = pd.DataFrame([scores_row])
+        # Rewrite the file rather than appending. to_csv writes columns in DataFrame
+        # order but only emits a header for a new file, so appending a row with a
+        # different set of columns silently shifts every value into the wrong one.
+        # That already happens within a single run, because the per-iteration
+        # diagnostics are only added once a posterior exists. concat aligns on
+        # column names and fills the gaps, and the file is one row per iteration.
+        if os.path.isfile(scores_path):
+            combined = pd.concat([pd.read_csv(scores_path), scores_df],
+                                 ignore_index=True)
+        else:
+            combined = scores_df
+        combined.to_csv(scores_path, mode="w", header=True, index=False)
+
+        # 5. Per-parameter marginal optima (one growing file, one row per parameter
+        #    and iteration). These are the per-parameter optima the calibration is
+        #    actually after; the collocation points above are information-gain picks.
+        optima = _iter_val(bayesian_dict, "marginal_optima")
+        if optima is not None:
+            hdi = _iter_val(bayesian_dict, "marginal_hdi")
+            reduction = _iter_val(bayesian_dict, "variance_reduction")
+            flags = _iter_val(bayesian_dict, "identifiability_flags")
+            optima_path = os.path.join(folder, "marginal_optima.csv")
+            rows = []
+            for index, name in enumerate(self.calibration_parameters):
+                rows.append({
+                    "iteration": it,
+                    "N_tp": n_tp,
+                    "parameter": name,
+                    "marginal_peak": optima[index],
+                    "hdi_low": None if hdi is None else hdi[index][0],
+                    "hdi_high": None if hdi is None else hdi[index][1],
+                    "variance_reduction": None if reduction is None else reduction[index],
+                    "flags": "" if not flags else "|".join(flags[index]),
+                })
+            optima_df = pd.DataFrame(rows)
+            write_optima_header = not os.path.isfile(optima_path)
+            optima_df.to_csv(optima_path, mode="a", header=write_optima_header, index=False)
+
+        log_bme = _iter_val(bayesian_dict, "log_BME")
+        logger.info(
+            f"Saved calibration-data for iteration {it} "
+            f"(N_tp={n_tp}, "
+            f"log BME={'n/a' if log_bme is None else f'{log_bme:.4f}'}, "
+            f"RE={bayesian_dict['RE'][it]:.4f})"
+        )
