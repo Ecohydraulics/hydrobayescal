@@ -91,3 +91,40 @@ def test_restart_outputs_are_written_for_only_bal_mode(saver):
     assert restart["n_runs"] == 1
     assert restart["calibration_parameters"] == ["ks"]
     assert restart["calibration_quantities"] == ["U_x"]
+
+
+def test_restart_collocation_points_csv_is_written(saver):
+    """``__init__`` loads this file when only_bal_mode is set, so it must exist.
+
+    Only the TELEMAC binding ever wrote it, so ``only_bal_mode=True`` died with a
+    FileNotFoundError for OpenFOAM and Delft3D before a single BAL iteration ran.
+    Writing it here gives every binding the restart path.
+    """
+    _save(saver, 0, 3, _rows(0))
+
+    path = f"{saver.restart_data_folder}/initial-collocation-points.csv"
+    points = np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2)
+
+    assert points.shape == (3, 1)
+    with open(path) as f:
+        assert f.readline().strip() == "ks"      # header names the parameters
+
+
+def test_the_initial_design_stays_in_the_leading_rows(saver):
+    """The file is rewritten each call, and the reader takes max_rows=init_runs.
+
+    During BAL it therefore holds the accumulated set, not the initial design
+    alone. That is only safe while the initial points remain the leading rows, so
+    a restart with init_runs=2 still reads the design it started from.
+    """
+    initial = np.array([[10.0], [20.0]])
+    HydroSimulations._save_all_results(saver, initial, None)
+
+    saver.model_evaluations = np.zeros((4, 1))
+    accumulated = np.vstack([initial, [[30.0], [40.0]]])
+    HydroSimulations._save_all_results(saver, accumulated, None)
+
+    path = f"{saver.restart_data_folder}/initial-collocation-points.csv"
+    restart = np.loadtxt(path, delimiter=",", skiprows=1, max_rows=2, ndmin=2)
+
+    assert restart.tolist() == [[10.0], [20.0]]

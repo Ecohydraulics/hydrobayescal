@@ -4,6 +4,40 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-08-10
+
+Two bugs that made Bayesian Active Learning unreachable for OpenFOAM and Delft3D, plus
+the follow-ups to the 1.4.1 review notes. Reported and fixed by Federica Scolari.
+
+### Fixed
+- `only_bal_mode=True` raised `FileNotFoundError` for
+  `restart_data/initial-collocation-points.csv` before a single BAL iteration could
+  start. `HydroSimulations.__init__` has always read that file, but only the TELEMAC
+  binding wrote it. It is now written by the shared `_save_all_results`, so OpenFOAM
+  and Delft3D can restart too. Reported and fixed by Federica Scolari.
+- BAL crashed on its first iteration with "truth value of an array is ambiguous" in
+  `save_calibration_data`. The `bayesian_dict.get(key) or [None] * (it + 1)` idiom
+  calls `bool()` on the stored value, which is undefined for the multi-element numpy
+  arrays `BayesianInference` actually returns (`log_BME` among them). All seven
+  occurrences now test `is not None`. Reported and fixed by Federica Scolari.
+- `Cs` is no longer overwritten with a hardcoded `0.5` when a rough-wall patch already
+  sets it. Only `Ks` is calibrated, so a roughness constant chosen by the case author
+  was being discarded silently. Reported and fixed by Federica Scolari.
+- A `value nonuniform` list closed by `);` rather than a standalone `;` no longer
+  swallows every following patch in the field file. Reported and fixed by Federica
+  Scolari.
+- `_get_vtm_time` raises instead of falling back to `0.0` when a `.vtm` carries no
+  parseable time attribute. The silent fallback degraded the timestep sort back to
+  arbitrary order, which is the exact failure the sort exists to prevent. Reported and
+  fixed by Federica Scolari.
+
+### Changed
+- `save_calibration_data` moved from the OpenFOAM and Delft3D bindings to
+  `HydroSimulations`, where `_save_all_results` already lives. The two copies were
+  verbatim duplicates, so the ambiguous-truth-value crash above existed twice and was
+  fixed once; hoisting fixes Delft3D as well and removes the drift vector. A test now
+  fails if either method is overridden in a binding again.
+
 ## [1.4.2] - 2026-08-07
 
 The calibration drivers now ship **with the installed package**. Until now
@@ -384,6 +418,7 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.4.3]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.3
 [1.4.2]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.2
 [1.4.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.1
 [1.4.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.0

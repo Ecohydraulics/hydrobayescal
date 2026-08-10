@@ -181,14 +181,63 @@ def _write_bc(tmp_path, contents, patch, bc_type, value):
 
 
 def test_roughness_patch_gets_the_new_ks(tmp_path):
-    """The calibrated ks reaches the rough-wall patch, and Cs is written alongside it."""
+    """The calibrated ks reaches the rough-wall patch and replaces the template value."""
     out = _write_bc(
         tmp_path, BOUNDARY_FIELD.format(patch="bottom"),
         patch="bottom", bc_type="nutkRoughWallFunction", value=0.042,
     )
     assert "Ks uniform 0.04200;" in out
-    assert "Cs uniform 0.5;" in out
-    assert "uniform 0.01" not in out          # the template value is gone
+    assert "uniform 0.01" not in out          # the template Ks is gone
+    assert out.count("Cs") == 1               # exactly one Cs entry, never a duplicate
+
+
+def test_a_cs_set_by_the_template_is_preserved(tmp_path):
+    """Cs is a property of the case, not of the calibration, so it is left alone.
+
+    Only ``Ks`` is calibrated. Overwriting ``Cs`` with a hardcoded default silently
+    discarded a roughness constant the case author chose deliberately.
+    """
+    template = BOUNDARY_FIELD.format(patch="bottom").replace(
+        "Cs              uniform 0.5;", "Cs              uniform 0.8;")
+    out = _write_bc(tmp_path, template,
+                    patch="bottom", bc_type="nutkRoughWallFunction", value=0.042)
+
+    assert "uniform 0.8;" in out
+    assert "0.5" not in out
+
+
+def test_a_bracketed_list_terminator_ends_the_skip(tmp_path):
+    """A nonuniform list closed by ');' must not swallow the rest of the file.
+
+    The skip mode used to end only on a standalone ';'. A list written as ``);``
+    never terminated it, so every following patch was consumed silently.
+    """
+    out = _write_bc(tmp_path, """\
+        boundaryField
+        {
+            bottom
+            {
+                type            nutkRoughWallFunction;
+                Ks              uniform 0.01;
+                Cs              uniform 0.5;
+                value           nonuniform List<scalar>
+        2
+        (
+        0.1
+        0.2
+        );
+            }
+            outlet
+            {
+                type            calculated;
+                value           uniform 0;
+            }
+        }
+    """, patch="bottom", bc_type="nutkRoughWallFunction", value=0.02)
+
+    assert "outlet" in out                      # the trailing patch survived
+    assert "type            calculated;" in out
+    assert "0.1" not in out                     # the list body is still consumed
 
 
 def test_ks_is_not_injected_into_a_non_roughness_patch(tmp_path):

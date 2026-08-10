@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import numpy as np
-import pandas as pd
 import pyvista as pv
 from scipy import spatial
 
@@ -1057,129 +1056,6 @@ class OpenFOAMModel(HydroSimulations):
         }
         with open(os.path.join(case_dir, f"{self.dict_output_name}.json"), 'w') as f:
             json.dump(output, f, indent=2)
-
-    def save_calibration_data(self, it, collocation_points, bayesian_dict):
-        """Write per-iteration CSV files to ``calibration-data/<quantities>/``.
-
-        Called once per BAL iteration from ``bal_openfoam.py`` after
-        ``estimate_bme()``. Produces three files per iteration::
-
-            collocation_points_N{n_tp}.csv   parameter values tested so far
-            model_results_N{n_tp}.csv        simulation outputs (model_evaluations)
-            bayesian_scores.csv              BME, RE, IE, ELPD for all iterations
-
-        ``bayesian_scores.csv`` is appended on each call (one row per iteration).
-        The posterior is saved as a separate ``.npy`` file because it is a
-        variable-length array (rejection sampling keeps only accepted samples).
-        """
-        n_tp = int(collocation_points.shape[0])
-        folder = self.calibration_folder
-
-        # 1. Collocation points CSV
-        cp_path = os.path.join(folder, f"collocation_points_N{n_tp:03d}.csv")
-        cp_df = pd.DataFrame(collocation_points, columns=self.calibration_parameters)
-        cp_df.index.name = "run_idx"
-        cp_df.to_csv(cp_path)
-
-        # 2. Model evaluations CSV
-        quantities_str = '_'.join(self.calibration_quantities)
-        col_names = [
-            f"{qty}_z{i}"
-            for i in range(self.nloc)
-            for qty in self.calibration_quantities
-        ]
-        if self.model_evaluations is not None:
-            me_path = os.path.join(folder, f"model_results_N{n_tp:03d}.csv")
-            me_df = pd.DataFrame(self.model_evaluations, columns=col_names)
-            me_df.index.name = "run_idx"
-            me_df.to_csv(me_path)
-
-        # 3. Posterior npy (variable size - one file per iteration)
-        posterior = bayesian_dict['posterior'][it]
-        if posterior is not None and len(posterior) > 0:
-            post_path = os.path.join(folder, f"posterior_N{n_tp:03d}.npy")
-            np.save(post_path, posterior)
-
-        # Safe accessor for optional per-iteration diagnostics. `d.get(key) or
-        # default` raises "truth value of an array is ambiguous" the moment the
-        # stored value is a numpy array (e.g. log_BME, which is np.zeros(n_iter+1))
-        # rather than a plain list - bool() is undefined for a multi-element
-        # array. Checking `is not None` avoids evaluating the array's truthiness
-        # at all, and still falls back correctly for a genuinely missing key.
-        def _iter_val(d, key):
-            seq = d.get(key)
-            return seq[it] if seq is not None else None
-
-        # 4. Bayesian scores CSV (one growing file, appended each call)
-        scores_path = os.path.join(folder, "bayesian_scores.csv")
-        scores_row = {
-            "iteration": it,
-            "N_tp": n_tp,
-            "BME":  bayesian_dict['BME'][it],
-            "RE":   bayesian_dict['RE'][it],
-            "IE":   bayesian_dict['IE'][it],
-            "ELPD": bayesian_dict['ELPD'][it],
-            "post_size": int(bayesian_dict['post_size'][it]),
-            # log_BME is the exact evidence; BME above may be 0.0 or inf at large
-            # problem sizes and is kept only for backward compatibility.
-            "log_BME": _iter_val(bayesian_dict, 'log_BME'),
-        }
-        # Per-iteration posterior diagnostics, when the driver recorded them
-        # (hydroBayesCal.surrogate.posterior_analysis.record_iteration).
-        gap = _iter_val(bayesian_dict, 'marginal_joint_gap')
-        if gap:
-            scores_row.update({
-                "marginal_peak_density_percentile": gap.get('density_percentile'),
-                "max_abs_parameter_correlation": gap.get('max_abs_correlation'),
-                "equifinality_verdict": gap.get('verdict'),
-            })
-        scores_df = pd.DataFrame([scores_row])
-        # Rewrite the file rather than appending. to_csv writes columns in DataFrame
-        # order but only emits a header for a new file, so appending a row with a
-        # different set of columns silently shifts every value into the wrong one.
-        # That already happens within a single run, because the per-iteration
-        # diagnostics are only added once a posterior exists. concat aligns on
-        # column names and fills the gaps, and the file is one row per iteration.
-        if os.path.isfile(scores_path):
-            combined = pd.concat([pd.read_csv(scores_path), scores_df],
-                                 ignore_index=True)
-        else:
-            combined = scores_df
-        combined.to_csv(scores_path, mode='w', header=True, index=False)
-
-
-        # 5. Per-parameter marginal optima (one growing file, one row per parameter
-        #    and iteration). These are the per-parameter optima the calibration is
-        #    actually after; the collocation points above are information-gain picks.
-        optima = _iter_val(bayesian_dict, "marginal_optima")
-        if optima is not None:
-            hdi = _iter_val(bayesian_dict, "marginal_hdi")
-            reduction = _iter_val(bayesian_dict, "variance_reduction")
-            flags = _iter_val(bayesian_dict, "identifiability_flags")
-            optima_path = os.path.join(folder, "marginal_optima.csv")
-            rows = []
-            for index, name in enumerate(self.calibration_parameters):
-                rows.append({
-                    "iteration": it,
-                    "N_tp": n_tp,
-                    "parameter": name,
-                    "marginal_peak": optima[index],
-                    "hdi_low": None if hdi is None else hdi[index][0],
-                    "hdi_high": None if hdi is None else hdi[index][1],
-                    "variance_reduction": None if reduction is None else reduction[index],
-                    "flags": "" if not flags else "|".join(flags[index]),
-                })
-            optima_df = pd.DataFrame(rows)
-            write_optima_header = not os.path.isfile(optima_path)
-            optima_df.to_csv(optima_path, mode="a", header=write_optima_header, index=False)
-
-        log_bme = _iter_val(bayesian_dict, 'log_BME')
-        logger.info(
-            f"Saved calibration-data for iteration {it} "
-            f"(N_tp={n_tp}, "
-            f"log BME={'n/a' if log_bme is None else f'{log_bme:.4f}'}, "
-            f"RE={bayesian_dict['RE'][it]:.4f})"
-        )
 
     def _cleanup_run(self, case_dir):
         """Delete the entire run folder to free disk space.
