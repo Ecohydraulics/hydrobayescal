@@ -89,8 +89,8 @@ class HydroSimulations(ABC):
             - "sobol"            : Sobol sequence sampling.
             - "halton"           : Halton sequence sampling.
             - "hammersley"       : Hammersley sequence sampling.
-            - "chebyshev(FT)"    : Chebyshev nodes (Fourier Transform-based).
-            - "grid(FT)"         : Grid-based sampling (Fourier Transform-based).
+            - "chebyshev"        : Chebyshev nodes.
+            - "grid"             : Grid-based sampling.
             - "user"             : User-defined sampling.
 
             Example::
@@ -179,8 +179,8 @@ class HydroSimulations(ABC):
             - "sobol"
             - "halton"
             - "hammersley"
-            - "chebyshev(FT)"
-            - "grid(FT)"
+            - "chebyshev"
+            - "grid"
             - "user" (requires a CSV file with user-defined collocation points in the restart data folder).
         init_runs : int
             Number of initial runs before surrogate-assisted calibration.
@@ -383,6 +383,7 @@ class HydroSimulations(ABC):
             bal_iteration=0,
             complete_bal_mode=True,
             validation=False,
+            start_index=0,
             *args,
             **kwargs
     ):
@@ -417,6 +418,13 @@ class HydroSimulations(ABC):
             construction and BAL); ``False`` for initial runs only.
         validation : bool, optional
             ``True`` to run a separate set of validation simulations.
+        start_index : int, optional
+            First row of ``collocation_points`` to simulate during the initial
+            runs (default ``0``, i.e. the whole design). A staged initial design
+            (:mod:`~hydroBayesCal.surrogate.initial_design`) passes the
+            cumulative design together with the number of rows already
+            simulated, so that growing the design never repeats a run and the
+            outputs accumulate across blocks.
         *args, **kwargs
             Binding-specific options (e.g. Telemac's ``output_extraction``,
             ``output_extraction_time`` and ``n``). See the concrete subclass.

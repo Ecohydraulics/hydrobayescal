@@ -62,11 +62,23 @@ Bayesian inference and sequential design
    :members:
    :show-inheritance:
 
+Initial design
+++++++++++++++
+
+Sizing the initial design from the number of calibration parameters, extensible Sobol
+blocks and the sufficiency gate that decides when the design is good enough to start
+Bayesian active learning on; see :ref:`initial-design` for the workflow.
+
+.. automodule:: hydroBayesCal.surrogate.initial_design
+   :members:
+   :show-inheritance:
+
 Calibrated parameters from the posterior
 ++++++++++++++++++++++++++++++++++++++++
 
-Per-parameter marginal optima, the joint posterior optimum, identifiability flags
-and the equifinality diagnostic; see :ref:`calibrated-parameters` for the workflow.
+Per-parameter marginal optima, the maximum of the joint posterior, identifiability
+flags, the equifinality diagnostic and the rule that decides which of the two is the
+calibrated parameter set; see :ref:`calibrated-parameters` for the workflow.
 
 .. automodule:: hydroBayesCal.surrogate.posterior_analysis
    :members:

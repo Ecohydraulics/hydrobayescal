@@ -438,8 +438,11 @@ def test_candidate_report_files(tmp_path):
                                  np.column_stack([np.full(50, 0.3), np.full(50, 0.4)])])
 def test_track_iteration_never_raises(bad):
     summary = track_iteration(bad, parameter_names=["a", "b"], prior_bounds=BOUNDS_UNIT)
+    # The failure path has to return the same keys as the success path: a consumer
+    # reading the summary must not have to know whether the diagnostic worked.
     assert set(summary) == {"peak", "hdi", "variance_reduction", "flags", "gap",
-                            "post_size"}
+                            "joint", "joint_log_density", "n_modes", "post_size"}
+    assert summary["n_modes"] == 1
 
 
 def test_record_iteration_populates_additive_keys():
@@ -454,6 +457,9 @@ def test_record_iteration_populates_additive_keys():
     assert bayesian_dict["variance_reduction"][0].shape == (2,)
     assert bayesian_dict["marginal_joint_gap"][0]["verdict"] in (
         "consistent", "acceptable", "inconsistent")
+    assert bayesian_dict["joint_optimum"][0].shape == (2,)
+    assert np.isfinite(bayesian_dict["joint_log_density"][0])
+    assert bayesian_dict["posterior_modes"][0] >= 1
     assert bayesian_dict["calibration_parameters"] == ["a", "b"]
 
 
@@ -506,3 +512,133 @@ def test_analyze_posterior_infers_names_and_bounds_from_the_dictionary():
     }
     analysis = analyze_posterior(bayesian_dict=bayesian_dict)
     assert analysis["marginal"]["parameter_names"] == ["zone2", "zone3"]
+
+
+# ---------------------------------------------------------------------------
+# global maximum of the joint posterior
+# ---------------------------------------------------------------------------
+class _BimodalSurrogate:
+    """Emulator whose likelihood has two maxima, one deeper than the other.
+
+    The deep one sits at (0.25, 0.75) and reproduces the observations exactly; the
+    shallow one at (0.75, 0.25) does not. The accepted sample below is deliberately
+    dominated by the *shallow* mode, so the highest-density sample is in the wrong basin
+    and only a mode-seeded search can find the right one.
+    """
+
+    deep = np.array([0.25, 0.75])
+    shallow = np.array([0.75, 0.25])
+
+    def predict_(self, input_sets, **kwargs):
+        points = np.atleast_2d(input_sets)
+        near_deep = np.exp(-np.sum((points - self.deep) ** 2, axis=1) / (2 * 0.02 ** 2))
+        near_shallow = 0.7 * np.exp(
+            -np.sum((points - self.shallow) ** 2, axis=1) / (2 * 0.02 ** 2))
+        response = near_deep + near_shallow
+        output = np.column_stack([response, 2 * response, 0.5 * response])
+        return {"output": output, "std": np.full_like(output, 0.01)}
+
+
+def _bimodal_posterior():
+    return np.vstack([
+        RNG.normal(_BimodalSurrogate.deep, 0.02, (120, 2)),
+        RNG.normal(_BimodalSurrogate.shallow, 0.02, (400, 2)),
+    ])
+
+
+def test_refinement_seeded_by_the_modes_finds_the_global_maximum():
+    """Why the refinement exists: the densest sample can be in the wrong basin."""
+    posterior = _bimodal_posterior()
+    observations = np.array([[1.0, 2.0, 0.5]])
+    error = np.full(3, 0.02 ** 2)
+
+    analysis = analyze_posterior(
+        posterior=posterior, parameter_names=["a", "b"], prior_bounds=BOUNDS_UNIT,
+        surrogate=_BimodalSurrogate(), observations=observations, error=error,
+        refine=True)
+    joint = analysis["joint"]
+
+    plain = posterior[int(np.argmax(joint["log_density"]))]
+    assert np.allclose(plain, _BimodalSurrogate.shallow, atol=0.08)  # wrong basin
+    assert joint["refined"] is True
+    assert np.allclose(joint["refined_vector"], _BimodalSurrogate.deep, atol=0.01)
+    # Not every start agreed, which is the honest signal that there are two maxima.
+    assert joint["global_agreement"] < 1.0
+
+
+def test_refinement_without_a_surrogate_falls_back_and_says_so():
+    posterior = RNG.multivariate_normal([0.3, 0.6], np.eye(2) * 0.0025, 800)
+    result = joint_optimum(posterior, refine=True)
+    assert result["refined"] is False
+    assert np.allclose(result["refined_vector"], result["vector"])
+
+
+def test_refined_optimum_stays_inside_the_calibration_range():
+    posterior = np.column_stack([_truncated_normal(0.02, 0.01, 0.0, 1.0, 500),
+                                 _truncated_normal(0.98, 0.01, 0.0, 1.0, 500)])
+    observations = np.array([[1.0, 2.0, 0.5]])
+    analysis = analyze_posterior(
+        posterior=posterior, parameter_names=["a", "b"], prior_bounds=BOUNDS_UNIT,
+        surrogate=_BimodalSurrogate(), observations=observations,
+        error=np.full(3, 0.02 ** 2), refine=True)
+    vector = analysis["joint"]["refined_vector"]
+    assert np.all(vector >= 0.0) and np.all(vector <= 1.0)
+
+
+# ---------------------------------------------------------------------------
+# marginal against joint: the decision rule
+# ---------------------------------------------------------------------------
+def test_independent_posterior_promotes_the_marginal_peaks():
+    posterior = np.column_stack([_truncated_normal(0.30, 0.05, 0.0, 1.0, 8000),
+                                 _truncated_normal(0.70, 0.05, 0.0, 1.0, 8000)])
+    analysis = analyze_posterior(posterior=posterior, parameter_names=["a", "b"],
+                                 prior_bounds=BOUNDS_UNIT)
+    decision = analysis["decision"]
+
+    assert analysis["equifinality"]["verdict"] == "consistent"
+    assert decision["source"] == "marginal-peak vector"
+    assert np.allclose(decision["vector"], [0.30, 0.70], atol=0.03)
+
+
+def test_a_ridge_posterior_reports_the_joint_optimum_not_the_marginal_peaks():
+    """The case the whole module exists for: individually optimal, jointly wrong."""
+    t = RNG.uniform(0.0, 1.0, 8000)
+    posterior = np.column_stack([0.15 + 0.7 * t + RNG.normal(0, 0.012, 8000),
+                                 0.85 - 0.7 * t + RNG.normal(0, 0.012, 8000)])
+    analysis = analyze_posterior(posterior=posterior, parameter_names=["a", "b"],
+                                 prior_bounds=BOUNDS_UNIT)
+    decision = analysis["decision"]
+
+    assert analysis["equifinality"]["verdict"] in ("coupled", "inconsistent")
+    assert decision["source"].endswith("joint posterior maximum")
+    assert np.allclose(decision["vector"], analysis["joint"]["vector"])
+    assert "marginal_peak" in [label for label, _ in decision["must_verify"]] or \
+           decision["verdict"] == "inconsistent"
+
+
+def test_a_multimodal_posterior_reports_no_single_parameter_set():
+    posterior = np.vstack([RNG.normal([0.2, 0.2], 0.03, (4000, 2)),
+                           RNG.normal([0.8, 0.8], 0.03, (4000, 2))])
+    analysis = analyze_posterior(posterior=posterior, parameter_names=["a", "b"],
+                                 prior_bounds=BOUNDS_UNIT)
+    decision = analysis["decision"]
+
+    assert analysis["modes"]["n_modes"] == 2
+    assert decision["verdict"] == "equifinal"
+    assert decision["vector"] is None
+    assert len(decision["must_verify"]) == 2
+
+
+def test_the_decision_reaches_the_candidate_report(tmp_path):
+    posterior = np.column_stack([_truncated_normal(0.30, 0.05, 0.0, 1.0, 4000),
+                                 _truncated_normal(0.70, 0.05, 0.0, 1.0, 4000)])
+    analysis = analyze_posterior(posterior=posterior, parameter_names=["a", "b"],
+                                 prior_bounds=BOUNDS_UNIT)
+    candidates_path, _ = write_candidate_report(analysis, str(tmp_path))
+
+    with open(candidates_path) as handle:
+        rows = [line.split(",") for line in handle.read().strip().splitlines()]
+    header = rows[0]
+    assert "selected" in header
+    column = header.index("selected")
+    assert sum(row[column] == "calibrated" for row in rows[1:]) == 1

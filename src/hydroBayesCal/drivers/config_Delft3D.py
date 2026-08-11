@@ -108,9 +108,19 @@ sampling = {
     'init_runs': 30,    # Number of initial parameter samples
     'max_runs':  50,    # Total runs (initial + BAL iterations)
 
-    # Experimental design
+    # Experimental design. Sobol is the default: a low-discrepancy sequence covers the
+    # parameter space far more evenly than random or Latin hypercube sampling at the
+    # same cost, and it is extensible, so the staged design below can grow along it.
+    # Valid: random, latin_hypercube, sobol, halton, hammersley, chebyshev, grid, user.
     'parameter_distribution':    "uniform",
     'parameter_sampling_method': "sobol",
+
+    # Grow the initial design in Sobol blocks and stop as soon as it is measurably
+    # sufficient, instead of always running all init_runs. init_runs stays the ceiling,
+    # so this can only ever save simulations; the ones it saves go to BAL iterations.
+    # Set to False for the fixed-size initial design of earlier versions.
+    'adaptive_init_runs': True,
+    'init_runs_min':      None,    # first block; None -> 2**ceil(log2(4 * n_parameters))
     'tp_selection_criteria':     "dkl",
 
     # BAL specific
@@ -125,6 +135,13 @@ sampling = {
     # uncertainty is genuine uncertainty, and the BAL utility already accounts for
     # it. Keep calibration['gpe_error'] at 0.0 while this is True.
     'include_surrogate_error': True,
+
+    # Exploration/exploitation of the BAL point selection. 'auto' (default) exploits the
+    # posterior until the per-iteration diagnostic finds more than one well-separated
+    # mode, then adds exploration for the remaining iterations: pure exploitation keeps
+    # refining the mode it started in, which is how a local maximum survives to the end
+    # of a calibration. True or False force the behaviour.
+    'bal_exploration_tradeoff': 'auto',
 }
 
 # ============================================================================

@@ -499,7 +499,8 @@ class TelemacModel(HydroSimulations):
             output_extraction_time="last",
             n=40,
             validation=False,
-            kill_process = True
+            kill_process = True,
+            start_index=0,
     ):
         """
         Runs multiple Telemac2d or Telemac3d simulations with a set of collocation points and a new set of
@@ -530,6 +531,12 @@ class TelemacModel(HydroSimulations):
             If `True`, the method runs a separate set of simulations for validation purposes, and saves the collocation points used for validation in a separate CSV file.
         kill_process: bool
             If `True`, the method will attempt to kill any remaining Telemac processes after running the simulations. This is useful when preventing to running BAL after the initial runs.
+        start_index : int
+            First row of `collocation_points` to simulate during the initial runs.
+            Default 0, i.e. the whole design. A staged initial design (see
+            :mod:`~hydroBayesCal.surrogate.initial_design`) passes the cumulative design
+            together with the number of rows already simulated, so that growing the
+            design never re-runs a parameter set.
 
 
         Returns
@@ -582,9 +589,13 @@ class TelemacModel(HydroSimulations):
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)  # Write the array data
 
-                collocation_points=collocation_points 
+                collocation_points=collocation_points
 
-                for i in range(init_runs):
+                # start_index > 0 resumes a staged initial design: the rows before it
+                # have already been simulated and their outputs are in the detailed
+                # JSON, so only the new block is run while the numbering, the CSV and
+                # the output accumulation stay continuous over the whole design.
+                for i in range(int(start_index), init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list = collocation_points[i].tolist()
                     logger.info(

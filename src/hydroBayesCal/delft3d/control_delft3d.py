@@ -616,15 +616,27 @@ class Delft3DModel(HydroSimulations):
         validation=False,
         bal_iteration=None,
         bal_new_set_parameters=None,
+        start_index=0,
     ):
-        """Run multiple Delft3D-FLOW simulations - BAL interface."""
+        """Run multiple Delft3D-FLOW simulations - BAL interface.
 
+        ``start_index`` resumes a staged initial design: the cumulative design is passed
+        together with the number of rows already simulated, so growing the design runs
+        only the new block while the run numbering and the accumulated outputs stay
+        continuous. See :mod:`~hydroBayesCal.surrogate.initial_design`.
+        """
+        start_index = int(start_index or 0)
+        design = None
         if bal_new_set_parameters is not None:
             params_to_run = np.atleast_2d(bal_new_set_parameters)
             start_idx = collocation_points.shape[0]
         else:
-            params_to_run = np.atleast_2d(collocation_points)
-            start_idx = 0
+            design = np.atleast_2d(collocation_points)
+            params_to_run = design[start_index:]
+            start_idx = start_index
+        # Outputs of the blocks already simulated, so a staged design accumulates
+        # instead of replacing what the earlier blocks produced.
+        previous_evaluations = self.model_evaluations if start_index else None
 
         all_results = []
         all_detailed_results = []  # for comprehensive CSV: one row per run x control point
@@ -672,7 +684,8 @@ class Delft3DModel(HydroSimulations):
                     logger.info(f"No measurements file - raw fields saved to {raw_dir} for run {run_idx}.")
 
                     # Save collocation points so they can be reloaded later
-                    current_cp = params_to_run[: i + 1]
+                    current_cp = (design[: start_idx + i + 1] if design is not None
+                                  else params_to_run[: i + 1])
                     np.save(os.path.join(self.restart_data_folder, "collocation_points.npy"), current_cp)
 
                 else:
@@ -709,8 +722,10 @@ class Delft3DModel(HydroSimulations):
                     # Update model_evaluations
                     current_results = np.array(all_results)
                     if bal_new_set_parameters is None:
-                        self.model_evaluations = current_results
-                        current_cp = params_to_run[: i + 1]
+                        self.model_evaluations = (
+                            np.vstack([previous_evaluations, current_results])
+                            if previous_evaluations is not None else current_results)
+                        current_cp = design[: start_idx + i + 1]
                     else:
                         self.model_evaluations = (
                             np.vstack([self.model_evaluations, current_results])
@@ -756,7 +771,7 @@ class Delft3DModel(HydroSimulations):
             if bal_new_set_parameters is not None:
                 all_cp = np.vstack([collocation_points, params_to_run])
             else:
-                all_cp = params_to_run
+                all_cp = design
             self._save_all_results(all_cp, all_detailed_results)
 
     def _extract_at_control_points(self, coords, fields):

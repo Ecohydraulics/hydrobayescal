@@ -297,12 +297,17 @@ class SklTraining(MyGeneralGPR):
             upper_ci = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
             lower_ci = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
         for i in range(0, self.n_obs):
+            # MySklGPR inherits scikit-learn's GaussianProcessRegressor, whose method is
+            # predict(X, return_std=True); it has no predict_ of its own. Only this
+            # class does, which is the one being called here.
             if self.tp_norm:
                 input_scaled = self.gp_list[i]['normalizer'].transform(input_sets)
 
-                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict_(input_scaled)
+                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict(
+                    input_scaled, return_std=True)
             else:
-                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict_(input_sets)
+                surrogate_prediction[:, i], surrogate_std[:, i] = self.gp_list[i]['gp'].predict(
+                    input_sets, return_std=True)
             if get_conf_int:
                 lower_ci[:, i] = surrogate_prediction[:, i] - (1.96 * surrogate_std[:, i])
                 upper_ci[:, i] = surrogate_prediction[:, i] + (1.96 * surrogate_std[:, i])

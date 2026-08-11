@@ -166,7 +166,7 @@ class MultiflowTelemacModel:
         self.extraction_quantities = first.extraction_quantities
         self.num_calibration_quantities = first.num_calibration_quantities
         self.multitask_selection = first.multitask_selection
-        self.init_runs = first.init_runs
+        self._init_runs = first.init_runs
         self.max_runs = first.max_runs
         self.complete_bal_mode = first.complete_bal_mode
         self.only_bal_mode = first.only_bal_mode
@@ -197,6 +197,24 @@ class MultiflowTelemacModel:
             f"({' + '.join(str(n) for n in self.nloc_per_flow)}), "
             f"{self.ndim} calibration parameter(s)")
 
+    @property
+    def init_runs(self):
+        """Size of the initial design, kept identical across every flow.
+
+        A staged initial design grows ``init_runs`` between blocks
+        (:mod:`~hydroBayesCal.surrogate.initial_design`). Each flow runs the design
+        through its own ``TelemacModel``, which reads its *own* ``init_runs``, so
+        assigning here has to reach them too; otherwise the flows would keep running the
+        first block while the combined model believes the design has grown.
+        """
+        return self._init_runs
+
+    @init_runs.setter
+    def init_runs(self, value):
+        self._init_runs = int(value)
+        for model in self.models:
+            model.init_runs = int(value)
+
     # ------------------------------------------------------------------ runs
     def run_multiple_simulations(self, collocation_points=None,
                                  bal_new_set_parameters=None,
@@ -206,7 +224,8 @@ class MultiflowTelemacModel:
                                  output_extraction_time="last",
                                  n=40,
                                  validation=False,
-                                 kill_process=True):
+                                 kill_process=True,
+                                 start_index=0):
         """Run every flow for the given collocation points and stack outputs.
 
         Same signature/semantics as ``TelemacModel.run_multiple_simulations``;
@@ -229,6 +248,7 @@ class MultiflowTelemacModel:
                 n=n,
                 validation=validation,
                 kill_process=kill_process,
+                start_index=start_index,
             )
             per_flow.append(np.atleast_2d(m.model_evaluations))
 

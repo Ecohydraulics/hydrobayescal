@@ -4,6 +4,106 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-11
+
+Two ends of the same problem: whether a calibration finds the *global* maximum of the
+joint posterior, or converges confidently onto a local one. At the front end, the initial
+design is now sized from the number of calibration parameters and grown in Sobol blocks
+until it is measurably good enough. At the back end, the maximum of the joint posterior is
+located by mode-seeded refinement rather than by picking the best prior draw, and an
+explicit rule decides whether the per-parameter marginal optima may be reported as a
+parameter set at all.
+
+### Added
+- `hydroBayesCal.surrogate.initial_design`, a solver-agnostic, report-only module for the
+  initial design:
+  - `recommended_init_runs` sizes it as ten runs per calibration parameter, floored at 16
+    and rounded up to a power of two, because the unscrambled Sobol sequence chaospy
+    generates is balanced at `2**m`. It runs before the first simulation and warns when
+    the configured `init_runs` is below the recommendation. It is never enforced and
+    never silently raised: spending days of extra CPU time is the modeller's decision.
+  - `sobol_block` extends a design along the same Sobol sequence, using the prefix
+    property that makes the first `n` points of a length-`2n` sequence exactly the
+    length-`n` sequence, so growing a design never discards a simulation. The prefix is
+    verified rather than assumed, with a Latin hypercube fallback, because a silently
+    reordered design would attach every stored model output to the wrong parameter set.
+  - `initial_design_sufficiency` measures, after each block, GP leave-one-out
+    predictivity, whether the emulator's error bars are calibrated, whether the implied
+    posterior is resolved by enough accepted samples, whether its shape is driven by the
+    data rather than by emulator uncertainty, and whether it stopped moving since the
+    previous block. Verdict `sufficient` / `marginal` / `insufficient`; never raises.
+  - `run_staged_initial_design` runs the ladder. It is capped by `init_runs`, so it can
+    only ever save simulations, and the ones it saves become BAL iterations because
+    `max_runs` is the total budget. New config keys `sampling['adaptive_init_runs']`
+    (default `True`) and `sampling['init_runs_min']`.
+- `posterior_analysis.refine_joint_optimum` maximises the surrogate's joint posterior
+  over the continuous calibration ranges from several starting points, seeded by the
+  highest-density samples **and one representative per detected posterior mode**. Without
+  it the reported optimum is the best of finitely many prior draws, quantised to the prior
+  sample and unstable between rejection samplings; without the mode seeding it is the top
+  of whichever basin held the densest sample, which is not necessarily the deepest one.
+  Exposed as `joint_optimum(..., refine=True)`, `analyze_posterior(..., refine=True)` and
+  `derive_calibrated_parameters.py --refine`.
+- `posterior_analysis.select_calibrated_parameters` decides which parameter set is the
+  calibration result. The joint maximum is the default and the marginal peaks are promoted
+  only when the posterior says the independence assumption behind stacking them holds:
+  parameters effectively uncorrelated *and* the marginal-peak vector within 0.25 posterior
+  standard deviations of the joint maximum. A multimodal posterior reports no single set
+  and hands every mode representative to the solver to arbitrate. The decision reaches the
+  log, the `selected` column of `calibrated-parameter-candidates.csv` and the driver's
+  headline output.
+- `sampling['bal_exploration_tradeoff']` (default `'auto'`): the sequential design exploits
+  the posterior until the per-iteration diagnostic finds more than one well-separated mode,
+  then adds exploration for the remaining iterations. Pure exploitation refines the mode it
+  started in, which is how a local maximum survives to the end of a calibration.
+- `ITERATION_KEYS` gained `joint_optimum`, `joint_log_density` and `posterior_modes`, so
+  the convergence of the joint maximum is recoverable from an archived `BAL_dictionary.pkl`
+  and is plotted alongside the marginal traces in `parameter_optimum_convergence`. The keys
+  are additive; older result files still plot, reconstructed from their stored posteriors.
+- `validate_sampling_method` rejects an unusable `parameter_sampling_method` before the
+  first simulation instead of several minutes into the run, from inside chaospy. The
+  historical `"chebyshev(FT)"` and `"grid(FT)"` spellings are not chaospy rules at all;
+  they are now accepted with a warning and mapped to `chebyshev` and `grid`.
+- `tests/test_initial_design.py`, plus tests for the refinement and the decision rule in
+  `tests/test_posterior_analysis.py`. All run on analytic responses, no solver involved.
+
+### Changed
+- `run_multiple_simulations` gained a `start_index` argument in every binding (TELEMAC,
+  OpenFOAM, Delft3D, multiflow), so a staged design runs only its new block while run
+  numbering, the collocation CSV and the accumulated outputs stay continuous over the
+  whole design. Default `0`, i.e. unchanged behaviour.
+- `MultiflowTelemacModel.init_runs` is now a property that propagates to the per-flow
+  models. Each flow runs the design through its own `TelemacModel`, which reads its *own*
+  `init_runs`, so a plain attribute would have left the flows running the first block
+  while the combined model believed the design had grown.
+- The docs' "Bayesian Calibration Workflow" gained **Step 1: Size and sample the initial
+  design**; the former Steps 1 to 4 are now Steps 2 to 5. The `calibrated-parameters`
+  label is unchanged, so every cross-reference still resolves. Step 5 now states that the
+  calibrated parameter set is the maximum of the joint posterior PDF, how that maximum is
+  located, and the rule that vets the marginal optima against it.
+- `BayesianInference.rejection_sampling` records the accepted prior rows in `post_index`.
+  Rejection sampling is stochastic, so the acceptance cannot be reconstructed from the
+  likelihood afterwards, and callers needing per-sample quantities of the accepted set had
+  no way to get them.
+
+### Fixed
+- `setup_experiment_design` assigned `exp_design.x = complex_model.user_collocation_points`
+  unconditionally. Assigning `None` is harmless today, but bayesvalidrox switches the
+  design to `'user'` as soon as `x` is set, so this was one library change away from
+  silently discarding the configured sampling method. The assignment now happens only when
+  user points exist.
+- `sampling['gp_library'] = "skl"` could not run at all, in two independent places.
+  `run_bal_model` never bound `surrogate_object` in the scikit-learn branch, so the first
+  log line raised `UnboundLocalError`, and `SklTraining.predict_` called `predict_` on the
+  raw `GaussianProcessRegressor`, which only has `predict(X, return_std=True)`. Both are
+  fixed, and `tests/test_gpe_skl.py` now trains and predicts through that path and checks
+  the binding in every driver's source. Found while exercising the staged design end to
+  end; unrelated to the initial-design work but on the same code path.
+- The initial-design gate pins the BLAS thread pool to one thread while fitting its
+  Gaussian processes. On a many-core machine, spawning one thread per core for matrices a
+  few dozen rows across cost 1.5 s per column instead of 30 ms, i.e. the gate would have
+  been slower than useful.
+
 ## [1.4.4] - 2026-08-11
 
 A one-line fix with a wide blast radius: the multi-flow TELEMAC driver ignored the

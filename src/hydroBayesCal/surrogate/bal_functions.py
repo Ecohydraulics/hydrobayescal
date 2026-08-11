@@ -107,7 +107,12 @@ class BayesianInference:
         self.post_likelihood = None
         self.posterior = None
         self.posterior_output = None
-        self.post_logpdf = None 
+        self.post_logpdf = None
+        # Rows of the prior that rejection sampling accepted. Rejection sampling is
+        # stochastic, so the acceptance cannot be reconstructed from the likelihood
+        # afterwards; callers that need per-sample quantities of the accepted set
+        # (e.g. the emulator standard deviation there) have to read it from here.
+        self.post_index = None
 
         self.BME = None
         self.log_BME = None
@@ -342,6 +347,7 @@ class BayesianInference:
             self.post_loglikelihood = np.log(self.post_likelihood)
 
         # Get posterior samples
+        self.post_index = post_index
         self.posterior_output = np.take(self.model_predictions, post_index, axis=0)
         if self.prior is not None:
             self.posterior = np.take(self.prior, post_index, axis=0)

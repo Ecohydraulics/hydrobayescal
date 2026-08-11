@@ -114,6 +114,13 @@ def main():
         default=5,
         help="Maximum number of posterior modes to look for (default: 5).")
     parser.add_argument(
+        "--refine",
+        action="store_true",
+        help="Refine the joint optimum by multi-start local maximisation of the "
+             "surrogate posterior, seeded from every detected posterior mode. Lifts the "
+             "optimum off the discrete prior sample and makes it global over those "
+             "modes. Requires --surrogate.")
+    parser.add_argument(
         "--write-csv",
         action="store_true",
         help="Write restart_data/user-collocation-points.csv, backing up any existing "
@@ -145,6 +152,12 @@ def main():
     surrogate = load_surrogate(args.surrogate) if args.surrogate else None
     if args.joint_method == "likelihood" and surrogate is None:
         raise ValueError("--joint-method likelihood requires --surrogate <path.pkl>")
+    if args.refine and surrogate is None:
+        raise ValueError(
+            "--refine requires --surrogate <path.pkl>: the refinement maximises the "
+            "emulator's posterior between the accepted samples, which needs the "
+            "emulator. Without it, the reported optimum is the best of the prior "
+            "samples that rejection sampling accepted.")
 
     analysis = analyze_posterior(
         bayesian_dict=bayesian_data,
@@ -157,11 +170,22 @@ def main():
         error=full_complexity_model.variances,
         include=tuple(kind.strip() for kind in args.candidates.split(",") if kind.strip()),
         max_modes=args.max_modes,
+        refine=args.refine,
     )
     log_posterior_analysis(analysis)
 
     restart_folder = full_complexity_model.restart_data_folder
     write_candidate_report(analysis, restart_folder)
+
+    decision = analysis["decision"]
+    if decision["vector"] is None:
+        logger_warn.warning(
+            "No single calibrated parameter set: %s", decision["message"])
+    else:
+        logger.info("Calibrated parameter set (%s): %s", decision["source"],
+                    ", ".join(f"{name}={value:.5g}" for name, value
+                              in zip(config.calibration["parameters"],
+                                     decision["vector"])))
 
     n_candidates = len(analysis["candidates"]["labels"])
     if args.write_csv:

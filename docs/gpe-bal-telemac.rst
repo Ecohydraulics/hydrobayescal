@@ -143,13 +143,13 @@ Parameters
 
    Available options:
 
+   * **"sobol"** - Sobol sequence sampling (default; see :ref:`initial-design` for why).
    * **"random"** - Random sampling.
    * **"latin_hypercube"** - Latin Hypercube Sampling (LHS).
-   * **"sobol"** - Sobol sequence sampling.
    * **"halton"** - Halton sequence sampling.
    * **"hammersley"** - Hammersley sequence sampling.
-   * **"chebyshev(FT)"** - Chebyshev nodes (Fourier Transform-based).
-   * **"grid(FT)"** - Grid-based sampling (Fourier Transform-based).
+   * **"chebyshev"** - Chebyshev nodes.
+   * **"grid"** - Grid-based sampling.
    * **"user"** - User-defined sampling. (Requires a user-defined .csv file with the sampling points.)
 
 Returns

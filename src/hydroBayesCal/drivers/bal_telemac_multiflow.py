@@ -124,6 +124,8 @@ def main():
         experiment_design=exp_design,
         output_extraction_time=extraction.get('output_extraction_time', "mean_last"),
         n_last=extraction.get('n_last', extraction.get('n', 80)),
+        adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
+        init_runs_min=config.sampling.get('init_runs_min', None),
     )
     if not (multiflow_model.complete_bal_mode or multiflow_model.only_bal_mode):
         logger.info("Initial multiflow runs finished (only-init mode): "
@@ -140,6 +142,7 @@ def main():
         mc_exploration=config.sampling["mc_exploration"],
         gp_library=config.sampling["gp_library"],
         include_surrogate_error=config.sampling.get("include_surrogate_error", True),
+        bal_exploration_tradeoff=config.sampling.get("bal_exploration_tradeoff", "auto"),
     )
 
 

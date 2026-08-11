@@ -83,7 +83,7 @@ def setup_experiment_design(
     exp_design.n_init_samples = complex_model.init_runs
     # Sampling methods
     # 1) random 2) latin_hypercube 3) sobol 4) halton 5) hammersley
-    # 6) chebyshev(FT) 7) grid(FT) 8) User
+    # 6) chebyshev 7) grid 8) user
     exp_design.sampling_method = parameter_sampling_method
     exp_design.n_new_samples = 1
     exp_design.x = complex_model.user_collocation_points

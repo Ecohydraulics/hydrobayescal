@@ -35,8 +35,9 @@ class PosteriorPlots:
         -------
         dict
             ``n_tp``, ``peak`` ``[n_iter, ndim]``, ``hdi`` ``[n_iter, ndim, 2]``,
-            ``variance_reduction`` ``[n_iter, ndim]``, ``density_percentile``
-            ``[n_iter]``, ``max_abs_correlation`` ``[n_iter]`` and ``iterations``.
+            ``variance_reduction`` ``[n_iter, ndim]``, ``joint`` ``[n_iter, ndim]``,
+            ``n_modes`` ``[n_iter]``, ``density_percentile`` ``[n_iter]``,
+            ``max_abs_correlation`` ``[n_iter]`` and ``iterations``.
         """
         posteriors = bayesian_dict.get('posterior', [])
         ndim = len(parameter_names)
@@ -44,6 +45,7 @@ class PosteriorPlots:
         rebuild = stored is None or all(entry is None for entry in stored)
 
         iterations, peaks, hdis, reductions, percentiles, correlations = [], [], [], [], [], []
+        joints, mode_counts = [], []
         for it, posterior in enumerate(posteriors):
             if posterior is None or np.asarray(posterior).size == 0:
                 continue
@@ -55,6 +57,8 @@ class PosteriorPlots:
                 hdi = summary['hdi']
                 reduction = summary['variance_reduction']
                 gap = summary['gap']
+                joint = summary['joint']
+                n_modes = summary['n_modes']
             else:
                 peak = stored[it]
                 if peak is None:
@@ -62,12 +66,21 @@ class PosteriorPlots:
                 hdi = bayesian_dict['marginal_hdi'][it]
                 reduction = bayesian_dict['variance_reduction'][it]
                 gap = bayesian_dict['marginal_joint_gap'][it] or {}
+                # Additive keys: a result file written before the joint optimum was
+                # tracked has neither, and its panels simply carry no joint trace.
+                stored_joint = (bayesian_dict.get('joint_optimum') or [None] * len(posteriors))[it]
+                joint = (np.full(ndim, np.nan) if stored_joint is None
+                         else np.asarray(stored_joint, dtype=float))
+                n_modes = (bayesian_dict.get('posterior_modes')
+                           or [np.nan] * len(posteriors))[it]
             iterations.append(it)
             peaks.append(np.asarray(peak, dtype=float))
             hdis.append(np.asarray(hdi, dtype=float).reshape(ndim, 2))
             reductions.append(np.asarray(reduction, dtype=float))
             percentiles.append(float(gap.get('density_percentile', np.nan)))
             correlations.append(float(gap.get('max_abs_correlation', np.nan)))
+            joints.append(np.asarray(joint, dtype=float).ravel())
+            mode_counts.append(float(n_modes) if n_modes is not None else np.nan)
 
         if not iterations:
             raise ValueError("No iteration with accepted posterior samples to plot.")
@@ -82,6 +95,8 @@ class PosteriorPlots:
             'peak': np.asarray(peaks),
             'hdi': np.asarray(hdis),
             'variance_reduction': np.asarray(reductions),
+            'joint': np.asarray(joints),
+            'n_modes': np.asarray(mode_counts, dtype=float),
             'density_percentile': np.asarray(percentiles),
             'max_abs_correlation': np.asarray(correlations),
         }
@@ -106,6 +121,12 @@ class PosteriorPlots:
         prior bound means the parameter is pinned and the range or the parameter
         choice needs revisiting.
 
+        Each panel also carries the *joint* posterior maximum, which is the calibration
+        result proper. Where the two traces converge onto each other, reading the
+        posterior per parameter and reading it jointly give the same answer; where they
+        stay apart, the parameters are coupled and only the joint trace is a parameter
+        set that can be run.
+
         The companion figure shows the posterior-to-prior variance reduction, i.e.
         how much the measurements actually constrain each parameter.
         """
@@ -124,6 +145,10 @@ class PosteriorPlots:
             ax = axes[i]
             ax.plot(series['n_tp'], series['peak'][:, i], color='tab:blue',
                     marker='o', markersize=4, linewidth=2, label='marginal optimum')
+            if series['joint'].size and np.any(np.isfinite(series['joint'][:, i])):
+                ax.plot(series['n_tp'], series['joint'][:, i], color='tab:green',
+                        marker='s', markersize=4, linewidth=2, linestyle='--',
+                        label='joint optimum')
             if show_hdi:
                 ax.fill_between(series['n_tp'], series['hdi'][:, i, 0],
                                 series['hdi'][:, i, 1], color='tab:blue', alpha=0.18,

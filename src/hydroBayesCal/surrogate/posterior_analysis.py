@@ -49,10 +49,12 @@ __all__ = [
     "select_posterior_iteration",
     "marginal_optima",
     "joint_optimum",
+    "refine_joint_optimum",
     "equifinality_diagnostic",
     "detect_posterior_modes",
     "assemble_candidates",
     "analyze_posterior",
+    "select_calibrated_parameters",
     "log_posterior_analysis",
     "track_iteration",
     "record_iteration",
@@ -70,6 +72,9 @@ ITERATION_KEYS = (
     "variance_reduction",
     "identifiability_flags",
     "marginal_joint_gap",
+    "joint_optimum",
+    "joint_log_density",
+    "posterior_modes",
 )
 
 
@@ -630,6 +635,11 @@ def joint_optimum(
         n_top=1,
         refine_with_surrogate=False,
         density=None,
+        refine=False,
+        prior_bounds=None,
+        prior=None,
+        modes=None,
+        n_starts=8,
 ):
     """Parameter vector of highest *joint* posterior density.
 
@@ -660,13 +670,27 @@ def joint_optimum(
         with the exactness of the likelihood.
     density : _DensityEstimator, optional
         Reuse an existing estimator instead of building a new one.
+    refine : bool
+        Polish the optimum by multi-start local maximisation of the surrogate
+        likelihood, see :func:`refine_joint_optimum`. Needs ``surrogate``,
+        ``observations`` and ``error``. This is what turns "the best of the accepted
+        samples" into an actual maximum of the joint posterior density.
+    prior_bounds, prior : optional
+        Calibration ranges for the refinement, resolved from the posterior when absent.
+    modes : dict, optional
+        Output of :func:`detect_posterior_modes`, whose representatives seed the
+        refinement. Seeding every mode is what makes the refined optimum the *global*
+        maximum rather than the top of whichever basin the density ranking preferred.
+    n_starts : int
+        Number of starting points for the refinement.
 
     Returns
     -------
     dict
         ``vector``, ``index``, ``log_density``, ``top_vectors``, ``method_used``,
         ``density`` (the estimator, reusable by :func:`equifinality_diagnostic`) and
-        ``message``.
+        ``message``. With ``refine`` also ``refined_vector``, ``refined``,
+        ``global_agreement`` and ``local_optima``.
 
     Note
     ----
@@ -708,7 +732,7 @@ def joint_optimum(
                     surrogate, posterior[top_idx], observations, error)
                 best = int(top_idx[int(np.argmax(top_ll))])
                 order = np.argsort(log_density)[::-1][:n_top]
-                return {
+                result = {
                     "vector": posterior[best],
                     "index": best,
                     "log_density": log_density,
@@ -718,10 +742,12 @@ def joint_optimum(
                     "message": (f"Joint optimum from the {n_top} highest-density "
                                 f"candidates re-ranked by surrogate likelihood."),
                 }
+                return _maybe_refine(result, posterior, refine, surrogate, observations,
+                                     error, prior_bounds, prior, modes, n_starts)
 
     order = np.argsort(log_density)[::-1]
     best = int(order[0])
-    return {
+    result = {
         "vector": posterior[best],
         "index": best,
         "log_density": log_density,
@@ -729,6 +755,161 @@ def joint_optimum(
         "method_used": method_used,
         "density": density if method != "likelihood" else None,
         "message": message,
+    }
+    return _maybe_refine(result, posterior, refine, surrogate, observations, error,
+                         prior_bounds, prior, modes, n_starts)
+
+
+def _maybe_refine(result, posterior, refine, surrogate, observations, error,
+                  prior_bounds, prior, modes, n_starts):
+    """Attach the refined optimum to a ``joint_optimum`` result, if asked for."""
+    if not refine:
+        return result
+    if surrogate is None or observations is None or error is None:
+        logger_warn.warning(
+            "refine=True needs a surrogate, observations and error; reporting the "
+            "sample of highest posterior density instead of a refined maximum.")
+        result["refined"] = False
+        result["refined_vector"] = result["vector"]
+        result["global_agreement"] = np.nan
+        result["local_optima"] = np.atleast_2d(result["vector"])
+        return result
+
+    refinement = refine_joint_optimum(
+        posterior=posterior, surrogate=surrogate, observations=observations, error=error,
+        seeds=result["top_vectors"], modes=modes, prior_bounds=prior_bounds, prior=prior,
+        n_starts=n_starts)
+    result.update(refinement)
+    result["vector"] = refinement["refined_vector"]
+    result["method_used"] = f"{result['method_used']}+refined"
+    result["message"] = refinement["message"]
+    return result
+
+
+def refine_joint_optimum(posterior, surrogate, observations, error, seeds=None,
+                         modes=None, prior_bounds=None, prior=None, n_starts=8,
+                         tolerance=0.05):
+    """Maximise the surrogate posterior density locally, from several starting points.
+
+    The joint optimum read off the accepted sample is the best of finitely many prior
+    draws. It is therefore quantised to the prior sample: with 10 000 draws in five
+    dimensions, the nearest draw to the true maximum is typically several percent of the
+    calibration range away, and that error goes straight into the calibrated parameter
+    set. Worse, it is the maximum of a *sample*, so it drifts from one rejection sampling
+    to the next.
+
+    This function removes both by maximising the emulator's joint log-likelihood over the
+    continuous calibration ranges, with a bounded quasi-Newton method, from several
+    starting points: the highest-density accepted samples **and one representative per
+    detected posterior mode**. The mode seeding is the part that matters for a *global*
+    maximum. A local optimiser started only in the densest basin finds the top of that
+    basin however deep another one is, which is exactly the failure mode of a calibration
+    that converges confidently onto the wrong parameter set. Starting one run in every
+    basin the posterior actually has turns the search global over the modes the posterior
+    exhibits, and the agreement between the runs then says whether the answer is unique.
+
+    Parameters
+    ----------
+    posterior : array
+        Accepted posterior sample, used for the bounds and the fallback.
+    surrogate : object
+        Trained GPE exposing ``predict_(input_sets=...)``.
+    observations, error : array
+        Measured values ``[1, n_obs]`` and observation variances ``[n_obs]``.
+    seeds : array, optional
+        Additional starting points, e.g. the highest-density samples.
+    modes : dict, optional
+        Output of :func:`detect_posterior_modes`; its representatives are added as
+        starting points.
+    prior_bounds, prior : optional
+        Calibration ranges, resolved from the posterior when absent. The optimisation is
+        constrained to them, so a refined optimum can never leave the calibration range.
+    n_starts : int
+        Maximum number of starting points.
+    tolerance : float
+        Two optima count as the same when they differ by less than this fraction of the
+        calibration range in every parameter.
+
+    Returns
+    -------
+    dict
+        ``refined_vector``, ``refined``, ``local_optima``, ``local_log_likelihood``,
+        ``global_agreement`` (fraction of starts that reached the best optimum),
+        ``n_starts`` and ``message``.
+    """
+    from scipy.optimize import minimize
+
+    posterior = _as_2d_array(posterior)
+    bounds = _resolve_prior_bounds(prior_bounds, prior, posterior)
+    lower, upper = bounds[:, 0], bounds[:, 1]
+    span = np.where(upper - lower > 0, upper - lower, 1.0)
+
+    # Mode representatives go first and are never dropped by the cap below. They are the
+    # whole point: the density-ranked seeds all come from the *densest* basin, so a cap
+    # applied to a density-ordered list would discard exactly the starts that reach the
+    # other basins, and the search would be local again while looking global.
+    starts = []
+    if modes is not None and modes.get("representatives") is not None:
+        starts.extend(list(np.atleast_2d(np.asarray(modes["representatives"],
+                                                    dtype=float))))
+    n_mode_starts = len(starts)
+    if seeds is not None and len(np.atleast_2d(seeds)):
+        starts.extend(list(np.atleast_2d(np.asarray(seeds, dtype=float))))
+    if not starts:
+        starts = [posterior.mean(axis=0) if len(posterior)
+                  else 0.5 * (lower + upper)]
+    limit = max(int(n_starts), n_mode_starts, 1)
+    starts = np.atleast_2d(np.asarray(starts, dtype=float))[:limit]
+
+    def negative_log_likelihood(vector):
+        clipped = np.clip(np.asarray(vector, dtype=float), lower, upper)
+        return -float(_surrogate_log_likelihood(
+            surrogate, clipped.reshape(1, -1), observations, error)[0])
+
+    optima, values = [], []
+    for start in starts:
+        try:
+            outcome = minimize(negative_log_likelihood, np.clip(start, lower, upper),
+                               method="L-BFGS-B", bounds=list(zip(lower, upper)))
+            vector = np.clip(np.asarray(outcome.x, dtype=float), lower, upper)
+            optima.append(vector)
+            values.append(-float(outcome.fun))
+        except Exception as exception:  # a failed start must not lose the others
+            logger_warn.warning(f"A refinement start failed and was skipped: {exception}")
+
+    if not optima:
+        best = (posterior[0] if len(posterior) else np.asarray(starts[0], dtype=float))
+        return {
+            "refined_vector": best, "refined": False,
+            "local_optima": np.atleast_2d(best),
+            "local_log_likelihood": np.asarray([np.nan]),
+            "global_agreement": np.nan, "n_starts": 0,
+            "message": ("Local refinement of the joint optimum failed at every start; "
+                        "reporting the highest-density posterior sample."),
+        }
+
+    optima = np.atleast_2d(np.asarray(optima, dtype=float))
+    values = np.asarray(values, dtype=float)
+    best = int(np.argmax(values))
+    same = np.all(np.abs(optima - optima[best]) <= tolerance * span, axis=1)
+    agreement = float(np.mean(same))
+
+    if agreement >= 1.0:
+        message = (f"Joint optimum refined by local maximisation of the surrogate "
+                   f"posterior from {len(optima)} starting points, all of which "
+                   f"converged to the same parameter set: the maximum is global over "
+                   f"the basins the posterior exhibits.")
+    else:
+        distinct = int(np.sum(~same))
+        message = (f"Joint optimum refined by local maximisation of the surrogate "
+                   f"posterior from {len(optima)} starting points; {distinct} of them "
+                   f"converged elsewhere, so the posterior has more than one local "
+                   f"maximum and the reported one is the highest of those found.")
+
+    return {
+        "refined_vector": optima[best], "refined": True, "local_optima": optima,
+        "local_log_likelihood": values, "global_agreement": agreement,
+        "n_starts": len(optima), "message": message,
     }
 
 
@@ -1260,17 +1441,30 @@ def analyze_posterior(
         error=None,
         include=("marginal_peak", "joint_map", "posterior_mean", "modes"),
         max_modes=5,
+        refine=False,
         **kwargs
 ):
     """Run the full posterior analysis and return every part of it.
 
     Accepts either a loaded ``BAL_dictionary.pkl`` or raw arrays.
 
+    The order of the steps is deliberate: the posterior modes are detected *before* the
+    joint optimum is refined, so that every basin the posterior has can seed the
+    refinement and the reported maximum is the global one rather than the top of the
+    basin that happened to hold the densest sample.
+
+    Parameters
+    ----------
+    refine : bool
+        Refine the joint optimum by multi-start local maximisation of the surrogate
+        posterior, see :func:`refine_joint_optimum`. Needs ``surrogate``,
+        ``observations`` and ``error``.
+
     Returns
     -------
     dict
         ``iteration``, ``posterior``, ``marginal``, ``joint``, ``equifinality``,
-        ``modes`` and ``candidates``.
+        ``modes``, ``candidates`` and ``decision``.
     """
     if bayesian_dict is not None:
         posterior, iteration = select_posterior_iteration(bayesian_dict, iteration)
@@ -1286,27 +1480,32 @@ def analyze_posterior(
         posterior, prior_bounds=prior_bounds, parameter_names=parameter_names,
         prior=prior, **kwargs)
 
-    joint = joint_optimum(
-        posterior, method=joint_method, surrogate=surrogate,
-        observations=observations, error=error)
-
-    equifinality = equifinality_diagnostic(
-        posterior, marginal["peak"], joint_optimum_vector=joint["vector"],
-        density=joint.get("density"), sample_log_density=(
-            joint["log_density"] if joint["method_used"] != "likelihood" else None),
-        parameter_names=marginal["parameter_names"])
-
     modes = detect_posterior_modes(
         posterior, max_modes=max_modes, prior_bounds=marginal["prior_bounds"],
         relevant_mask=np.array([
             "non_identifiable" not in flags for flags in marginal["flags"]]))
+
+    joint = joint_optimum(
+        posterior, method=joint_method, surrogate=surrogate,
+        observations=observations, error=error, refine=refine,
+        prior_bounds=marginal["prior_bounds"], modes=modes,
+        n_top=max(8, modes["n_modes"]))
+
+    equifinality = equifinality_diagnostic(
+        posterior, marginal["peak"], joint_optimum_vector=joint["vector"],
+        density=joint.get("density"),
+        # The stored log densities belong to the kNN estimator; with the likelihood
+        # method they are log-likelihoods and would mis-scale the density percentile.
+        sample_log_density=(None if joint["method_used"].startswith("likelihood")
+                            else joint["log_density"]),
+        parameter_names=marginal["parameter_names"])
 
     candidates = assemble_candidates(
         marginal, joint, modes, posterior,
         parameter_names=marginal["parameter_names"], equifinality=equifinality,
         include=include, prior_bounds=marginal["prior_bounds"])
 
-    return {
+    analysis = {
         "iteration": iteration,
         "posterior": posterior,
         "marginal": marginal,
@@ -1314,6 +1513,181 @@ def analyze_posterior(
         "equifinality": equifinality,
         "modes": modes,
         "candidates": candidates,
+    }
+    analysis["decision"] = select_calibrated_parameters(analysis)
+    return analysis
+
+
+def select_calibrated_parameters(analysis, gap_tolerance=0.25):
+    """Which parameter set is the calibration result, and why.
+
+    The calibration infers a *joint* posterior over the calibration parameters, and the
+    calibrated parameter set is the maximum of that joint density. The per-parameter
+    marginal peaks answer a different question, namely where each parameter's own optimum
+    lies once every other parameter has been integrated out, and stacking them into a
+    vector silently assumes the parameters are independent. Under equifinality they are
+    not, and the stacked vector can land in a region the posterior considers implausible
+    while each of its components is individually optimal.
+
+    So the joint optimum is the default and the marginal peaks have to earn their
+    promotion. They get it only when the posterior says the assumption behind them holds:
+
+    ============================================  =======================================
+    Posterior situation                           Reported calibrated parameter set
+    ============================================  =======================================
+    more than one well-separated mode             none; every mode representative has to
+                                                  be run and arbitrated by the solver
+    ``inconsistent``                              joint optimum; the marginal-peak vector
+                                                  is rejected as a parameter set
+    ``coupled``                                   joint optimum; the marginals do not
+                                                  determine the combination
+    ``consistent`` and the marginal peaks agree   marginal-peak vector, confirmed by the
+    with the joint optimum to ``gap_tolerance``   joint optimum
+    anything else (``acceptable``)                joint optimum, with the marginal-peak
+                                                  vector to be checked against it
+    ============================================  =======================================
+
+    Parameters that the measurements do not identify are reported from the joint optimum
+    and flagged: any value in their range fits about as well, so the number is a
+    placeholder that the data does not support, whichever vector it comes from.
+
+    Report-only, like everything else in this module: it returns the decision and the
+    reasoning, and never writes a configuration or launches a run.
+
+    Parameters
+    ----------
+    analysis : dict
+        Output of :func:`analyze_posterior`.
+    gap_tolerance : float
+        How far the marginal-peak vector may sit from the joint optimum, in posterior
+        standard deviations per parameter, and still count as agreeing with it.
+
+    Returns
+    -------
+    dict
+        ``vector``, ``source``, ``verdict``, ``runner_up``, ``runner_up_source``,
+        ``must_verify`` (labelled parameter sets the solver should arbitrate),
+        ``unidentified`` (parameter names the data does not constrain), ``message`` and
+        ``recommendation``.
+    """
+    marginal = analysis["marginal"]
+    joint = analysis["joint"]
+    equifinality = analysis["equifinality"]
+    modes = analysis["modes"]
+    names = list(marginal["parameter_names"])
+
+    peak_vector = np.asarray(marginal["peak"], dtype=float)
+    joint_vector = np.asarray(joint["vector"], dtype=float)
+    gap = np.asarray(equifinality["gap_normalised"], dtype=float)
+    agrees = bool(np.all(np.abs(gap[np.isfinite(gap)]) <= gap_tolerance)
+                  and np.any(np.isfinite(gap)))
+    unidentified = [name for name, flags in zip(names, marginal["flags"])
+                    if "non_identifiable" in flags]
+    verdict = equifinality["verdict"]
+
+    joint_label = ("refined joint posterior maximum" if joint.get("refined")
+                   else "joint posterior maximum")
+    must_verify = [("joint_map", joint_vector)]
+
+    if modes["n_modes"] > 1:
+        representatives = np.atleast_2d(np.asarray(modes["representatives"],
+                                                   dtype=float))
+        must_verify = [(f"mode_{index + 1}", vector)
+                       for index, vector in enumerate(representatives)]
+        return {
+            "vector": None,
+            "source": "none",
+            "verdict": "equifinal",
+            "runner_up": joint_vector,
+            "runner_up_source": joint_label,
+            "must_verify": must_verify,
+            "unidentified": unidentified,
+            "message": (
+                f"The posterior has {modes['n_modes']} well-separated modes, so there is "
+                f"no single calibrated parameter set: {modes['n_modes']} different "
+                f"parameter combinations reproduce the measurements comparably well, and "
+                f"the posterior cannot tell them apart. The highest-density one is "
+                f"reported as the runner-up, but only because it is the densest, not "
+                f"because the data prefers it."),
+            "recommendation": (
+                "Run the full complexity model at every mode representative and let the "
+                "outputs arbitrate. If they are also comparable, report the ambiguity "
+                "instead of resolving it: the measurements available do not determine "
+                "these parameters uniquely."),
+        }
+
+    if verdict == "inconsistent":
+        selected, source = joint_vector, joint_label
+        message = (
+            f"The calibrated parameter set is the {joint_label}. The vector assembled "
+            f"from the per-parameter marginal peaks sits at the "
+            f"{equifinality['density_percentile']:.0f}th percentile of joint posterior "
+            f"density and is not a valid parameter set for this calibration, however "
+            f"good each of its components looks on its own.")
+        recommendation = (
+            "Report the marginal peaks only as a per-parameter summary, with their "
+            "credible intervals, and never as a parameter set to run.")
+        must_verify = [("joint_map", joint_vector)]
+    elif verdict == "coupled":
+        selected, source = joint_vector, joint_label
+        message = (
+            f"The calibrated parameter set is the {joint_label}. The marginal-peak "
+            f"vector is inside the posterior bulk, but the calibration couples the "
+            f"parameters tightly (largest |r| = "
+            f"{equifinality['max_abs_correlation']:.2f}), so the marginals do not "
+            f"determine which combination is right and their agreement here is a "
+            f"coincidence rather than a confirmation.")
+        recommendation = (
+            "Run the full complexity model at the joint optimum and at the marginal-peak "
+            "vector to see how far the coupled parameters trade off without degrading "
+            "the fit.")
+        must_verify = [("joint_map", joint_vector), ("marginal_peak", peak_vector)]
+    elif verdict == "consistent" and agrees:
+        selected, source = peak_vector, "marginal-peak vector"
+        message = (
+            f"The calibrated parameter set is the vector of per-parameter marginal "
+            f"peaks. The parameters are effectively independent under the posterior "
+            f"(largest |r| = {equifinality['max_abs_correlation']:.2f}) and the vector "
+            f"agrees with the {joint_label} to within {gap_tolerance} posterior standard "
+            f"deviations in every parameter, so the two ways of reading the posterior "
+            f"give the same answer.")
+        recommendation = (
+            "Run the full complexity model at this parameter set to confirm the "
+            "surrogate, and report the marginal credible intervals with it.")
+        must_verify = [("marginal_peak", peak_vector), ("joint_map", joint_vector)]
+    else:
+        selected, source = joint_vector, joint_label
+        worst = (float(np.nanmax(np.abs(gap))) if np.any(np.isfinite(gap)) else np.nan)
+        message = (
+            f"The calibrated parameter set is the {joint_label}. The marginal peaks are "
+            f"jointly plausible ({equifinality['density_percentile']:.0f}th density "
+            f"percentile) but differ from it by up to {worst:.2f} posterior standard "
+            f"deviations, and only the joint maximum is guaranteed to be a parameter set "
+            f"the posterior actually supports.")
+        recommendation = (
+            "Run the full complexity model at both and compare them against the "
+            "measurements before reporting one as the calibrated parameter set.")
+        must_verify = [("joint_map", joint_vector), ("marginal_peak", peak_vector)]
+
+    if unidentified:
+        message += (
+            f" The measurements do not identify {', '.join(unidentified)}: their reported "
+            f"values are taken from the joint optimum, but any value in their calibration "
+            f"range fits about as well.")
+
+    runner_up = (joint_vector if source == "marginal-peak vector" else peak_vector)
+    runner_up_source = ("marginal-peak vector" if source != "marginal-peak vector"
+                        else joint_label)
+    return {
+        "vector": selected,
+        "source": source,
+        "verdict": verdict,
+        "runner_up": runner_up,
+        "runner_up_source": runner_up_source,
+        "must_verify": must_verify,
+        "unidentified": unidentified,
+        "message": message,
+        "recommendation": recommendation,
     }
 
 
@@ -1354,6 +1728,14 @@ def log_posterior_analysis(analysis, logger_obj=None):
     info.info(f"Joint posterior optimum ({joint['method_used']}):")
     for i, name in enumerate(names):
         info.info(f"  {name:<40s} {joint['vector'][i]:.5g}")
+    if joint.get("refined"):
+        info.info(f"  {joint['message']}")
+        if joint.get("global_agreement", 1.0) < 1.0:
+            logger_warn.warning(
+                f"Only {100 * joint['global_agreement']:.0f}% of the refinement starts "
+                f"reached the reported maximum, so the surrogate posterior has more than "
+                f"one local maximum. The reported one is the highest found, not "
+                f"necessarily the highest there is.")
 
     if equifinality["verdict"] in ("inconsistent", "coupled"):
         logger_warn.warning(f"Equifinality [{equifinality['verdict']}]: {equifinality['message']}")
@@ -1372,6 +1754,23 @@ def log_posterior_analysis(analysis, logger_obj=None):
     info.info(f"Candidate calibrated parameter sets ({len(candidates['labels'])}):")
     for label, vector in zip(candidates["labels"], candidates["vectors"]):
         info.info(f"  {label:<24s} " + "  ".join(f"{value:.5g}" for value in vector))
+
+    decision = analysis.get("decision")
+    if decision:
+        info.info("-" * 78)
+        info.info(f"CALIBRATED PARAMETER SET [{decision['verdict']}]: "
+                  f"{decision['message']}")
+        if decision["vector"] is None:
+            logger_warn.warning(
+                "No single calibrated parameter set can be reported for this "
+                "calibration.")
+        else:
+            for name, value in zip(names, decision["vector"]):
+                info.info(f"  {name:<40s} {value:.5g}   <- from the {decision['source']}")
+        info.info(f"  -> {decision['recommendation']}")
+        if decision["must_verify"]:
+            info.info("  Parameter sets to run the full complexity model at: "
+                      + ", ".join(label for label, _ in decision["must_verify"]))
     info.info("=" * 78)
     return analysis
 
@@ -1380,13 +1779,19 @@ def log_posterior_analysis(analysis, logger_obj=None):
 # per-BAL-iteration tracking
 # ---------------------------------------------------------------------------
 def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=None,
-                    joint_method="auto"):
+                    joint_method="auto", max_modes=3):
     """Cheap per-iteration posterior summary for use inside the BAL loop.
 
     Records where each parameter's own optimum currently sits, how well the data
-    constrain it, and how far the combination of those optima is from a jointly
-    plausible parameter set. Uses the nearest-neighbour density and no mixture fit,
-    so the cost stays negligible next to one full-complexity simulation.
+    constrain it, how far the combination of those optima is from a jointly
+    plausible parameter set, where the maximum of the joint posterior lies and how many
+    well-separated modes the posterior has. Uses the nearest-neighbour density and no
+    surrogate refinement, so the cost stays negligible next to one full-complexity
+    simulation.
+
+    The mode count is not only a diagnostic: a driver reads it to decide whether the
+    sequential design should start exploring instead of refining the mode it is in, so
+    it is counted every iteration rather than once at the end.
 
     This function never raises. It runs inside a loop whose iterations each cost a
     solver run, so a diagnostic failure must not abort a multi-day calibration; on
@@ -1397,7 +1802,8 @@ def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=No
     dict
         ``peak``, ``hdi``, ``variance_reduction``, ``flags``, ``gap`` (dict with
         ``density_percentile``, ``mahalanobis_percentile``, ``max_abs_correlation``
-        and ``verdict``) and ``post_size``.
+        and ``verdict``), ``joint``, ``joint_log_density``, ``n_modes`` and
+        ``post_size``.
     """
     ndim = None
     try:
@@ -1412,6 +1818,10 @@ def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=No
             posterior, marginal["peak"], joint_optimum_vector=joint["vector"],
             density=joint.get("density"), sample_log_density=joint["log_density"],
             parameter_names=marginal["parameter_names"])
+        modes = detect_posterior_modes(
+            posterior, max_modes=max_modes, prior_bounds=marginal["prior_bounds"],
+            relevant_mask=np.array([
+                "non_identifiable" not in flags for flags in marginal["flags"]]))
 
         return {
             "peak": marginal["peak"],
@@ -1424,6 +1834,9 @@ def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=No
                 "max_abs_correlation": equifinality["max_abs_correlation"],
                 "verdict": equifinality["verdict"],
             },
+            "joint": np.asarray(joint["vector"], dtype=float),
+            "joint_log_density": float(np.max(joint["log_density"])),
+            "n_modes": int(modes["n_modes"]),
             "post_size": marginal["post_size"],
         }
     except Exception as exception:  # never abort a running calibration
@@ -1437,6 +1850,9 @@ def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=No
             "flags": [[] for _ in range(ndim)],
             "gap": {"density_percentile": np.nan, "mahalanobis_percentile": np.nan,
                     "max_abs_correlation": np.nan, "verdict": "unavailable"},
+            "joint": np.full(ndim, np.nan),
+            "joint_log_density": np.nan,
+            "n_modes": 1,
             "post_size": 0,
         }
 
@@ -1469,6 +1885,9 @@ def record_iteration(bayesian_dict, iteration, posterior, prior=None,
     bayesian_dict["variance_reduction"][iteration] = summary["variance_reduction"]
     bayesian_dict["identifiability_flags"][iteration] = summary["flags"]
     bayesian_dict["marginal_joint_gap"][iteration] = summary["gap"]
+    bayesian_dict["joint_optimum"][iteration] = summary["joint"]
+    bayesian_dict["joint_log_density"][iteration] = summary["joint_log_density"]
+    bayesian_dict["posterior_modes"][iteration] = summary["n_modes"]
 
     # Make the stored dictionary self-describing: without these, no consumer can
     # recover the parameter names or the calibration ranges from the result file.
@@ -1482,6 +1901,14 @@ def record_iteration(bayesian_dict, iteration, posterior, prior=None,
         peaks = ", ".join(f"{name}={value:.4g}"
                           for name, value in zip(names, summary["peak"]))
         logger.info(f"Marginal optima after iteration {iteration}: {peaks}")
+        joint = ", ".join(f"{name}={value:.4g}"
+                          for name, value in zip(names, summary["joint"]))
+        logger.info(f"Joint posterior maximum after iteration {iteration}: {joint}")
+        if summary["n_modes"] > 1:
+            logger_warn.warning(
+                f"Iteration {iteration}: the posterior has {summary['n_modes']} "
+                f"well-separated modes, i.e. that many different parameter combinations "
+                f"reproduce the measurements comparably well.")
         if summary["gap"]["verdict"] == "inconsistent":
             logger_warn.warning(
                 f"Iteration {iteration}: the per-parameter marginal peaks do not form a "
@@ -1545,7 +1972,10 @@ def write_candidate_report(analysis, output_folder,
     """Write the labelled candidate table and the per-parameter diagnostics.
 
     These sidecars carry the labels and the verdicts that cannot live in the numeric
-    ``user-collocation-points.csv``.
+    ``user-collocation-points.csv``. The candidate table's ``selected`` column carries
+    the outcome of :func:`select_calibrated_parameters`: ``calibrated`` for the parameter
+    set the decision rule reports as the calibration result, ``verify`` for the ones the
+    full complexity model should be run at, and empty for the rest.
 
     Returns
     -------
@@ -1562,13 +1992,26 @@ def write_candidate_report(analysis, output_folder,
     with open(candidates_path, "w", newline="") as csv_file:
         writer = csv.writer(csv_file)
         writer.writerow(["label"] + list(names)
-                        + ["kind", "posterior_weight", "equifinality_verdict",
+                        + ["kind", "posterior_weight", "selected", "equifinality_verdict",
                            "density_percentile", "mahalanobis", "note"])
+        # Which candidate the decision rule picked, and which ones it asks to be run,
+        # so the table can be read without the log next to it.
+        decision = analysis.get("decision") or {}
+        selected_vector = decision.get("vector")
+        must_verify = {label for label, _ in decision.get("must_verify", [])}
         for index, label in enumerate(candidates["labels"]):
-            row = [label] + [f"{value:.10g}" for value in candidates["vectors"][index]]
+            vector = candidates["vectors"][index]
+            row = [label] + [f"{value:.10g}" for value in vector]
+            if selected_vector is not None and np.allclose(vector, selected_vector):
+                selected = "calibrated"
+            elif label in must_verify:
+                selected = "verify"
+            else:
+                selected = ""
             row += [candidates["kinds"][index],
                     "" if np.isnan(candidates["weights"][index])
-                    else f"{candidates['weights'][index]:.4f}"]
+                    else f"{candidates['weights'][index]:.4f}",
+                    selected]
             if label == "marginal_peak":
                 row += [equifinality["verdict"],
                         f"{equifinality['density_percentile']:.2f}",
