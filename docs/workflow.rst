@@ -145,53 +145,81 @@ which target the posterior instead of covering the whole prior.
 What "sufficient" means
 ++++++++++++++++++++++++
 
-After every block,
+"Sufficient" is not a judgement call. After every block,
 :func:`~hydroBayesCal.surrogate.initial_design.initial_design_sufficiency` fits an
-independent Gaussian process to the runs carried out so far and measures five things.
-Each of them breaks BAL in a different way when it fails:
+independent Gaussian process to the runs carried out so far and evaluates the seven
+measurements below. Each of them breaks Bayesian active learning in a different way when
+it fails. The names in the first column are the keys under which the run reports them.
 
 .. list-table::
    :header-rows: 1
-   :widths: 22 18 60
+   :widths: 22 20 58
 
    * - Criterion
-     - Threshold
-     - What its failure means
-   * - Predictivity ``Q2``
-     - median 0.90, worst column 0.70
-     - The emulator cannot predict a parameter set it has not been trained on, so the
-       likelihood surface BAL refines is not the solver's. ``Q2`` is a leave-one-out
-       score, i.e. it is measured at points the emulator did not see; the training fit
+     - Passes when
+     - What it measures, and what its failure means
+   * - ``predictivity``
+     - median :math:`Q^2 \ge` 0.90
+     - Leave-one-out predictivity of the fitted Gaussian process, per output column.
+       Below the threshold the emulator cannot predict a parameter set it has not been
+       trained on, so the likelihood surface BAL refines is not the solver's.
+       :math:`Q^2` is measured at points the emulator did *not* see; the training fit
        itself is always perfect for an interpolating GP and says nothing.
-   * - Error-bar calibration
-     - at least 0.85
-     - Fraction of leave-one-out residuals inside the 95 % predictive interval. Below
-       that the emulator is overconfident, and the active-learning utility is an
-       expectation over exactly those error bars.
-   * - Posterior resolution
-     - at least max(200, 25 d)
+   * - ``worst_column``
+     - lowest :math:`Q^2 \ge` 0.70
+     - The same score for the worst-predicted calibration point. It gets its own
+       criterion because that point enters the joint likelihood with the same weight as
+       every other, so a good median cannot compensate for it.
+   * - ``error_bars``
+     - :math:`\ge` 0.85
+     - Fraction of standardised leave-one-out residuals inside the 95 % predictive
+       interval. Below that the emulator is overconfident, and the active-learning
+       utility is an expectation over exactly those error bars.
+   * - ``posterior_resolution``
+     - :math:`\ge \max(200,\ 25\,d)`
      - Accepted posterior samples. Everything downstream, the maximum included, is
        estimated from the accepted rejection sample; a handful of samples is noise and
        its maximum is a random draw. The check enlarges its own prior sample first, so
        this measures the design and not ``prior_samples``.
-   * - Data-driven shape
-     - at most 0.50
+   * - ``data_driven``
+     - :math:`\le` 0.50
      - Median emulator standard deviation over the observation standard deviation, at the
        accepted samples. Above that, the posterior is a picture of what the emulator does
        not know rather than of what the measurements say.
-   * - Stability
-     - at most 0.25 std, and a log-evidence change of at most 1
-     - How far the posterior moved since the previous block. Needs two blocks, so a first
-       block is never "sufficient". Measured on the posterior *mean*, not on its maximum:
-       with a few hundred accepted samples the maximum wanders by a third of a standard
-       deviation between two rejection samplings of the same emulator, so a criterion
-       built on it would test the random number generator instead of the design.
+   * - ``stability``
+     - :math:`\le` 0.25
+     - Movement of the posterior mean since the previous block, in posterior standard
+       deviations. Measured on the *mean*, not on the maximum: with a few hundred
+       accepted samples the maximum wanders by a third of a standard deviation between
+       two rejection samplings of the same emulator, so a criterion built on it would
+       test the random number generator instead of the design.
+   * - ``evidence_stability``
+     - :math:`|\Delta \log \mathrm{BME}| \le` 1
+     - Change of the log evidence since the previous block. Together with ``stability``
+       this is the only pair that asks the question the ladder actually needs answered,
+       namely whether adding runs still changes the answer.
 
-The verdict is ``sufficient`` when all five pass, ``marginal`` when the emulator and the
-posterior resolution are adequate but the design has not settled, and ``insufficient``
-otherwise. When the ladder reaches the ``init_runs`` ceiling while still insufficient, the
+The first four form the **core**: they describe the emulator and the posterior it
+implies, and they can be evaluated on a single block. The last three are **refinements**,
+and the two stability criteria need a previous block to compare against.
+
+The verdict follows from that:
+
+* ``sufficient`` when **all seven** pass. This, and only this, stops the ladder.
+* ``marginal`` when the core four pass but a refinement does not. The design is usable
+  but has not settled, so the ladder runs the next block.
+* ``insufficient`` when any of the core four fails.
+
+A criterion that cannot yet be evaluated counts as **not passed**, never as passed. The
+first block therefore can never be ``sufficient``, and the ladder always runs at least two
+blocks. That is deliberate: one block can only tell you that the emulator fits the runs it
+has, not that adding runs would stop moving the answer.
+
+When the ladder reaches the ``init_runs`` ceiling while still short of ``sufficient``, the
 calibration proceeds and says so: the posterior maximum it eventually reports has to be
-treated as provisional.
+treated as provisional. The thresholds themselves live in
+:data:`~hydroBayesCal.surrogate.initial_design.DEFAULT_THRESHOLDS` and can be overridden
+per call.
 
 Configuration
 ++++++++++++++

@@ -571,8 +571,8 @@ def initial_design_sufficiency(
 ):
     """Is the initial design good enough to start Bayesian active learning on?
 
-    Five properties are measured, each of which breaks BAL in a different way when it
-    fails:
+    Five properties are measured, reported as the seven criteria of the returned
+    ``criteria`` dictionary. Each breaks BAL in a different way when it fails:
 
     1. **Predictivity** (``q2_median``, ``q2_min``). An emulator that cannot predict a
        point it has not seen gives BAL a likelihood surface with maxima the solver does
@@ -586,10 +586,16 @@ def initial_design_sufficiency(
     4. **Data-driven posterior shape** (``error_ratio``). If the emulator standard
        deviation dominates the observation error, the posterior is a picture of what the
        emulator does not know rather than of what the measurements say.
-    5. **Stability** (``mean_shift``, ``delta_log_bme``). The one criterion that needs
-       two blocks: if the posterior and the evidence stop moving when runs are added, the
+    5. **Stability** (``mean_shift``, ``delta_log_bme``). The one property that needs two
+       blocks: if the posterior and the evidence stop moving when runs are added, the
        design has converged; if they still jump, it has not, whatever the other four say.
        Measured on the posterior mean rather than on its maximum, see :func:`_stability`.
+
+    The verdict is ``sufficient`` only when every criterion passes, which is what stops
+    the staged ladder; ``marginal`` when the first three properties hold but the design
+    has not settled; ``insufficient`` otherwise. A criterion that cannot be evaluated yet
+    counts as not passed rather than as passed, so the first block, which has nothing to
+    compare its stability against, is never ``sufficient``.
 
     The function never raises. It runs between blocks of full-complexity simulations, and
     a diagnostic failure must not abort a calibration that has already cost days.
