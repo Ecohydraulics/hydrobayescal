@@ -395,6 +395,10 @@ class PosteriorPlots:
         """
         Plot marginal posterior distributions for selected Bayesian iterations.
 
+        All posterior subplots use the same histogram bin width and the same
+        histogram bin edges. The common histogram range is determined from the
+        minimum and maximum parameter limits across all selected parameters.
+
         Parameters
         ----------
         posterior_arrays : list of array-like
@@ -421,7 +425,9 @@ class PosteriorPlots:
             Bayesian iterations to plot.
 
         bins : int, default=40
-            Number of histogram bins.
+            Number of histogram bins across the complete global parameter range.
+            Because the same bin edges are used for every subplot, all histograms
+            have exactly the same numerical bin width.
 
         density : bool, default=True
             Whether the histogram represents probability density.
@@ -640,6 +646,84 @@ class PosteriorPlots:
                     param_idx
                 ]
 
+        # ------------------------------------------------------------------
+        # Define COMMON histogram bins for all posterior subplots
+        # ------------------------------------------------------------------
+        # The histogram domain is the complete range covered by all selected
+        # calibration parameters. Therefore every subplot uses exactly the
+        # same numerical bin width and exactly the same bin-edge positions.
+        global_bin_min = float(
+            np.min(
+                x_limits[:, 0]
+            )
+        )
+
+        global_bin_max = float(
+            np.max(
+                x_limits[:, 1]
+            )
+        )
+
+        if (
+                not np.isfinite(global_bin_min)
+                or not np.isfinite(global_bin_max)
+        ):
+            raise ValueError(
+                "The global histogram limits must be finite."
+            )
+
+        if global_bin_max <= global_bin_min:
+            raise ValueError(
+                "Cannot construct histogram bins because the global "
+                "parameter range is zero or negative."
+            )
+
+        if (
+                not isinstance(
+                    bins,
+                    (int, np.integer)
+                )
+                or bins <= 0
+        ):
+            raise ValueError(
+                "bins must be a positive integer."
+            )
+
+        common_bin_edges = np.linspace(
+            global_bin_min,
+            global_bin_max,
+            bins + 1
+        )
+
+        common_bin_width = float(
+            common_bin_edges[1]
+            - common_bin_edges[0]
+        )
+
+        print(
+            "Common histogram configuration:"
+        )
+
+        print(
+            f"  global minimum: "
+            f"{global_bin_min}"
+        )
+
+        print(
+            f"  global maximum: "
+            f"{global_bin_max}"
+        )
+
+        print(
+            f"  number of bins: "
+            f"{bins}"
+        )
+
+        print(
+            f"  common bin width: "
+            f"{common_bin_width}"
+        )
+
         # Results returned by the function
         estimate_results = {}
 
@@ -803,14 +887,14 @@ class PosteriorPlots:
                         "the posterior sample at the same row index."
                     )
 
-                valid_scores = ~np.isnan(
+                valid_scores = np.isfinite(
                     log_likelihood_vector
                 )
 
                 if not np.any(valid_scores):
                     raise ValueError(
                         "All post-rejection log-likelihood values are "
-                        f"NaN for iteration {iteration_idx}."
+                        f"non-finite for iteration {iteration_idx}."
                     )
 
                 valid_sample_indices = np.flatnonzero(
@@ -844,14 +928,17 @@ class PosteriorPlots:
                     f"Joint posterior MAP for iteration "
                     f"{iteration_idx}:"
                 )
+
                 print(
                     f"  posterior sample index: "
                     f"{joint_map_sample_index}"
                 )
+
                 print(
                     f"  maximum log-likelihood: "
                     f"{maximum_loglikelihood}"
                 )
+
                 print(
                     f"  parameter combination: "
                     f"{joint_map_vector}"
@@ -861,6 +948,7 @@ class PosteriorPlots:
             # Create figure
             # --------------------------------------------------------------
             num_rows = 3
+
             num_cols = math.ceil(
                 parameter_num / num_rows
             )
@@ -895,7 +983,9 @@ class PosteriorPlots:
                                    ]
 
                 finite_posterior_values = posterior_vector[
-                    np.isfinite(posterior_vector)
+                    np.isfinite(
+                        posterior_vector
+                    )
                 ]
 
                 if finite_posterior_values.size == 0:
@@ -911,12 +1001,16 @@ class PosteriorPlots:
                 # ----------------------------------------------------------
                 posterior_hist_values, _ = np.histogram(
                     finite_posterior_values,
-                    bins=bins,
+                    bins=common_bin_edges,
                     density=density
                 )
 
                 max_density = (
-                    float(np.max(posterior_hist_values))
+                    float(
+                        np.max(
+                            posterior_hist_values
+                        )
+                    )
                     if posterior_hist_values.size > 0
                     else 0.0
                 )
@@ -931,19 +1025,25 @@ class PosteriorPlots:
                                    ]
 
                     finite_prior_values = prior_vector[
-                        np.isfinite(prior_vector)
+                        np.isfinite(
+                            prior_vector
+                        )
                     ]
 
                     prior_hist_values, _ = np.histogram(
                         finite_prior_values,
-                        bins=bins,
+                        bins=common_bin_edges,
                         density=density
                     )
 
                     if prior_hist_values.size > 0:
                         max_density = max(
                             max_density,
-                            float(np.max(prior_hist_values))
+                            float(
+                                np.max(
+                                    prior_hist_values
+                                )
+                            )
                         )
 
                 # ----------------------------------------------------------
@@ -955,7 +1055,7 @@ class PosteriorPlots:
                     posterior_patches
                 ) = ax.hist(
                     finite_posterior_values,
-                    bins=bins,
+                    bins=common_bin_edges,
                     density=density,
                     alpha=0.75,
                     color='0.35',
@@ -989,9 +1089,8 @@ class PosteriorPlots:
                     # ------------------------------------------------------
                     # Marginal posterior peak
                     # ------------------------------------------------------
-                    # Find the histogram bin containing the highest posterior
-                    # density. This uses the same histogram and the same bins
-                    # that are displayed in the figure.
+                    # The peak is calculated from exactly the same common
+                    # histogram bins displayed in the plot.
                     peak_bin_index = int(
                         np.argmax(
                             posterior_hist_values
@@ -1042,7 +1141,7 @@ class PosteriorPlots:
                         )
 
                     # Use the mean of the actual posterior samples located
-                    # inside the densest marginal posterior region.
+                    # inside the densest marginal posterior bin.
                     if samples_in_peak_bin.size > 0:
 
                         value = float(
@@ -1112,7 +1211,7 @@ class PosteriorPlots:
                         prior_patches
                     ) = ax.hist(
                         finite_prior_values,
-                        bins=bins,
+                        bins=common_bin_edges,
                         density=density,
                         alpha=0.35,
                         color='0.75',

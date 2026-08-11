@@ -123,7 +123,7 @@ def main():
         prior=prior,
         param_values=full_complexity_model.param_values,
         iterations_to_plot=config.plotting["iterations_to_plot"],
-        bins=15,
+        bins=40,
         density=True,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
