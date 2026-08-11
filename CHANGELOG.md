@@ -4,6 +4,17 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The Read the Docs build failed with `ModuleNotFoundError: No module named
+  'threadpoolctl'`. That build installs only `docs/requirements-docs.txt` and mocks the
+  heavy runtime stack through `autodoc_mock_imports`, and `surrogate/initial_design.py`
+  imports `threadpoolctl` directly, which was in neither list. It is now mocked for the
+  docs build and declared in `[project] dependencies`, where a direct import belongs: it
+  arrives with scikit-learn in practice, but relying on that is implicit and the 1.5.0
+  wheel therefore under-declares what it imports.
+
 ## [1.5.0] - 2026-08-11
 
 Two ends of the same problem: whether a calibration finds the *global* maximum of the

@@ -47,6 +47,10 @@ dependencies = [
     "scipy>=1.11",
     "pandas>=2.0",
     "scikit-learn>=1.3",
+    # Imported directly by surrogate/initial_design.py to pin the BLAS thread pool
+    # while fitting the gate emulator. It arrives with scikit-learn in practice, but a
+    # direct import belongs in the direct dependencies.
+    "threadpoolctl>=3.1",
     # data IO
     "h5py>=3.10",
     "openpyxl>=3.1",       # pandas.to_excel engine (function_pool)

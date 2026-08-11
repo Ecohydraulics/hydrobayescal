@@ -61,6 +61,9 @@ autodoc_default_options = {
 autodoc_mock_imports = [
     "scipy",
     "sklearn",
+    # scikit-learn ships threadpoolctl, but the docs build installs neither, and
+    # surrogate/initial_design.py imports it directly to pin the BLAS thread pool.
+    "threadpoolctl",
     "torch",
     "gpytorch",
     "linear_operator",
