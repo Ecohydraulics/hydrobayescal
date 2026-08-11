@@ -4,6 +4,34 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-08-11
+
+A one-line fix with a wide blast radius: the multi-flow TELEMAC driver ignored the
+configured output-extraction window, so the *same* configuration calibrated
+single-flow and multi-flow was fitted to different data.
+
+### Fixed
+- `bal_telemac_multiflow.py` did not read the config's `extraction` block. It calls
+  `run_complex_model`, imported from `bal_telemac.py`, without passing
+  `output_extraction_time` or `n_last`, so it silently took that function's
+  `"mean_last"` default no matter what the configuration asked for. A single-flow run
+  on the same config honoured the setting; a multi-flow run averaged the last frames.
+  On a model marching to steady state from a dry or pre-wetted start, that folds the
+  residual transient into the values the surrogate is trained on, so the two modes
+  disagreed about what was being calibrated with nothing in the logs to say so.
+  `main()` now reads `extraction` and passes both arguments, exactly as
+  `bal_telemac.py` does.
+
+  Only the TELEMAC multiflow driver was affected: the OpenFOAM and Delft3D drivers
+  define their own `run_complex_model` and have no extraction window.
+
+### Added
+- `test_telemac_drivers_pass_the_configured_extraction_window` parses each TELEMAC
+  driver's `main()` and fails if it does not read `config.extraction` and forward
+  both arguments. The defect was invisible because omitting an argument that has a
+  default is not an error, so a test that only imports or runs the driver cannot see
+  it - this one reads the source.
+
 ## [1.4.3] - 2026-08-10
 
 Two bugs that made Bayesian Active Learning unreachable for OpenFOAM and Delft3D, plus

@@ -126,3 +126,41 @@ def test_ering_driver_matches_the_template():
                or "Keep in sync" in line or line == ""
                for line in added), added
     assert all("config_Telemac.py" in line for line in removed), removed
+
+
+# --------------------------------------------------------------------------- #
+# the extraction window has to reach every driver that has one
+# --------------------------------------------------------------------------- #
+def _main_source(path):
+    """Source of the module-level ``main()`` in a driver, parsed not imported."""
+    tree = ast.parse(pathlib.Path(path).read_text())
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "main":
+            return ast.get_source_segment(pathlib.Path(path).read_text(), node)
+    raise AssertionError(f"{pathlib.Path(path).name} has no module-level main()")
+
+
+@pytest.mark.parametrize("driver", [
+    DRIVERS_DIR / "bal_telemac.py",
+    DRIVERS_DIR / "bal_telemac_multiflow.py",
+])
+def test_telemac_drivers_pass_the_configured_extraction_window(driver):
+    """Both TELEMAC drivers must read ``config.extraction`` and pass it on.
+
+    ``bal_telemac_multiflow.py`` imports ``run_complex_model`` from
+    ``bal_telemac.py``, so omitting the argument does not fail - it silently takes
+    that function's ``mean_last`` default. The result was that the same
+    configuration calibrated single-flow and multi-flow fitted *different data*:
+    one honoured the requested extraction window, the other averaged the last
+    frames, which on a run marching to steady state folds the residual transient
+    into the values the surrogate is trained on.
+    """
+    source = _main_source(driver)
+    assert "getattr(config, 'extraction'" in source, (
+        f"{driver.name}'s main() does not read the config's extraction block")
+    assert "output_extraction_time=" in source, (
+        f"{driver.name}'s main() does not pass output_extraction_time to "
+        "run_complex_model, so it falls back to the function default")
+    assert "n_last=" in source, (
+        f"{driver.name}'s main() does not pass n_last, so the averaging window "
+        "would be the function default even when the config sets one")
