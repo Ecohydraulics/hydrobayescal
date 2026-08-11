@@ -111,9 +111,19 @@ def main():
         parameter_distribution=config.sampling["parameter_distribution"],
         parameter_sampling_method=config.sampling["parameter_sampling_method"],
     )
+    # Honour the config's `extraction` block exactly as bal_telemac.py's main()
+    # does. Without this the call falls through to run_complex_model's own default
+    # of "mean_last", so a multi-flow calibration averaged the last frames while a
+    # single-flow one on the same config used whatever the config asked for. On a
+    # run marching to steady state that averages the residual transient into the
+    # values the surrogate is trained on, and the two modes silently disagreed
+    # about what was being calibrated.
+    extraction = getattr(config, 'extraction', {})
     init_collocation_points, model_evaluations = run_complex_model(
         complex_model=multiflow_model,
         experiment_design=exp_design,
+        output_extraction_time=extraction.get('output_extraction_time', "mean_last"),
+        n_last=extraction.get('n_last', extraction.get('n', 80)),
     )
     if not (multiflow_model.complete_bal_mode or multiflow_model.only_bal_mode):
         logger.info("Initial multiflow runs finished (only-init mode): "
