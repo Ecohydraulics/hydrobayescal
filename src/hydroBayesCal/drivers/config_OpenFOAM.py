@@ -2,8 +2,9 @@
 OpenFOAM configuration for HydroBayesCal (interFoam free-surface solver).
 
 Surrogate-assisted Bayesian calibration of an OpenFOAM ``interFoam`` case, e.g.
-the turbulence coefficient ``Cmu`` and/or the wall roughness height ``ks``
-against measured velocities.
+the k-epsilon turbulence coefficients (``Cmu``, ``C1``, ``C2``, ``C3``,
+``sigmak``, ``sigmaEps``) and/or the wall roughness height ``ks`` against
+measured velocities.
 
 Consumed by ``bal_openfoam.py`` via ``--config`` (default: this file); see the
 dictionaries below (``paths``, ``simulation``, ``interfoam``, ``calibration``,
@@ -58,11 +59,15 @@ interfoam = {
 }
 
 # ============================================================================
-# CALIBRATION PARAMETERS - Cmu TURBULENCE COEFFICIENT + ks WALL ROUGHNESS
+# CALIBRATION PARAMETERS - TURBULENCE COEFFICIENTS + ks WALL ROUGHNESS
 # ============================================================================
 calibration = {
-    # Names must match the dispatch in control_openfoam.run_multiple_simulations
-    # (currently "Cmu" -> constant/turbulenceProperties, "ks" -> 0/nut wall BC).
+    # Names must match the dispatch in control_openfoam.run_multiple_simulations:
+    # the kEpsilonCoeffs entries "Cmu", "C1", "C2", "C3", "sigmak" and "sigmaEps"
+    # go to constant/turbulenceProperties, "ks" to the rough-wall BC in 0/nut.
+    # Matching is case-insensitive; anything else is rejected when the model is
+    # constructed, before the first simulation. A coefficient must already exist
+    # in the template's kEpsilonCoeffs subdictionary, or the run stops.
     'parameters': ["Cmu",   # k-epsilon turbulence coefficient
                    "ks"],   # Nikuradse wall roughness height [m]
 

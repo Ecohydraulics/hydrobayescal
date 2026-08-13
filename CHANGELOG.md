@@ -4,7 +4,38 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.6.0] - 2026-08-13
+
+An OpenFOAM release. Until now a k-epsilon calibration could only vary `Cmu`, because the
+parameter dispatch named each supported coefficient in two hardcoded branches. The whole
+`kEpsilonCoeffs` set is now available, the dispatch is table-driven so the next
+coefficient needs no code, and a misspelled parameter name is caught when the model is
+constructed rather than after the initial design has been sampled. TELEMAC and Delft3D
+workflows are unaffected apart from the dependency declaration below.
+
+### Added
+- **The k-epsilon turbulence coefficients are calibration parameters in the OpenFOAM
+  binding.** `sigmaEps` was contributed by Federica Scolari; the dispatch it was added
+  to is now table-driven, so `Cmu`, `C1`, `C2`, `C3`, `sigmak` and `sigmaEps` are all
+  supported and listed in `openfoam.control_openfoam.KEPSILON_COEFFS`. Config names are
+  matched case-insensitively, but the key written into `constant/turbulenceProperties`
+  comes from that table rather than from what the user typed, because OpenFOAM's
+  dictionary lookup is case-sensitive and falls back to a built-in default for a
+  coefficient it does not find. A coefficient absent from the case template's
+  `kEpsilonCoeffs` subdictionary still stops the run, which is deliberate: writing
+  nothing would leave every simulation on the same value while the surrogate was told
+  the parameter had changed.
+
+### Changed
+- **Unknown OpenFOAM `calibration_parameters` are rejected when the model is
+  constructed**, alongside the existing check on `calibration_quantities`. The dispatch
+  in `run_multiple_simulations` still raises for a name it cannot route, but that fires
+  only after the experimental design has been sampled and a case directory copied, so a
+  typo used to cost a full setup before it was reported.
+- The `Cmu` and `sigmaEps` branches in `OpenFOAMController.update_model_controls` and in
+  `OpenFOAMModel.run_multiple_simulations` were verbatim copies of each other. Both
+  dispatch sites now read the coefficient table, so a further coefficient needs no code.
+  No behaviour change for `Cmu`, `ks` or `sigmaEps`.
 
 ### Fixed
 - The Read the Docs build failed with `ModuleNotFoundError: No module named
@@ -557,6 +588,9 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.6.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.6.0
+[1.5.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.5.0
+[1.4.4]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.4
 [1.4.3]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.3
 [1.4.2]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.2
 [1.4.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.1
