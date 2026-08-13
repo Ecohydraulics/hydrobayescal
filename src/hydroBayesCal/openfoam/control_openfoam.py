@@ -332,6 +332,17 @@ class OpenFOAMController:
                 )
                 continue
 
+            if patch == "sigmaEps":
+                value = float(param["value"])
+                print("Updating model coefficient 'sigmaEps' in constant/turbulenceProperties...")
+                self.update_dictionary_entry(
+                    file="constant/turbulenceProperties",
+                    subdict="kEpsilonCoeffs",
+                    key="sigmaEps",
+                    value=value,
+                )
+                continue
+
             if patch == "ks":
                 value = float(param["value"])
                 print(f"Updating Ks={value} on patch '{param['patch']}' in 0/nut...")
@@ -874,6 +885,11 @@ class OpenFOAMModel(HydroSimulations):
                         "patch": self.ks_patch,
                         "field_type": "scalar",
                         "bc_type": "nutkRoughWallFunction",
+                        "value": float(pval),
+                    }
+                elif pname.lower() == "sigmaeps":
+                    update_params["sigmaEps"] = {
+                        "file": "constant/turbulenceProperties",
                         "value": float(pval),
                     }
                 else:
