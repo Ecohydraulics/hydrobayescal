@@ -15,6 +15,24 @@ import pyvista as pv
 from scipy import spatial
 
 
+#: ``kEpsilonCoeffs`` entries in ``constant/turbulenceProperties`` that may be used as
+#: calibration parameters, mapping the lowercase config spelling to the exact case
+#: OpenFOAM expects in the case file. Config names are matched case-insensitively; the
+#: dictionary key written into the case is not, so it is taken from this table rather
+#: than from what the user typed. The coefficient must already be present in the
+#: template's ``kEpsilonCoeffs`` subdictionary, otherwise the run fails loudly:
+#: OpenFOAM falls back to built-in defaults for coefficients it does not find, so a
+#: silently skipped write would leave every run using the same value.
+KEPSILON_COEFFS = {
+    "cmu": "Cmu",
+    "c1": "C1",
+    "c2": "C2",
+    "c3": "C3",
+    "sigmak": "sigmak",
+    "sigmaeps": "sigmaEps",
+}
+
+
 class OpenFOAMController:
     def __init__(self, case_dir: str):
         self.case_dir = os.path.normpath(case_dir)
@@ -313,21 +331,22 @@ class OpenFOAMController:
         with open(path, "w") as f:
             f.writelines(new_lines)
 
-    # Dispatches all calibration parameter updates: Cmu goes to turbulenceProperties,
-    # everything else is written as a boundary condition; alpha.water fields are skipped.
+    # Dispatches all calibration parameter updates: k-epsilon coefficients go to
+    # turbulenceProperties, everything else is written as a boundary condition;
+    # alpha.water fields are skipped.
     def update_model_controls(self, params: Dict[str, Dict[str, Any]]) -> None:
         skip_fields = {"alpha.water", "alpha.water.orig"}
 
         for patch, param in params.items():
             file = param["file"]
 
-            if patch == "Cmu":
+            if patch in KEPSILON_COEFFS.values():
                 value = float(param["value"])
-                print("Updating model coefficient 'Cmu' in constant/turbulenceProperties...")
+                print(f"Updating model coefficient '{patch}' in constant/turbulenceProperties...")
                 self.update_dictionary_entry(
                     file="constant/turbulenceProperties",
                     subdict="kEpsilonCoeffs",
-                    key="Cmu",
+                    key=patch,
                     value=value,
                 )
                 continue
@@ -679,6 +698,12 @@ class OpenFOAMModel(HydroSimulations):
         # nothing and only surfaced much later as a nonsensical surrogate.
         self._validate_calibration_quantities()
 
+        # Same reasoning for the parameter names. The dispatch in
+        # run_multiple_simulations raises NotImplementedError for a name it cannot
+        # route, but only once the experimental design has been sampled and a case
+        # directory copied, so a typo cost a full setup before it was reported.
+        self._validate_calibration_parameters()
+
         # The base class sets these only when a calibration file is present;
         # provide robust fallbacks so the BAL driver never sees None.
         if self.num_calibration_quantities is None:
@@ -728,6 +753,29 @@ class OpenFOAMModel(HydroSimulations):
             raise ValueError(
                 f"Unknown calibration_quantities for the OpenFOAM binding: {unknown}. "
                 f"Valid field names are: {', '.join(self.EXTRACTABLE_QUANTITIES)}."
+            )
+
+    def _validate_calibration_parameters(self):
+        """Check every calibration parameter against what the dispatch can route.
+
+        Raises
+        ------
+        ValueError
+            If ``calibration_parameters`` names a parameter that is neither ``ks``
+            nor a :data:`KEPSILON_COEFFS` entry, listing the offending names and
+            the valid ones.
+        """
+        valid = tuple(KEPSILON_COEFFS.values()) + ("ks",)
+        unknown = [
+            p for p in (self.calibration_parameters or [])
+            if p.lower() not in KEPSILON_COEFFS and p.lower() != "ks"
+        ]
+        if unknown:
+            raise ValueError(
+                f"Unknown calibration_parameters for the OpenFOAM binding: {unknown}. "
+                f"Valid parameter names are: {', '.join(valid)}. Names are matched "
+                f"case-insensitively. To calibrate something else, add a branch to the "
+                f"dispatch in OpenFOAMModel.run_multiple_simulations."
             )
 
     def _check_k_in_controldict(self):
@@ -863,8 +911,8 @@ class OpenFOAMModel(HydroSimulations):
             # Build params dict for update_model_controls
             update_params = {}
             for pname, pval in zip(self.calibration_parameters, params):
-                if pname.lower() == "cmu":
-                    update_params["Cmu"] = {
+                if pname.lower() in KEPSILON_COEFFS:
+                    update_params[KEPSILON_COEFFS[pname.lower()]] = {
                         "file": "constant/turbulenceProperties",
                         "value": float(pval),
                     }
