@@ -352,13 +352,13 @@ class MetricsPlots:
 
                 if q_idx in [0, 2]:  # first and third columns
                     if r_idx == 0:
-                        ymin, ymax = 0.0, 0.030
+                        ymin, ymax = 0.0, 0.005
                     elif r_idx == 1:
                         ymin, ymax = 0.0, 0.10
 
                 elif q_idx == 1:  # second column
                     if r_idx == 0:
-                        ymin, ymax = 0.0, 0.075
+                        ymin, ymax = 0.0, 0.010
                     elif r_idx == 1:
                         ymin, ymax = 0.0, 0.25
 

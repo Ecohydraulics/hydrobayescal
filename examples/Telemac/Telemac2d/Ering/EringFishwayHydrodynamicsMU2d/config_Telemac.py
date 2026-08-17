@@ -26,7 +26,7 @@ paths = {
     'case_template_dir': os.path.join(BASE_DIR, ""),
     'model_dir':         os.path.join(BASE_DIR, "simulationFiles"),
     'res_dir':           os.path.join(BASE_DIR),
-    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measurements-calibration-EringCalib-detailed.csv"),
+    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measurements-calibration-EringCalib-detailed-updated.csv"),
 }
 
 # ============================================================================
@@ -58,11 +58,11 @@ calibration = {
                                     "zone6"], # Run,
 
     # Parameter ranges [min, max] in the same order as 'parameters' above.
-    'param_values': [     [0.002, 0.6],  # zone2
-                          [0.002, 0.6],  # zone3
-                          [0.002, 0.6],  # zone4
-                          [0.002, 0.6],  # zone5
-                          [0.002, 0.6]], #zone6
+    'param_values': [     [0.001, 0.6],  # zone2
+                          [0.001, 0.6],  # zone3
+                          [0.001, 0.6],  # zone4
+                          [0.001, 0.6],  # zone5
+                          [0.001, 0.6]], #zone6
 
     # Quantities to extract from simulation - USE STANDARD NAMES
     'extraction_quantities': ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
@@ -86,9 +86,9 @@ calibration = {
     #                           conditions). Independent of the emulator and NOT
     #                           supplied by include_surrogate_error. Set it only if
     #                           you can defend a value.
-    'measurement_error':      0.0,
-    'gpe_error':              0.0,
-    'model_structural_error': 0.0,
+    'measurement_error':      0.20,
+    'gpe_error':              0.1,
+    'model_structural_error': 0.15,
 
     'dict_output_name': "extraction-data",
 }
@@ -107,7 +107,7 @@ sampling = {
 
     # BAL specific0
     'eval_steps':    5,      # Save surrogate and evaluate every iteration
-    'prior_samples': 28000,
+    'prior_samples': 25000,
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
@@ -127,6 +127,10 @@ extraction = {
     # steps (steady state), "last" takes the final one, "index" a fixed index.
     'output_extraction_time': "mean_last",
     'n_last':                 80,
+    'calibration_quantities': ["WATER DEPTH","SCALAR VELOCITY"],
+    'extraction_quantities': ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
+    'time_index': 10,
+    'input_slf_file' : "results2m3_preBAL_1.slf",
 }
 
 # ============================================================================
@@ -157,7 +161,7 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0, 1, 2, 3, 4],
-    'iterations_to_plot': [31],
+    'iterations_to_plot': [75],
     #-------------------------
     #posterior plotting options
     #-------------------------

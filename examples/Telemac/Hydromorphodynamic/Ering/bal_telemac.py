@@ -133,6 +133,7 @@ def run_complex_model(complex_model,
                       n_last=80,
                       adaptive_init_runs=True,
                       init_runs_min=None,
+                      gaia_layer_average=None,
                       ):
     """
     Executes the hydrodynamic model for a given experiment design and returns the collocation points,
@@ -178,7 +179,8 @@ def run_complex_model(complex_model,
             adaptive=adaptive_init_runs,
             init_runs_min=init_runs_min,
             output_extraction_time=output_extraction_time,
-            n=n_last)
+            n=n_last,
+            gaia_layer_average=gaia_layer_average,)
     else:
         try:
             model_outputs = complex_model.output_processing(output_data_path=os.path.join(complex_model.restart_data_folder,
@@ -207,6 +209,9 @@ def run_bal_model(collocation_points,
                   gp_library="gpy",  # By default
                   include_surrogate_error=True,
                   bal_exploration_tradeoff="auto",
+                  output_extraction_time="mean_last",
+                  n_last=80,
+                  gaia_layer_average=None,
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -652,9 +657,10 @@ def run_bal_model(collocation_points,
                                                        bal_iteration=bal_iteration,
                                                        bal_new_set_parameters=new_tp,
                                                        complete_bal_mode=complex_model.complete_bal_mode,
-                                                       output_extraction_time="mean_last",
-                                                       n=40,
-                                                       validation=complex_model.validation)
+                                                       output_extraction_time=output_extraction_time,
+                                                       n=n_last,
+                                                       validation=complex_model.validation,
+                                                       gaia_layer_average=gaia_layer_average,)
 
                 model_outputs = complex_model.model_evaluations
 
@@ -726,6 +732,7 @@ def main():
         n_last=extraction.get('n_last', extraction.get('n', 80)),
         adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
         init_runs_min=config.sampling.get('init_runs_min', None),
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None)
     )
     if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
         logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
@@ -742,6 +749,7 @@ def main():
         gp_library=config.sampling['gp_library'],
         include_surrogate_error=config.sampling.get('include_surrogate_error', True),
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None)
     )
 
 if __name__ == "__main__":

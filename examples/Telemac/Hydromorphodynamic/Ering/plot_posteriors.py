@@ -1,7 +1,4 @@
 """
-Ering case plots: copy of src/hydroBayesCal/drivers/plot_posteriors.py with config_Ering.py as the
-default configuration. Keep in sync with the template.
-
 Code that plots BAL posterior results.
 
 Plots:
@@ -38,8 +35,8 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="config_Ering.py",
-        help="Path to Python configuration file. Default: config_Ering.py"
+        default="config.py",
+        help="Path to Python configuration file. Default: config.py"
     )
 
     args = parser.parse_args()
@@ -68,7 +65,7 @@ def main():
     # ---------------------------------------------------------------------
     # User settings
     # ---------------------------------------------------------------------
-    iterations_to_plot = config.plotting["iterations_to_plot"]  # BAL iteration to plot (0-based index)
+    iterations_to_plot = config.plotting["iterations_to_plot"] # BAL iteration to plot (0-based index)
 
 
 
@@ -82,7 +79,8 @@ def main():
 
     posterior_arrays = bayesian_data["posterior"]
     prior = bayesian_data["prior"]
-    post_loglikelihood = bayesian_data["post_loglikelihood"]
+    post_loglikelihood = None
+    # print(post_loglikelihood)
 
     # ---------------------------------------------------------------------
     # Find last valid posterior if requested iteration is empty
@@ -91,48 +89,49 @@ def main():
         i for i, posterior in enumerate(posterior_arrays)
         if posterior is not None and np.asarray(posterior).size > 0
     ]
-
     if len(valid_posterior_iterations) == 0:
         raise ValueError("No valid posterior found in BAL_dictionary.pkl")
 
     last_valid_iteration = valid_posterior_iterations[-1]
-
-    if iterations_to_plot not in valid_posterior_iterations:
+    if iterations_to_plot[0] not in valid_posterior_iterations:
         print(
             f"Iteration {iterations_to_plot} has no valid posterior. "
             f"Using last valid posterior iteration: {last_valid_iteration}"
         )
         iterations_to_plot = last_valid_iteration
-
     print(f"Plotting posterior iteration: {iterations_to_plot}")
-
     # ---------------------------------------------------------------------
     # Plot BME and RE evolution
     # ---------------------------------------------------------------------
     # plotter.plot_bme_re(
     #     bayesian_dict=bayesian_data,
-    #     num_bal_iterations=iterations_to_plot,
+    #     num_bal_iterations=config.plotting["parameter_indices"][0],
     #     plot_type="both"
     # )
 
     # ---------------------------------------------------------------------
     # Plot posterior updates
     # ---------------------------------------------------------------------
+# plotting posterior options
+    # "posterior_mean",
+    # "posterior_marginal_peak",
+    # "joint_posterior_MAP"
+
     map_results = plotter.plot_posterior_updates(
         posterior_arrays=posterior_arrays,
-        posterior_scores=post_loglikelihood,
         parameter_names=config.plotting["parameter_names"],
         prior=prior,
         param_values=full_complexity_model.param_values,
-<<<<<<< HEAD
-        iterations_to_plot=[iterations_to_plot],
+        iterations_to_plot=config.plotting["iterations_to_plot"],
         bins=40,
+        density=True,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
-        parameter_indices = config.plotting["parameter_indices"],
-        best_estimate_value="posterior_marginal_peak",
+        parameter_indices=config.plotting["parameter_indices"],
+        best_estimate_value=config.plotting['posterior_plotting_option'],
+        post_loglikelihood_arrays=post_loglikelihood
     )
-
+    
     # ---------------------------------------------------------------------
     # Per-parameter optimum over the BAL iterations, and whether the combination
     # of those per-parameter optima is a jointly plausible parameter set.
@@ -147,28 +146,7 @@ def main():
         bayesian_dict=bayesian_data,
         parameter_names=config.calibration["parameters"],
         param_values=full_complexity_model.param_values,
-=======
-        iterations_to_plot=[0],
-        bins=15,
-        density=True,
-        plot_prior=True,
-        parameter_units=config.plotting["parameter_units"],
-        parameter_indices=config.plotting["parameter_indices"],
-        best_estimate_value="posterior_MAP"
->>>>>>> accounted for  meas_erros, model_errors,modified plots for MAP after inference
     )
-    print(map_results)
-    # plotter.plot_posterior_updates(
-    #     posterior_arrays=posterior_arrays,
-    #     parameter_names=config.plotting["parameter_names"],
-    #     prior=prior,
-    #     param_values=full_complexity_model.param_values,
-    #     iterations_to_plot=[iterations_to_plot],
-    #     bins=12,
-    #     plot_prior=True,
-    #     parameter_units=config.plotting["parameter_units"],
-    #     parameter_indices = config.plotting["parameter_indices"],
-    # )
 
 
 if __name__ == "__main__":

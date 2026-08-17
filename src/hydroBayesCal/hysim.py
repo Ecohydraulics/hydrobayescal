@@ -466,12 +466,12 @@ class HydroSimulations(ABC):
             f"{type(self).__name__} does not implement run_single_simulation()."
         )
 
-    def set_observations_and_variances( #This method was modified from the main version because the measurement erros and the model errors are assigned in the .csv file externally because they depend on the measurement device and the model structure and not on the user at each measurement point. The gpe error is assigned by the user because it depends on the surrogate model.
+    def set_observations_and_variances(
             self,
             calibration_pts_file_path,
             calibration_quantities,
             extraction_quantities,
-            gpe_error=0.10,
+            gpe_error=0.0,
             measurement_error=0.0,
             model_structural_error=0.0):
         """
@@ -479,94 +479,77 @@ class HydroSimulations(ABC):
 
         Total variance is computed as::
 
-            variance = (
-                measurement_error**2
-                + gpe_error**2
-                + model_structural_error**2
-            )
+            variance = (measurement_error**2 + gpe_error**2
+                        + model_structural_error**2 + site_specific_error**2)
 
-        The measurement and model structural errors are read directly from the
-        calibration dataframe:
+        The three relative terms are deliberately kept apart, because they describe
+        different things and lumping them into one flat factor is what allowed the
+        emulator uncertainty to be counted twice:
 
-        - ``measurement_error`` is read from the ``<target>_MEAS_ERROR`` columns.
-        - ``model_structural_error`` is read from the
-          ``<target>_MODEL_ERROR`` columns.
-        - ``gpe_error`` is supplied as a relative fraction of the measured value.
-
-        The ``measurement_error`` and ``model_structural_error`` function
-        arguments are retained for compatibility but are not used.
+        - ``measurement_error``: the instrument or campaign is imprecise. A fraction
+          of the measured value.
+        - ``gpe_error``: flat stand-in for the emulator's own uncertainty, a fraction
+          of the measured value. Leave at 0.0 while the driver runs with
+          ``include_surrogate_error=True``, which supplies the real per-prediction
+          GPE standard deviation.
+        - ``model_structural_error``: the solver itself is an imperfect description
+          of the site. A fraction of the measured value, independent of the emulator
+          and never supplied by ``include_surrogate_error``.
+        - ``site_specific_error`` is read from the ``<target>_ERROR`` columns and is
+          already in the physical units of the corresponding calibration target.
         """
 
         calibration_pts_df = pd.read_csv(calibration_pts_file_path)
 
-        # Resolve the required columns case-insensitively.
-        column_lookup = {
-            col.lower(): col
-            for col in calibration_pts_df.columns
-        }
+        # Resolve the required <quantity>_DATA / <quantity>_ERROR columns
+        # case-insensitively, so both the Telemac (e.g. "WATER DEPTH_DATA") and
+        # OpenFOAM (e.g. "U_x_DATA") naming conventions work regardless of the
+        # exact case used in the CSV header.
+        column_lookup = {col.lower(): col for col in calibration_pts_df.columns}
 
         observation_columns = []
-        measurement_error_columns = []
-        model_error_columns = []
+        error_columns = []
         missing_columns = []
 
         for quantity in calibration_quantities:
-            obs_actual = column_lookup.get(
-                f"{quantity}_DATA".lower()
-            )
-            meas_err_actual = column_lookup.get(
-                f"{quantity}_MEAS_ERROR".lower()
-            )
-            model_err_actual = column_lookup.get(
-                f"{quantity}_MODEL_ERROR".lower()
-            )
-
+            obs_actual = column_lookup.get(f"{quantity}_DATA".lower())
+            err_actual = column_lookup.get(f"{quantity}_ERROR".lower())
             if obs_actual is not None:
                 observation_columns.append(obs_actual)
             else:
                 missing_columns.append(f"{quantity}_DATA")
-
-            if meas_err_actual is not None:
-                measurement_error_columns.append(meas_err_actual)
+            if err_actual is not None:
+                error_columns.append(err_actual)
             else:
-                missing_columns.append(f"{quantity}_MEAS_ERROR")
-
-            if model_err_actual is not None:
-                model_error_columns.append(model_err_actual)
-            else:
-                missing_columns.append(f"{quantity}_MODEL_ERROR")
+                missing_columns.append(f"{quantity}_ERROR")
 
         if missing_columns:
             raise ValueError(
                 f"Missing required columns in calibration file: {missing_columns}"
             )
 
-        observations_2d = calibration_pts_df[
-            observation_columns
-        ].to_numpy(dtype=float)
+        observations_2d = calibration_pts_df[observation_columns].to_numpy(dtype=float)
 
-        measurement_errors_2d = calibration_pts_df[
-            measurement_error_columns
-        ].to_numpy(dtype=float)
-
-        structural_errors_2d = calibration_pts_df[
-            model_error_columns
-        ].to_numpy(dtype=float)
+        site_specific_errors_2d = calibration_pts_df[error_columns].to_numpy(dtype=float)
 
         abs_observations_2d = np.abs(observations_2d)
 
+        measurement_errors_2d = abs_observations_2d * measurement_error
         gpe_errors_2d = abs_observations_2d * gpe_error
+        structural_errors_2d = abs_observations_2d * model_structural_error
 
         observations = observations_2d.flatten().reshape(1, -1)
 
         measurement_errors = measurement_errors_2d.flatten()
         gpe_errors = gpe_errors_2d.flatten()
         structural_errors = structural_errors_2d.flatten()
+        site_specific_errors = site_specific_errors_2d.flatten()
 
         variances = (
                 measurement_errors ** 2
                 + gpe_errors ** 2
                 + structural_errors ** 2
+                + site_specific_errors ** 2
         )
 
         n_loc = len(calibration_pts_df)

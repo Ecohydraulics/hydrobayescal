@@ -79,7 +79,7 @@ def main():
 
     posterior_arrays = bayesian_data["posterior"]
     prior = bayesian_data["prior"]
-    post_loglikelihood = bayesian_data["post_loglikelihood"]
+    post_loglikelihood = None
     # print(post_loglikelihood)
 
     # ---------------------------------------------------------------------
@@ -123,7 +123,7 @@ def main():
         prior=prior,
         param_values=full_complexity_model.param_values,
         iterations_to_plot=config.plotting["iterations_to_plot"],
-        bins=40,
+        bins=15,
         density=True,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],

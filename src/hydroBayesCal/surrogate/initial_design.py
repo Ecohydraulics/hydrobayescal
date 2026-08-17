@@ -1061,7 +1061,7 @@ def run_staged_initial_design(complex_model, experiment_design, adaptive=True,
         complex_model.run_multiple_simulations(
             collocation_points=collocation_points,
             complete_bal_mode=complex_model.complete_bal_mode,
-            validation=complex_model.validation,
+            validation=complex_model.validation
             **run_kwargs)
         return collocation_points, complex_model.model_evaluations
 
