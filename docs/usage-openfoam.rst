@@ -53,7 +53,8 @@ usual OpenFOAM directory structure:
      - ``controlDict``, ``fvSchemes``, ``fvSolution``, ``decomposeParDict``.
    * - ``constant/``
      - Mesh (``polyMesh``), ``transportProperties``, ``turbulenceProperties``
-       (e.g. ``kEpsilonCoeffs`` for the ``Cmu`` coefficient).
+       (the ``kEpsilonCoeffs`` subdictionary holds the calibratable turbulence
+       coefficients).
    * - ``0/``
      - Initial/boundary fields (``U``, ``p_rgh``, ``alpha.water``, ``k``,
        ``epsilon``, ``nut`` …).
@@ -99,14 +100,33 @@ Calibration parameters
 -----------------------
 
 OpenFOAM calibration parameters map to model coefficients and boundary/
-dictionary entries that ``OpenFOAMController`` writes into the case, for example:
+dictionary entries that ``OpenFOAMController`` writes into the case:
 
-* **Turbulence coefficient** ``Cmu`` in ``constant/turbulenceProperties``
-  (``kEpsilonCoeffs``).
-* **Wall roughness** ``ks`` applied as a boundary condition (e.g. on a wall
-  patch in ``0/nut``).
+* **k-epsilon turbulence coefficients** in the ``kEpsilonCoeffs``
+  subdictionary of ``constant/turbulenceProperties``. The supported names are
+  ``Cmu``, ``C1``, ``C2``, ``C3``, ``sigmak`` and ``sigmaEps``, listed in
+  ``hydroBayesCal.openfoam.control_openfoam.KEPSILON_COEFFS``.
+* **Wall roughness** ``ks`` applied as a boundary condition on the
+  ``nutkRoughWallFunction`` patch in ``0/nut``. The patch is auto-detected from
+  the case template.
 * Other **boundary-condition values** or **dictionary entries**, updated via
-  ``update_boundary_condition`` / ``update_dictionary_entry``.
+  ``update_boundary_condition`` / ``update_dictionary_entry`` by code driving
+  ``OpenFOAMController`` directly.
+
+Parameter names are matched case-insensitively, so ``"sigmaeps"`` and
+``"sigmaEps"`` both work; the key written into the case file always uses the
+spelling OpenFOAM expects. Any other name raises a ``ValueError`` when the model
+is constructed, before a simulation starts.
+
+.. important::
+
+   A coefficient must already be present in the case template's
+   ``kEpsilonCoeffs`` subdictionary, otherwise the run stops with
+   ``ValueError: Key '<name>' not found``. This is deliberate: OpenFOAM falls
+   back to a built-in default for any coefficient it does not find in the
+   dictionary, so a write that quietly did nothing would leave every run of the
+   calibration using the same value while the surrogate was told the parameter
+   had changed.
 
 ``calibration_quantities`` uses the standard field names. The OpenFOAM binding
 extracts ``"U_x"``, ``"U_y"``, ``"U_z"``, ``"U_MAG"`` (velocity components and
