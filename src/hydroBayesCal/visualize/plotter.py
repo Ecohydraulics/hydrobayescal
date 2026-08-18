@@ -5,6 +5,7 @@ The BayesianPlotter groups thematic plot mixins; the individual plot
 implementations live in the sibling modules of this package.
 """
 
+from hydroBayesCal.visualize.agreement_plots import AgreementPlots
 from hydroBayesCal.visualize.bal_plots import BALPlots
 from hydroBayesCal.visualize.base import PlotterBase
 from hydroBayesCal.visualize.calibration_assessment import CalibrationAssessment
@@ -19,6 +20,7 @@ class BayesianPlotter(
     ModelComparisonPlots,
     MetricsPlots,
     CalibrationAssessment,
+    AgreementPlots,
     PlotterBase,
 ):
     pass

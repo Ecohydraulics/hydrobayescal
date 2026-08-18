@@ -19,6 +19,7 @@ from hydroBayesCal.surrogate.gpe_skl import *
 from hydroBayesCal.surrogate.gpe_gpytorch import *
 from hydroBayesCal.function_pool import *
 from hydroBayesCal.surrogate.posterior_analysis import ITERATION_KEYS, record_iteration
+from hydroBayesCal.surrogate.target_agreement import finalize_target_agreement
 from hydroBayesCal.surrogate.initial_design import (
     log_initial_design,
     recommended_init_runs,
@@ -247,6 +248,12 @@ def run_bal_model(collocation_points,
     else:
         n_evals = math.ceil(n_iter / eval_steps) + 1
     new_tp = None
+    bi_gpe = None
+    # "Before calibration" in the final quality check means the initial design, and
+    # model_outputs grows by one row per BAL iteration below, so the block has to be
+    # taken now. In only_bal_mode the stored outputs are already filtered to init_runs.
+    initial_model_outputs = (None if model_outputs is None
+                             else np.asarray(model_outputs)[:experiment_design.n_init_samples])
     logger.info(f"<<< Will run ({n_iter + 1}) GP training iterations and ({n_evals}) GP evaluations. >>> ")
     # Logged unconditionally so an archived logfile.log records which likelihood
     # convention produced its numbers.
@@ -561,6 +568,19 @@ def run_bal_model(collocation_points,
             print("BAL data successfully saved.")
         except Exception as e:
             print(f"An error occurred while saving the dictionary: {e}")
+    # Report-only closing quality check, in observation rather than parameter space:
+    # modeled against measured calibration targets before calibration (the initial
+    # full-complexity design) and after it (the posterior predictive of the final
+    # surrogate), with the measurement uncertainty as error bars and the 1:1 line as the
+    # reference. It states whether a systematic over- or underestimation survived the
+    # calibration - the mismatch a calibration parameter such as roughness can still
+    # remove - or whether the residuals are scatter that it cannot. Never raises.
+    finalize_target_agreement(
+        complex_model=complex_model,
+        bayesian_dict=bayesian_dict,
+        initial_model_outputs=initial_model_outputs,
+        posterior_predictions=getattr(bi_gpe, 'posterior_output', None),
+    )
     return bayesian_dict, collocation_points
 
 def main():
