@@ -84,6 +84,17 @@ calibrated parameter set; see :ref:`calibrated-parameters` for the workflow.
    :members:
    :show-inheritance:
 
+Agreement with the calibration targets
+++++++++++++++++++++++++++++++++++++++
+
+Modeled against measured calibration targets before and after calibration, the verdict
+that separates a systematic over- or underestimation from scatter, and the closing
+post-processing step of every driver; see :ref:`target-agreement` for the workflow.
+
+.. automodule:: hydroBayesCal.surrogate.target_agreement
+   :members:
+   :show-inheritance:
+
 Result extraction
 -----------------
 
@@ -97,6 +108,10 @@ Visualization
 -------------
 
 .. automodule:: hydroBayesCal.visualize.plotter
+   :members:
+   :show-inheritance:
+
+.. automodule:: hydroBayesCal.visualize.agreement_plots
    :members:
    :show-inheritance:
 

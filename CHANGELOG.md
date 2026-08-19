@@ -4,6 +4,42 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-18
+
+### Added
+- **Modeled vs. measured calibration targets as the closing step of every calibration.**
+  Each `bal_*` driver now writes `plots/<targets>/calibration-target-agreement.png|svg`
+  and logs the matching verdicts: one panel per calibration target and calibration state,
+  measured values on the x-axis, modeled values on the y-axis, open black circles with the
+  measurement uncertainty as error bars, against the 45-degree line of perfect agreement.
+  "Before calibration" is the initial-design ensemble of full-complexity runs, "after
+  calibration" the posterior predictive of the final surrogate, so the figure shows what
+  the calibration bought in observation space, which the parameter-space results of
+  `posterior_analysis` cannot. New modules `surrogate/target_agreement.py` (analysis,
+  report-only) and `visualize/agreement_plots.py` (figure, also available on
+  `BayesianPlotter`).
+- **A verdict per calibration target that separates a systematic deviation from scatter.**
+  A mean residual above both a 2 % deadband and the standard error of the mean measurement
+  uncertainty, with at least 60 % of the calibration points on the same side of the 1:1
+  line, is reported as a systematic over- or underestimation, i.e. a bias a calibration
+  parameter can still remove. Residuals that change sign across the calibration points are
+  reported as scatter, which no global parameter value can fix. The
+  roughness-identifiability diagnostic runs on both states and its reading appears in the
+  column titles, so the figure states whether roughness was the identifiable calibration
+  parameter, whether the calibration moved it, or whether roughness was never the issue.
+- **`drivers/plot_target_agreement.py`** reproduces the figure from an archived
+  `BAL_dictionary.pkl` with different thresholds, units or labels. `--config` uses the
+  TELEMAC result-folder layout; `--bal-dictionary` needs neither a configuration nor a
+  model instance and works for TELEMAC, OpenFOAM and Delft3D results alike.
+- The series behind the figure are stored in `BAL_dictionary.pkl` under the new
+  `target_agreement` key (additive, read with `.get`, absent from older result files).
+
+### Changed
+- `hydroBayesCal.visualize` imports `BayesianPlotter` lazily (PEP 562 module
+  `__getattr__`). `from hydroBayesCal.visualize import BayesianPlotter` is unchanged, but
+  a single plot module no longer drags in the dependencies of every other one, so the
+  closing agreement figure survives a missing dependency of an unrelated plot.
+
 ## [1.6.0] - 2026-08-13
 
 An OpenFOAM release. Until now a k-epsilon calibration could only vary `Cmu`, because the
@@ -588,6 +624,7 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.7.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.7.0
 [1.6.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.6.0
 [1.5.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.5.0
 [1.4.4]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.4.4
