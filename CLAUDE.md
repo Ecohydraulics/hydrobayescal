@@ -120,6 +120,13 @@ without re-running the solver.
 * `surrogate/bal_functions.py`: `BayesianInference` (likelihood, rejection sampling, BME/RE/ELPD/IE)
   and `SequentialDesign` (candidate exploration plus the `dkl`/`bme` utility functions).
 * `surrogate/exploration.py`, `doepy/`: candidate generation and design-of-experiments helpers.
+* `surrogate/target_agreement.py`: the report-only closing step every `bal_*` driver runs
+  after the BAL loop. Modeled vs. measured calibration targets before calibration (the
+  initial-design ensemble) and after it (the posterior predictive, i.e.
+  `BayesianInference.posterior_output` of the last iteration), the verdict that separates
+  a systematic over-/underestimation from scatter, and the figure in
+  `visualize/agreement_plots.py`. Stores its series in `BAL_dictionary.pkl` under
+  `target_agreement`; `drivers/plot_target_agreement.py` replots them. Never raises.
 
 ### Output layout
 

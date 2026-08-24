@@ -14,6 +14,7 @@ and adapt them to your project; they are not part of the installable
 | `derive_calibrated_parameters.py` | Post-calibration: per-parameter marginal optima, joint posterior optimum, equifinality diagnostic, and the candidate parameter sets for the final full-complexity runs |
 | `telemac_extract.py` | Extract model outputs from a TELEMAC result file (.slf) at calibration points |
 | `assess_calibration.py` | Post-calibration assessment of surrogate and full-complexity model outputs |
+| `plot_target_agreement.py` | Post-calibration: modeled vs. measured calibration targets before and after calibration against the 1:1 line, with a verdict on systematic over-/underestimation. The `bal_*` drivers write the same figure automatically |
 | `main_plots.py` | Plot BAL posterior results (BME/RE evolution, posterior histograms) |
 | `main_validate.py` | Validate calibrated models against observations |
 | `vectrino_postprocess.py` | Post-process Vectrino ADV measurements (despiking, TKE, velocity profiles) |

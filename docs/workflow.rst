@@ -796,3 +796,81 @@ archived ``logfile.log`` records which convention produced its numbers.
    different scale depending on whether a model error was included, so compare those
    only within a run. The stored ``log_BME`` is the exact evidence; ``BME`` is kept for
    backward compatibility and can reach ``0.0`` or ``inf`` on large problems.
+
+.. _target-agreement:
+
+Step 6: Check the calibrated model against its calibration targets
+-------------------------------------------------------------------
+
+Steps 4 and 5 report the calibration in *parameter* space: posterior optima, credible
+intervals, evidence, relative entropy. None of them answers the question a modeller asks
+first, which lives in *observation* space: does the calibrated model reproduce the
+measurements, and if it does not, what kind of mismatch is left?
+
+Every ``bal_*`` driver answers it when the BAL loop finishes, writing
+``plots/<targets>/calibration-target-agreement.png`` (and ``.svg``) and logging the same
+verdicts to ``logfile.log``. The figure carries one row per calibration target and one
+column per calibration state:
+
+* **before calibration**: the initial-design ensemble of full-complexity runs, i.e. the
+  model across the prior ranges of the calibration parameters;
+* **after calibration**: the posterior predictive, i.e. the surrogate at the parameter
+  sets that rejection sampling accepted.
+
+Each panel scatters the modeled values (y-axis) against the measured ones (x-axis) as
+open black circles, with the measurement uncertainty as horizontal error bars, against
+the 45-degree line of perfect agreement. The error bar is the quadratic sum of the
+relative ``calibration['measurement_error']`` and the absolute ``<target>_ERROR`` column
+of the calibration-points file, i.e. the measurement side of the error budget only:
+``gpe_error`` and ``model_structural_error`` describe the model and have no business on
+a measured value.
+
+Reading the figure:
+
+* **Points consistently above the line** - the model overestimates that calibration
+  target; **consistently below** - it underestimates it. A systematic offset is still a
+  calibration-parameter problem. If the roughness reading in the column title says
+  roughness is identifiable, check whether its posterior optimum pins at a prior bound
+  (see :ref:`calibrated-parameters`) and widen the bound.
+* **A cloud straddling the line** - the residuals change sign from point to point. No
+  single value of any calibration parameter can remove that, and the figure is telling
+  you to look at the mesh, the boundary conditions, the model structure or the
+  measurements instead.
+* **Circles on the line, error bars crossing it** - agreement within the measurement
+  uncertainty. The annotation reports the share of calibration points whose error bar
+  reaches the 1:1 line.
+
+An offset counts as *systematic* only when it exceeds both a 2 % deadband and the
+standard error of the mean measurement uncertainty, **and** at least 60 % of the
+calibration points fall on the same side of the line. Below that it is reported as
+agreement or as scatter, because sending a modeller after a calibration parameter that
+is already right is the more expensive mistake.
+
+The column titles carry the roughness reading of that state, from the same physics as
+the pre-calibration diagnostic (:ref:`initial-design`): at fixed discharge, raising the
+roughness deepens and slows the flow, so a roughness error shows up as **anti-correlated**
+depth and velocity residuals, while **correlated** residuals (both too high, or both too
+low) cannot be produced by roughness at all. Comparing the two columns therefore states
+whether roughness was the identifiable calibration parameter and whether the calibration
+actually moved it, or whether roughness was never the issue.
+
+The figure can be reproduced from archived results, with different thresholds or units:
+
+.. code-block:: bash
+
+   python src/hydroBayesCal/drivers/plot_target_agreement.py --config config_Telemac.py \
+       --units "m,m/s" --deadband 0.05
+
+   # solver-agnostic, without a configuration:
+   python src/hydroBayesCal/drivers/plot_target_agreement.py \
+       --bal-dictionary <res_dir>/auto-saved-results-HydroBayesCal/calibration-data/<targets>/BAL_dictionary.pkl
+
+The series it needs are stored in ``BAL_dictionary.pkl`` under the ``target_agreement``
+key when the calibration finishes; result files written before this diagnostic existed do
+not carry them, and a re-run in ``only_bal_mode`` rebuilds the surrogate from the stored
+runs and writes the key without re-running the solver.
+
+Like every other diagnostic in this package, the step is report-only: it changes no
+sampling, no parameter and no result, and a failure inside it (a missing LaTeX
+installation, an unwritable folder) is logged as a warning and never costs a finished
+calibration.
