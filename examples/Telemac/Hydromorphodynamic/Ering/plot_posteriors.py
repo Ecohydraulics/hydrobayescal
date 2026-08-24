@@ -129,7 +129,7 @@ def main():
         parameter_units=config.plotting["parameter_units"],
         parameter_indices=config.plotting["parameter_indices"],
         best_estimate_value=config.plotting['posterior_plotting_option'],
-        post_loglikelihood_arrays=post_loglikelihood
+        #post_loglikelihood_arrays=post_loglikelihood
     )
     
     # ---------------------------------------------------------------------

@@ -51,13 +51,13 @@ calibration = {
     # bed-friction zones; names must match update_model_controls / the .cas.
     'parameters': ["gaiaCLASSES SHIELDS PARAMETERS 1",
                    "gaiaCLASSES SHIELDS PARAMETERS 2",
-                   #"gaiaCLASSES SHIELDS PARAMETERS 3",
+                   "gaiaCLASSES SHIELDS PARAMETERS 3",
                    #"gaiaCLASSES SHIELDS PARAMETERS 4"
                    ], # Run,
 
     'param_values': [[0.03, 0.070],  # critical shields parameter class 1
+                     [0.03, 0.070],
                      [0.03, 0.070]],
-                     #[0.047, 0.070],
                      #[0.047, 0.070]],
     # Quantities to extract from simulation - USE STANDARD NAMES
     'extraction_quantities': ["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL","LAY1 SAND RAT"],
@@ -80,7 +80,7 @@ calibration = {
     #                           supplied by include_surrogate_error. Set it only if
     #                           you can defend a value.
     'measurement_error':      0.03,
-    'gpe_error':              0.0,
+    'gpe_error':              0.02,
     'model_structural_error': 0.0,
 
     'dict_output_name': "extraction-data",
@@ -90,8 +90,8 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 20,   # Number of initial parameter samples
-    'max_runs': 50 ,   # Total runs (initial + BAL iterations)
+    'init_runs': 30,   # Number of initial parameter samples
+    'max_runs': 70 ,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
@@ -131,7 +131,7 @@ extraction = {
 # ============================================================================
 execution = {
     'complete_bal_mode':  True,
-    'only_bal_mode':         False,
+    'only_bal_mode':         True,
     'delete_complex_outputs': True,
     'validation':             False,
     'user_param_values':      False,
@@ -145,15 +145,15 @@ plotting = {
     'parameter_names': [
         r"$\tau_{*,\mathrm{cr},d_{10}}$",
         r"$\tau_{*,\mathrm{cr},d_{16}}$",
-        #r"$\tau_{*,\mathrm{cr},d_{60}}$",
+        r"$\tau_{*,\mathrm{cr},d_{50}}$",
         #r"$\tau_{*,\mathrm{cr},d_{84}}$"
     ],
     # Units for reporting and plotting - must be in same order as 'parameters'
-    'parameter_units': ["-", "-"],
+    'parameter_units': ["-", "-", "-"],
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
-    'parameter_indices': [0,1],
-    'iterations_to_plot': [0],
+    'parameter_indices': [0,1,2],
+    'iterations_to_plot': [2],
     # -------------------------
     # posterior plotting options
     # -------------------------
