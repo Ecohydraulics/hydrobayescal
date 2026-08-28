@@ -393,15 +393,34 @@ def diagnose_roughness_identifiability(
     sim = _np.atleast_2d(_np.asarray(model_outputs, dtype=float))
     obs = _np.asarray(observations, dtype=float).ravel()
 
+    # This is a report-only check that runs on the default calibration path, after
+    # the initial design has cost hours of solver time. It must not be able to end
+    # a run that would otherwise succeed, so mismatched shapes are reported rather
+    # than left to raise out of the broadcast in _residual below.
+    if sim.shape[1] != obs.size:
+        result["message"] = (
+            "roughness diagnostic skipped: model outputs have "
+            f"{sim.shape[1]} columns but there are {obs.size} observations.")
+        return result
+    if not _np.isfinite(sim).any() or not _np.isfinite(obs).any():
+        result["message"] = ("roughness diagnostic skipped: model outputs or "
+                             "observations contain no finite values.")
+        return result
+
     def _residual(j):
         s = sim[:, j::nq]                       # [n_runs, nloc] simulated for quantity j
         o = obs[j::nq]                          # [nloc] observed for quantity j
-        med = float(_np.median(s - o[None, :]))  # central residual (sim - obs)
-        scale = float(_np.mean(_np.abs(o))) or 1.0
+        # nanmedian: one dry/failed location must not turn the whole verdict into NaN
+        med = float(_np.nanmedian(s - o[None, :]))  # central residual (sim - obs)
+        scale = float(_np.nanmean(_np.abs(o))) or 1.0
         return med, med / scale
 
     dh, dh_rel = _residual(jd)                  # + => simulated too DEEP
     du, du_rel = _residual(jv)                  # + => simulated too FAST
+    if not (_np.isfinite(dh) and _np.isfinite(du)):
+        result["message"] = ("roughness diagnostic skipped: the depth or velocity "
+                             "residual is not finite.")
+        return result
     result.update(depth_residual=dh, velocity_residual=du,
                   depth_rel=dh_rel, velocity_rel=du_rel)
 

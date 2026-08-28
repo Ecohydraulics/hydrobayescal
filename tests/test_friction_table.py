@@ -61,3 +61,47 @@ def test_a_zone_that_is_not_present_leaves_the_table_alone(tmp_path):
     before = path.read_text()
     TelemacModel.tbl_creator("7", 0.9, str(path))
     assert path.read_text() == before
+
+
+# --------------------------------------------------------------------------- #
+# the roughness diagnostic now runs on the default calibration path
+# --------------------------------------------------------------------------- #
+import numpy as np
+
+from hydroBayesCal.function_pool import diagnose_roughness_identifiability
+
+QUANTITIES = ["WATER DEPTH", "SCALAR VELOCITY"]
+
+
+@pytest.mark.parametrize("name, outputs, observations", [
+    ("ragged", np.zeros((5, 20)), np.zeros(13)),
+    ("empty", np.zeros((0, 20)), np.zeros(20)),
+    ("all nan", np.full((5, 20), np.nan), np.zeros(20)),
+])
+def test_the_diagnostic_never_raises_on_unusable_input(name, outputs, observations):
+    """It is report-only and runs after the initial design has cost hours of solver
+    time, so bad input must produce a verdict of 'unavailable' - never an exception
+    that would discard the completed runs."""
+    result = diagnose_roughness_identifiability(outputs, observations, QUANTITIES)
+    assert result["verdict"] == "unavailable"
+    assert "skipped" in result["message"]
+
+
+def test_a_single_dead_location_does_not_void_the_verdict():
+    """One dry or failed calibration point used to turn the median residual into NaN
+    and with it the whole diagnosis."""
+    outputs = np.ones((5, 20))
+    outputs[:, 7] = np.nan
+    result = diagnose_roughness_identifiability(outputs, np.ones(20), QUANTITIES)
+    assert result["verdict"] != "unavailable"
+    assert np.isfinite(result["depth_residual"])
+
+
+def test_correlated_residuals_report_roughness_as_non_identifiable():
+    """Both quantities over-predicted cannot be produced by roughness alone, so the
+    verdict must say so rather than recommend a direction to move ks."""
+    observations = np.ones(20)
+    outputs = np.full((5, 20), 1.5)          # too deep AND too fast
+    result = diagnose_roughness_identifiability(outputs, observations, QUANTITIES)
+    assert result["verdict"] == "not_identifiable"
+    assert result["identifiable"] is False

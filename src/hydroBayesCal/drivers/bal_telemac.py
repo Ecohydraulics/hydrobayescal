@@ -751,13 +751,16 @@ def main():
     # (both over- or both under-predicted) mean it is not, and the posterior will pin
     # against whichever prior bound it is given, however many BAL iterations follow.
     # Changes no sampling and no parameter.
-    log_roughness_identifiability(
-        diagnose_roughness_identifiability(
-            model_evaluations,
-            full_complexity_model.observations,
-            full_complexity_model.calibration_quantities,
+    try:
+        log_roughness_identifiability(
+            diagnose_roughness_identifiability(
+                model_evaluations,
+                full_complexity_model.observations,
+                full_complexity_model.calibration_quantities,
+            )
         )
-    )
+    except Exception as exception:  # report-only: never lose a finished design to it
+        logger_warn.warning("Roughness-identifiability check skipped: %s", exception)
     if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
         logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
         return

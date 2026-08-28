@@ -133,13 +133,16 @@ def main():
     # cannot close the misfit and the posterior will pin against whichever prior
     # bound it is given, however many BAL iterations follow. MultiflowTelemacModel
     # stacks the per-flow observations, so the check spans every flow at once.
-    log_roughness_identifiability(
-        diagnose_roughness_identifiability(
-            model_evaluations,
-            multiflow_model.observations,
-            multiflow_model.calibration_quantities,
+    try:
+        log_roughness_identifiability(
+            diagnose_roughness_identifiability(
+                model_evaluations,
+                multiflow_model.observations,
+                multiflow_model.calibration_quantities,
+            )
         )
-    )
+    except Exception as exception:  # report-only: never lose a finished design to it
+        logger_warn.warning("Roughness-identifiability check skipped: %s", exception)
     if not (multiflow_model.complete_bal_mode or multiflow_model.only_bal_mode):
         logger.info("Initial multiflow runs finished (only-init mode): "
                     "skipping surrogate training and BAL.")

@@ -4,6 +4,17 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-08-28
+
+### Fixed
+- **The roughness-identifiability check can no longer end a calibration.** 1.8.0 moved it
+  onto the default path, where it runs after an initial design that has already cost
+  hours of solver time - but with mismatched output/observation shapes it raised out of
+  its own residual broadcast, which would have discarded those completed runs. It now
+  reports `unavailable` for a shape mismatch or all-non-finite input, uses `nanmedian`
+  so one dry or failed calibration point cannot void the verdict, and the driver call
+  sites catch anything else and log it as a warning. Report-only means report-only.
+
 ## [1.8.0] - 2026-08-28
 
 A TELEMAC release, from a 14-day multi-discharge calibration that ended with a posterior
@@ -661,6 +672,7 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.8.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.8.1
 [1.8.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.8.0
 [1.7.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.7.0
 [1.6.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.6.0
