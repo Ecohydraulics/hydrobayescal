@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydroBayesCal"
-version = "1.7.0"
+version = "1.8.0"
 description = "Surrogate-assisted Bayesian calibration for hydrodynamic and morphodynamic models (Telemac, OpenFOAM, Delft3D)."
 readme = "README.md"
 license = "BSD-3-Clause"

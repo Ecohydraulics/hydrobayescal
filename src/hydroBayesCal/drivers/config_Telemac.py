@@ -135,6 +135,22 @@ sampling = {
     # refining the mode it started in, which is how a local maximum survives to the end
     # of a calibration. True or False force the behaviour.
     'bal_exploration_tradeoff': 'auto',
+
+    # How the posterior sample is drawn from the prior samples once the likelihood
+    # has been computed. Both target the same distribution; they differ in how many
+    # samples come back.
+    #   'rejection_sampling' (default)  keeps a prior sample with probability
+    #       likelihood/max(likelihood). The samples are distinct, but their NUMBER
+    #       falls as the likelihood sharpens - so a well-constrained calibration can
+    #       end with a posterior too small to estimate a density from, and raising
+    #       prior_samples to compensate is expensive (the surrogate is evaluated at
+    #       every one, and its covariance grows with the square of that count).
+    #   'bayesian_weighting'            resamples the prior with replacement in
+    #       proportion to the likelihood weights, returning a full-size posterior
+    #       from the same likelihoods at no extra model cost. The samples repeat, so
+    #       read the effective sample size it logs alongside the count.
+    # Switch to 'bayesian_weighting' if a run reports the low_posterior_sample verdict.
+    'posterior_sampling_method': 'rejection_sampling',
 }
 
 # ============================================================================
