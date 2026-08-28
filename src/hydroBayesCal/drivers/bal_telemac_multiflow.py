@@ -127,6 +127,19 @@ def main():
         adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
         init_runs_min=config.sampling.get('init_runs_min', None),
     )
+    # Report-only physics check on the joint initial design, BEFORE the BAL loop -
+    # the last moment the answer is still cheap to act on. Correlated depth vs.
+    # velocity residuals (both over- or both under-predicted) mean bottom roughness
+    # cannot close the misfit and the posterior will pin against whichever prior
+    # bound it is given, however many BAL iterations follow. MultiflowTelemacModel
+    # stacks the per-flow observations, so the check spans every flow at once.
+    log_roughness_identifiability(
+        diagnose_roughness_identifiability(
+            model_evaluations,
+            multiflow_model.observations,
+            multiflow_model.calibration_quantities,
+        )
+    )
     if not (multiflow_model.complete_bal_mode or multiflow_model.only_bal_mode):
         logger.info("Initial multiflow runs finished (only-init mode): "
                     "skipping surrogate training and BAL.")
@@ -143,6 +156,8 @@ def main():
         gp_library=config.sampling["gp_library"],
         include_surrogate_error=config.sampling.get("include_surrogate_error", True),
         bal_exploration_tradeoff=config.sampling.get("bal_exploration_tradeoff", "auto"),
+        posterior_sampling_method=config.sampling.get("posterior_sampling_method",
+                                                      "rejection_sampling"),
     )
 
 

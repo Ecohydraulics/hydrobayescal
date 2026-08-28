@@ -11,6 +11,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 
 from hydroBayesCal.surrogate.exploration import Exploration
+from hydroBayesCal.utils.config_logging import logger, logger_warn
 
 
 class BayesianInference:
@@ -50,6 +51,23 @@ class BayesianInference:
         Method used to sample from the posterior distribution, one of
         ``"rejection_sampling"`` (default) or ``"bayesian_weighting"``.
 
+        ``rejection_sampling`` accepts a prior sample with probability
+        ``likelihood / max(likelihood)``, so the number of posterior samples it
+        returns is roughly ``MC_size * mean(L) / max(L)``. For a sharply peaked
+        likelihood - a well-constrained parameter, or many observations - that ratio
+        collapses and the posterior can end up with too few samples to estimate a
+        density from, however large ``MC_size`` is.
+
+        ``bayesian_weighting`` instead resamples the prior *with replacement* in
+        proportion to the normalised likelihood weights (sampling-importance
+        resampling), so it returns a full-size posterior from the same likelihoods at
+        no extra model cost. The trade is that the samples are no longer distinct;
+        see :attr:`ess` for how much independent information they carry.
+    sampling_size : int, optional
+        Number of posterior samples drawn by ``bayesian_weighting``. Default
+        ``None`` = as many as there are prior samples. Ignored by rejection sampling,
+        whose size is set by the acceptance rate.
+
     Attributes
     ----------
     likelihood : numpy.ndarray
@@ -76,19 +94,19 @@ class BayesianInference:
     -----
     Posterior sampling options:
 
-    * **Bayesian weighting** obtains the posterior likelihoods as a weighted
-      average of the prior-based likelihood values, avoiding small posterior
-      sample sizes. Results are similar to rejection sampling, but the
-      posterior set is not easily available.
+    * **Bayesian weighting** weights the prior samples by their normalised
+      likelihood and resamples them with replacement, so the posterior is the size
+      asked for however peaked the likelihood is. The samples repeat, so read
+      :attr:`ess` alongside the count.
     * **Rejection sampling** divides all likelihoods by the maximum and accepts
       sample ``i`` when ``likelihood(i) / max(likelihood) > U[0, 1]``. It yields
-      a posterior distribution directly, but needs a larger Monte Carlo sample
-      when the output dimension is large.
+      distinct samples, but their number falls as the likelihood sharpens, so it
+      needs a larger Monte Carlo sample when the output dimension is large.
 
     .. todo:: Add posterior MCMC sampling methods.
     """
     def __init__(self, model_predictions, observations, error, prior=None, prior_log_pdf=None, model_error=None,
-                 sampling_method='rejection_sampling'):
+                 sampling_method='rejection_sampling', sampling_size=None):
 
         self.use_log = True
         self.observations = observations
@@ -97,6 +115,7 @@ class BayesianInference:
         self.model_error = model_error
         self.prior = prior
         self.post_sampling_method = sampling_method
+        self.sampling_size = sampling_size
 
         self.prior_logpdf = prior_log_pdf
 
@@ -108,11 +127,19 @@ class BayesianInference:
         self.posterior = None
         self.posterior_output = None
         self.post_logpdf = None
-        # Rows of the prior that rejection sampling accepted. Rejection sampling is
-        # stochastic, so the acceptance cannot be reconstructed from the likelihood
-        # afterwards; callers that need per-sample quantities of the accepted set
-        # (e.g. the emulator standard deviation there) have to read it from here.
+        # Rows of the prior the posterior sampler selected - accepted by rejection
+        # sampling, or drawn by weighted resampling. Both are stochastic, so the
+        # selection cannot be reconstructed from the likelihood afterwards; callers
+        # that need per-sample quantities of that set (e.g. the emulator standard
+        # deviation there) have to read it from here. Weighted resampling draws with
+        # replacement, so this may repeat a row.
         self.post_index = None
+        # Kish effective sample size of the weighted resampling, 1 / sum(w^2): how
+        # many independent samples the weights are worth. Far below the drawn size
+        # means one prior sample carries the posterior and the density is thin,
+        # however many rows came back. None for rejection sampling, whose samples
+        # are distinct by construction.
+        self.ess = None
 
         self.BME = None
         self.log_BME = None
@@ -313,6 +340,101 @@ class BayesianInference:
         self.log_likelihood = log_likelihood
         self.likelihood = likelihood
 
+    def weighted_resampling(self):
+        """Draw the posterior by sampling-importance resampling of the prior.
+
+        Rejection sampling keeps a prior sample with probability
+        ``likelihood / max(likelihood)``, so the posterior it returns has roughly
+        ``MC_size * mean(L) / max(L)`` samples. That ratio is small exactly when the
+        calibration went well - a peaked likelihood - so a well-constrained problem
+        can end up with a posterior too small to estimate a density from. Raising
+        ``MC_size`` to compensate is expensive: the surrogate is evaluated at every
+        prior sample, and the covariance it builds grows with the square of that
+        count.
+
+        This instead uses every likelihood already computed. The normalised weights
+        ``w_i = L_i / sum(L)`` define the posterior over the prior samples exactly,
+        so drawing indices with replacement in proportion to ``w`` targets the same
+        distribution and returns as many samples as asked for, at no extra model cost.
+
+        The samples are no longer distinct, so the *number* of rows overstates how
+        much independent information is present. :attr:`ess` (Kish, ``1 / sum(w^2)``)
+        reports what they are actually worth and is logged, so a posterior carried by
+        a handful of prior samples stays visible rather than hiding behind a
+        full-looking array.
+
+        Notes
+        -----
+        * Sets the same attributes as :meth:`rejection_sampling`, so the two are
+          interchangeable downstream.
+        * Weights are computed in log space; non-finite log-likelihoods are dropped
+          before normalising, and indices are mapped back to rows of the *original*
+          prior.
+        * If no weight is positive (or every likelihood is non-finite) there is no
+          posterior to draw and the attributes are left as ``None``.
+        """
+        n_prior = self.model_predictions.shape[0]
+        size = int(self.sampling_size) if self.sampling_size else n_prior
+
+        if self.log_likelihood is not None and self.use_log:
+            log_like = np.ravel(self.log_likelihood)
+            finite = np.isfinite(log_like)
+            if not finite.any():
+                logger_warn.warning("weighted resampling: every log-likelihood is "
+                               "non-finite; no posterior drawn.")
+                return
+            # subtract the max before exponentiating: the raw values underflow to
+            # exactly 0 for a few hundred observations
+            source = np.flatnonzero(finite)
+            shifted = log_like[finite] - np.max(log_like[finite])
+            weights = np.exp(shifted)
+        else:
+            like = np.ravel(self.likelihood)
+            finite = np.isfinite(like) & (like >= 0)
+            if not finite.any():
+                logger_warn.warning("weighted resampling: no finite likelihood; "
+                               "no posterior drawn.")
+                return
+            source = np.flatnonzero(finite)
+            weights = like[finite]
+
+        total = float(np.sum(weights))
+        if not np.isfinite(total) or total <= 0:
+            logger_warn.warning("weighted resampling: likelihood weights sum to %r; "
+                           "no posterior drawn.", total)
+            return
+        weights = weights / total
+
+        self.ess = float(1.0 / np.sum(weights ** 2))
+        if self.ess < 0.05 * size:
+            logger_warn.warning(
+                "weighted resampling: effective sample size %.1f from %d prior "
+                "samples - the posterior rests on very few of them, so treat the "
+                "density as indicative. Widen the priors or add prior samples.",
+                self.ess, len(source))
+        else:
+            logger.info("weighted resampling: %d posterior samples, effective "
+                        "sample size %.1f", size, self.ess)
+
+        # map the drawn positions back onto rows of the original prior
+        drawn = np.random.default_rng().choice(source.size, size=size, replace=True,
+                                               p=weights)
+        post_index = source[drawn]
+
+        self.post_index = post_index
+        self.posterior_output = np.take(self.model_predictions, post_index, axis=0)
+        if self.prior is not None:
+            self.posterior = np.take(self.prior, post_index, axis=0)
+        if self.log_likelihood is not None and self.use_log:
+            self.post_loglikelihood = np.take(np.ravel(self.log_likelihood),
+                                              post_index, axis=0)
+        else:
+            self.post_likelihood = np.take(np.ravel(self.likelihood), post_index,
+                                           axis=0)
+            self.post_loglikelihood = np.log(self.post_likelihood)
+        if self.prior_logpdf is not None:
+            self.post_logpdf = self.prior_logpdf[post_index]
+
     def rejection_sampling(self):
         """Run rejection sampling.
 
@@ -385,6 +507,11 @@ class BayesianInference:
                                  - np.log(log_likelihood.size))
             weights = np.exp(log_likelihood[finite] - logsumexp(log_likelihood[finite]))
             self.ELPD = float(np.sum(weights * log_likelihood[finite]))
+            # 3. Posterior estimation/sampling. Without this the branch computed
+            # scores and threw the weights away, leaving `posterior` at None - so
+            # every consumer downstream (posterior analysis, plots, the calibrated-
+            # parameter derivation) got nothing back from this method.
+            self.weighted_resampling()
 
         elif 'rejection_sampling' in self.post_sampling_method.lower():  # rejection sampling
             # 3. Posterior estimation/sampling
