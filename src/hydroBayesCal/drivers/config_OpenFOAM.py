@@ -14,11 +14,20 @@ Note the OpenFOAM-specific schema differences from the TELEMAC config:
 ``simulation`` (not ``hydrodynamic_simulation``), an ``interfoam`` block with
 real values, and ``n_cpus`` living in ``sampling``. Quantity names use the
 standard HydroBayesCal field names. The OpenFOAM binding extracts "U_x", "U_y",
-"U_z", "U_MAG", "TKE" and the fluctuation components "u_fluct", "v_fluct",
-"w_fluct"; anything else in ``calibration_quantities`` is rejected at model
-construction (see ``OpenFOAMModel.EXTRACTABLE_QUANTITIES``). Free-surface
-quantities such as "WATER_DEPTH" and "FREE_SURFACE" are available in the
-Delft3D and TELEMAC bindings but are not yet extracted here.
+"U_z", "U_MAG", "TKE", "ALPHA_WATER" and the fluctuation components "u_fluct",
+"v_fluct", "w_fluct"; anything else in ``calibration_quantities`` is rejected at
+model construction (see ``OpenFOAMModel.EXTRACTABLE_QUANTITIES``). Free-surface
+quantities such as "WATER_DEPTH" and "FREE_SURFACE" are available in the Delft3D
+and TELEMAC bindings but are not yet extracted here.
+
+Choosing the calibration quantities after the runs: the binding writes *every*
+extractable quantity to ``results-detailed-*.csv`` for every run x control point,
+regardless of ``calibration_quantities``, and mirrors that table to
+``restart_data/detailed-model-outputs.csv``. To re-calibrate on a different
+subset without re-running OpenFOAM, change ``calibration_quantities`` (or pass
+``--calibration_quantities "U_x TKE"``) and run with ``--only_bal_mode True``:
+``output_processing`` rebuilds the surrogate training data for the new subset
+from that mirrored table.
 """
 
 import os
@@ -71,9 +80,16 @@ calibration = {
                      [0.001, 0.05]],   # ks [m]
 
     # Quantities to extract from the VTK output - USE STANDARD NAMES.
-    'extraction_quantities': ["U_x", "U_y", "U_z", "TKE"],
+    # Informational for the OpenFOAM binding: it always writes every quantity in
+    # OpenFOAMModel.EXTRACTABLE_QUANTITIES ("U_x","U_y","U_z","U_MAG","TKE",
+    # "ALPHA_WATER","u_fluct","v_fluct","w_fluct") to results-detailed-*.csv for
+    # every run, so the calibration subset below can be changed afterwards without
+    # re-running OpenFOAM (see module docstring, --only_bal_mode).
+    'extraction_quantities': ["U_x", "U_y", "U_z", "TKE", "ALPHA_WATER"],
 
     # Quantities used for BAL calibration - must match columns in measurements.csv.
+    # Can be overridden per run with --calibration_quantities; combine with
+    # --only_bal_mode True to re-calibrate on a different subset from stored runs.
     'calibration_quantities': ["U_x", "U_y", "U_z"],
 
     # Three relative error terms, each a fraction of every measured value, added to

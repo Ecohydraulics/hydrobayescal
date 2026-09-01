@@ -453,10 +453,11 @@ class OpenFOAMController:
             raise RuntimeError(f"foamToVTK failed with exit code {result.returncode}")
         print("VTK conversion completed.")
 
-    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any]:
+    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any, Any]:
         """
-        Extract velocity (U) and turbulent kinetic energy (k) fields from VTK output,
-        averaged over the last n_avg_timesteps timesteps, filtered to water phase only.
+        Extract velocity (U), turbulent kinetic energy (k) and water volume
+        fraction (alpha.water) fields from VTK output, averaged over the last
+        n_avg_timesteps timesteps, filtered to water phase only.
 
         k is read directly from the OpenFOAM k field (k-epsilon RANS turbulent kinetic energy).
 
@@ -468,8 +469,12 @@ class OpenFOAMController:
             alpha_threshold: Only include points where alpha.water > threshold (default 0.5)
 
         Returns:
-            Tuple of (coordinates, U_mean, k_mean) for water-phase points only.
-            k is None if not found in the VTK files.
+            Tuple of (coordinates, U_mean, k_mean, alpha_mean) for water-phase
+            points only. k_mean is None if the k field is not in the VTK files;
+            alpha_mean is None if alpha.water is not in the VTK files (single-phase
+            case). alpha_mean is kept so ALPHA_WATER can be reported at the control
+            points; on a water-masked extraction it is by construction above the
+            threshold, but it is still useful as a free-surface proximity check.
         """
         vtk_dir = os.path.join(self.case_dir, "VTK")
         if not os.path.isdir(vtk_dir):
@@ -539,7 +544,8 @@ class OpenFOAMController:
         coords = mesh0.points
         has_k = "k" in mesh0.point_data
 
-        if "alpha.water" in mesh0.point_data:
+        has_alpha = "alpha.water" in mesh0.point_data
+        if has_alpha:
             alpha = mesh0.point_data["alpha.water"]
             water_mask = alpha > alpha_threshold
             coords = coords[water_mask]
@@ -548,9 +554,10 @@ class OpenFOAMController:
             logger.warning("alpha.water not found in VTK - using all points")
             water_mask = None
 
-        # Accumulate U and k across selected timesteps
+        # Accumulate U, k and alpha.water across selected timesteps
         U_sum = np.zeros_like(mesh0.point_data["U"][water_mask] if water_mask is not None else mesh0.point_data["U"])
         k_sum = np.zeros(U_sum.shape[0]) if has_k else None
+        alpha_sum = np.zeros(U_sum.shape[0]) if has_alpha else None
 
         for vtk_file in selected_files:
             mesh = pv.read(vtk_file)
@@ -565,15 +572,22 @@ class OpenFOAMController:
                     k_t = k_t[water_mask]
                 k_sum += k_t
 
+            if has_alpha and "alpha.water" in mesh.point_data:
+                alpha_t = mesh.point_data["alpha.water"]
+                if water_mask is not None:
+                    alpha_t = alpha_t[water_mask]
+                alpha_sum += alpha_t
+
         U_mean = U_sum / n
         k_mean = k_sum / n if has_k else None
+        alpha_mean = alpha_sum / n if has_alpha else None
 
         if k_mean is None:
             logger.warning("k field not found in VTK - TKE will be NaN")
         else:
             logger.info(f"k (averaged over {n} steps): Mean={k_mean.mean():.4e}, Max={k_mean.max():.4e}")
 
-        return coords, U_mean, k_mean
+        return coords, U_mean, k_mean, alpha_mean
 # =============================================================================
 # OpenFOAMModel - BAL-compatible wrapper around OpenFOAMController
 # =============================================================================
@@ -591,14 +605,21 @@ class OpenFOAMModel(HydroSimulations):
     """
 
     #: Field names ``_extract_at_control_points`` returns, and therefore the only
-    #: valid entries in ``calibration_quantities``. ``U_magnitude`` is a legacy
-    #: alias of ``U_MAG``, kept so the detailed result CSVs and per-run JSONs
-    #: written by earlier versions stay readable.
+    #: valid entries in ``calibration_quantities`` and ``extraction_quantities``.
+    #: ``U_magnitude`` is a legacy alias of ``U_MAG``, kept so the detailed result
+    #: CSVs and per-run JSONs written by earlier versions stay readable.
+    #: Every one of these is written to ``results-detailed-*.csv`` for every run x
+    #: control point regardless of what is being calibrated, so the calibration
+    #: quantities can be re-chosen afterwards from stored data (see
+    #: :meth:`output_processing` and ``--only_bal_mode``). ``ALPHA_WATER`` is the
+    #: interFoam water volume fraction at the point; it is extracted and stored but
+    #: is rarely a sensible calibration target on its own.
     EXTRACTABLE_QUANTITIES = (
         "U_x", "U_y", "U_z",
         "U_MAG", "U_magnitude",
         "u_fluct", "v_fluct", "w_fluct",
         "TKE",
+        "ALPHA_WATER",
     )
 
     def __init__(
@@ -907,7 +928,7 @@ class OpenFOAMModel(HydroSimulations):
                 foam.convert_to_vtk()
 
                 # Extract fields from VTK (averaged over n_avg_timesteps)
-                coords, U, k = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
+                coords, U, k, alpha = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
 
                 # Sanity check: verify fields differ from previous run.
                 # Identical fields across runs indicate a VTK extraction bug (e.g. missing -latestTime).
@@ -935,6 +956,8 @@ class OpenFOAMModel(HydroSimulations):
                     np.save(os.path.join(raw_dir, f"U_{run_idx:04d}.npy"), U)
                     if k is not None:
                         np.save(os.path.join(raw_dir, f"k_{run_idx:04d}.npy"), k)
+                    if alpha is not None:
+                        np.save(os.path.join(raw_dir, f"alpha_{run_idx:04d}.npy"), alpha)
                     logger.info(f"No measurements file  raw fields saved to {raw_dir} for run {run_idx}.")
 
                     # Save collocation points so they can be reloaded later
@@ -944,7 +967,7 @@ class OpenFOAMModel(HydroSimulations):
 
                 else:
                     # Measurements file exists  interpolate to control points as normal
-                    results = self._extract_at_control_points(coords, U, k)
+                    results = self._extract_at_control_points(coords, U, k, alpha)
 
                     # calibration_quantities is validated against
                     # EXTRACTABLE_QUANTITIES in __init__, so a missing key here
@@ -957,7 +980,11 @@ class OpenFOAMModel(HydroSimulations):
 
                     all_results.append(run_results)
 
-                    # Store detailed results: one row per control point
+                    # Store detailed results: one row per control point. Every
+                    # extractable quantity is written here regardless of what is
+                    # being calibrated, so calibration_quantities can be re-chosen
+                    # later from this table without re-running OpenFOAM (see
+                    # output_processing / --only_bal_mode).
                     for pt_idx, cp in enumerate(self.control_points):
                         row = {
                             "run_idx": run_idx,
@@ -971,6 +998,7 @@ class OpenFOAMModel(HydroSimulations):
                             "v_fluct": float(results["v_fluct"][pt_idx]),
                             "w_fluct": float(results["w_fluct"][pt_idx]),
                             "TKE": float(results["TKE"][pt_idx]),
+                            "ALPHA_WATER": float(results["ALPHA_WATER"][pt_idx]),
                         }
                         all_detailed_results.append(row)
 
@@ -992,6 +1020,7 @@ class OpenFOAMModel(HydroSimulations):
 
                     # Save cumulative results after every run
                     self._save_all_results(current_cp, all_detailed_results)
+                    self._mirror_detailed_results_for_reselection()
 
                 # Delete the run folder immediately to free disk space
                 if self.delete_complex_outputs:
@@ -1017,6 +1046,7 @@ class OpenFOAMModel(HydroSimulations):
                             "U_magnitude": np.nan,
                             "u_fluct": np.nan, "v_fluct": np.nan, "w_fluct": np.nan,
                             "TKE": np.nan,
+                            "ALPHA_WATER": np.nan,
                         }
                         all_detailed_results.append(row)
 
@@ -1029,9 +1059,10 @@ class OpenFOAMModel(HydroSimulations):
             else:
                 all_cp = design
             self._save_all_results(all_cp, all_detailed_results)
+            self._mirror_detailed_results_for_reselection()
 
-    def _extract_at_control_points(self, coords, U, k=None):
-        """Extract velocity and TKE at control points.
+    def _extract_at_control_points(self, coords, U, k=None, alpha=None):
+        """Extract velocity, TKE and water fraction at control points.
 
         TKE is read directly from the OpenFOAM k field (RANS turbulent kinetic energy).
 
@@ -1039,11 +1070,12 @@ class OpenFOAMModel(HydroSimulations):
             coords: Array of VTK point coordinates (water phase only)
             U: Velocity array at VTK points, shape (n_points, 3)
             k: RANS turbulent kinetic energy array from OpenFOAM k field, or None
+            alpha: interFoam alpha.water array at VTK points, or None (single-phase)
 
         Returns:
             dict keyed by :attr:`EXTRACTABLE_QUANTITIES`: U_x, U_y, U_z, U_MAG
             (with U_magnitude retained as a legacy alias of the same values),
-            u_fluct, v_fluct, w_fluct and TKE at the control points
+            u_fluct, v_fluct, w_fluct, TKE and ALPHA_WATER at the control points
         """
         if len(self.control_points) == 0:
             # Built from the constant so both return paths always expose the
@@ -1064,6 +1096,11 @@ class OpenFOAMModel(HydroSimulations):
             k_cp = np.full(len(self.control_points), np.nan)
             fluct = np.full(len(self.control_points), np.nan)
 
+        if alpha is not None:
+            alpha_cp = alpha[indices]
+        else:
+            alpha_cp = np.full(len(self.control_points), np.nan)
+
         u_mag = np.linalg.norm(U_cp, axis=1)
 
         return {
@@ -1076,6 +1113,7 @@ class OpenFOAMModel(HydroSimulations):
             "v_fluct": fluct,
             "w_fluct": fluct,
             "TKE": k_cp,        # k from OpenFOAM k-epsilon field
+            "ALPHA_WATER": alpha_cp,  # interFoam water volume fraction at the point
         }
 
     def _save_run_results(self, case_dir, run_idx, params, results):
@@ -1102,12 +1140,159 @@ class OpenFOAMModel(HydroSimulations):
             shutil.rmtree(case_dir)
             logger.info(f"Deleted run folder to free disk space: {case_dir}")
 
+    #: Filename of the quantity-independent detailed results table copied into
+    #: ``restart_data`` so ``output_processing`` can rebuild ``model_evaluations``
+    #: for any subset of quantities without new simulations.
+    RESELECTION_DETAILED_FILE = "detailed-model-outputs.csv"
+
+    def _mirror_detailed_results_for_reselection(self):
+        """Copy the detailed per-point results table to a quantity-independent path.
+
+        ``calibration_folder`` is named after ``calibration_quantities``
+        (``calibration-data/<q1>_<q2>_.../``), so a later run that picks a
+        different subset lands in a fresh, empty folder and cannot see the
+        detailed CSV the original run wrote. This mirror in ``restart_data`` is
+        what :meth:`output_processing` reads to rebuild ``model_evaluations`` for
+        the new subset, so choosing the calibration quantities *after* the
+        expensive runs are done needs no new OpenFOAM runs. The detailed table
+        already holds every quantity in :attr:`EXTRACTABLE_QUANTITIES` for every
+        run x control point regardless of what was calibrated, so this is a
+        straight copy of the newest full table.
+        """
+        quantities_str = "_".join(self.calibration_quantities)
+        src = os.path.join(self.calibration_folder, f"results-detailed-{quantities_str}.csv")
+        if not os.path.isfile(src):
+            return
+        dst = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
+        shutil.copyfile(src, dst)
+        logger.info(f"Mirrored detailed results for quantity re-selection to {dst}")
+
+    def _rebuild_model_evaluations_from_detailed(self):
+        """Assemble the GP training matrix for the current ``calibration_quantities``
+        from the quantity-independent detailed results table.
+
+        Returns
+        -------
+        (model_evaluations, collocation_points) : tuple of numpy.ndarray
+            ``model_evaluations`` has shape ``[n_runs, nloc * n_calibration_quantities]``
+            with columns ordered exactly as :meth:`run_multiple_simulations` builds
+            them: for each control point, every calibration quantity in order.
+            ``collocation_points`` has shape ``[n_runs, n_params]``.
+
+        Notes
+        -----
+        Rows for one run are matched to control points by their order in the
+        table, which is the order :meth:`run_multiple_simulations` wrote them
+        (``for pt_idx, cp in enumerate(self.control_points)``) and the same order
+        :meth:`_load_control_points` restores from the measurements file. A count
+        mismatch against ``nloc`` is raised rather than guessed past.
+        """
+        path = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(
+                f"Cannot rebuild model_evaluations for {self.calibration_quantities}: "
+                f"{path} not found. Run the initial simulations once (with any "
+                "calibration_quantities) so the detailed per-point table is written."
+            )
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            raise ValueError(f"Detailed results table is empty: {path}")
+
+        missing = [q for q in self.calibration_quantities if q not in rows[0]]
+        if missing:
+            available = [c for c in rows[0] if c in self.EXTRACTABLE_QUANTITIES]
+            raise ValueError(
+                f"Detailed results table {path} has no column(s) for {missing}. "
+                f"Quantity columns present: {available}."
+            )
+
+        by_run = {}
+        for r in rows:
+            by_run.setdefault(int(float(r["run_idx"])), []).append(r)
+
+        param_names = list(self.calibration_parameters)
+        evaluations, collocation = [], []
+        for run_idx in sorted(by_run):
+            run_rows = by_run[run_idx]
+            if self.nloc and len(run_rows) != self.nloc:
+                raise ValueError(
+                    f"Run {run_idx} in {path} has {len(run_rows)} control-point rows, "
+                    f"expected nloc={self.nloc}. The detailed table and the current "
+                    "measurements file disagree - re-run the simulations or restore "
+                    "the measurements file they were extracted with."
+                )
+            vec = []
+            for loc_row in run_rows:            # already in control-point order
+                for q in self.calibration_quantities:
+                    vec.append(float(loc_row[q]))
+            evaluations.append(vec)
+            collocation.append([float(run_rows[0][p]) for p in param_names])
+
+        return np.array(evaluations), np.array(collocation)
+
     def output_processing(self, output_data_path=None, **kwargs):
-        """Load existing results for BAL restart."""
+        """Load stored model outputs for a BAL restart or pure re-analysis.
+
+        Fast path (unchanged behaviour): the frozen ``initial-model-outputs.json``
+        was written with the same ``calibration_quantities`` that are configured
+        now, so its ``model_evaluations`` matrix is returned as-is.
+
+        Re-selection path: the configured ``calibration_quantities`` differ from
+        the ones in that JSON, so the stored matrix is for the wrong quantities.
+        It is rebuilt from ``restart_data/detailed-model-outputs.csv`` (the
+        quantity-independent per-run x per-point table) by slicing out the
+        requested quantities. This is what lets the calibration quantities be
+        chosen after the expensive runs: extract everything once, then re-run
+        with ``--only_bal_mode True --calibration_quantities "..."`` and only the
+        surrogate + BAL are recomputed.
+
+        ``run_range_filtering=(lo, hi)`` (1-indexed, inclusive), if passed by the
+        driver, trims the rebuilt matrix to those run rows. It is not applied on
+        the fast path, which stays byte-for-byte the previous behaviour.
+        """
+        data = None
         if output_data_path and os.path.isfile(output_data_path):
-            with open(output_data_path, 'r') as f:
+            with open(output_data_path, "r") as f:
                 data = json.load(f)
+
+        # An older JSON without a recorded quantity list is trusted as-is, so this
+        # stays backward compatible: the rebuild path only triggers when the stored
+        # quantities are known and actually differ from what is configured now.
+        stored_q = data.get("calibration_quantities") if data is not None else None
+        same_quantities = (
+            data is not None
+            and (stored_q is None or list(stored_q) == list(self.calibration_quantities))
+        )
+
+        if same_quantities:
             self.restart_collocation_points = np.array(data["collocation_points"])
             self.model_evaluations = np.array(data["model_evaluations"])
             return self.model_evaluations
-        raise FileNotFoundError(f"Output data not found: {output_data_path}") 
+
+        # Re-selection / no matching JSON: rebuild from the detailed table.
+        mirror = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
+        if data is None and not os.path.isfile(mirror):
+            raise FileNotFoundError(
+                f"Output data not found: neither {output_data_path} nor {mirror} exists. "
+                "Run the initial simulations first to execute only Bayesian Active Learning."
+            )
+        if data is not None:
+            logger.info(
+                f"output_processing: configured calibration_quantities {self.calibration_quantities} "
+                f"differ from the stored run's {data.get('calibration_quantities')}; rebuilding "
+                f"model_evaluations from {os.path.basename(mirror)} (no new simulations)."
+            )
+
+        model_evaluations, collocation = self._rebuild_model_evaluations_from_detailed()
+
+        run_range = kwargs.get("run_range_filtering")
+        if run_range is not None:
+            lo, hi = int(run_range[0]), int(run_range[1])
+            hi = min(hi, model_evaluations.shape[0])
+            model_evaluations = model_evaluations[lo - 1:hi]
+            collocation = collocation[lo - 1:hi]
+
+        self.restart_collocation_points = collocation
+        self.model_evaluations = model_evaluations
+        return self.model_evaluations
