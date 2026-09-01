@@ -1,7 +1,6 @@
 """
 Ering case driver: copy of src/hydroBayesCal/drivers/bal_telemac.py with config_Ering.py as the
 default configuration. Keep in sync with the template.
-
 Code that trains a Gaussian Process Emulator (GPE) for any deterministic numerical model (i.e., hydrodynamic models) of Telemac
 Possible to couple with any other open source hydrodynamic software.
 Can use normal training (once) or sequential training (BAL)
@@ -213,6 +212,7 @@ def run_bal_model(collocation_points,
                   output_extraction_time="mean_last",
                   n_last=80,
                   gaia_layer_average=None,
+                  posterior_sampling_method="rejection_sampling",
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -582,7 +582,7 @@ def run_bal_model(collocation_points,
                                    error=total_error,
                                    model_error=(surrogate_output['std']
                                                 if include_surrogate_error else None),
-                                   sampling_method='rejection_sampling',
+                                   sampling_method=posterior_sampling_method,
                                    prior=prior,
                                    ) #prior_log_pdf=prior_logpdf This was here
         bi_gpe.estimate_bme()
@@ -754,6 +754,22 @@ def main():
         init_runs_min=config.sampling.get('init_runs_min', None),
         gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None)
     )
+    # Report-only physics check on the initial design, BEFORE the BAL loop - the last
+    # moment the answer is still cheap to act on. Anti-correlated depth vs. velocity
+    # residuals mean bottom roughness is the identifiable knob; correlated residuals
+    # (both over- or both under-predicted) mean it is not, and the posterior will pin
+    # against whichever prior bound it is given, however many BAL iterations follow.
+    # Changes no sampling and no parameter.
+    try:
+        log_roughness_identifiability(
+            diagnose_roughness_identifiability(
+                model_evaluations,
+                full_complexity_model.observations,
+                full_complexity_model.calibration_quantities,
+            )
+        )
+    except Exception as exception:  # report-only: never lose a finished design to it
+        logger_warn.warning("Roughness-identifiability check skipped: %s", exception)
     if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
         logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
         return
@@ -769,7 +785,12 @@ def main():
         gp_library=config.sampling['gp_library'],
         include_surrogate_error=config.sampling.get('include_surrogate_error', True),
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
+<<<<<<< HEAD
         gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None)
+=======
+        posterior_sampling_method=config.sampling.get('posterior_sampling_method',
+                                                      'rejection_sampling'),
+>>>>>>> origin/main
     )
 
 if __name__ == "__main__":

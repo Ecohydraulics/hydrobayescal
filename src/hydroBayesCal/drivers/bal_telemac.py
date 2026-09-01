@@ -206,7 +206,8 @@ def run_bal_model(collocation_points,
                   include_surrogate_error=True,
                   bal_exploration_tradeoff="auto",
                   output_extraction_time="mean_last",
-        	  n_last=80,
+        	      n_last=80,
+                  posterior_sampling_method="rejection_sampling",
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -576,7 +577,7 @@ def run_bal_model(collocation_points,
                                    error=total_error,
                                    model_error=(surrogate_output['std']
                                                 if include_surrogate_error else None),
-                                   sampling_method='rejection_sampling',
+                                   sampling_method=posterior_sampling_method,
                                    prior=prior,
                                    ) #prior_log_pdf=prior_logpdf This was here
         bi_gpe.estimate_bme()
@@ -747,6 +748,22 @@ def main():
         output_extraction_time=config.extraction['output_extraction_time'],
         n_last=config.extraction['n_last'],
     )
+    # Report-only physics check on the initial design, BEFORE the BAL loop - the last
+    # moment the answer is still cheap to act on. Anti-correlated depth vs. velocity
+    # residuals mean bottom roughness is the identifiable knob; correlated residuals
+    # (both over- or both under-predicted) mean it is not, and the posterior will pin
+    # against whichever prior bound it is given, however many BAL iterations follow.
+    # Changes no sampling and no parameter.
+    try:
+        log_roughness_identifiability(
+            diagnose_roughness_identifiability(
+                model_evaluations,
+                full_complexity_model.observations,
+                full_complexity_model.calibration_quantities,
+            )
+        )
+    except Exception as exception:  # report-only: never lose a finished design to it
+        logger_warn.warning("Roughness-identifiability check skipped: %s", exception)
     if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
         logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
         return
@@ -764,6 +781,7 @@ def main():
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
         output_extraction_time=config.extraction['output_extraction_time'],
         n_last=config.extraction['n_last'],
+        posterior_sampling_method=config.sampling.get('posterior_sampling_method'),
     )
 
 if __name__ == "__main__":

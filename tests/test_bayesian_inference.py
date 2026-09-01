@@ -252,3 +252,84 @@ def test_non_positive_observation_variance_is_rejected():
     with pytest.raises(ValueError, match="variance"):
         BayesianInference(model_predictions=predictions, observations=observations,
                           error=error)
+
+
+# --------------------------------------------------------------------------- #
+# posterior sampling: weighted resampling vs rejection sampling
+# --------------------------------------------------------------------------- #
+def _peaked_problem(mc=4000, n_obs=30):
+    """A sharply peaked likelihood - the regime where rejection sampling starves.
+
+    One parameter scales the prediction, so the likelihood is tight around the value
+    that reproduces the observations. This is the ordinary shape of a *successful*
+    calibration, which is exactly when the acceptance rate collapses.
+    """
+    rng = np.random.default_rng(7)
+    prior = rng.uniform(0.0, 1.0, size=(mc, 2))
+    shape = np.linspace(0.5, 1.5, n_obs)
+    predictions = shape[None, :] * (0.5 + prior[:, [0]])
+    observations = (shape * (0.5 + 0.7))[None, :]
+    error = np.full(n_obs, 0.01 ** 2)
+    return predictions, observations, error, prior
+
+
+def test_weighted_resampling_returns_a_full_size_posterior():
+    """Rejection sampling starves on a peaked likelihood; weighting must not.
+
+    The count is the whole point: a posterior of a few dozen samples cannot support
+    a density estimate, however many prior samples were evaluated.
+    """
+    predictions, observations, error, prior = _peaked_problem()
+
+    rejection = BayesianInference(model_predictions=predictions, observations=observations,
+                                  error=error, prior=prior,
+                                  sampling_method="rejection_sampling")
+    rejection.estimate_bme()
+
+    weighted = BayesianInference(model_predictions=predictions, observations=observations,
+                                 error=error, prior=prior,
+                                 sampling_method="bayesian_weighting")
+    weighted.estimate_bme()
+
+    assert rejection.posterior is not None
+    assert weighted.posterior is not None, "bayesian_weighting produced no posterior"
+    assert len(rejection.posterior) < 0.05 * len(prior), "expected a starved acceptance"
+    assert len(weighted.posterior) == len(prior)
+    assert weighted.posterior_output.shape == (len(prior), predictions.shape[1])
+
+
+def test_the_two_samplers_agree_on_the_posterior():
+    """Different mechanics, same target distribution - so the fix cannot be a
+    full-size sample of the wrong thing."""
+    predictions, observations, error, prior = _peaked_problem()
+
+    rejection = BayesianInference(model_predictions=predictions, observations=observations,
+                                  error=error, prior=prior,
+                                  sampling_method="rejection_sampling")
+    rejection.estimate_bme()
+    weighted = BayesianInference(model_predictions=predictions, observations=observations,
+                                 error=error, prior=prior,
+                                 sampling_method="bayesian_weighting")
+    weighted.estimate_bme()
+
+    # the informed parameter: means within a small fraction of the prior width
+    assert abs(weighted.posterior[:, 0].mean() - rejection.posterior[:, 0].mean()) < 0.02
+    # and the log-evidence is a property of the likelihood, not of the sampler
+    assert np.isclose(weighted.log_BME, rejection.log_BME, rtol=1e-9)
+
+
+def test_weighted_resampling_reports_its_effective_sample_size():
+    """Resampling with replacement repeats rows, so the count alone overstates the
+    information. ESS must be reported, and must not exceed the drawn size."""
+    predictions, observations, error, prior = _peaked_problem()
+    weighted = BayesianInference(model_predictions=predictions, observations=observations,
+                                 error=error, prior=prior,
+                                 sampling_method="bayesian_weighting")
+    weighted.estimate_bme()
+
+    assert weighted.ess is not None
+    assert 0 < weighted.ess <= len(prior)
+    # post_index must address rows of the original prior
+    assert weighted.post_index.min() >= 0
+    assert weighted.post_index.max() < len(prior)
+    assert np.allclose(weighted.posterior, prior[weighted.post_index])

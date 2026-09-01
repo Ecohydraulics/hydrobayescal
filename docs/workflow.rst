@@ -434,8 +434,11 @@ For telemac simulations, the following parameters should be defined in the **Tel
     physics-based *roughness-identifiability* diagnostic whenever the calibration
     targets include both a depth-like and a velocity-like target
     (``diagnose_roughness_identifiability`` / ``log_roughness_identifiability`` in
-    ``hydroBayesCal.function_pool``, invoked from
-    ``src/hydroBayesCal/drivers/prebal_telemac_error_analysis.py``). At a fixed discharge
+    ``hydroBayesCal.function_pool``). Since 1.8.0 it runs automatically in
+    ``bal_telemac.py`` and ``bal_telemac_multiflow.py``, on the initial design and before
+    the BAL loop, so an ordinary calibration reports it with no extra step;
+    ``src/hydroBayesCal/drivers/prebal_telemac_error_analysis.py`` still runs it
+    standalone. At a fixed discharge
     (:math:`Q = U\,A`), raising the bottom roughness slows the flow, so the water
     deepens to keep passing :math:`Q` -- depth goes up, velocity goes down. Hence the
     sign pattern of the depth-vs-velocity residuals (simulated minus observed) at the

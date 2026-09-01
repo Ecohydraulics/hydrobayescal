@@ -4,6 +4,54 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-08-28
+
+### Fixed
+- **The roughness-identifiability check can no longer end a calibration.** 1.8.0 moved it
+  onto the default path, where it runs after an initial design that has already cost
+  hours of solver time - but with mismatched output/observation shapes it raised out of
+  its own residual broadcast, which would have discarded those completed runs. It now
+  reports `unavailable` for a shape mismatch or all-non-finite input, uses `nanmedian`
+  so one dry or failed calibration point cannot void the verdict, and the driver call
+  sites catch anything else and log it as a warning. Report-only means report-only.
+
+## [1.8.0] - 2026-08-28
+
+A TELEMAC release, from a 14-day multi-discharge calibration that ended with a posterior
+of 35 samples and a result the tooling could have predicted on its first day. Both are
+fixed here: the posterior sample size no longer collapses when a calibration goes well,
+and the roughness-identifiability check now runs on the path calibrations actually take.
+
+### Added
+- **`sampling['posterior_sampling_method']` selects how the posterior is drawn.**
+  `bayesian_weighting` now resamples the prior with replacement in proportion to the
+  likelihood weights (sampling-importance resampling) and returns a full-size posterior
+  from the same likelihoods, at no extra model cost. It reports the Kish effective
+  sample size, `1/sum(w^2)`, and warns when that falls below 5% of the drawn size, so a
+  posterior resting on a few prior samples stays visible instead of hiding behind a
+  full-looking array. `rejection_sampling` remains the default and is unchanged.
+- **The roughness-identifiability diagnostic runs in `bal_telemac.py` and
+  `bal_telemac_multiflow.py`**, on the initial design and before the BAL loop. It was
+  already written and documented but only reachable from the opt-in
+  `prebal_telemac_error_analysis.py` driver, so an ordinary calibration never saw it.
+  Correlated depth and velocity residuals mean bottom roughness cannot close the misfit
+  and its optimum will pin against whichever prior bound it is given - worth knowing
+  before the active-learning iterations, not after. It is report-only and changes no
+  sampling and no parameter.
+
+### Fixed
+- **`bayesian_weighting` produced no posterior at all.** The branch computed the
+  evidence and the weights, then discarded the weights: `posterior`, `posterior_output`
+  and `post_index` were set only by `rejection_sampling`, so selecting the documented
+  alternative left every downstream consumer - posterior analysis, plots,
+  `derive_calibrated_parameters` - with `None`. This mattered because rejection sampling
+  is the one that starves: its acceptance rate is `mean(L)/max(L)`, which collapses
+  precisely when the likelihood is sharp, i.e. when the calibration has succeeded.
+- **`tbl_creator` raised `IndexError` on a blank line in a friction table.** The comment
+  branch guarded against an empty split, the zone comparison on the next line did not.
+  Since the friction table is rewritten before every model evaluation, a hand-edited
+  table with a trailing or separating blank line stopped the calibration at its first
+  run, after the design had been sampled and before any usable output existed.
 ## [1.7.0] - 2026-08-18
 
 ### Added
@@ -624,6 +672,8 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.8.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.8.1
+[1.8.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.8.0
 [1.7.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.7.0
 [1.6.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.6.0
 [1.5.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.5.0

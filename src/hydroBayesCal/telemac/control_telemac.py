@@ -1987,7 +1987,14 @@ class TelemacModel(HydroSimulations):
         updated_lines = []
         for line in file_lines:
             line_list = list(filter(None, line.split()))
-            if line_list and line_list[0].startswith('*'):
+            # A blank or whitespace-only line splits to [], and indexing it below
+            # raises IndexError - which happens on the FIRST parameter rewrite, so a
+            # friction table with a stray blank line kills the calibration at run 1
+            # rather than at the end. Pass such lines through untouched.
+            if not line_list:
+                updated_lines.append(line)
+                continue
+            if line_list[0].startswith('*'):
                 updated_lines.append(line)
                 continue
             if line_list[0] == zone_identifier:
