@@ -4,6 +4,50 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-09-04
+
+An OpenFOAM release. The binding shipped since 1.7 could not run against **OpenFOAM
+Foundation** at all, and three further defects surfaced only *after* an experimental
+design had already been simulated - i.e. at the point where the runs they invalidate
+have already been paid for.
+
+### Added
+- **OpenFOAM Foundation support.** The turbulence dictionary is resolved by which file
+  EXISTS rather than by name, so one binding serves both lines: ESI calls it
+  `constant/turbulenceProperties`, Foundation 8+ calls it `constant/momentumTransport`.
+  The caller's `param["file"]` is honoured only when it is really there, because the
+  config's default names the ESI spelling.
+- `OpenFOAMModel(write_vtk=...)`, default **off**. Field extraction no longer needs
+  `foamToVTK`, and with `delete_complex_outputs` the converted copy was deleted moments
+  after being written.
+- `HBC_MPI_LAUNCHER` for installs whose MPI launcher is not `mpirun`.
+
+### Fixed
+- **`do_tradeoff` was read before assignment in `bal_openfoam.py`**, so the first BAL
+  iteration raised `NameError` - after the whole initial design had run.
+  `bal_telemac.py` initialises it; this driver did not.
+- **`OpenFOAMModel.__init__` dropped `gpe_error`, `measurement_error` and
+  `model_structural_error`.** They were accepted and never forwarded to
+  `HydroSimulations`, so observation variances were always built from the base-class
+  defaults and a configured `measurement_error` was silently ignored.
+- **`update_model_controls` hard-coded the turbulence file** while reading
+  `param["file"]` one line above, so every k-epsilon perturbation raised
+  `FileNotFoundError` on a Foundation case.
+- **`extract_fields_from_vtk` required the ESI `foamToVTK` layout** (`VTK/*.vtm` plus
+  `VTK/<stem>/internal.vtu`). Foundation writes legacy `VTK/<case>_<n>.vtk`, so the
+  extractor could never run against it. It now reads the case directory through
+  pyvista's OpenFOAM reader - both lines, ASCII and binary `writeFormat`, with and
+  without `alpha.water` (a single-phase or rigid-lid case has none, which correctly
+  means every cell is water). Times come from the reader, so a hot-started run's step
+  indices cannot reorder the averaging window.
+- **`run_simulation` sourced a hard-coded `$HOME/OpenFOAM/OpenFOAM-v2412/etc/bashrc`**,
+  which made the binding usable on exactly one machine.
+
+### Verified
+Against a real OpenFOAM Foundation 9 build: parameter routing into the dictionaries,
+the MPI launch, field extraction and per-run accumulation, over a 3-run plumbing test
+and a multi-run campaign on the Inn KB15 reach.
+
 ## [1.8.1] - 2026-08-28
 
 ### Fixed

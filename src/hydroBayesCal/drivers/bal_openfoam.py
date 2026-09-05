@@ -307,6 +307,23 @@ def run_bal_model(collocation_points,
     # the canonical driver). Additive keys: existing consumers read by key.
     for _key in ITERATION_KEYS:
         bayesian_dict[_key] = [None] * (n_iter + 1)
+    # Exploration/exploitation of the sequential design. 'auto' starts as pure
+    # exploitation, which is right while the posterior looks unimodal, and switches
+    # once the per-iteration diagnostic finds a second mode. Kept in sync with
+    # bal_telemac.py, the canonical driver: without this the first BAL iteration
+    # reads do_tradeoff before it is ever assigned and raises NameError - after the
+    # whole initial design has already been simulated.
+    if bal_exploration_tradeoff == "auto":
+        do_tradeoff = False
+        logger.info("BAL point selection: exploitation only, switching to an "
+                    "exploration/exploitation trade-off if the posterior turns out to "
+                    "have more than one mode (sampling['bal_exploration_tradeoff'] = "
+                    "'auto').")
+    else:
+        do_tradeoff = bool(bal_exploration_tradeoff)
+        logger.info(f"BAL point selection: "
+                    f"{'exploration/exploitation trade-off' if do_tradeoff else 'exploitation only'} "
+                    f"(forced by sampling['bal_exploration_tradeoff']).")
     for it in range(0, n_iter + 1):
 
         # 1. Train surrogate
