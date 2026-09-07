@@ -86,11 +86,11 @@ def main():
     # Call the surrogate model
     #
     # surrogate_type = "MO" uses the multi-output GPE.
-    # surrogate_type = "SO" loops through the three single-output GPEs and fills
+    # surrogate_type = "SO" loops through the single-output GPEs and fills
     #                  the same interleaved output matrix as the MO-GPE.
     # -------------------------------------------------------------------------
 
-    surrogate_type = "MO"   # options: "MO" or "SO"
+    surrogate_type = "SO"   # options: "MO" or "SO"
 
     start_time = time.time()
 

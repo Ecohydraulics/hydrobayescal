@@ -17,7 +17,7 @@ e.g. "WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U/V",
 import os
 
 # Base directory
-BASE_DIR = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/EringFishwayHydrodynamicsMU2d/"
+BASE_DIR = "/media/andres/Windows/Users/andre/Documents/PhD/2026/EringMO-GPEcalibration_FSF_2026/hydrodynamic_calibration/"
 
 # ============================================================================
 # PATHS AND DIRECTORIES
@@ -97,12 +97,12 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 25,   # Number of initial parameter samples
-    'max_runs':  100,   # Total runs (initial + BAL iterations)
+    'init_runs': 4,   # Number of initial parameter samples
+    'max_runs':  4,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
-    'parameter_sampling_method': "sobol",
+    'parameter_sampling_method': "user",
     'tp_selection_criteria':    "dkl",
 
     # BAL specific0
@@ -137,11 +137,11 @@ extraction = {
 # EXECUTION MODES
 # ============================================================================
 execution = {
-    'complete_bal_mode':      True,
-    'only_bal_mode':          True,
-    'delete_complex_outputs': True,
+    'complete_bal_mode':      False,
+    'only_bal_mode':          False,
+    'delete_complex_outputs': False,
     'validation':             False,
-    'user_param_values':      False,
+    'user_param_values':      True,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS

@@ -946,6 +946,7 @@ class SequentialDesign:
                     # block_cov_matrix = block_diag(*cov_blocks)
                 else:
                     y_std = std_cand[idx, :]
+
                 if utility_func.lower() == "bme" or not self.gaussian_assumption:
                     U_J_d[idx] = self.bayesian_active_learning(y_mean=y_mean, y_std=y_std,
                                                                observations=self.observations, error=m_error,

@@ -17,7 +17,7 @@ e.g. "WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U/V",
 import os
 
 # Base directory
-BASE_DIR = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/EringFishwayHydrodynamicsMU2d/"
+BASE_DIR = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/"
 
 # ============================================================================
 # PATHS AND DIRECTORIES
@@ -26,7 +26,7 @@ paths = {
     'case_template_dir': os.path.join(BASE_DIR, ""),
     'model_dir':         os.path.join(BASE_DIR, "simulationFiles"),
     'res_dir':           os.path.join(BASE_DIR),
-    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measurements-calibration-EringCalib-detailed.csv"),
+    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measurements-calibration-EringCalib-detailed-updated.csv"),
 }
 
 # ============================================================================
@@ -58,11 +58,11 @@ calibration = {
                                     "zone6"], # Run,
 
     # Parameter ranges [min, max] in the same order as 'parameters' above.
-    'param_values': [     [0.002, 0.6],  # zone2
-                          [0.002, 0.6],  # zone3
-                          [0.002, 0.6],  # zone4
-                          [0.002, 0.6],  # zone5
-                          [0.002, 0.6]], #zone6
+    'param_values': [     [0.001, 0.6],  # zone2
+                          [0.001, 0.6],  # zone3
+                          [0.001, 0.6],  # zone4
+                          [0.001, 0.6],  # zone5
+                          [0.001, 0.6]], #zone6
 
     # Quantities to extract from simulation - USE STANDARD NAMES
     'extraction_quantities': ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
@@ -86,9 +86,9 @@ calibration = {
     #                           conditions). Independent of the emulator and NOT
     #                           supplied by include_surrogate_error. Set it only if
     #                           you can defend a value.
-    'measurement_error':      0.0,
-    'gpe_error':              0.0,
-    'model_structural_error': 0.0,
+    'measurement_error':      0.20,
+    'gpe_error':              0.05,
+    'model_structural_error': 0.25,
 
     'dict_output_name': "extraction-data",
 }
@@ -97,12 +97,12 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 4,   # Number of initial parameter samples
-    'max_runs':  4,   # Total runs (initial + BAL iterations)
+    'init_runs': 30,   # Number of initial parameter samples
+    'max_runs': 100,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
-    'parameter_sampling_method': "user",
+    'parameter_sampling_method': "sobol",
     'tp_selection_criteria':    "dkl",
 
     # BAL specific0
@@ -111,7 +111,7 @@ sampling = {
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
-
+    'multitask_selection': 'variables',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
     # Feed the GPE predictive standard deviation into the Bayesian inference rather
     # than treating the surrogate predictions as exact. On by default: the emulator's
     # uncertainty is genuine uncertainty, and the BAL utility already accounts for
@@ -137,11 +137,11 @@ extraction = {
 # EXECUTION MODES
 # ============================================================================
 execution = {
-    'complete_bal_mode':      False,
-    'only_bal_mode':          False,
-    'delete_complex_outputs': False,
+    'complete_bal_mode':      True,
+    'only_bal_mode':          True,
+    'delete_complex_outputs': True,
     'validation':             False,
-    'user_param_values':      True,
+    'user_param_values':      False,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS
@@ -160,8 +160,8 @@ plotting = {
     'parameter_units': [ "m", "m", "m", "m", "m"],
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
-    'parameter_indices': [0, 1, 2, 3, 4],
-    'iterations_to_plot': [75],
+    'parameter_indices': [0,1,2,3,4],
+    'iterations_to_plot': [0],
     #-------------------------
     #posterior plotting options
     #-------------------------

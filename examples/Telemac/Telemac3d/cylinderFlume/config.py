@@ -19,7 +19,7 @@ Standard Names Reference:
 import os
 
 # Base directory
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac3d/cylinderFlume/"
 
 # ============================================================================
 # PATHS AND DIRECTORIES
@@ -42,29 +42,29 @@ hydrodynamic_simulation = {
     'friction_file':         None, #Telemac friction file (if needed)
     'fortran_file':          "cstkep.f"
 }
-morphodynamic_simulation= {
-    'gaia_cas':                     None,
-    'gaia_results_filename_base':   None,
+morphodynamic_simulation = {
+    'gaia_cas':                   None,
+    'gaia_results_filename_base': None,
+
+    'gaia_layer_average': {
+        "LAY1 SAND RAT": {
+            "layers": None,
+            "thicknesses": None
+        }
+    }
 }
 
 # ============================================================================
-# INTERFOAM SPECIFIC SETTINGS
-# ============================================================================
-interfoam = {
-    'alpha_water_name':   "alpha.water",
-    'water_surface_alpha': 0.5,
-    'reference_z':         0.0,
-}
-
-# ============================================================================
-# CALIBRATION PARAMETERS - CMU TURBULENCE COEFFICIENT
+# CALIBRATION PARAMETERS - TELEMAC FRICTION ZONES + GAIA SHIELDS PARAMETERS
 # ============================================================================
 calibration = {
     # Use "Cmu" to match the key expected by update_model_controls
-    'parameters': ["FRICTION COEFFICIENT FOR THE BOTTOM"], # Run,
+    'parameters': ["FRICTION COEFFICIENT FOR THE BOTTOM","COEFFICIENT FOR HORIZONTAL DIFFUSION OF VELOCITIES","COEFFICIENT FOR VERTICAL DIFFUSION OF VELOCITIES"], # Run,
 
     # Cmu range: typical values 0.06-0.12 (default is 0.09)
-    'param_values': [[0.01,0.06]],
+    'param_values': [[0.01,0.06],
+    		     [0.000001,0.00001],
+    		     [0.000001,0.00001]],
 
     # Quantities to extract from simulation - USE STANDARD NAMES
     'extraction_quantities': ["TURBULENT ENERG", "VELOCITY U", "VELOCITY V", "VELOCITY W","3D VELOCITY MAGNITUDE"],
@@ -74,7 +74,23 @@ calibration = {
     # 'calibration_quantities': ["3D VELOCITY MAGNITUDE"],
     #'calibration_quantities': ["3D VELOCITY MAGNITUDE","VELOCITY U"],
     #'calibration_quantities': ["TURBULENT ENERG"],
-
+ 
+ # Three relative error terms, each a fraction of every measured value, added to
+    # the observation variance alongside the absolute <target>_ERROR column:
+    #   measurement_error       the instrument/campaign is imprecise.
+    #   gpe_error               flat stand-in for the emulator's own uncertainty.
+    #                           Leave at 0.0 while include_surrogate_error is True:
+    #                           the inference then uses the real per-prediction GPE
+    #                           standard deviation, and a value here would count the
+    #                           same uncertainty twice.
+    #   model_structural_error  the solver itself is an imperfect description of the
+    #                           site (unresolved processes, geometry, boundary
+    #                           conditions). Independent of the emulator and NOT
+    #                           supplied by include_surrogate_error. Set it only if
+    #                           you can defend a value.
+    'measurement_error':      0.0,
+    'gpe_error':              0.0,
+    'model_structural_error': 0.15,
 
     'dict_output_name': "extraction-data",
 }
@@ -83,8 +99,8 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 10,   # Number of initial parameter samples
-    'max_runs':  25,   # Total runs (initial + BAL iterations)
+    'init_runs': 30,   # Number of initial parameter samples
+    'max_runs':  60,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
@@ -97,6 +113,12 @@ sampling = {
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
+    'multitask_selection': 'variables', # 'locations' or 'variables' or 'all'
+    # Feed the GPE predictive standard deviation into the Bayesian inference rather
+    # than treating the surrogate predictions as exact. On by default: the emulator's
+    # uncertainty is genuine uncertainty, and the BAL utility already accounts for
+    # it. Keep calibration['gpe_error'] at 0.0 while this is True.
+    'include_surrogate_error': True,
 }
 
 # ============================================================================
@@ -116,14 +138,23 @@ plotting = {
 
     # Used for plotting and reporting - must be in same order as 'parameters'
     'parameter_names': [
-        r"$k_{\mathrm{s,bed}}$"
+        r"$k_{\mathrm{s,bed}}$",
+        r"$k_{\mathrm{CMU}}$"
     ],
     # Units for reporting and plotting - must be in same order as 'parameters'
-    'parameter_units': ["m"],
+    'parameter_units': ["m","-"],
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
-    'parameter_indices': [0],
-    'iterations_to_plot': 15,
+    'parameter_indices': [0,1,2],
+    'iterations_to_plot': [15],
+
+    # -------------------------
+    # posterior plotting options
+    # -------------------------
+    # "posterior_mean",
+    # "posterior_marginal_peak",
+    # "joint_posterior_MAP"
+    'posterior_plotting_option': 'posterior_marginal_peak'
 }
 
 # ============================================================================

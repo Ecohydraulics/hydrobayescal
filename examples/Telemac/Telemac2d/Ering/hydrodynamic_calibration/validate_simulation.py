@@ -38,7 +38,7 @@ def main():
     full_complexity_model = TelemacModel(
         res_dir=config.paths['res_dir'],
         calibration_pts_file_path=config.paths['calibration_pts_file_path'],
-        init_runs=30, # Number oF samples for validation
+        init_runs=40, # Number oF samples for validation
         calibration_parameters=config.calibration['parameters'],
         calibration_quantities=config.calibration['calibration_quantities'],
         # calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH", "CUMUL BED EVOL"],
@@ -46,8 +46,8 @@ def main():
         extraction_quantities=config.calibration['extraction_quantities'],
         validation=True
     )
-    surrogate_to_analyze = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to analyze
-    surrogates_to_evaluate = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to evaluate per location
+    surrogate_to_analyze = [10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to analyze
+    surrogates_to_evaluate = [10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to evaluate per location
 
     # Define the desired order manually (you can also automate if needed)
     calibration_quantities = full_complexity_model.calibration_quantities

@@ -11,7 +11,6 @@ Author: Andres Heredia Hidalgo MSc
 import argparse
 import importlib.util
 import numpy as np
-import os
 
 from hydroBayesCal.telemac.control_telemac import TelemacModel
 from hydroBayesCal.visualize import BayesianPlotter
@@ -62,9 +61,6 @@ def main():
         results_folder_path=results_folder_path,
         variable_name=quantities_str
     )
-    collocation_points_file = os.path.join(
-        full_complexity_model.calibration_folder,
-        f"collocation-points-{quantities_str}.csv")
 
     # ---------------------------------------------------------------------
     # User settings
@@ -107,23 +103,11 @@ def main():
     # ---------------------------------------------------------------------
     # Plot BME and RE evolution
     # ---------------------------------------------------------------------
-    plotter.plot_bme_re(
-         bayesian_dict=bayesian_data,
-         num_bal_iterations=config.plotting["iterations_to_plot"][0],
-         plot_type="RE"
-     )
-
-    plotter.plot_collocation_points(
-        bayesian_dict=bayesian_data,
-        collocation_points_path=collocation_points_file,
-        parameter_names=config.plotting["parameter_names"],       # full list of 5 LaTeX labels
-	    parameter_indices=[config.plotting["parameter_indices"][i] for i in [0,1, 2]],
-	    parameter_units=[config.plotting["parameter_units"][i] for i in [0,1, 2]],
-        param_values=full_complexity_model.param_values,
-        num_bal_iterations=config.plotting["iterations_to_plot"][0],
-        density_background=True,
-        density_points="bal",  #ballor all (to consider initial collocation points)
-    )
+    # plotter.plot_bme_re(
+    #     bayesian_dict=bayesian_data,
+    #     num_bal_iterations=config.plotting["parameter_indices"][0],
+    #     plot_type="both"
+    # )
 
     # ---------------------------------------------------------------------
     # Plot posterior updates
@@ -139,7 +123,7 @@ def main():
         prior=prior,
         param_values=full_complexity_model.param_values,
         iterations_to_plot=config.plotting["iterations_to_plot"],
-        bins=25,
+        bins=50,
         density=True,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
