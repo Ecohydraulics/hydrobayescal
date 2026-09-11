@@ -90,7 +90,7 @@ def main():
     #                  the same interleaved output matrix as the MO-GPE.
     # -------------------------------------------------------------------------
 
-    surrogate_type = "SO"   # options: "MO" or "SO"
+    surrogate_type = "MO"   # options: "MO" or "SO"
 
     start_time = time.time()
 
@@ -267,13 +267,13 @@ def main():
                 err_split,
                 coordinates,
                 model_names=[
-                                     r"MO-GPE: $h, \bar{U}$",
-                                     # r"MO-GPE: $h, \bar{U}$",
-                                     r"SO-GPE: $h$",
-                                     r"SO-GPE: $\bar{U}$",
+                                     r"MO-GPE (postBAL-JointOpt): $h, \bar{U}$",
+                                     r"SO-GPE (postBAL-JointOpt): $h, \bar{U}$",
+                                     r"MO-GPE (preBAL-JointOpt): $h, \bar{U}$",
+                                     r"SO-GPE (preBAL-JointOpt): $h, \bar{U}$",
                                      # r"SO-GPE: $\delta_{z}$",
                                      # r"Benchmark: $k_{s} = \mathrm{mean}$",
-                                     r"Benchmark: $k_{s} = 3 \times d_{50}$"
+                                     #r"Benchmark: $k_{s} = 3 \times d_{50}$"
                                  ],
                 quantity_names=calibration_names,
                 plot_models=list(range(4)))

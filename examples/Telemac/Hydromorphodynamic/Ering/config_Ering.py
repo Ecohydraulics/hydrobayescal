@@ -95,7 +95,7 @@ sampling = {
 
     # Experimental design
     'parameter_distribution':   "uniform",
-    'parameter_sampling_method': "sobol",
+    'parameter_sampling_method': "user",
     'tp_selection_criteria':    "dkl",
 
     # BAL specific
@@ -134,7 +134,7 @@ execution = {
     'only_bal_mode':         True,
     'delete_complex_outputs': True,
     'validation':             False,
-    'user_param_values':      False,
+    'user_param_values':      True,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS

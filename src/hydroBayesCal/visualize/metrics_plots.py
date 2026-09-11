@@ -358,7 +358,7 @@ class MetricsPlots:
 
                 elif q_idx == 1:  # second column
                     if r_idx == 0:
-                        ymin, ymax = 0.0, 0.010
+                        ymin, ymax = 0.0, 0.015
                     elif r_idx == 1:
                         ymin, ymax = 0.0, 0.25
 

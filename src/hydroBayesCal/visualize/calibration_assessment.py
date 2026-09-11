@@ -87,6 +87,12 @@ class CalibrationAssessment:
             all_normalized_residuals_cm = []
             all_normalized_residuals_sm = []
 
+            # Store residuals normalized by the observed spatial standard
+            # deviation of each quantity. Each quantity therefore has its
+            # own normalization scale, shared by all locations for that target.
+            all_stdobs_normalized_residuals_cm = []
+            all_stdobs_normalized_residuals_sm = []
+
             for i in range(n_quantities):
                 cm_vals = cm_outputs_split[f'cm_outputs_{i + 1}'][p]
                 sm_vals = sm_outputs_split[f'sm_outputs_{i + 1}'][p]
@@ -188,9 +194,60 @@ class CalibrationAssessment:
                     else nrmse_sm_total / nmae_sm_total
                 )
 
-                # Keep the normalized residuals for the pooled overall metrics.
+                # ---------------------------------------------------------
+                # Observation-standard-deviation-normalized RMSE and MAE
+                # ---------------------------------------------------------
+                # The normalization is target-specific: for quantity Q_i,
+                # compute one standard deviation from its observations across
+                # locations, then normalize every location residual of Q_i
+                # using that same target-specific scale.
+                #
+                # ddof=1 gives the sample standard deviation. If you want the
+                # population standard deviation of the finite set of observed
+                # locations instead, change ddof=1 to ddof=0.
+                finite_obs = obs_vals[np.isfinite(obs_vals)]
+
+                if finite_obs.size < 2:
+                    raise ValueError(
+                        f"At least two finite observations are required to compute "
+                        f"the observation standard deviation for Q{i + 1}"
+                    )
+
+                obs_std = np.std(finite_obs, ddof=1)
+
+                if not np.isfinite(obs_std) or obs_std <= 0.0:
+                    raise ValueError(
+                        f"Observation standard deviation must be finite and greater "
+                        f"than zero for Q{i + 1}; got {obs_std}"
+                    )
+
+                stdobs_normalized_residuals_cm = residuals_cm / obs_std
+                stdobs_normalized_residuals_sm = residuals_sm / obs_std
+
+                nrmse_stdobs_cm_total = np.sqrt(
+                    np.nanmean(stdobs_normalized_residuals_cm ** 2)
+                )
+                nrmse_stdobs_sm_total = np.sqrt(
+                    np.nanmean(stdobs_normalized_residuals_sm ** 2)
+                )
+
+                nmae_stdobs_cm_total = np.nanmean(
+                    np.abs(stdobs_normalized_residuals_cm)
+                )
+                nmae_stdobs_sm_total = np.nanmean(
+                    np.abs(stdobs_normalized_residuals_sm)
+                )
+
+                # Keep both normalization schemes for pooled overall metrics.
                 all_normalized_residuals_cm.append(normalized_residuals_cm)
                 all_normalized_residuals_sm.append(normalized_residuals_sm)
+
+                all_stdobs_normalized_residuals_cm.append(
+                    stdobs_normalized_residuals_cm
+                )
+                all_stdobs_normalized_residuals_sm.append(
+                    stdobs_normalized_residuals_sm
+                )
 
                 spearman_cm = spearmanr(cm_vals, obs_vals).correlation
                 spearman_sm = spearmanr(sm_vals, obs_vals).correlation
@@ -209,6 +266,13 @@ class CalibrationAssessment:
 
                 model_summary[f"NMAE_CM_Q{i + 1}"] = nmae_cm_total
                 model_summary[f"NMAE_SM_Q{i + 1}"] = nmae_sm_total
+
+                # Observation-standard-deviation normalization.
+                model_summary[f"Obs_STD_Q{i + 1}"] = obs_std
+                model_summary[f"NRMSE_STDOBS_CM_Q{i + 1}"] = nrmse_stdobs_cm_total
+                model_summary[f"NRMSE_STDOBS_SM_Q{i + 1}"] = nrmse_stdobs_sm_total
+                model_summary[f"NMAE_STDOBS_CM_Q{i + 1}"] = nmae_stdobs_cm_total
+                model_summary[f"NMAE_STDOBS_SM_Q{i + 1}"] = nmae_stdobs_sm_total
 
                 # Raw RMSE / MAE ratio.
                 model_summary[f"RMSE_MAE_CM_Q{i + 1}"] = rmse_mae_ratio_cm
@@ -251,6 +315,9 @@ class CalibrationAssessment:
                         "measurement_error": err_vals[j],
                         "normalized_residual_cm": normalized_residuals_cm[j],
                         "normalized_residual_sm": normalized_residuals_sm[j],
+                        "obs_std": obs_std,
+                        "stdobs_normalized_residual_cm": stdobs_normalized_residuals_cm[j],
+                        "stdobs_normalized_residual_sm": stdobs_normalized_residuals_sm[j],
                         "ci_width": ci_width,
                         "cm_rank": cm_ranks[j],
                         "sm_rank": sm_ranks[j],
@@ -344,6 +411,46 @@ class CalibrationAssessment:
                 else model_summary["Overall_NRMSE_SM"] / overall_nmae_sm
             )
 
+            # ---------------------------------------------------------
+            # Pooled overall observation-STD-normalized metrics
+            # ---------------------------------------------------------
+            # Each residual was first normalized by the observation standard
+            # deviation of its own quantity. Pooling afterward makes the
+            # quantities dimensionless and comparable in the global metric.
+            pooled_stdobs_residuals_cm = np.concatenate(
+                all_stdobs_normalized_residuals_cm
+            )
+            pooled_stdobs_residuals_sm = np.concatenate(
+                all_stdobs_normalized_residuals_sm
+            )
+
+            valid_stdobs_cm = np.isfinite(pooled_stdobs_residuals_cm)
+            valid_stdobs_sm = np.isfinite(pooled_stdobs_residuals_sm)
+
+            if np.any(valid_stdobs_cm):
+                valid_cm_values = pooled_stdobs_residuals_cm[valid_stdobs_cm]
+                model_summary["Overall_NRMSE_STDOBS_CM"] = np.sqrt(
+                    np.mean(valid_cm_values ** 2)
+                )
+                model_summary["Overall_NMAE_STDOBS_CM"] = np.mean(
+                    np.abs(valid_cm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_STDOBS_CM"] = np.nan
+                model_summary["Overall_NMAE_STDOBS_CM"] = np.nan
+
+            if np.any(valid_stdobs_sm):
+                valid_sm_values = pooled_stdobs_residuals_sm[valid_stdobs_sm]
+                model_summary["Overall_NRMSE_STDOBS_SM"] = np.sqrt(
+                    np.mean(valid_sm_values ** 2)
+                )
+                model_summary["Overall_NMAE_STDOBS_SM"] = np.mean(
+                    np.abs(valid_sm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_STDOBS_SM"] = np.nan
+                model_summary["Overall_NMAE_STDOBS_SM"] = np.nan
+
             model_summary["Overall_Spearman_CM"] = overall_spearman_cm
             model_summary["Overall_Spearman_SM"] = overall_spearman_sm
 
@@ -356,6 +463,20 @@ class CalibrationAssessment:
 
         df_summary["Rank_NMAE_CM"] = df_summary["Overall_NMAE_CM"].rank(method="min")
         df_summary["Rank_NMAE_SM"] = df_summary["Overall_NMAE_SM"].rank(method="min")
+
+        df_summary["Rank_NRMSE_STDOBS_CM"] = df_summary[
+            "Overall_NRMSE_STDOBS_CM"
+        ].rank(method="min")
+        df_summary["Rank_NRMSE_STDOBS_SM"] = df_summary[
+            "Overall_NRMSE_STDOBS_SM"
+        ].rank(method="min")
+
+        df_summary["Rank_NMAE_STDOBS_CM"] = df_summary[
+            "Overall_NMAE_STDOBS_CM"
+        ].rank(method="min")
+        df_summary["Rank_NMAE_STDOBS_SM"] = df_summary[
+            "Overall_NMAE_STDOBS_SM"
+        ].rank(method="min")
 
         df_summary["Rank_Spearman_CM"] = df_summary["Overall_Spearman_CM"].rank(
             ascending=False,
@@ -697,7 +818,66 @@ class CalibrationAssessment:
         )
 
         # ---------- Unified subplots for NMAE vs NRMSE ----------
-        def plot_nmae_vs_nrmse_subplots(metric_tag, filename):
+        def set_precise_metric_ticks(
+                ax,
+                axis,
+                values,
+                n_ticks=6
+        ):
+            """
+            Set tight metric limits with a fixed number of ticks and always
+            display tick labels with exactly two decimal places.
+
+            Six ticks are used for the STDOBS figures, i.e. one more horizontal
+            and vertical tick than the previous five-tick layout.
+            """
+            vals = np.asarray(values, dtype=float)
+            vals = vals[np.isfinite(vals)]
+
+            if vals.size == 0:
+                return
+
+            vmin, vmax = tight_metric_limits(vals)
+
+            if not np.isfinite(vmin) or not np.isfinite(vmax):
+                return
+
+            if np.isclose(vmin, vmax):
+                pad = 0.02 * max(abs(vmin), 1.0)
+                vmin -= pad
+                vmax += pad
+
+            ticks = np.linspace(vmin, vmax, n_ticks)
+            formatter = FormatStrFormatter('%.3f')
+
+            if axis == 'x':
+                ax.set_xlim(vmin, vmax)
+                ax.set_xticks(ticks)
+                ax.xaxis.set_major_formatter(formatter)
+            elif axis == 'y':
+                ax.set_ylim(vmin, vmax)
+                ax.set_yticks(ticks)
+                ax.yaxis.set_major_formatter(formatter)
+            else:
+                raise ValueError("axis must be either 'x' or 'y'")
+
+        def plot_nmae_vs_nrmse_subplots(
+                metric_tag,
+                filename,
+                normalization_tag=None
+        ):
+            """
+            Plot NMAE versus NRMSE for one model-output type.
+
+            normalization_tag
+                None     -> existing measurement-uncertainty normalization
+                "STDOBS" -> observation-standard-deviation normalization
+
+            For STDOBS plots, the axis labels use subscripts rather than
+            '/ sigma_obs'. The metric has already been normalized by
+            sigma_obs, so writing 'NRMSE / sigma_obs' would incorrectly imply
+            a second normalization.
+            """
             n_panels = n_quantities + 1
             ncols_local = 2
             nrows_local = math.ceil(n_panels / ncols_local)
@@ -709,14 +889,43 @@ class CalibrationAssessment:
                 sharey=False
             )
 
-            axes = axes.flatten()
+            axes = np.atleast_1d(axes).flatten()
             colors = plt.cm.get_cmap('tab10', len(df_plot))
+
+            if normalization_tag is None:
+                overall_x_col = f"Overall_NRMSE_{metric_tag}"
+                overall_y_col = f"Overall_NMAE_{metric_tag}"
+                x_label = "NRMSE"
+                y_label = "NMAE"
+
+                def quantity_cols(q):
+                    return (
+                        f"NRMSE_{metric_tag}_{q}",
+                        f"NMAE_{metric_tag}_{q}"
+                    )
+
+            elif normalization_tag == "STDOBS":
+                overall_x_col = f"Overall_NRMSE_STDOBS_{metric_tag}"
+                overall_y_col = f"Overall_NMAE_STDOBS_{metric_tag}"
+
+                # Correct notation: these quantities are already normalized
+                # by the target-specific observation standard deviation.
+                x_label = r"$\mathrm{NRMSE}_{\sigma_{\mathrm{obs}}}$"
+                y_label = r"$\mathrm{NMAE}_{\sigma_{\mathrm{obs}}}$"
+
+                def quantity_cols(q):
+                    return (
+                        f"NRMSE_STDOBS_{metric_tag}_{q}",
+                        f"NMAE_STDOBS_{metric_tag}_{q}"
+                    )
+
+            else:
+                raise ValueError(
+                    "normalization_tag must be None or 'STDOBS'"
+                )
 
             # Overall panel
             ax = axes[0]
-
-            overall_x_col = f"Overall_NRMSE_{metric_tag}"
-            overall_y_col = f"Overall_NMAE_{metric_tag}"
 
             for color_idx, (_, row) in enumerate(df_plot.iterrows()):
                 ax.scatter(
@@ -730,23 +939,36 @@ class CalibrationAssessment:
                 )
 
             ax.set_title("Overall", fontsize=20)
-            ax.set_xlabel("NRMSE", fontsize=16)
-            ax.set_ylabel("NMAE", fontsize=16)
+            ax.set_xlabel(x_label, fontsize=16)
+            ax.set_ylabel(y_label, fontsize=16)
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
 
             overall_x_vals = df_plot[overall_x_col].values
             overall_y_vals = df_plot[overall_y_col].values
 
-            ax.set_xlim(tight_metric_limits(overall_x_vals))
-            ax.set_ylim(tight_metric_limits(overall_y_vals))
+            if normalization_tag == "STDOBS":
+                # Six ticks = one more than the previous five-tick layout.
+                # Tick labels are forced to exactly two decimal places.
+                set_precise_metric_ticks(
+                    ax, 'x', overall_x_vals, n_ticks=6
+                )
+                set_precise_metric_ticks(
+                    ax, 'y', overall_y_vals, n_ticks=6
+                )
+            else:
+                ax.set_xlim(tight_metric_limits(overall_x_vals))
+                ax.set_ylim(tight_metric_limits(overall_y_vals))
 
-            # Important: do not force zero here.
-            # For tiny differences, start_at_zero=True destroys visual separation.
-            set_nice_ticks(ax, 'x', n_ticks=5)
-            set_nice_ticks(ax, 'y', n_ticks=5)
+                # Keep the existing uncertainty-normalized plots unchanged.
+                set_nice_ticks(ax, 'x', n_ticks=5)
+                set_nice_ticks(ax, 'y', n_ticks=5)
 
-            set_adaptive_decimal_formatter(ax, axis='x', values=overall_x_vals)
-            set_adaptive_decimal_formatter(ax, axis='y', values=overall_y_vals)
+                set_adaptive_decimal_formatter(
+                    ax, axis='x', values=overall_x_vals
+                )
+                set_adaptive_decimal_formatter(
+                    ax, axis='y', values=overall_y_vals
+                )
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -755,9 +977,7 @@ class CalibrationAssessment:
             for i in range(n_quantities):
                 ax = axes[i + 1]
                 q = f"Q{i + 1}"
-
-                x_col = f"NRMSE_{metric_tag}_{q}"
-                y_col = f"NMAE_{metric_tag}_{q}"
+                x_col, y_col = quantity_cols(q)
 
                 for color_idx, (_, row) in enumerate(df_plot.iterrows()):
                     ax.scatter(
@@ -771,22 +991,33 @@ class CalibrationAssessment:
                     )
 
                 ax.set_title(quantity_names[i], fontsize=20)
-                ax.set_xlabel("NRMSE", fontsize=16)
-                ax.set_ylabel("NMAE", fontsize=16)
+                ax.set_xlabel(x_label, fontsize=16)
+                ax.set_ylabel(y_label, fontsize=16)
                 ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
 
                 x_vals = df_plot[x_col].values
                 y_vals = df_plot[y_col].values
 
-                ax.set_xlim(tight_metric_limits(x_vals))
-                ax.set_ylim(tight_metric_limits(y_vals))
+                if normalization_tag == "STDOBS":
+                    set_precise_metric_ticks(
+                        ax, 'x', x_vals, n_ticks=6
+                    )
+                    set_precise_metric_ticks(
+                        ax, 'y', y_vals, n_ticks=6
+                    )
+                else:
+                    ax.set_xlim(tight_metric_limits(x_vals))
+                    ax.set_ylim(tight_metric_limits(y_vals))
 
-                # Important: do not force zero here.
-                set_nice_ticks(ax, 'x', n_ticks=5)
-                set_nice_ticks(ax, 'y', n_ticks=5)
+                    set_nice_ticks(ax, 'x', n_ticks=5)
+                    set_nice_ticks(ax, 'y', n_ticks=5)
 
-                set_adaptive_decimal_formatter(ax, axis='x', values=x_vals)
-                set_adaptive_decimal_formatter(ax, axis='y', values=y_vals)
+                    set_adaptive_decimal_formatter(
+                        ax, axis='x', values=x_vals
+                    )
+                    set_adaptive_decimal_formatter(
+                        ax, axis='y', values=y_vals
+                    )
 
                 for spine in ax.spines.values():
                     spine.set_linewidth(1.5)
@@ -808,7 +1039,9 @@ class CalibrationAssessment:
 
             fig.tight_layout(rect=[0, 0, 1, 0.93])
             fig.savefig(os.path.join(save_folder, filename), dpi=300)
+            plt.close(fig)
 
+        # Existing measurement-uncertainty normalization.
         plot_nmae_vs_nrmse_subplots(
             metric_tag="CM",
             filename="combined_nMAE_vs_nRMSE_CM.svg"
@@ -817,6 +1050,19 @@ class CalibrationAssessment:
         plot_nmae_vs_nrmse_subplots(
             metric_tag="SM",
             filename="combined_nMAE_vs_nRMSE_SM.svg"
+        )
+
+        # Observation-standard-deviation normalization.
+        plot_nmae_vs_nrmse_subplots(
+            metric_tag="CM",
+            filename="combined_nMAE_vs_nRMSE_STDOBS_CM.svg",
+            normalization_tag="STDOBS"
+        )
+
+        plot_nmae_vs_nrmse_subplots(
+            metric_tag="SM",
+            filename="combined_nMAE_vs_nRMSE_STDOBS_SM.svg",
+            normalization_tag="STDOBS"
         )
 
         df_spatial = pd.DataFrame(spatial_records)

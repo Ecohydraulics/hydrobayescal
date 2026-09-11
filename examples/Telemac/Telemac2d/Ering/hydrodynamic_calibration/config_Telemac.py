@@ -97,7 +97,7 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 30,   # Number of initial parameter samples
+    'init_runs': 100,   # Number of initial parameter samples
     'max_runs': 100,   # Total runs (initial + BAL iterations)
 
     # Experimental design
@@ -107,7 +107,7 @@ sampling = {
 
     # BAL specific0
     'eval_steps':    5,      # Save surrogate and evaluate every iteration
-    'prior_samples': 25000,
+    'prior_samples': 30000,
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
@@ -141,7 +141,6 @@ execution = {
     'only_bal_mode':          True,
     'delete_complex_outputs': True,
     'validation':             False,
-    'user_param_values':      False,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS
@@ -161,7 +160,7 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0,1,2,3,4],
-    'iterations_to_plot': [0],
+    'iterations_to_plot': [70],
     #-------------------------
     #posterior plotting options
     #-------------------------

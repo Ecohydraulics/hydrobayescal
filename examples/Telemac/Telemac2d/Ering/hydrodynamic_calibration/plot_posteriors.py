@@ -107,23 +107,23 @@ def main():
     # ---------------------------------------------------------------------
     # Plot BME and RE evolution
     # ---------------------------------------------------------------------
-    plotter.plot_bme_re(
-         bayesian_dict=bayesian_data,
-         num_bal_iterations=config.plotting["iterations_to_plot"][0],
-         plot_type="RE"
-     )
-
-    plotter.plot_collocation_points(
-        bayesian_dict=bayesian_data,
-        collocation_points_path=collocation_points_file,
-        parameter_names=config.plotting["parameter_names"],  # full list of 5 LaTeX labels
-        parameter_indices=[config.plotting["parameter_indices"][i] for i in [0, 1, 2]],
-        parameter_units=[config.plotting["parameter_units"][i] for i in [0, 1, 2]],
-        param_values=full_complexity_model.param_values,
-        num_bal_iterations=config.plotting["iterations_to_plot"][0],
-        density_background=True,
-        density_points="bal",  # ballor all (to consider initial collocation points)
-    )
+    # plotter.plot_bme_re(
+    #      bayesian_dict=bayesian_data,
+    #      num_bal_iterations=config.plotting["iterations_to_plot"][0],
+    #      plot_type="RE"
+    #  )
+    #
+    # plotter.plot_collocation_points(
+    #     bayesian_dict=bayesian_data,
+    #     collocation_points_path=collocation_points_file,
+    #     parameter_names=config.plotting["parameter_names"],  # full list of 5 LaTeX labels
+    #     parameter_indices=[config.plotting["parameter_indices"][i] for i in [0, 2]],
+    #     parameter_units=[config.plotting["parameter_units"][i] for i in [0,  2]],
+    #     param_values=full_complexity_model.param_values,
+    #     num_bal_iterations=config.plotting["iterations_to_plot"][0],
+    #     density_background=True,
+    #     density_points="bal",  # ballor all (to consider initial collocation points)
+    # )
 
     # ---------------------------------------------------------------------
     # Plot posterior updates
@@ -137,9 +137,9 @@ def main():
         posterior_arrays=posterior_arrays,
         parameter_names=config.plotting["parameter_names"],
         prior=prior,
-        param_values=full_complexity_model.param_values,
+        param_values=config.calibration['param_values'],
         iterations_to_plot=config.plotting["iterations_to_plot"],
-        bins=17,
+        bins=12,
         density=True,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
@@ -147,7 +147,20 @@ def main():
         best_estimate_value=config.plotting['posterior_plotting_option'],
         post_loglikelihood_arrays=post_loglikelihood
     )
-    
+    comparison_results = plotter.plot_posterior_model_comparison(
+        bal_dictionary_1="/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/auto-saved-results-HydroBayesCal/calibration-data/WATER DEPTH_SCALAR VELOCITY/BAL_dictionary.pkl",
+        bal_dictionary_2="/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/auto-saved-results-HydroBayesCal/calibration-data/WATER DEPTH_SCALAR VELOCITY_SOGPE_postBAL/BAL_dictionary.pkl",
+        model_names=("MO-GPE", "SO-GPE"),
+        parameter_names=config.plotting["parameter_names"],
+        parameter_units=config.plotting["parameter_units"],
+        param_values=config.calibration['param_values'],
+        plot_prior=True,
+        normalize_density=True,
+        n_bins=10,
+        ncols=2,
+        figsize_per_panel=(5.5, 4.0),
+        filename="posterior_comparison_MO_vs_SO.svg"
+    )
     # ---------------------------------------------------------------------
     # Per-parameter optimum over the BAL iterations, and whether the combination
     # of those per-parameter optima is a jointly plausible parameter set.
