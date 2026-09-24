@@ -586,7 +586,7 @@ class SequentialDesign:
 
     """
     def __init__(self, exp_design, sm_object, obs, n_cand_groups=4, secondary_sm=None,
-                 parallel=True, n_jobs=-1, backend='loky',
+                 parallel=True, n_jobs=1, backend='loky',
                  errors=None,
                  do_tradeoff=False,
                  gaussian_assumption=False,
@@ -943,7 +943,6 @@ class SequentialDesign:
                 y_mean = y_cand[idx, :]
                 if self.multitask:
                     y_std = multi_cov[idx]
-                    # block_cov_matrix = block_diag(*cov_blocks)
                 else:
                     y_std = std_cand[idx, :]
 

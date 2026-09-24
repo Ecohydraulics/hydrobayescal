@@ -489,6 +489,49 @@ class TelemacModel(HydroSimulations):
 
         logger.info("TELEMAC simulation time: " + str(datetime.now() - start_time))
 
+    def _next_validation_attempt(self):
+        """
+        Return the next available validation attempt number.
+
+        Examples
+        --------
+        No previous validation files:
+            -> 1
+
+        Files ending in _1 exist:
+            -> 2
+
+        Files ending in _1, _2, _3 exist:
+            -> 4
+        """
+
+        folder = self.restart_data_folder
+
+        file_specs = [
+            ("collocation-points-validation_", ".csv"),
+            ("model-results-validation_", ".json"),
+            ("model-results-validation_", ".csv"),
+        ]
+
+        existing_ids = []
+
+        if os.path.isdir(folder):
+            for filename in os.listdir(folder):
+                for prefix, extension in file_specs:
+
+                    if (
+                            filename.startswith(prefix)
+                            and filename.endswith(extension)
+                    ):
+                        number_string = filename[
+                                        len(prefix):-len(extension)
+                                        ]
+
+                        if number_string.isdigit():
+                            existing_ids.append(int(number_string))
+
+        return max(existing_ids, default=0) + 1
+
     def run_multiple_simulations(
             self,
             collocation_points=None,
@@ -557,6 +600,41 @@ class TelemacModel(HydroSimulations):
         restart_data_path = self.restart_data_folder
         fr_tbl = self.fr_tbl
         init_runs = self.init_runs
+        # --------------------------------------------------------------
+        # Validation attempt bookkeeping
+        # --------------------------------------------------------------
+        if validation:
+
+            # start_index == 0 means that a NEW validation experiment
+            # is starting.
+            #
+            # For staged designs, subsequent blocks have start_index > 0
+            # and therefore reuse the same validation attempt number.
+            if int(start_index) == 0 or not hasattr(
+                    self, "validation_attempt"):
+                self.validation_attempt = self._next_validation_attempt()
+
+                logger.info(
+                    f"Starting validation attempt "
+                    f"{self.validation_attempt}"
+                )
+
+            suffix = f"_{self.validation_attempt}"
+
+            self.validation_collocation_path = os.path.join(
+                restart_data_path,
+                f"collocation-points-validation{suffix}.csv"
+            )
+
+            self.validation_json_path = os.path.join(
+                restart_data_path,
+                f"model-results-validation{suffix}.json"
+            )
+
+            self.validation_csv_path = os.path.join(
+                restart_data_path,
+                f"model-results-validation{suffix}.csv"
+            )
         logger.info(
             "* Running multiple Telemac simulations can take time -- check CPU acitivity...")
         start_time = datetime.now()
@@ -702,9 +780,12 @@ class TelemacModel(HydroSimulations):
                 array_list = collocation_points.tolist()
 
                 if validation:
-                    # Validation case — always write validation CSV
-                    with open(os.path.join(restart_data_path, "collocation-points-validation.csv"), mode='w',
-                              newline='') as file:
+                    with open(
+                            self.validation_collocation_path,
+                            mode='w',
+                            newline=''
+                    ) as file:
+
                         writer = csv.writer(file)
                         writer.writerow(calibration_parameters)
                         writer.writerows(array_list)
@@ -750,7 +831,7 @@ class TelemacModel(HydroSimulations):
                 # Keep reference if needed later
                 collocation_points = collocation_points
 
-                for i in range(init_runs):
+                for i in range(int(start_index), init_runs):
                     self.num_run = i + 1
                     collocation_point_sim_list = collocation_points[i].tolist()
                     logger.info(
@@ -767,10 +848,12 @@ class TelemacModel(HydroSimulations):
                                             output_extraction_time=output_extraction_time,
                                             n=n,gaia_layer_average=gaia_layer_average )
                     if validation:
-                        output_data_path = os.path.join(restart_data_path, 'model-results-validation.json')
+                        output_data_path = self.validation_json_path
                     else:
-                        output_data_path = os.path.join(self.calibration_folder,
-                                                        f'{self.dict_output_name}-detailed.json')
+                        output_data_path = os.path.join(
+                            self.calibration_folder,
+                            f'{self.dict_output_name}-detailed.json'
+                        )
 
                     self.model_evaluations = self.output_processing(output_data_path=output_data_path,
                                                                     delete_slf_files=self.delete_complex_outputs,
@@ -907,7 +990,7 @@ class TelemacModel(HydroSimulations):
 
                 if validation:
                     np.savetxt(
-                        os.path.join(self.restart_data_folder, 'model-results-validation.csv'),
+                        self.validation_csv_path,
                         model_results_calibration,
                         delimiter=',',
                         fmt='%.8f',
@@ -960,7 +1043,7 @@ class TelemacModel(HydroSimulations):
                         column_headers_extraction.append(f'{i}_{quantity}')
                 if validation:
                     np.savetxt(
-                        os.path.join(self.restart_data_folder, 'model-results-validation.csv'),
+                        self.validation_csv_path,
                         model_results_extraction,
                         delimiter=',',
                         fmt='%.8f',
@@ -1812,10 +1895,7 @@ class TelemacModel(HydroSimulations):
                 )
 
         if validation:
-            json_target = os.path.join(
-                self.restart_data_folder,
-                "model-results-validation.json"
-            )
+            json_target = self.validation_json_path
         else:
             json_target = json_path_detailed
 

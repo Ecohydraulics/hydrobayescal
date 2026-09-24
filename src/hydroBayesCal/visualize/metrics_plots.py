@@ -229,6 +229,128 @@ class MetricsPlots:
         plt.suptitle("Metric and CI Evolution Across Locations", fontsize=16)
         plt.show()
 
+    def summarize_validation_metrics(
+            self,
+            surrogate_metrics,
+            metrics=None,
+    ):
+        """
+        Aggregate independently computed validation metrics across
+        validation sets.
+
+        The metric is first computed separately on each validation
+        set. This function then reports the mean and sample standard
+        deviation across validation sets.
+
+        For a single validation set, SD is defined as 0.
+        """
+
+        if metrics is None:
+            metrics = ["MSE", "RMSE", "MAE", "Correlation", "CI"]
+
+        train_points = np.asarray(
+            surrogate_metrics["TrainPoints"]
+        )
+
+        quantities = np.asarray(
+            surrogate_metrics["Quantity"]
+        )
+
+        surrogate_types = np.asarray(
+            surrogate_metrics["SurrogateType"]
+        )
+
+        validation_sets = np.asarray(
+            surrogate_metrics.get(
+                "ValidationSet",
+                np.ones(len(train_points), dtype=int),
+            )
+        )
+
+        rows = []
+
+        for quantity in np.unique(quantities):
+
+            for surrogate_type in np.unique(surrogate_types):
+
+                mask_base = (
+                        (quantities == quantity)
+                        & (surrogate_types == surrogate_type)
+                )
+
+                tps = np.unique(train_points[mask_base])
+
+                for tp in np.sort(tps):
+
+                    mask = (
+                            mask_base
+                            & (train_points == tp)
+                    )
+
+                    replicate_ids = validation_sets[mask]
+
+                    for metric in metrics:
+
+                        values = np.asarray(
+                            surrogate_metrics[metric],
+                            dtype=float,
+                        )[mask]
+
+                        valid = np.isfinite(values)
+                        values = values[valid]
+
+                        n_sets = len(values)
+
+                        if n_sets == 0:
+                            mean_value = np.nan
+                            std_value = np.nan
+
+                        elif n_sets == 1:
+                            mean_value = float(values[0])
+                            std_value = 0.0
+
+                        else:
+                            mean_value = float(
+                                np.mean(values)
+                            )
+
+                            # Sample SD across independent
+                            # validation replicates.
+                            std_value = float(
+                                np.std(values, ddof=1)
+                            )
+
+                        rows.append(
+                            {
+                                "TrainPoints": int(tp),
+                                "Quantity": quantity,
+                                "SurrogateType":
+                                    surrogate_type,
+                                "Metric": metric,
+                                "Mean": mean_value,
+                                "Std": std_value,
+                                "NValidationSets": n_sets,
+                            }
+                        )
+
+        summary_df = pd.DataFrame(rows)
+
+        summary_path = os.path.join(
+            self.save_folder,
+            "validation_metrics_mean_std.csv",
+        )
+
+        summary_df.to_csv(
+            summary_path,
+            index=False,
+        )
+
+        print(
+            f"Validation metric summary saved to: "
+            f"{summary_path}"
+        )
+
+        return summary_df
     def plot_metric_comparison(
             self,
             surrogate_metrics: dict,
@@ -253,10 +375,11 @@ class MetricsPlots:
 
         assert len(metric_labels) == len(metrics)
 
-        train_points = np.asarray(surrogate_metrics["TrainPoints"])
-        quantity_names = np.asarray(surrogate_metrics["Quantity"])
-        surrogate_type = np.asarray(surrogate_metrics["SurrogateType"])
-        metric_values = {m: np.asarray(surrogate_metrics[m]) for m in metrics}
+        summary_df = self.summarize_validation_metrics(
+            surrogate_metrics,
+            metrics=metrics,
+        )
+
 
         num_metrics = len(metrics)
         num_quantities = len(quantities)
@@ -278,66 +401,129 @@ class MetricsPlots:
         # GLOBAL Y LIMITS PER METRIC (used only as default)
         # ---------------------------------------------------
         row_limits = {}
-        for metric in metrics:
-            vals_all = []
-            for quantity in quantities:
-                mask_q = quantity_names == quantity
-                vals_all.append(metric_values[metric][mask_q])
 
-            vals_all = np.concatenate(vals_all)
-            ymin = vals_all.min()
-            ymax = vals_all.max()
-            pad = 0.05 * (ymax - ymin) if ymax > ymin else 0.01
-            row_limits[metric] = (ymin - pad, ymax + pad)
+        for metric in metrics:
+            metric_data = summary_df[
+                summary_df["Metric"] == metric
+                ]
+
+            lower = (
+                    metric_data["Mean"]
+                    - metric_data["Std"]
+            ).to_numpy()
+
+            upper = (
+                    metric_data["Mean"]
+                    + metric_data["Std"]
+            ).to_numpy()
+
+            ymin = np.nanmin(lower)
+            ymax = np.nanmax(upper)
+
+            pad = (
+                0.05 * (ymax - ymin)
+                if ymax > ymin
+                else 0.01
+            )
+
+            row_limits[metric] = (
+                ymin - pad,
+                ymax + pad
+            )
         # ---------------------------------------------------
 
         for q_idx, quantity in enumerate(quantities):
             for r_idx, metric in enumerate(metrics):
                 ax = axs[r_idx, q_idx]
 
-                mask_q = quantity_names == quantity
-                mask_so = mask_q & (surrogate_type == "SO")
-                mask_mo = mask_q & (surrogate_type == "MO")
+                mo_data = summary_df[
+                    (summary_df["Quantity"] == quantity)
+                    & (summary_df["Metric"] == metric)
+                    & (summary_df["SurrogateType"] == "MO")
+                    ].sort_values("TrainPoints")
 
-                so_tp = train_points[mask_so]
-                mo_tp = train_points[mask_mo]
+                so_data = summary_df[
+                    (summary_df["Quantity"] == quantity)
+                    & (summary_df["Metric"] == metric)
+                    & (summary_df["SurrogateType"] == "SO")
+                    ].sort_values("TrainPoints")
 
-                so_val = metric_values[metric][mask_so]
-                mo_val = metric_values[metric][mask_mo]
+                mo_tp = mo_data["TrainPoints"].to_numpy()
+                mo_mean = mo_data["Mean"].to_numpy()
+                mo_std = mo_data["Std"].to_numpy()
+
+                so_tp = so_data["TrainPoints"].to_numpy()
+                so_mean = so_data["Mean"].to_numpy()
+                so_std = so_data["Std"].to_numpy()
 
                 line_mo, = ax.plot(
                     mo_tp,
-                    mo_val,
+                    mo_mean,
                     marker='o',
                     linestyle='-',
                     color='black',
                     linewidth=1.5,
-                    markersize=6,
+                    markersize=4,
                     label='MO (Multi-output GP)'
+                )
+
+                band_mo = ax.fill_between(
+                    mo_tp,
+                    mo_mean - mo_std,
+                    mo_mean + mo_std,
+                    color='royalblue',
+                    alpha=0.40,
+                    linewidth=0,
+                    zorder=1,
+                    label='MO ±1 SD'
                 )
 
                 line_so, = ax.plot(
                     so_tp,
-                    so_val,
+                    so_mean,
                     marker='s',
                     linestyle='--',
                     color='slategray',
                     linewidth=1.5,
-                    markersize=6,
+                    markersize=4,
                     label='SO (Single-output GP)'
                 )
 
+                band_so = ax.fill_between(
+                    so_tp,
+                    so_mean - so_std,
+                    so_mean + so_std,
+                    color='darkorange',
+                    alpha=0.40,
+                    linewidth=0,
+                    zorder=1,
+                    label='SO ±1 SD'
+                )
+
                 if q_idx == 0 and r_idx == 0:
-                    all_handles = [line_mo, line_so]
-                    all_labels = [h.get_label() for h in all_handles]
+                    all_handles = [
+                        line_mo,
+                        band_mo,
+                        line_so,
+                        band_so,
+                    ]
+
+                    all_labels = [
+                        h.get_label()
+                        for h in all_handles
+                    ]
 
                 ax.axvline(x=30, color='lightgray', linestyle='--', linewidth=1)
 
                 # ---------------------------------------------------
                 # X TICKS WITH EXTRA EMPTY LAST TICK
                 # ---------------------------------------------------
-                min_tp = train_points.min()
-                max_tp = train_points.max()
+                all_tp = np.concatenate(
+                    [mo_tp, so_tp]
+                )
+
+                min_tp = all_tp.min()
+                max_tp = all_tp.max()
                 xticks = np.arange(min_tp, max_tp + 11, 10)
                 ax.set_xticks(xticks)
 

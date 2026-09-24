@@ -59,12 +59,13 @@ morphodynamic_simulation = {
 # ============================================================================
 calibration = {
     # Use "Cmu" to match the key expected by update_model_controls
-    'parameters': ["FRICTION COEFFICIENT FOR THE BOTTOM","COEFFICIENT FOR HORIZONTAL DIFFUSION OF VELOCITIES","COEFFICIENT FOR VERTICAL DIFFUSION OF VELOCITIES"], # Run,
+    'parameters': ["FRICTION COEFFICIENT FOR THE BOTTOM"], # Run,
 
     # Cmu range: typical values 0.06-0.12 (default is 0.09)
-    'param_values': [[0.01,0.06],
-    		     [0.000001,0.00001],
-    		     [0.000001,0.00001]],
+    'param_values': [
+        [0.005, 0.05],  # roughness
+         # vertical diffusion coefficient
+    ],
 
     # Quantities to extract from simulation - USE STANDARD NAMES
     'extraction_quantities': ["TURBULENT ENERG", "VELOCITY U", "VELOCITY V", "VELOCITY W","3D VELOCITY MAGNITUDE"],
@@ -99,7 +100,7 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 30,   # Number of initial parameter samples
+    'init_runs': 15,   # Number of initial parameter samples
     'max_runs':  60,   # Total runs (initial + BAL iterations)
 
     # Experimental design
@@ -108,9 +109,9 @@ sampling = {
     'tp_selection_criteria':    "dkl",
 
     # BAL specific
-    'eval_steps':    1,      # Save surrogate and evaluate every iteration
+    'eval_steps':    2,      # Save surrogate and evaluate every iteration
     'prior_samples': 15000,
-    'mc_samples_al': 2000,
+    'mc_samples_al': 1000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
     'multitask_selection': 'variables', # 'locations' or 'variables' or 'all'
@@ -126,7 +127,7 @@ sampling = {
 # ============================================================================
 execution = {
     'complete_bal_mode':      True,
-    'only_bal_mode':          False,
+    'only_bal_mode':          True,
     'delete_complex_outputs': True,
     'validation':             False,
     'user_param_values':      False,
@@ -139,14 +140,14 @@ plotting = {
     # Used for plotting and reporting - must be in same order as 'parameters'
     'parameter_names': [
         r"$k_{\mathrm{s,bed}}$",
-        r"$k_{\mathrm{CMU}}$"
+
     ],
     # Units for reporting and plotting - must be in same order as 'parameters'
-    'parameter_units': ["m","-"],
+    'parameter_units': ["m"],
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
-    'parameter_indices': [0,1,2],
-    'iterations_to_plot': [15],
+    'parameter_indices': [0],
+    'iterations_to_plot': [2],
 
     # -------------------------
     # posterior plotting options

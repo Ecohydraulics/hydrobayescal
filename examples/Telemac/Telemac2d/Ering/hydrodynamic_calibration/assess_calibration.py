@@ -79,21 +79,39 @@ def main():
     coordinates = full_complexity_model.calibration_pts_df[["x", "y"]]
     collocation_points = full_complexity_model.user_collocation_points # To be used for the surrogate model predictions.
     # coordinates = full_complexity_model.calibration_pts_df[["x", "y"]]
-    # The next block calls the metamodel to use for the predictions. The predictions are done in the collocation points.
     # -------------------------------------------------------------------------
     # Call the surrogate model
     # -------------------------------------------------------------------------
-    # Call the surrogate model
     #
-    # surrogate_type = "MO" uses the multi-output GPE.
-    # surrogate_type = "SO" loops through the single-output GPEs and fills
-    #                  the same interleaved output matrix as the MO-GPE.
+    # surrogate_type = "MO"
+    #     Uses the multi-output GPE.
+    #
+    # surrogate_type = "SO"
+    #     Loads one separate single-output GPE pickle per calibration quantity.
+    #
+    # surrogate_type = "SOSequential"
+    #     Loads one SO-sequential pickle containing all quantities.
+    #     The pickle has:
+    #
+    #         sm.models[quantity]
+    #
+    #     where each entry is a GPyTraining object containing one independent
+    #     GP per calibration location/target in its gp_list.
+    #
+    # All approaches finally produce the same interleaved output layout:
+    #
+    #     [Q1_loc1, Q2_loc1, ..., Qn_loc1,
+    #      Q1_loc2, Q2_loc2, ..., Qn_loc2, ...]
+    #
     # -------------------------------------------------------------------------
 
-    surrogate_type = "MO"   # options: "MO" or "SO"
+    surrogate_type = "SO_sequential"  # options: "MO", "SO", "SOSequential"
 
     start_time = time.time()
 
+    # =========================================================================
+    # MULTI-OUTPUT GPE
+    # =========================================================================
     if surrogate_type == "MO":
 
         if n_quantities == 1:
@@ -122,29 +140,32 @@ def main():
         sm_lower_ci = np.asarray(sm_predictions["lower_ci"])
 
 
+    # =========================================================================
+    # SINGLE-OUTPUT GPEs STORED IN SEPARATE PICKLE FILES
+    # =========================================================================
     elif surrogate_type == "SO":
 
         # Number of parameter sets/models to predict.
         n_models = collocation_points.shape[0]
 
-        # Number of reproduction/calibration points.
+        # Number of calibration/reproduction locations.
         n_points = n_loc
 
-        # Three calibration quantities:
-        # ["WATER DEPTH", "SCALAR VELOCITY", "CUMUL BED EVOL"]
         surrogate_quantities = full_complexity_model.calibration_quantities
 
-        # Empty matrices with same shape as MO-GPE output.
-        # Example: 5 models, 37 points, 3 quantities -> (5, 111)
-        sm_outputs = np.full((n_models, n_points * n_quantities), np.nan)
-        sm_upper_ci = np.full((n_models, n_points * n_quantities), np.nan)
-        sm_lower_ci = np.full((n_models, n_points * n_quantities), np.nan)
+        # Empty matrices with same interleaved layout as MO-GPE.
+        sm_outputs = np.full(
+            (n_models, n_points * n_quantities),
+            np.nan
+        )
+        sm_upper_ci = np.full_like(sm_outputs, np.nan)
+        sm_lower_ci = np.full_like(sm_outputs, np.nan)
 
         for q_idx, quantity in enumerate(surrogate_quantities):
 
-            # Read the corresponding single-output GPE.
-            # Example filename:
-            # gpr_gpy_TP100_bal_quantities_['WATER DEPTH'].pkl
+            # -------------------------------------------------------------
+            # Load one pickle for this calibration quantity.
+            # -------------------------------------------------------------
             sm = full_complexity_model.read_data(
                 results_folder_path,
                 f"surrogate-gpe/bal_dkl/"
@@ -161,8 +182,11 @@ def main():
             upper_q = np.asarray(sm_predictions_q["upper_ci"])
             lower_q = np.asarray(sm_predictions_q["lower_ci"])
 
-            # Make sure each SO-GPE prediction has shape:
-            # (n_models, n_points)
+            # -------------------------------------------------------------
+            # Standardize shapes to:
+            #
+            #     (n_models, n_points)
+            # -------------------------------------------------------------
             if output_q.ndim == 1:
                 output_q = output_q.reshape(n_models, n_points)
 
@@ -172,7 +196,6 @@ def main():
             if lower_q.ndim == 1:
                 lower_q = lower_q.reshape(n_models, n_points)
 
-            # In case the surrogate returns shape (n_points, n_models), transpose.
             if output_q.shape == (n_points, n_models):
                 output_q = output_q.T
 
@@ -182,44 +205,250 @@ def main():
             if lower_q.shape == (n_points, n_models):
                 lower_q = lower_q.T
 
-            # Final safety check.
+            # -------------------------------------------------------------
+            # Safety checks
+            # -------------------------------------------------------------
             if output_q.shape != (n_models, n_points):
                 raise ValueError(
-                    f"Wrong output shape for SO-GPE quantity {quantity}. "
-                    f"Expected {(n_models, n_points)}, got {output_q.shape}."
+                    f"Wrong output shape for SO-GPE quantity '{quantity}'. "
+                    f"Expected {(n_models, n_points)}, "
+                    f"got {output_q.shape}."
                 )
 
             if upper_q.shape != (n_models, n_points):
                 raise ValueError(
-                    f"Wrong upper_ci shape for SO-GPE quantity {quantity}. "
-                    f"Expected {(n_models, n_points)}, got {upper_q.shape}."
+                    f"Wrong upper_ci shape for SO-GPE quantity '{quantity}'. "
+                    f"Expected {(n_models, n_points)}, "
+                    f"got {upper_q.shape}."
                 )
 
             if lower_q.shape != (n_models, n_points):
                 raise ValueError(
-                    f"Wrong lower_ci shape for SO-GPE quantity {quantity}. "
-                    f"Expected {(n_models, n_points)}, got {lower_q.shape}."
+                    f"Wrong lower_ci shape for SO-GPE quantity '{quantity}'. "
+                    f"Expected {(n_models, n_points)}, "
+                    f"got {lower_q.shape}."
                 )
 
-            # Fill the interleaved matrix:
+            # -------------------------------------------------------------
+            # Interleave quantities:
             #
-            # q_idx = 0 -> WATER DEPTH       -> columns 0, 3, 6, ...
-            # q_idx = 1 -> SCALAR VELOCITY   -> columns 1, 4, 7, ...
-            # q_idx = 2 -> CUMUL BED EVOL    -> columns 2, 5, 8, ...
+            # q_idx = 0 -> columns 0, n_quantities, 2*n_quantities, ...
+            # q_idx = 1 -> columns 1, n_quantities+1, ...
+            # etc.
+            # -------------------------------------------------------------
             sm_outputs[:, q_idx::n_quantities] = output_q
             sm_upper_ci[:, q_idx::n_quantities] = upper_q
             sm_lower_ci[:, q_idx::n_quantities] = lower_q
 
-        # Rebuild sm_predictions with the same keys used later in your code.
         sm_predictions = {
             "output": sm_outputs,
             "upper_ci": sm_upper_ci,
             "lower_ci": sm_lower_ci,
         }
 
+
+    # =========================================================================
+    # SO-SEQUENTIAL
+    # =========================================================================
+    elif surrogate_type == "SO_sequential":
+
+        # Number of parameter sets/models to predict.
+        n_models = collocation_points.shape[0]
+
+        # Number of calibration/reproduction locations.
+        n_points = n_loc
+
+        surrogate_quantities = full_complexity_model.calibration_quantities
+        sm = full_complexity_model.read_data(
+            results_folder_path,
+            f"surrogate-gpe/bal_dkl/"
+            f"gpr_gpy_TP{surrogate_to_analyze}_bal_quantities_"
+            f"{full_complexity_model.calibration_quantities}_"
+            f"SO_sequential.pkl"
+        )
+
+        # -------------------------------------------------------------
+        # Check that this really is an SOSequential surrogate.
+        # -------------------------------------------------------------
+        if not hasattr(sm, "models"):
+            raise AttributeError(
+                "The loaded SOSequential surrogate does not contain a "
+                "'models' attribute."
+            )
+
+        if not isinstance(sm.models, dict):
+            raise TypeError(
+                f"Expected sm.models to be a dictionary, "
+                f"got {type(sm.models)}."
+            )
+
+        # Check number of locations stored in the sequential model.
+        if hasattr(sm, "nloc"):
+            if sm.nloc != n_points:
+                raise ValueError(
+                    f"SOSequential surrogate was trained with {sm.nloc} "
+                    f"locations, but n_loc = {n_points}."
+                )
+
+        # -------------------------------------------------------------
+        # Allocate final interleaved prediction matrices.
+        # -------------------------------------------------------------
+        sm_outputs = np.full(
+            (n_models, n_points * n_quantities),
+            np.nan
+        )
+
+        sm_upper_ci = np.full_like(sm_outputs, np.nan)
+        sm_lower_ci = np.full_like(sm_outputs, np.nan)
+        sm_std = np.full_like(sm_outputs, np.nan)
+
+        # -------------------------------------------------------------
+        # Loop through quantities stored INSIDE the SOSequential pickle.
+        # -------------------------------------------------------------
+        for q_idx, quantity in enumerate(surrogate_quantities):
+
+            if quantity not in sm.models:
+                raise KeyError(
+                    f"Quantity '{quantity}' was not found inside the "
+                    f"SOSequential surrogate.\n"
+                    f"Available quantities: {list(sm.models.keys())}"
+                )
+
+            # ---------------------------------------------------------
+            # Extract the GPyTraining object corresponding to this
+            # calibration quantity.
+            #
+            # This object contains n_points independent GPs in gp_list.
+            # ---------------------------------------------------------
+            sm_quantity = sm.models[quantity]
+
+            if not hasattr(sm_quantity, "predict_"):
+                raise AttributeError(
+                    f"The SOSequential model for '{quantity}' does not "
+                    f"contain a predict_() method."
+                )
+
+            if hasattr(sm_quantity, "n_obs"):
+                if sm_quantity.n_obs != n_points:
+                    raise ValueError(
+                        f"SOSequential quantity '{quantity}' contains "
+                        f"{sm_quantity.n_obs} independent targets, "
+                        f"but n_loc = {n_points}."
+                    )
+
+            # ---------------------------------------------------------
+            # Predict ALL independent targets for this quantity.
+            #
+            # GPyTraining.predict_() internally loops through gp_list,
+            # so this reproduces all calibration locations using their
+            # own independent surrogate.
+            #
+            # Returned shape:
+            #
+            #     (n_models, n_points)
+            #
+            # ---------------------------------------------------------
+            predictions_q = sm_quantity.predict_(
+                input_sets=collocation_points,
+                get_conf_int=True
+            )
+
+            output_q = np.asarray(predictions_q["output"])
+            upper_q = np.asarray(predictions_q["upper_ci"])
+            lower_q = np.asarray(predictions_q["lower_ci"])
+
+            if "std" in predictions_q:
+                std_q = np.asarray(predictions_q["std"])
+            else:
+                # Recover standard deviation from the ±2 sigma CI
+                # used by GPyTraining.predict_().
+                std_q = (upper_q - lower_q) / 4.0
+
+            # ---------------------------------------------------------
+            # Standardize dimensions.
+            # ---------------------------------------------------------
+            arrays = {
+                "output": output_q,
+                "upper_ci": upper_q,
+                "lower_ci": lower_q,
+                "std": std_q,
+            }
+
+            for name, array in arrays.items():
+
+                # 1D -> expected 2D
+                if array.ndim == 1:
+                    if array.size != n_models * n_points:
+                        raise ValueError(
+                            f"Cannot reshape '{name}' for quantity "
+                            f"'{quantity}'. Array contains {array.size} "
+                            f"values, while {n_models * n_points} "
+                            f"were expected."
+                        )
+
+                    array = array.reshape(n_models, n_points)
+
+                # Transposed case.
+                if (
+                        array.shape == (n_points, n_models)
+                        and array.shape != (n_models, n_points)
+                ):
+                    array = array.T
+
+                if array.shape != (n_models, n_points):
+                    raise ValueError(
+                        f"Wrong {name} shape for SOSequential quantity "
+                        f"'{quantity}'. Expected "
+                        f"{(n_models, n_points)}, got {array.shape}."
+                    )
+
+                arrays[name] = array
+
+            output_q = arrays["output"]
+            upper_q = arrays["upper_ci"]
+            lower_q = arrays["lower_ci"]
+            std_q = arrays["std"]
+
+            # ---------------------------------------------------------
+            # Put this quantity into the common interleaved matrix.
+            #
+            # For 2 quantities:
+            #
+            # WATER DEPTH:
+            #     columns 0, 2, 4, 6, ...
+            #
+            # SCALAR VELOCITY:
+            #     columns 1, 3, 5, 7, ...
+            #
+            # resulting in:
+            #
+            # [h_1, U_1, h_2, U_2, ..., h_37, U_37]
+            #
+            # ---------------------------------------------------------
+            sm_outputs[:, q_idx::n_quantities] = output_q
+            sm_upper_ci[:, q_idx::n_quantities] = upper_q
+            sm_lower_ci[:, q_idx::n_quantities] = lower_q
+            sm_std[:, q_idx::n_quantities] = std_q
+
+        # -------------------------------------------------------------
+        # Reconstruct same prediction dictionary used by the rest of
+        # the script.
+        # -------------------------------------------------------------
+        sm_predictions = {
+            "output": sm_outputs,
+            "std": sm_std,
+            "upper_ci": sm_upper_ci,
+            "lower_ci": sm_lower_ci,
+        }
+
+
+    # =========================================================================
+    # UNKNOWN OPTION
+    # =========================================================================
     else:
         raise ValueError(
-            "surrogate_type must be either 'MO' or 'SO'."
+            "surrogate_type must be one of "
+            "'MO', 'SO', or 'SOSequential'."
         )
 
     end_time = time.time()
@@ -258,7 +487,6 @@ def main():
         sm_lower_ci_split[f'sm_lower_ci_{i+1}'] = sm_predictions["lower_ci"][:, i::n_quantities]
         obs_split[f'obs_{i+1}'] = obs[:, i::n_quantities]
         err_split[f'err_{i+1}'] = err[i::n_quantities]
-    print(err_split)
     df_spatial,df_summary= plotter.evaluate_calibration(cm_outputs_split,
                 sm_outputs_split,
                 sm_upper_ci_split,
@@ -269,15 +497,15 @@ def main():
                 model_names=[
                                      r"MO-GPE (postBAL-JointOpt): $h, \bar{U}$",
                                      r"SO-GPE (postBAL-JointOpt): $h, \bar{U}$",
-                                     r"MO-GPE (preBAL-JointOpt): $h, \bar{U}$",
-                                     r"SO-GPE (preBAL-JointOpt): $h, \bar{U}$",
+                                     #r"MO-GPE (preBAL-JointOpt): $h, \bar{U}$",
+                                     #r"SO-GPE (preBAL-JointOpt): $h, \bar{U}$",
                                      # r"SO-GPE: $\delta_{z}$",
                                      # r"Benchmark: $k_{s} = \mathrm{mean}$",
                                      #r"Benchmark: $k_{s} = 3 \times d_{50}$"
                                  ],
                 quantity_names=calibration_names,
-                plot_models=list(range(4)))
-    plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4],
+                plot_models=list(range(2)))
+    plotter.observed_vs_modeled_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2],
                                         quantity_names=[
                                             r"$h$",
                                             r"$\bar{U}$",
@@ -287,7 +515,7 @@ def main():
                                         points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
                                                         35, 36, 37]
                                         )
-    plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2,3,4],
+    plotter.surrogate_vs_deterministic_compare(df_spatial=df_spatial, df_summary=df_summary, model_ids=[1,2],
                                         quantity_names=[
                                             r"$h$",
                                             r"$\bar{U}$",
@@ -297,20 +525,29 @@ def main():
                                         points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
                                                         35, 36, 37]
                                         )
-
 
     plotter.plot_residuals(
-            df_spatial,
-            df_summary,
-            model_ids = [1,2,3,4],
-            quantity_names = [
-                                            r"$h$",
-                                            r"$\bar{U}$",
-    #                                        r"$\delta_z$"
-                                        ],
-                                        points_group_1=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-                                        points_group_2=[18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-                                                        35, 36, 37])
+        df_spatial,
+        df_summary,
+        model_ids=[1, 2],
+        quantity_names=[
+            r"$h$",
+            r"$\bar{U}$",
+            # r"$\delta_z$"
+        ],
+        points_group_1=[
+            1, 2, 3, 4, 5, 6, 7, 8, 9,
+            10, 11, 12, 13, 14, 15, 16, 17
+        ],
+        points_group_2=[
+            18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+            28, 29, 30, 31, 32, 33, 34, 35, 36, 37
+        ],
+        residual_limits={
+            "Q1": (-0.012, 0.012),  # h
+            "Q2": (-0.045, 0.045),  # Ubar
+        }
+    )
 
 
 if __name__ == "__main__":

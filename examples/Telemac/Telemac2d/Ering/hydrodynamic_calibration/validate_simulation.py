@@ -1,4 +1,5 @@
 import os
+import re
 import argparse
 import importlib.util
 
@@ -132,6 +133,7 @@ def save_metrics(
     quantity_name,
     surrogate_type,
     n_loc,
+    validation_set,
     save_location_metrics=True,
 ):
     """
@@ -157,6 +159,7 @@ def save_metrics(
     surrogate_metrics["TrainPoints"].append(train_points)
     surrogate_metrics["Quantity"].append(quantity_name)
     surrogate_metrics["SurrogateType"].append(surrogate_type)
+    surrogate_metrics["ValidationSet"].append(validation_set)
     surrogate_metrics["MSE"].append(overall_mse)
     surrogate_metrics["RMSE"].append(overall_rmse)
     surrogate_metrics["MAE"].append(overall_mae)
@@ -171,6 +174,7 @@ def save_metrics(
             "TrainPoints": train_points,
             "Quantity": quantity_name,
             "SurrogateType": [surrogate_type] * n_locations_metrics,
+            "ValidationSet": [validation_set] * n_locations_metrics,
             "LocationIdx": list(range(n_locations_metrics)),
             "MSE": locations_metrics[:, 0].tolist(),
             "RMSE": locations_metrics[:, 1].tolist(),
@@ -181,6 +185,132 @@ def save_metrics(
 
         surrogate_metrics["metrics_per_location"].append(per_loc_data)
 
+def discover_validation_sets(restart_data_folder):
+    """
+    Discover complete validation sets.
+
+    Expected numbered files:
+        collocation-points-validation_1.csv
+        model-results-validation_1.json
+
+        collocation-points-validation_2.csv
+        model-results-validation_2.json
+        ...
+
+    Only IDs for which both files exist are used.
+
+    Backward compatibility:
+    If no numbered files exist, use the old unsuffixed pair:
+        collocation-points-validation.csv
+        model-results-validation.json
+    """
+
+    collocation_pattern = re.compile(
+        r"^collocation-points-validation_(\d+)\.csv$"
+    )
+
+    results_pattern = re.compile(
+        r"^model-results-validation_(\d+)\.json$"
+    )
+
+    collocation_files = {}
+    result_files = {}
+
+    for filename in os.listdir(restart_data_folder):
+
+        match = collocation_pattern.match(filename)
+
+        if match:
+            validation_id = int(match.group(1))
+            collocation_files[validation_id] = filename
+            continue
+
+        match = results_pattern.match(filename)
+
+        if match:
+            validation_id = int(match.group(1))
+            result_files[validation_id] = filename
+
+    # ---------------------------------------------------------
+    # Numbered validation sets
+    # ---------------------------------------------------------
+    common_ids = sorted(
+        set(collocation_files) & set(result_files)
+    )
+
+    if common_ids:
+
+        missing_collocation = sorted(
+            set(result_files) - set(collocation_files)
+        )
+
+        missing_results = sorted(
+            set(collocation_files) - set(result_files)
+        )
+
+        if missing_collocation:
+            print(
+                "WARNING: validation result JSON exists without "
+                f"collocation file for IDs: {missing_collocation}"
+            )
+
+        if missing_results:
+            print(
+                "WARNING: validation collocation file exists without "
+                f"result JSON for IDs: {missing_results}"
+            )
+
+        return [
+            {
+                "id": validation_id,
+                "collocation_file":
+                    collocation_files[validation_id],
+                "results_file":
+                    result_files[validation_id],
+                "results_csv":
+                    f"model-results-validation_{validation_id}.csv",
+            }
+            for validation_id in common_ids
+        ]
+
+    # ---------------------------------------------------------
+    # Legacy single-validation case
+    # ---------------------------------------------------------
+    legacy_collocation = "collocation-points-validation.csv"
+    legacy_results = "model-results-validation.json"
+
+    legacy_collocation_path = os.path.join(
+        restart_data_folder,
+        legacy_collocation,
+    )
+
+    legacy_results_path = os.path.join(
+        restart_data_folder,
+        legacy_results,
+    )
+
+    if (
+        os.path.isfile(legacy_collocation_path)
+        and os.path.isfile(legacy_results_path)
+    ):
+        print(
+            "Using legacy single validation set "
+            "(unsuffixed files)."
+        )
+
+        return [
+            {
+                "id": 1,
+                "collocation_file": legacy_collocation,
+                "results_file": legacy_results,
+                "results_csv": "model-results-validation.csv",
+            }
+        ]
+
+    raise FileNotFoundError(
+        "No complete validation sets were found in:\n"
+        f"{restart_data_folder}"
+    )
 
 def main():
 
@@ -277,52 +407,106 @@ def main():
 
     surrogates_to_evaluate = set(surrogate_to_analyze)
 
-    # ---------------------------------------------------------
-    # Load validation input set ONCE
-    # ---------------------------------------------------------
+    # =============================================================
+    # DISCOVER AND LOAD ALL VALIDATION SETS
+    # =============================================================
 
-    validation_sets = full_complexity_model.read_data(
-        restart_data_folder,
-        "collocation-points-validation.csv",
+    validation_file_sets = discover_validation_sets(
+        restart_data_folder
     )
 
-    # ---------------------------------------------------------
-    # Load full-complexity validation results ONCE
-    # ---------------------------------------------------------
-
-    cm_outputs = full_complexity_model.output_processing(
-        output_data_path=os.path.join(
-            restart_data_folder,
-            "model-results-validation.json",
-        ),
-        validation=full_complexity_model.validation,
-        filter_outputs=True,
-        run_range_filtering=(
-            1,
-            full_complexity_model.init_runs,
-        ),
+    print(
+        f"\nFound {len(validation_file_sets)} validation set(s): "
+        f"{[entry['id'] for entry in validation_file_sets]}"
     )
 
     expected_columns = n_loc * n_quantities
 
-    if cm_outputs.shape[1] != expected_columns:
-        raise ValueError(
-            "Unexpected number of columns in validation model outputs.\n"
-            f"Expected: {expected_columns} "
-            f"({n_loc} locations x {n_quantities} quantities)\n"
-            f"Obtained: {cm_outputs.shape[1]}"
+    validation_pools = []
+
+    for validation_info in validation_file_sets:
+
+        validation_id = validation_info["id"]
+
+        print(
+            f"\nLoading validation set {validation_id}: "
+            f"{validation_info['collocation_file']}"
         )
 
-    # The MO output arrangement is:
-    #
-    # P1_q1, P1_q2, P2_q1, P2_q2, ...
-    #
-    # Therefore idx::n_quantities selects one quantity across
-    # all locations.
-    cm_outputs_by_quantity = {
-        quantity: cm_outputs[:, idx::n_quantities]
-        for idx, quantity in enumerate(calibration_quantities)
-    }
+        # ---------------------------------------------------------
+        # Input parameter combinations
+        # ---------------------------------------------------------
+        validation_inputs = full_complexity_model.read_data(
+            restart_data_folder,
+            validation_info["collocation_file"],
+        )
+
+        n_validation_runs = validation_inputs.shape[0]
+
+        print(
+            f"Validation set {validation_id}: "
+            f"{n_validation_runs} parameter combinations."
+        )
+
+        # output_processing() needs the number of validation runs.
+        full_complexity_model.init_runs = n_validation_runs
+
+        # Important for the new numbered validation-file system.
+        full_complexity_model.validation_csv_path = os.path.join(
+            restart_data_folder,
+            validation_info["results_csv"],
+        )
+
+        # ---------------------------------------------------------
+        # Full-complexity outputs
+        # ---------------------------------------------------------
+        cm_outputs = full_complexity_model.output_processing(
+            output_data_path=os.path.join(
+                restart_data_folder,
+                validation_info["results_file"],
+            ),
+            validation=True,
+            filter_outputs=True,
+            run_range_filtering=(
+                1,
+                n_validation_runs,
+            ),
+        )
+
+        if cm_outputs.shape[1] != expected_columns:
+            raise ValueError(
+                f"Validation set {validation_id}: unexpected "
+                f"number of output columns.\n"
+                f"Expected: {expected_columns} "
+                f"({n_loc} locations x {n_quantities} quantities)\n"
+                f"Obtained: {cm_outputs.shape[1]}"
+            )
+
+        if cm_outputs.shape[0] != n_validation_runs:
+            raise ValueError(
+                f"Validation set {validation_id}: number of "
+                f"full-complexity outputs does not match the "
+                f"number of validation inputs.\n"
+                f"Inputs: {n_validation_runs}\n"
+                f"Outputs: {cm_outputs.shape[0]}"
+            )
+
+        cm_outputs_by_quantity = {
+            quantity: cm_outputs[:, idx::n_quantities]
+            for idx, quantity in enumerate(
+                calibration_quantities
+            )
+        }
+
+        validation_pools.append(
+            {
+                "id": validation_id,
+                "inputs": validation_inputs,
+                "cm_outputs": cm_outputs,
+                "cm_outputs_by_quantity":
+                    cm_outputs_by_quantity,
+            }
+        )
 
     # ---------------------------------------------------------
     # Results container
@@ -332,6 +516,7 @@ def main():
         "TrainPoints": [],
         "Quantity": [],
         "SurrogateType": [],
+        "ValidationSet": [],
         "MSE": [],
         "RMSE": [],
         "MAE": [],
@@ -373,48 +558,59 @@ def main():
             mo_relative_path,
         )
 
-        mo_predictions = mo_surrogate.predict_(
-            input_sets=validation_sets,
-            get_conf_int=True,
-        )
+        for validation_pool in validation_pools:
 
-        mo_output = mo_predictions["output"]
-        mo_upper_ci = mo_predictions["upper_ci"]
-        mo_lower_ci = mo_predictions["lower_ci"]
+            validation_id = validation_pool["id"]
+            validation_sets = validation_pool["inputs"]
 
-        if mo_output.shape[1] != expected_columns:
-            raise ValueError(
-                f"MO surrogate TP{train_points} returned "
-                f"{mo_output.shape[1]} columns; "
-                f"expected {expected_columns}."
+            cm_outputs_by_quantity = (
+                validation_pool["cm_outputs_by_quantity"]
             )
 
-        # Evaluate each calibration target separately.
-        for idx, quantity_name in enumerate(
-            calibration_quantities
-        ):
-
-            sm_output_q = mo_output[:, idx::n_quantities]
-            sm_upper_q = mo_upper_ci[:, idx::n_quantities]
-            sm_lower_q = mo_lower_ci[:, idx::n_quantities]
-
-            cm_output_q = cm_outputs_by_quantity[quantity_name]
-
-            save_metrics(
-                surrogate_metrics=surrogate_metrics,
-                plotter=plotter,
-                sm_output=sm_output_q,
-                cm_output=cm_output_q,
-                sm_upper_ci=sm_upper_q,
-                sm_lower_ci=sm_lower_q,
-                train_points=train_points,
-                quantity_name=quantity_name,
-                surrogate_type="MO",
-                n_loc=n_loc,
-                save_location_metrics=(
-                    train_points in surrogates_to_evaluate
-                ),
+            mo_predictions = mo_surrogate.predict_(
+                input_sets=validation_sets,
+                get_conf_int=True,
             )
+
+            mo_output = mo_predictions["output"]
+            mo_upper_ci = mo_predictions["upper_ci"]
+            mo_lower_ci = mo_predictions["lower_ci"]
+
+            if mo_output.shape[1] != expected_columns:
+                raise ValueError(
+                    f"MO surrogate TP{train_points}, validation "
+                    f"set {validation_id}, returned "
+                    f"{mo_output.shape[1]} columns; "
+                    f"expected {expected_columns}."
+                )
+
+            for idx, quantity_name in enumerate(
+                    calibration_quantities
+            ):
+                sm_output_q = mo_output[:, idx::n_quantities]
+                sm_upper_q = mo_upper_ci[:, idx::n_quantities]
+                sm_lower_q = mo_lower_ci[:, idx::n_quantities]
+
+                cm_output_q = cm_outputs_by_quantity[
+                    quantity_name
+                ]
+
+                save_metrics(
+                    surrogate_metrics=surrogate_metrics,
+                    plotter=plotter,
+                    sm_output=sm_output_q,
+                    cm_output=cm_output_q,
+                    sm_upper_ci=sm_upper_q,
+                    sm_lower_ci=sm_lower_q,
+                    train_points=train_points,
+                    quantity_name=quantity_name,
+                    surrogate_type="MO",
+                    validation_set=validation_id,
+                    n_loc=n_loc,
+                    save_location_metrics=(
+                            train_points in surrogates_to_evaluate
+                    ),
+                )
 
         # =====================================================
         # 2. SINGLE-OUTPUT GPEs
@@ -478,42 +674,53 @@ def main():
                     f"{quantity_name}"
                 )
 
-                so_predictions = so_surrogate.predict_(
-                    input_sets=validation_sets,
-                    get_conf_int=True,
-                )
+                for validation_pool in validation_pools:
 
-                sm_output_q = so_predictions["output"]
-                sm_upper_q = so_predictions["upper_ci"]
-                sm_lower_q = so_predictions["lower_ci"]
+                    validation_id = validation_pool["id"]
+                    validation_sets = validation_pool["inputs"]
 
-                cm_output_q = cm_outputs_by_quantity[
-                    quantity_name
-                ]
-
-                if sm_output_q.shape[1] != n_loc:
-                    raise ValueError(
-                        f"Sequential SO model for "
-                        f"{quantity_name}, TP{train_points}, "
-                        f"returned {sm_output_q.shape[1]} columns; "
-                        f"expected {n_loc}."
+                    cm_outputs_by_quantity = (
+                        validation_pool["cm_outputs_by_quantity"]
                     )
 
-                save_metrics(
-                    surrogate_metrics=surrogate_metrics,
-                    plotter=plotter,
-                    sm_output=sm_output_q,
-                    cm_output=cm_output_q,
-                    sm_upper_ci=sm_upper_q,
-                    sm_lower_ci=sm_lower_q,
-                    train_points=train_points,
-                    quantity_name=quantity_name,
-                    surrogate_type="SO",
-                    n_loc=n_loc,
-                    save_location_metrics=(
-                        train_points in surrogates_to_evaluate
-                    ),
-                )
+                    so_predictions = so_surrogate.predict_(
+                        input_sets=validation_sets,
+                        get_conf_int=True,
+                    )
+
+                    sm_output_q = so_predictions["output"]
+                    sm_upper_q = so_predictions["upper_ci"]
+                    sm_lower_q = so_predictions["lower_ci"]
+
+                    cm_output_q = cm_outputs_by_quantity[
+                        quantity_name
+                    ]
+
+                    if sm_output_q.shape[1] != n_loc:
+                        raise ValueError(
+                            f"Sequential SO model for "
+                            f"{quantity_name}, TP{train_points}, "
+                            f"validation set {validation_id}, "
+                            f"returned {sm_output_q.shape[1]} columns; "
+                            f"expected {n_loc}."
+                        )
+
+                    save_metrics(
+                        surrogate_metrics=surrogate_metrics,
+                        plotter=plotter,
+                        sm_output=sm_output_q,
+                        cm_output=cm_output_q,
+                        sm_upper_ci=sm_upper_q,
+                        sm_lower_ci=sm_lower_q,
+                        train_points=train_points,
+                        quantity_name=quantity_name,
+                        surrogate_type="SO",
+                        validation_set=validation_id,
+                        n_loc=n_loc,
+                        save_location_metrics=(
+                                train_points in surrogates_to_evaluate
+                        ),
+                    )
 
         else:
 
@@ -547,34 +754,53 @@ def main():
                     so_relative_path,
                 )
 
-                so_predictions = so_surrogate.predict_(
-                    input_sets=validation_sets,
-                    get_conf_int=True,
-                )
+                for validation_pool in validation_pools:
 
-                sm_output_q = so_predictions["output"]
-                sm_upper_q = so_predictions["upper_ci"]
-                sm_lower_q = so_predictions["lower_ci"]
+                    validation_id = validation_pool["id"]
+                    validation_sets = validation_pool["inputs"]
 
-                cm_output_q = cm_outputs_by_quantity[
-                    quantity_name
-                ]
+                    cm_outputs_by_quantity = (
+                        validation_pool["cm_outputs_by_quantity"]
+                    )
 
-                save_metrics(
-                    surrogate_metrics=surrogate_metrics,
-                    plotter=plotter,
-                    sm_output=sm_output_q,
-                    cm_output=cm_output_q,
-                    sm_upper_ci=sm_upper_q,
-                    sm_lower_ci=sm_lower_q,
-                    train_points=train_points,
-                    quantity_name=quantity_name,
-                    surrogate_type="SO",
-                    n_loc=n_loc,
-                    save_location_metrics=(
-                        train_points in surrogates_to_evaluate
-                    ),
-                )
+                    so_predictions = so_surrogate.predict_(
+                        input_sets=validation_sets,
+                        get_conf_int=True,
+                    )
+
+                    sm_output_q = so_predictions["output"]
+                    sm_upper_q = so_predictions["upper_ci"]
+                    sm_lower_q = so_predictions["lower_ci"]
+
+                    cm_output_q = cm_outputs_by_quantity[
+                        quantity_name
+                    ]
+
+                    if sm_output_q.shape[1] != n_loc:
+                        raise ValueError(
+                            f"Independent SO model for "
+                            f"{quantity_name}, TP{train_points}, "
+                            f"validation set {validation_id}, "
+                            f"returned {sm_output_q.shape[1]} columns; "
+                            f"expected {n_loc}."
+                        )
+
+                    save_metrics(
+                        surrogate_metrics=surrogate_metrics,
+                        plotter=plotter,
+                        sm_output=sm_output_q,
+                        cm_output=cm_output_q,
+                        sm_upper_ci=sm_upper_q,
+                        sm_lower_ci=sm_lower_q,
+                        train_points=train_points,
+                        quantity_name=quantity_name,
+                        surrogate_type="SO",
+                        validation_set=validation_id,
+                        n_loc=n_loc,
+                        save_location_metrics=(
+                                train_points in surrogates_to_evaluate
+                        ),
+                    )
 
     # =========================================================
     # PLOTTING

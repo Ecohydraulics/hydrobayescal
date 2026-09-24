@@ -6,6 +6,9 @@ scatter, and residual plots.
 
 import math
 import os
+import re
+import unicodedata
+
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +16,6 @@ import pandas as pd
 from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 from scipy.stats import spearmanr
 from sklearn.preprocessing import StandardScaler
-
 from hydroBayesCal.visualize.axis_utils import (
     compute_nice_limits,
     format_tick_label,
@@ -1209,7 +1211,7 @@ class CalibrationAssessment:
                     ax, obs, cm,
                     downstream_set, upstream_set,
                     collect_legend=(row_idx == 0 and col_idx == 0),
-                    s=160, alpha=0.85, marker="*"
+                    s=80, alpha=0.85, marker="*"
                 )
                 legend_handles.extend(group_handles)
                 legend_labels.extend(group_labels)
@@ -1228,12 +1230,12 @@ class CalibrationAssessment:
                 # Titles and labels
                 # ----------------------------------------------------
                 if row_idx == 0:
-                    ax.set_title(f"{qname}", fontsize=32, pad=16)
+                    ax.set_title(f"{qname}", fontsize=22, pad=16)
 
                 if row_idx == 0 or row_idx == n_models - 1:
-                    ax.set_xlabel(f"Observed {qname}", fontsize=36)
+                    ax.set_xlabel(f"Observed {qname}", fontsize=22)
 
-                ax.set_ylabel(f"Modeled {qname}", fontsize=36)
+                ax.set_ylabel(f"Modeled {qname}", fontsize=22)
 
                 if col_idx == 0:
                     ax.annotate(
@@ -1243,7 +1245,7 @@ class CalibrationAssessment:
                         rotation=90,
                         va="center",
                         ha="center",
-                        fontsize=28,
+                        fontsize=22,
                         fontweight="bold"
                     )
 
@@ -1265,7 +1267,7 @@ class CalibrationAssessment:
                 ax.set_xticklabels(xlabels)
                 ax.set_yticklabels(ylabels)
 
-                ax.tick_params(axis="both", which="both", direction="in", labelsize=28)
+                ax.tick_params(axis="both", which="both", direction="in", labelsize=22)
 
                 # Grid and spines
                 ax.grid(True, linestyle="--", linewidth=0.5, color="gray")
@@ -1287,7 +1289,7 @@ class CalibrationAssessment:
                     transform=ax.transAxes,
                     va="top",
                     ha="right",
-                    fontsize=24,
+                    fontsize=22,
                     bbox=dict(facecolor="white", alpha=0.85, edgecolor="none")
                 )
 
@@ -1320,175 +1322,418 @@ class CalibrationAssessment:
             points_group_1=None,
             points_group_2=None,
     ):
-        """
-        Surrogate Model (X-axis) vs Deterministic/Complex Model (Y-axis)
+        r"""
+        Plots Surrogate Model vs Deterministic/Complex Model with:
 
-        • Rows = quantities
-        • Columns = surrogate models
-        • Wider subplots
-        • Red dashed 1:1 line
-        • Star markers
+            Rows    = surrogate models
+            Columns = quantities / calibration targets
+
+        The plotting style is consistent with observed_vs_modeled_compare():
+            - Same subplot dimensions
+            - Same font sizes
+            - Same tick formatting
+            - 6 ticks per axis, every second label displayed
+            - Shared axis limits per quantity
+            - Equal x/y aspect ratio
+            - Model names shown vertically on the left
+            - Quantity names shown at the top
+            - Common legend above the figure
 
         Parameters
         ----------
+        df_spatial : DataFrame
+            Spatial comparison data containing:
+                - model_id
+                - quantity
+                - sm_output
+                - cm_output
+
+        df_summary : DataFrame
+            Summary table containing model_id and model_name.
+
+        model_ids : list
+            List of surrogate model IDs to plot.
+
+        quantity_names : list
+            Quantity names corresponding to Q1, Q2, Q3, ...
+            Example:
+                [r"$h$", r"$\bar{U}$", r"$\delta_z$"]
+
         points_group_1 : list or range, optional
-            Node positions to color as downstream (gray).
+            First group of points, e.g. downstream nodes.
+
         points_group_2 : list or range, optional
-            Node positions to color as upstream (black).
+            Second group of points, e.g. upstream nodes.
         """
 
         save_folder = self.save_folder
+
         n_models = len(model_ids)
         n_quantities = len(quantity_names)
 
-        # Convert to sets for faster lookup (only if provided)
-        downstream_set = set(points_group_1) if points_group_1 is not None else None
-        upstream_set = set(points_group_2) if points_group_2 is not None else None
+        downstream_set = (
+            set(points_group_1)
+            if points_group_1 is not None
+            else None
+        )
 
-        # ---- Wider figure ----
+        upstream_set = (
+            set(points_group_2)
+            if points_group_2 is not None
+            else None
+        )
+
+        # ------------------------------------------------------------
+        # Create subplot grid
+        # Rows    = models
+        # Columns = quantities
+        # ------------------------------------------------------------
         fig, axes = plt.subplots(
-            nrows=n_quantities,
-            ncols=n_models,
-            figsize=(7.5 * n_models, 6 * n_quantities),  # widened
+            nrows=n_models,
+            ncols=n_quantities,
+            figsize=(9.5 * n_quantities, 5.0 * n_models),
+            sharex=False,
             sharey=False
         )
 
-        if n_quantities == 1:
+        # Force axes into a 2D array
+        if n_models == 1 and n_quantities == 1:
+            axes = np.array([[axes]])
+        elif n_models == 1:
             axes = axes[np.newaxis, :]
-        if n_models == 1:
+        elif n_quantities == 1:
             axes = axes[:, np.newaxis]
 
-        colors = plt.cm.get_cmap('tab10', n_models)
+        # ------------------------------------------------------------
+        # Compute shared nice axis limits for each quantity column
+        # ------------------------------------------------------------
+        axis_limits_by_quantity = {}
 
-        # Track if we need to create legend (only when grouping is specified)
+        for q_idx, qname in enumerate(quantity_names):
+
+            all_sm_q = []
+            all_cm_q = []
+
+            for model_id in model_ids:
+
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == f"Q{q_idx + 1}")
+                    ]
+
+                if not df_model.empty:
+                    all_sm_q.append(df_model["sm_output"].values)
+                    all_cm_q.append(df_model["cm_output"].values)
+
+            # Fallback if no data exists for this quantity
+            if len(all_sm_q) == 0 or len(all_cm_q) == 0:
+                axis_limits_by_quantity[q_idx] = (0.0, 1.0)
+                continue
+
+            all_sm_q = np.concatenate(all_sm_q)
+            all_cm_q = np.concatenate(all_cm_q)
+
+            combined = np.concatenate([
+                all_sm_q,
+                all_cm_q
+            ])
+
+            min_val = np.nanmin(combined)
+            max_val = np.nanmax(combined)
+
+            axis_limits_by_quantity[q_idx] = compute_nice_limits(
+                min_val,
+                max_val,
+                n_ticks=5
+            )
+
+        # ------------------------------------------------------------
+        # Legend bookkeeping
+        # ------------------------------------------------------------
         legend_handles = []
         legend_labels = []
 
-        for i, qname in enumerate(quantity_names):
+        # Units used for RMSE
+        units_map = {
+            r"$h$": "m",
+            r"$\bar{U}$": "m/s",
+            r"$\delta_z$": "m",
+        }
 
-            # ===================================
-            # Collect all outputs for this quantity
-            # ===================================
-            all_surrogate = []
-            all_complex = []
+        # ------------------------------------------------------------
+        # Plot loop
+        # ------------------------------------------------------------
+        for row_idx, model_id in enumerate(model_ids):
 
-            for model_id in model_ids:
-                df_q = df_spatial[
+            # Model name
+            model_name_series = df_summary.loc[
+                df_summary["model_id"] == model_id,
+                "model_name"
+            ]
+
+            model_name = (
+                model_name_series.iloc[0]
+                if not model_name_series.empty
+                else f"M{model_id}"
+            )
+
+            for col_idx, qname in enumerate(quantity_names):
+
+                ax = axes[row_idx, col_idx]
+
+                df_model = df_spatial[
                     (df_spatial["model_id"] == model_id) &
-                    (df_spatial["quantity"] == f"Q{i + 1}")
+                    (df_spatial["quantity"] == f"Q{col_idx + 1}")
                     ]
 
-                all_surrogate.append(df_q["sm_output"].values)
-                all_complex.append(df_q["cm_output"].values)
+                # ----------------------------------------------------
+                # Handle missing data
+                # ----------------------------------------------------
+                if df_model.empty:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No data",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=18
+                    )
 
-            all_surrogate = np.concatenate(all_surrogate)
-            all_complex = np.concatenate(all_complex)
+                    ax.set_axis_off()
+                    continue
 
-            vmin = min(all_surrogate.min(), all_complex.min())
-            vmax = max(all_surrogate.max(), all_complex.max())
-            margin = 0.05 * (vmax - vmin)
-            lims = (vmin - margin, vmax + margin)
+                surrogate = df_model["sm_output"].values
+                deterministic = df_model["cm_output"].values
 
-            # ===================================
-            # Plot per surrogate model
-            # ===================================
-            for j, model_id in enumerate(model_ids):
+                axis_limits = axis_limits_by_quantity[col_idx]
 
-                ax = axes[i, j]
-
-                df_q = df_spatial[
-                    (df_spatial["model_id"] == model_id) &
-                    (df_spatial["quantity"] == f"Q{i + 1}")
-                    ]
-
-                model_name = df_summary[
-                    df_summary["model_id"] == model_id
-                    ]["model_name"].values[0]
-
-                surrogate = df_q["sm_output"].values
-                complex_m = df_q["cm_output"].values
-
+                # ----------------------------------------------------
+                # Scatter points
+                # ----------------------------------------------------
                 group_handles, group_labels = scatter_node_groups(
-                    ax, surrogate, complex_m,
-                    downstream_set, upstream_set,
-                    collect_legend=(i == 0 and j == 0),
-                    s=110, marker='*', alpha=0.9, edgecolor='k', linewidth=0.6
+                    ax,
+                    surrogate,
+                    deterministic,
+                    downstream_set,
+                    upstream_set,
+                    collect_legend=(
+                            row_idx == 0 and col_idx == 0
+                    ),
+                    s=80,
+                    alpha=0.85,
+                    marker="*"
                 )
+
                 legend_handles.extend(group_handles)
                 legend_labels.extend(group_labels)
 
-                # ---- Red dashed 1:1 line (no label) ----
+                # ----------------------------------------------------
+                # 1:1 line
+                # ----------------------------------------------------
                 ax.plot(
-                    lims,
-                    lims,
-                    linestyle='--',
-                    color='red',
-                    linewidth=1.5
+                    axis_limits,
+                    axis_limits,
+                    color="red",
+                    linestyle="--",
+                    lw=1.2
                 )
 
-                # ===================================
-                # Statistics
-                # ===================================
-                rmse = np.sqrt(np.mean((complex_m - surrogate) ** 2))
-                rho = spearmanr(complex_m, surrogate).correlation
+                # Same x/y limits within each quantity column
+                ax.set_xlim(axis_limits)
+                ax.set_ylim(axis_limits)
 
-                # Axis limits
-                ax.set_xlim(lims)
-                ax.set_ylim(lims)
-                ax.set_aspect("equal", adjustable="box")
+                # Keep the plotting area geometrically symmetric
+                ax.set_aspect(
+                    "equal",
+                    adjustable="box"
+                )
 
-                ax.set_title(f"{model_name} — {qname}", fontsize=20)
-                ax.set_xlabel("Surrogate Model", fontsize=18)
-                ax.set_ylabel("Deterministic Model", fontsize=18)
+                # ----------------------------------------------------
+                # Titles and axis labels
+                # ----------------------------------------------------
 
-                ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.tick_params(axis='both', direction='in', labelsize=20)
+                # Quantity title only on top row
+                if row_idx == 0:
+                    ax.set_title(
+                        f"{qname}",
+                        fontsize=22,
+                        pad=16
+                    )
 
-                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-                ax.minorticks_on()
-                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+                # Same behavior as observed_vs_modeled_compare:
+                # x-axis label on first and last model rows
+                if row_idx == 0 or row_idx == n_models - 1:
+                    ax.set_xlabel(
+                        f"Surrogate Model {qname}",
+                        fontsize=22
+                    )
+
+                ax.set_ylabel(
+                    f"Deterministic Model {qname}",
+                    fontsize=22
+                )
+
+                # ----------------------------------------------------
+                # Model name on left side of each row
+                # ----------------------------------------------------
+                if col_idx == 0:
+                    ax.annotate(
+                        model_name,
+                        xy=(-0.48, 0.5),
+                        xycoords="axes fraction",
+                        rotation=90,
+                        va="center",
+                        ha="center",
+                        fontsize=22,
+                        fontweight="bold"
+                    )
+
+                # ----------------------------------------------------
+                # Tick formatting
+                #
+                # 6 ticks exactly.
+                # Display label every second tick.
+                # ----------------------------------------------------
+                ticks = np.linspace(
+                    axis_limits[0],
+                    axis_limits[1],
+                    6
+                )
+
+                # Remove tiny floating-point values around zero
+                ticks = np.array([
+                    0.0 if np.isclose(t, 0.0, atol=1e-12) else t
+                    for t in ticks
+                ])
+
+                ax.set_xticks(ticks)
+                ax.set_yticks(ticks)
+
+                xlabels = [
+                    format_tick_label(tick)
+                    if k % 2 == 0
+                    else ""
+                    for k, tick in enumerate(ticks)
+                ]
+
+                ylabels = [
+                    format_tick_label(tick)
+                    if k % 2 == 0
+                    else ""
+                    for k, tick in enumerate(ticks)
+                ]
+
+                ax.set_xticklabels(xlabels)
+                ax.set_yticklabels(ylabels)
+
+                ax.tick_params(
+                    axis="both",
+                    which="both",
+                    direction="in",
+                    labelsize=22
+                )
+
+                # ----------------------------------------------------
+                # Grid and spines
+                # ----------------------------------------------------
+                ax.grid(
+                    True,
+                    linestyle="--",
+                    linewidth=0.5,
+                    color="gray"
+                )
 
                 for spine in ax.spines.values():
-                    spine.set_linewidth(1.5)
+                    spine.set_linewidth(1.2)
 
-                # ---- Metrics box ----
-                textstr = (
-                    f"RMSE = {rmse:.3f}\n"
-                    f"$\\rho$ = {rho:.2f}"
+                # ----------------------------------------------------
+                # Metrics
+                # ----------------------------------------------------
+                residuals = deterministic - surrogate
+
+                rmse = np.sqrt(
+                    np.mean(residuals ** 2)
                 )
 
+                rho = spearmanr(
+                    deterministic,
+                    surrogate
+                ).correlation
+
+                unit = units_map.get(qname, "")
+
+                rmse_text = (
+                        f"RMSE={rmse:.3f}"
+                        + (f" {unit}" if unit else "")
+                )
+
+                metrics_text = (
+                    f"{rmse_text}\n"
+                    f"$\\rho$={rho:.2f}"
+                )
+
+                # ----------------------------------------------------
+                # Metrics box
+                # Same position/font size as observed-vs-modeled
+                # ----------------------------------------------------
                 ax.text(
-                    0.05,
-                    0.95,
-                    textstr,
+                    0.97,
+                    0.97,
+                    metrics_text,
                     transform=ax.transAxes,
-                    va='top',
-                    ha='left',
-                    fontsize=14,
-                    bbox=dict(facecolor="white", alpha=0.85, edgecolor="none")
+                    va="top",
+                    ha="right",
+                    fontsize=22,
+                    bbox=dict(
+                        facecolor="white",
+                        alpha=0.85,
+                        edgecolor="none"
+                    )
                 )
 
-        # Add general horizontal legend at the top if grouping was specified
+        # ------------------------------------------------------------
+        # Figure legend
+        # ------------------------------------------------------------
         if legend_handles:
-            fig.legend(legend_handles, legend_labels,
-                       loc='upper center',
-                       ncol=len(legend_handles),
-                       fontsize=14,
-                       framealpha=0.9,
-                       bbox_to_anchor=(0.5, 0.98))
-            fig.tight_layout(rect=[0, 0, 1, 0.96])
-        else:
-            fig.tight_layout(rect=[0, 0, 1, 0.95])
 
+            fig.legend(
+                legend_handles,
+                legend_labels,
+                loc="upper center",
+                ncol=len(legend_handles),
+                fontsize=18,
+                framealpha=0.9,
+                bbox_to_anchor=(0.5, 0.995)
+            )
+
+            fig.tight_layout(
+                rect=[0.08, 0.03, 1, 0.95]
+            )
+
+        else:
+
+            fig.tight_layout(
+                rect=[0.08, 0.03, 1, 0.98]
+            )
+
+        # ------------------------------------------------------------
+        # Save figure
+        # ------------------------------------------------------------
         save_path = os.path.join(
             save_folder,
-            "scatter_surrogate_vs_complex.svg"
+            "scatter_surrogate_vs_deterministic_rows_models_cols_targets.svg"
         )
 
-        fig.savefig(save_path, dpi=300)
+        fig.savefig(
+            save_path,
+            dpi=300,
+            bbox_inches="tight"
+        )
 
-        print(f"Surrogate vs deterministic plots saved to {save_path}")
+        print(
+            f"Surrogate vs deterministic figure saved to {save_path}"
+        )
 
     def plot_residuals(
             self,
@@ -1500,168 +1745,639 @@ class CalibrationAssessment:
             points_group_2=None,
             mm_col="sm_output",
             cm_col="cm_output",
-            figsize_per_panel=(6, 4)
+            figsize_per_panel=(6, 4),
+            residual_limits=None
     ):
         """
-        Residuals (Complex Model - Metamodel) vs Location Index for multiple models and quantities.
+        Residuals (Complex Model - Metamodel) vs Location Index.
+
         Rows    -> quantities
         Columns -> models
+
+        Residuals are defined as:
+
+            residual = Complex Model - Metamodel
 
         Parameters
         ----------
         df_spatial : pd.DataFrame
-            Must contain: model_id, quantity, mm_output, cm_output
+            Must contain:
+                model_id, quantity, mm_col, cm_col
+
         df_summary : pd.DataFrame
-            Must contain: model_id, model_name
+            Must contain:
+                model_id, model_name
+
         model_ids : list[int]
-            Model IDs to visualize
+            Model IDs to visualize.
+
         quantity_names : list[str]
-            Names for subplot titles (ordered as Q1, Q2, ...)
+            Quantity names ordered as Q1, Q2, Q3, ...
+
+            Example:
+                [
+                    r"$h$",
+                    r"$\\bar{U}$",
+                ]
+
         points_group_1 : list or range, optional
-            Node positions to color as downstream (gray).
+            First point group, e.g. downstream nodes.
+
         points_group_2 : list or range, optional
-            Node positions to color as upstream (black).
+            Second point group, e.g. upstream nodes.
+
         mm_col : str
-            Column name of metamodel output
+            Column name containing metamodel predictions.
+
         cm_col : str
-            Column name of complex model output
+            Column name containing complex/deterministic model outputs.
+
         figsize_per_panel : tuple
-            Size per subplot (width, height)
+            Width and height of each subplot.
+
+        residual_limits : dict, optional
+            User-defined residual limits for each quantity.
+
+            Example:
+
+                residual_limits = {
+                    "Q1": (-0.05, 0.05),
+                    "Q2": (-0.10, 0.10),
+                }
+
+            The same limits are applied to all models belonging to
+            a given quantity.
+
+            If a quantity is not specified, its limits are calculated
+            automatically from all models.
         """
+
+        import os
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+
         save_folder = self.save_folder
+
         n_models = len(model_ids)
         n_quantities = len(quantity_names)
 
-        # Convert to sets for faster lookup (only if provided)
-        downstream_set = set(points_group_1) if points_group_1 is not None else None
-        upstream_set = set(points_group_2) if points_group_2 is not None else None
+        # ============================================================
+        # Plot settings
+        # ============================================================
 
-        # Arrange subplots: rows = quantities, cols = models
+        # EXACT number of Y-axis ticks in every subplot.
+        #
+        # Seven is useful for symmetric residual plots because zero
+        # becomes the central tick:
+        #
+        #  -3  -2  -1   0   1   2   3
+        #
+        n_y_ticks = 7
+
+        # ============================================================
+        # Node groups
+        # ============================================================
+        downstream_set = (
+            set(points_group_1)
+            if points_group_1 is not None
+            else None
+        )
+
+        upstream_set = (
+            set(points_group_2)
+            if points_group_2 is not None
+            else None
+        )
+
+        # ============================================================
+        # Units
+        # ============================================================
+        units_map = {
+            r"$h$": "m",
+            r"$\bar{U}$": "m/s",
+            r"$\delta_z$": "m",
+        }
+
+        # ============================================================
+        # Create subplot grid
+        #
+        # Rows    = quantities
+        # Columns = models
+        # ============================================================
         fig, axes = plt.subplots(
             nrows=n_quantities,
             ncols=n_models,
-            figsize=(figsize_per_panel[0] * n_models,
-                     figsize_per_panel[1] * n_quantities),
+            figsize=(
+                figsize_per_panel[0] * n_models,
+                figsize_per_panel[1] * n_quantities
+            ),
             sharex=False,
-            sharey=False
+            sharey=False,
+            squeeze=False
         )
 
-        # Ensure axes is 2D array even if n_models or n_quantities = 1
-        if n_quantities == 1:
-            axes = axes[np.newaxis, :]
-        if n_models == 1:
-            axes = axes[:, np.newaxis]
-
-        # Track if we need to create legend (only when grouping is specified)
+        # ============================================================
+        # Legend bookkeeping
+        # ============================================================
         legend_handles = []
         legend_labels = []
 
+        # ============================================================
+        # LOOP OVER QUANTITIES
+        # ============================================================
         for i, qname in enumerate(quantity_names):
-            # ----- Compute per-variable global limits across all models -----
-            max_points = 0
+
+            quantity_id = f"Q{i + 1}"
+
+            # --------------------------------------------------------
+            # Collect residuals across ALL selected models for this
+            # quantity.
+            #
+            # This is used only if residual_limits is not explicitly
+            # provided for the quantity.
+            # --------------------------------------------------------
             all_residuals_q = []
+            max_points = 0
 
             for model_id in model_ids:
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) &
-                                      (df_spatial["quantity"] == f"Q{i + 1}")]
-                cm = df_model[cm_col].values
-                mm = df_model[mm_col].values
-                residuals = cm - mm
-                all_residuals_q.append(residuals)
-                max_points = max(max_points, len(df_model))
 
-            # Concatenate all residuals for this quantity
-            all_residuals_q = np.concatenate(all_residuals_q)
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == quantity_id)
+                    ]
 
-            # X-axis limits based on location indices (1 to n_points)
-            x_limits = (0.5, max_points + 0.5)
+                if df_model.empty:
+                    continue
 
-            # Y-axis limits based on all residuals for this quantity
-            min_residual = all_residuals_q.min()
-            max_residual = all_residuals_q.max()
-            margin = 0.05 * (max_residual - min_residual)
-            y_limits = (min_residual - margin, max_residual + margin)
+                cm = df_model[
+                    cm_col
+                ].to_numpy(dtype=float)
 
-            # ----- Plot each model in this row -----
+                mm = df_model[
+                    mm_col
+                ].to_numpy(dtype=float)
+
+                valid = (
+                        np.isfinite(cm) &
+                        np.isfinite(mm)
+                )
+
+                residuals = (
+                        cm[valid] -
+                        mm[valid]
+                )
+
+                if residuals.size > 0:
+                    all_residuals_q.append(
+                        residuals
+                    )
+
+                max_points = max(
+                    max_points,
+                    len(df_model)
+                )
+
+            # ========================================================
+            # X-axis limits
+            # ========================================================
+            if max_points > 0:
+                x_limits = (
+                    0.5,
+                    max_points + 0.5
+                )
+            else:
+                x_limits = (
+                    0.5,
+                    1.5
+                )
+
+            # ========================================================
+            # Y-axis residual limits
+            # ========================================================
+
+            # --------------------------------------------------------
+            # User-defined limits
+            # --------------------------------------------------------
+            if (
+                    residual_limits is not None
+                    and quantity_id in residual_limits
+            ):
+
+                y_limits = residual_limits[
+                    quantity_id
+                ]
+
+            # --------------------------------------------------------
+            # Automatic fallback
+            # --------------------------------------------------------
+            else:
+
+                if len(all_residuals_q) > 0:
+
+                    all_residuals_q = np.concatenate(
+                        all_residuals_q
+                    )
+
+                    max_abs = np.max(
+                        np.abs(all_residuals_q)
+                    )
+
+                    if np.isclose(
+                            max_abs,
+                            0.0
+                    ):
+                        max_abs = 1.0
+
+                    # 5 % margin
+                    max_abs *= 1.05
+
+                    y_limits = (
+                        -max_abs,
+                        max_abs
+                    )
+
+                else:
+
+                    y_limits = (
+                        -1.0,
+                        1.0
+                    )
+
+            # --------------------------------------------------------
+            # Validate limits
+            # --------------------------------------------------------
+            if y_limits[0] >= y_limits[1]:
+                raise ValueError(
+                    f"Invalid residual limits for {quantity_id}: "
+                    f"{y_limits}. Lower limit must be smaller "
+                    f"than upper limit."
+                )
+
+            # ========================================================
+            # EXACT SAME NUMBER OF Y TICKS FOR EVERY VARIABLE
+            # ========================================================
+            y_ticks = np.linspace(
+                y_limits[0],
+                y_limits[1],
+                n_y_ticks
+            )
+
+            # Remove tiny floating point values around zero
+            y_ticks = np.array([
+                0.0
+                if np.isclose(tick, 0.0, atol=1e-12)
+                else tick
+                for tick in y_ticks
+            ])
+
+            # ========================================================
+            # LOOP OVER MODELS
+            # ========================================================
             for j, model_id in enumerate(model_ids):
+
                 ax = axes[i, j]
 
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) &
-                                      (df_spatial["quantity"] == f"Q{i + 1}")]
-                model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == quantity_id)
+                    ]
 
-                cm = df_model[cm_col].values
-                mm = df_model[mm_col].values
-                residuals = cm - mm
-                n_points = len(cm)
+                # ====================================================
+                # Model name
+                # ====================================================
+                model_name_series = df_summary.loc[
+                    df_summary["model_id"] == model_id,
+                    "model_name"
+                ]
 
-                # Create location indices (1, 2, 3, ..., n_points)
-                location_indices = np.arange(1, n_points + 1)
-
-                group_handles, group_labels = scatter_node_groups(
-                    ax, location_indices, residuals,
-                    downstream_set, upstream_set,
-                    collect_legend=(i == 0 and j == 0),
-                    s=60, alpha=0.8, marker='*'
+                model_name = (
+                    model_name_series.iloc[0]
+                    if not model_name_series.empty
+                    else f"M{model_id}"
                 )
-                legend_handles.extend(group_handles)
-                legend_labels.extend(group_labels)
 
-                # Zero reference line
-                ax.axhline(0.0, color='red', linestyle='--', linewidth=1)
-
-                # Apply identical X and Y axis limits for all models in this row
-                ax.set_xlim(x_limits)
-                ax.set_ylim(y_limits)
-
-                # Titles and labels
-                ax.set_title(f"{model_name} — {qname}", fontsize=18)
-                ax.set_xlabel(f"Location Index", fontsize=16)
-                if j == 0:  # first column
-                    ax.set_ylabel(f"Residuals", fontsize=16)
-
-                # Tick formatting - synchronized across row
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=10))
-                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
-
-                # Grid and spines
-                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-                ax.minorticks_on()
-                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
-                for spine in ax.spines.values():
-                    spine.set_linewidth(1.5)
-
-                # Metrics box: RMSE and Mean residual
-                rmse = np.sqrt(np.mean(residuals ** 2))
-                mean_res = np.mean(residuals)
-
-                # Position text box at top right
-                ax.text(0.98, 0.98,
-                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\nMean={mean_res:.3f} $\\mathrm{{m/s}}$",
+                # ====================================================
+                # No data
+                # ====================================================
+                if df_model.empty:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No data",
+                        ha="center",
+                        va="center",
                         transform=ax.transAxes,
-                        va='top', ha='right',
-                        fontsize=12,
-                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+                        fontsize=16
+                    )
 
-        # Add general horizontal legend at the top if grouping was specified
+                    ax.set_axis_off()
+
+                    continue
+
+                # ====================================================
+                # Data
+                # ====================================================
+                cm = df_model[
+                    cm_col
+                ].to_numpy(dtype=float)
+
+                mm = df_model[
+                    mm_col
+                ].to_numpy(dtype=float)
+
+                valid = (
+                        np.isfinite(cm) &
+                        np.isfinite(mm)
+                )
+
+                # ----------------------------------------------------
+                # Preserve original spatial indices
+                # ----------------------------------------------------
+                location_indices = np.arange(
+                    1,
+                    len(df_model) + 1
+                )
+
+                location_indices = (
+                    location_indices[valid]
+                )
+
+                residuals = (
+                        cm[valid] -
+                        mm[valid]
+                )
+
+                # ====================================================
+                # No valid values
+                # ====================================================
+                if residuals.size == 0:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No valid data",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=16
+                    )
+
+                    ax.set_axis_off()
+
+                    continue
+
+                # ====================================================
+                # Residual scatter
+                # ====================================================
+                group_handles, group_labels = scatter_node_groups(
+                    ax,
+                    location_indices,
+                    residuals,
+                    downstream_set,
+                    upstream_set,
+                    collect_legend=(
+                            i == 0 and j == 0
+                    ),
+                    s=60,
+                    alpha=0.8,
+                    marker="*"
+                )
+
+                legend_handles.extend(
+                    group_handles
+                )
+
+                legend_labels.extend(
+                    group_labels
+                )
+
+                # ====================================================
+                # Zero residual reference line
+                # ====================================================
+                ax.axhline(
+                    0.0,
+                    color="red",
+                    linestyle="--",
+                    linewidth=1.2
+                )
+
+                # ====================================================
+                # Axis limits
+                #
+                # Identical Y limits across all models for the same
+                # quantity.
+                # ====================================================
+                ax.set_xlim(
+                    x_limits
+                )
+
+                ax.set_ylim(
+                    y_limits
+                )
+
+                # ====================================================
+                # Titles and labels
+                #
+                # Use normal hyphen instead of Unicode em dash to
+                # avoid problems with text.usetex=True.
+                # ====================================================
+                ax.set_title(
+                    f"{model_name} - {qname}",
+                    fontsize=18
+                )
+
+                ax.set_xlabel(
+                    "Location Index",
+                    fontsize=16
+                )
+
+                # Y label only on first column
+                if j == 0:
+
+                    unit = units_map.get(
+                        qname,
+                        ""
+                    )
+
+                    if unit:
+
+                        ax.set_ylabel(
+                            f"Residual [{unit}]",
+                            fontsize=16
+                        )
+
+                    else:
+
+                        ax.set_ylabel(
+                            "Residual",
+                            fontsize=16
+                        )
+
+                # ====================================================
+                # X-axis ticks
+                # ====================================================
+                ax.xaxis.set_major_locator(
+                    MaxNLocator(
+                        integer=True,
+                        nbins=10
+                    )
+                )
+
+                # ====================================================
+                # Y-axis ticks
+                #
+                # IMPORTANT:
+                # Do not use MaxNLocator here.
+                #
+                # np.linspace guarantees exactly the same number of
+                # major ticks for Q1, Q2, Q3, etc.
+                # ====================================================
+                ax.set_yticks(
+                    y_ticks
+                )
+
+                # ====================================================
+                # Tick appearance
+                # ====================================================
+                ax.tick_params(
+                    axis="both",
+                    which="both",
+                    direction="in",
+                    labelsize=20
+                )
+
+                # ====================================================
+                # Grid
+                # ====================================================
+                ax.grid(
+                    True,
+                    which="major",
+                    linestyle="--",
+                    linewidth=0.5,
+                    color="gray"
+                )
+
+                # Minor ticks
+                ax.minorticks_on()
+
+                ax.grid(
+                    True,
+                    which="minor",
+                    linestyle=":",
+                    linewidth=0.5,
+                    alpha=0.4
+                )
+
+                # ====================================================
+                # Spines
+                # ====================================================
+                for spine in ax.spines.values():
+                    spine.set_linewidth(
+                        1.5
+                    )
+
+                # ====================================================
+                # Statistics
+                # ====================================================
+                rmse = np.sqrt(
+                    np.mean(
+                        residuals ** 2
+                    )
+                )
+
+                mean_res = np.mean(
+                    residuals
+                )
+
+                unit = units_map.get(
+                    qname,
+                    ""
+                )
+
+                if unit:
+
+                    metrics_text = (
+                        f"RMSE={rmse:.3f} {unit}\n"
+                        f"Mean={mean_res:.3f} {unit}"
+                    )
+
+                else:
+
+                    metrics_text = (
+                        f"RMSE={rmse:.3f}\n"
+                        f"Mean={mean_res:.3f}"
+                    )
+
+                # ====================================================
+                # Metrics box
+                # ====================================================
+                ax.text(
+                    0.98,
+                    0.98,
+                    metrics_text,
+                    transform=ax.transAxes,
+                    va="top",
+                    ha="right",
+                    fontsize=12,
+                    bbox=dict(
+                        facecolor="white",
+                        alpha=0.8,
+                        edgecolor="none"
+                    )
+                )
+
+        # ============================================================
+        # General figure legend
+        # ============================================================
         if legend_handles:
-            fig.legend(legend_handles, legend_labels,
-                       loc='upper center',
-                       ncol=len(legend_handles),
-                       fontsize=14,
-                       framealpha=0.9,
-                       bbox_to_anchor=(0.5, 0.98))
-            fig.tight_layout(rect=[0, 0, 1, 0.96])
-        else:
-            fig.tight_layout(rect=[0, 0, 1, 0.95])
 
+            fig.legend(
+                legend_handles,
+                legend_labels,
+                loc="upper center",
+                ncol=len(legend_handles),
+                fontsize=14,
+                framealpha=0.9,
+                bbox_to_anchor=(0.5, 0.98)
+            )
+
+            fig.tight_layout(
+                rect=[
+                    0,
+                    0,
+                    1,
+                    0.96
+                ]
+            )
+
+        else:
+
+            fig.tight_layout(
+                rect=[
+                    0,
+                    0,
+                    1,
+                    0.95
+                ]
+            )
+
+        # ============================================================
+        # Save figure
+        # ============================================================
         if save_folder is not None:
             save_path = os.path.join(
                 save_folder,
                 "residuals_CM_vs_MM_individual_models.svg"
             )
-            fig.savefig(save_path, dpi=300)
-            print(f"Residuals plot saved to {save_path}")
+
+            fig.savefig(
+                save_path,
+                dpi=300,
+                bbox_inches="tight"
+            )
+
+            print(
+                f"Residuals plot saved to {save_path}"
+            )
 
 

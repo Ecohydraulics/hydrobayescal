@@ -97,21 +97,21 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 100,   # Number of initial parameter samples
-    'max_runs': 100,   # Total runs (initial + BAL iterations)
+    'init_runs': 2,   # Number of initial parameter samples
+    'max_runs': 2,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
-    'parameter_sampling_method': "sobol",
+    'parameter_sampling_method': "random",
     'tp_selection_criteria':    "dkl",
 
     # BAL specific0
     'eval_steps':    5,      # Save surrogate and evaluate every iteration
-    'prior_samples': 30000,
+    'prior_samples': 25000,
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
-    'multitask_selection': 'variables',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
+    'multitask_selection': 'SO_sequential',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
     # Feed the GPE predictive standard deviation into the Bayesian inference rather
     # than treating the surrogate predictions as exact. On by default: the emulator's
     # uncertainty is genuine uncertainty, and the BAL utility already accounts for
@@ -137,10 +137,10 @@ extraction = {
 # EXECUTION MODES
 # ============================================================================
 execution = {
-    'complete_bal_mode':      True,
-    'only_bal_mode':          True,
+    'complete_bal_mode':      False,
+    'only_bal_mode':          False,
     'delete_complex_outputs': True,
-    'validation':             False,
+    'validation':             True,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS
