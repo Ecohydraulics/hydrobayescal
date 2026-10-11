@@ -42,6 +42,10 @@ pre-commit install
   sphinx-build -b html -W docs docs/_build/html
   ```
 
+  The suite needs no solver and takes a few minutes.
+* **Every push and every pull request is tested on GitHub** by the `tests` workflow (`.github/workflows/tests.yml`): a lint that reports definite errors only (files that do not parse, undefined names), the test suite on Python 3.10 and 3.12, and the documentation build with the Read the Docs settings. A red mark next to a commit means that one of them failed. Open the run from that mark or from the *Actions* tab to see which test failed and why, and fix it before building further work on that commit. The lint can be run locally with `ruff check --target-version py310 --select E9,F63,F7,F82 src tests examples env-scripts docs/conf.py`.
+* If you change `src/hydroBayesCal/drivers/bal_telemac.py`, run `python env-scripts/sync-example-drivers.py` afterwards. The copies of that driver in the example folders are generated from it, and a test compares them with it. Change the workflow in the driver, not in a copy.
+
 ## Versioning
 
 We follow **Semantic Versioning** (`MAJOR.MINOR.PATCH`, see
