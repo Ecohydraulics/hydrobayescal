@@ -1,30 +1,49 @@
 import os
-
+import argparse
+import importlib.util
 
 from hydroBayesCal.telemac.control_telemac import TelemacModel
 from hydroBayesCal.visualize import BayesianPlotter
 
+def load_config(config_path):
+    """
+    Load configuration from Python file.
 
+    Parameters
+    ----------
+    config_path : str
+        Path to the Python configuration file
+
+    Returns
+    -------
+    module
+        Configuration module with all variables
+    """
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config
 def main():
     # Initialize full complexity model
+    # Initialize full complexity model
+    parser = argparse.ArgumentParser(description="Assess calibraed deterministic models  against measurements.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='config_Ering.py',
+        help='Path to Python configuration file (default: config_Ering.py)'
+    )
+    args = parser.parse_args()
+    config = load_config(args.config)
     full_complexity_model = TelemacModel(
-        res_dir="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/",
-        calibration_pts_file_path="/home/user/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/measuredData/measurements-calibration-EringCalib.csv",
+        res_dir=config.paths['res_dir'],
+        calibration_pts_file_path=config.paths['calibration_pts_file_path'],
         init_runs=30, # Number oF samples for validation
-        calibration_parameters=["gaiaCLASSES SHIELDS PARAMETERS 1",
-                                "gaiaCLASSES SHIELDS PARAMETERS 2",
-                                "zone2",  # Pool
-                                "zone3",  # Slackwater
-                                "zone4",  # Glide
-                                "zone5",  # Riffle
-                                "zone6"],  # Run
-        # calibration_quantities=["WATER DEPTH"],
-        # calibration_quantities = ["SCALAR VELOCITY"],
-        calibration_quantities=["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL"],
+        calibration_parameters=config.calibration['parameters'],
+        calibration_quantities=config.calibration['calibration_quantities'],
         # calibration_quantities=["SCALAR VELOCITY", "WATER DEPTH", "CUMUL BED EVOL"],
         # calibration_quantities=["WATER DEPTH","SCALAR VELOCITY"],
-        extraction_quantities=["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V",
-                               "CUMUL BED EVOL"],
+        extraction_quantities=config.calibration['extraction_quantities'],
         validation=True
     )
     surrogate_to_analyze = [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100]  # Train points to analyze

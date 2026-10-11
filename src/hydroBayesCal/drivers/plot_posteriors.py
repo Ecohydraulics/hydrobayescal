@@ -87,19 +87,16 @@ def main():
         i for i, posterior in enumerate(posterior_arrays)
         if posterior is not None and np.asarray(posterior).size > 0
     ]
-
     if len(valid_posterior_iterations) == 0:
         raise ValueError("No valid posterior found in BAL_dictionary.pkl")
 
     last_valid_iteration = valid_posterior_iterations[-1]
-
-    if iterations_to_plot not in valid_posterior_iterations:
+    if iterations_to_plot[0] not in valid_posterior_iterations:
         print(
             f"Iteration {iterations_to_plot} has no valid posterior. "
             f"Using last valid posterior iteration: {last_valid_iteration}"
         )
         iterations_to_plot = last_valid_iteration
-
     print(f"Plotting posterior iteration: {iterations_to_plot}")
 
     # ---------------------------------------------------------------------
@@ -119,7 +116,7 @@ def main():
         parameter_names=config.plotting["parameter_names"],
         prior=prior,
         param_values=full_complexity_model.param_values,
-        iterations_to_plot=[iterations_to_plot],
+        iterations_to_plot=config.plotting["iterations_to_plot"],
         bins=40,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],

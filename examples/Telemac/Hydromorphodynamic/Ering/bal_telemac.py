@@ -133,6 +133,7 @@ def run_complex_model(complex_model,
                       n_last=80,
                       adaptive_init_runs=True,
                       init_runs_min=None,
+                      gaia_layer_average=None,
                       ):
     """
     Executes the hydrodynamic model for a given experiment design and returns the collocation points,
@@ -178,7 +179,8 @@ def run_complex_model(complex_model,
             adaptive=adaptive_init_runs,
             init_runs_min=init_runs_min,
             output_extraction_time=output_extraction_time,
-            n=n_last)
+            n=n_last,
+            gaia_layer_average=gaia_layer_average,)
     else:
         try:
             model_outputs = complex_model.output_processing(output_data_path=os.path.join(complex_model.restart_data_folder,
@@ -207,6 +209,9 @@ def run_bal_model(collocation_points,
                   gp_library="gpy",  # By default
                   include_surrogate_error=True,
                   bal_exploration_tradeoff="auto",
+                  output_extraction_time="mean_last",
+                  n_last=80,
+                  gaia_layer_average=None,
                   posterior_sampling_method="rejection_sampling",
                   ):
     """
@@ -412,19 +417,35 @@ def run_bal_model(collocation_points,
             # 1.2. Set up Likelihood
             if complex_model.num_calibration_quantities == 1:
                 kernel = gpytorch.kernels.ScaleKernel(
-                                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
-                                        )
-                likelihood = gpytorch.likelihoods.GaussianLikelihood(
-                    noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
-                # Modify default kernel/likelihood values:
-                likelihood.noise = 1e-5  # Initialize the noise with a very small value.
-                # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
-                sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
-                                 likelihood=likelihood, kernel=kernel,
-                                 training_iter=150,
-                                 optimizer="adam", lr=0.07,
-                                 verbose=False)
-                surrogate_object = sm
+                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
+                )
+                if complex_model.multitask_selection == "locations":
+                    multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=complex_model.nloc,
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)  # Allow smaller noise
+                    )
+
+                    multi_sm_loc = MultiGPyTraining(collocation_points,
+                                                    model_outputs,
+                                                    kernel,
+                                                    training_iter=150,
+                                                    likelihood=multi_likelihood_loc,
+                                                    optimizer="adam", lr=0.01,
+                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    )
+                    surrogate_object = multi_sm_loc
+                else:
+                    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
+                    # Modify default kernel/likelihood values:
+                    likelihood.noise = 1e-5  # Initialize the noise with a very small value.
+                    # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
+                    sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
+                                     likelihood=likelihood, kernel=kernel,
+                                     training_iter=150,
+                                     optimizer="adam", lr=0.07,
+                                     verbose=False)
+                    surrogate_object = sm
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim))
@@ -445,7 +466,6 @@ def run_bal_model(collocation_points,
                                                     )
                     surrogate_object = multi_sm_var
                 if complex_model.multitask_selection == "locations":
-
                     multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
                         num_tasks=complex_model.nloc,
                         noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
@@ -487,13 +507,20 @@ def run_bal_model(collocation_points,
         elif it == 0:
             logger.info(
                 f'Starting {type(surrogate_object).__name__} surrogate model training with the initial collocation points. Please check the .csv file if information required.')
-
         if complex_model.num_calibration_quantities == 1:
-            logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
-            start_time_training = time.time()
-            sm.train_()
-            end_time_training = time.time()
-            logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
+            if complex_model.multitask_selection == "locations":
+                logger.info(
+                    f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+                start_time_training = time.time()
+                surrogate_object.train_tasks_locations()
+                end_time_training = time.time()
+                logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
+            else:
+                logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+                start_time_training = time.time()
+                sm.train_()
+                end_time_training = time.time()
+                logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
         else:
             logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
             start_time_training = time.time()
@@ -508,13 +535,21 @@ def run_bal_model(collocation_points,
         # 2. Validate GPR
         if it % eval_steps == 0:
             if complex_model.num_calibration_quantities == 1:
-                # Construct the save_name path for single quantity
-                save_name = os.path.join(gpe_results_folder_bal,
-                                         f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}.pkl')
-                sm.exp_design = experiment_design
-                with open(save_name, "wb") as file:
-                    pickle.dump(sm, file)
+                if complex_model.multitask_selection == "locations":
+                    save_name = os.path.join(gpe_results_folder_bal,
+                                             f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
+                                             f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.multitask_selection}.pkl')
+                    surrogate_object.exp_design = experiment_design
+                    with open(save_name, "wb") as file:
+                        pickle.dump(surrogate_object, file)
+                else:
+                    # Construct the save_name path for single quantity
+                    save_name = os.path.join(gpe_results_folder_bal,
+                                             f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
+                                             f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}.pkl')
+                    sm.exp_design = experiment_design
+                    with open(save_name, "wb") as file:
+                        pickle.dump(sm, file)
             else:
                 # Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
@@ -528,23 +563,43 @@ def run_bal_model(collocation_points,
         # Surrogate outputs for prior samples
         if complex_model.num_calibration_quantities == 1:
             multitask = False
-            start_time_prediction = time.time()
-            logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
-            surrogate_output = surrogate_object.predict_(input_sets=prior,
-                                           get_conf_int=True)
-            end_time_prediction = time.time()
-            logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
-            model_predictions = surrogate_output['output']
-            total_error = complex_model.variances
-            if it == 0 or it == n_iter:
-                try:
-                    # Open the file and save the dictionary
-                    with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
-                              'wb') as pickle_file:
-                        pickle.dump(surrogate_output, pickle_file)
-                    print(f"Surrogate output data for iteration {it} successfully saved.")
-                except Exception as e:
-                    print(f"An error occurred while saving the dictionary: {e}")
+            if complex_model.multitask_selection == "locations":
+                start_time_prediction = time.time()
+                logger.info(
+                    f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
+                surrogate_output = surrogate_object.predict_(input_sets=prior, get_conf_int=True)
+                end_time_prediction = time.time()
+                logger.info(
+                    f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+                total_error = complex_model.variances
+                model_predictions = surrogate_output['output']
+                if it == 0 or it == n_iter:
+                    try:
+                        # Open the file and save the dictionary
+                        with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
+                                  'wb') as pickle_file:
+                            pickle.dump(surrogate_output, pickle_file)
+                        print(f"Surrogate output data for iteration {it} successfully saved..")
+                    except Exception as e:
+                        print(f"An error occurred while saving the dictionary: {e}")
+            else:
+                start_time_prediction = time.time()
+                logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
+                surrogate_output = surrogate_object.predict_(input_sets=prior,
+                                               get_conf_int=True)
+                end_time_prediction = time.time()
+                logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+                model_predictions = surrogate_output['output']
+                total_error = complex_model.variances
+                if it == 0 or it == n_iter:
+                    try:
+                        # Open the file and save the dictionary
+                        with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
+                                  'wb') as pickle_file:
+                            pickle.dump(surrogate_output, pickle_file)
+                        print(f"Surrogate output data for iteration {it} successfully saved.")
+                    except Exception as e:
+                        print(f"An error occurred while saving the dictionary: {e}")
 
         else:
             multitask=True
@@ -659,9 +714,10 @@ def run_bal_model(collocation_points,
                                                        bal_iteration=bal_iteration,
                                                        bal_new_set_parameters=new_tp,
                                                        complete_bal_mode=complex_model.complete_bal_mode,
-                                                       output_extraction_time="mean_last",
-                                                       n=40,
-                                                       validation=complex_model.validation)
+                                                       output_extraction_time=output_extraction_time,
+                                                       n=n_last,
+                                                       validation=complex_model.validation,
+                                                       gaia_layer_average=gaia_layer_average,)
 
                 model_outputs = complex_model.model_evaluations
 
@@ -727,7 +783,8 @@ def main():
             complete_bal_mode=config.execution['complete_bal_mode'],
             only_bal_mode=config.execution['only_bal_mode'],
             delete_complex_outputs=config.execution['delete_complex_outputs'],
-            validation=config.execution['validation']
+            validation=config.execution['validation'],
+            multitask_selection=config.sampling.get('multitask_selection', 'variables'),
     )
 
     # Setup and run the experiment
@@ -746,6 +803,7 @@ def main():
         n_last=extraction.get('n_last', extraction.get('n', 80)),
         adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
         init_runs_min=config.sampling.get('init_runs_min', None),
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None)
     )
     # Report-only physics check on the initial design, BEFORE the BAL loop - the last
     # moment the answer is still cheap to act on. Anti-correlated depth vs. velocity
@@ -778,6 +836,7 @@ def main():
         gp_library=config.sampling['gp_library'],
         include_surrogate_error=config.sampling.get('include_surrogate_error', True),
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None),
         posterior_sampling_method=config.sampling.get('posterior_sampling_method',
                                                       'rejection_sampling'),
     )

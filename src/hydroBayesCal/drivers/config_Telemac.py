@@ -173,3 +173,23 @@ execution = {
     'validation':             False,
     'user_param_values':      False,
 }
+# ============================================================================
+# PLOTTING AND REPORTING SETTINGS
+# ============================================================================
+plotting = {
+
+    # Used for plotting and reporting - must be in same order as 'parameters'
+    'parameter_names': [
+        r"$k_{\mathrm{s,pool}}$",
+        r"$k_{\mathrm{s,slack}}$",
+        r"$k_{\mathrm{s,glide}}$",
+        r"$k_{\mathrm{s,riff}}$",
+        r"$k_{\mathrm{s,run}}$"
+    ],
+    # Units for reporting and plotting - must be in same order as 'parameters'
+    'parameter_units': [ "m", "m", "m", "m", "m"],
+    # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
+    # When all parameters are plotted all indices must be included.
+    'parameter_indices': [0, 1, 2, 3, 4],
+    'iterations_to_plot': [11],
+}

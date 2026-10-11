@@ -125,7 +125,7 @@ def tight_metric_limits(values, pad_fraction=0.12, min_span_fraction=1e-4, min_a
     return vmin - pad, vmax + pad
 
 
-def set_adaptive_decimal_formatter(ax, axis='both', values=None, max_decimals=2):
+def set_adaptive_decimal_formatter(ax, axis='both', values=None, max_decimals=1):
     """
     Uses adaptive decimals, but caps the number of decimals.
 

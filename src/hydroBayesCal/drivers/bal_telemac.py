@@ -205,6 +205,8 @@ def run_bal_model(collocation_points,
                   gp_library="gpy",  # By default
                   include_surrogate_error=True,
                   bal_exploration_tradeoff="auto",
+                  output_extraction_time="mean_last",
+        	      n_last=80,
                   posterior_sampling_method="rejection_sampling",
                   ):
     """
@@ -346,7 +348,7 @@ def run_bal_model(collocation_points,
                      'posterior': [None] * (n_iter + 1),
                      f'{experiment_design.exploit_method}_{experiment_design.util_func}': np.zeros(n_iter),
                      'util_func': np.empty(n_iter, dtype=object), 'prior': prior, 'observations': complex_model.observations,
-                     'errors': complex_model.measurement_errors,
+                     'errors': complex_model.measurement_errors,'post_loglikelihood': [None] * (n_iter + 1),
                      # Makes the stored dictionary self-describing: without these no
                      # consumer can recover the parameter names or calibration ranges.
                      'calibration_parameters': complex_model.calibration_parameters,
@@ -587,6 +589,7 @@ def run_bal_model(collocation_points,
         bayesian_dict['log_BME'][it] = bi_gpe.log_BME
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
         bayesian_dict['posterior'][it] = bi_gpe.posterior
+        bayesian_dict['post_loglikelihood'] = bi_gpe.post_loglikelihood
         # Report-only: where each calibration parameter's own optimum currently sits,
         # how well the data constrain it, and whether those per-parameter optima form
         # a jointly plausible parameter set. Never raises, never touches sampling.
@@ -658,7 +661,7 @@ def run_bal_model(collocation_points,
                                                        bal_new_set_parameters=new_tp,
                                                        complete_bal_mode=complex_model.complete_bal_mode,
                                                        output_extraction_time="mean_last",
-                                                       n=40,
+                                                       n=80,
                                                        validation=complex_model.validation)
 
                 model_outputs = complex_model.model_evaluations
@@ -740,10 +743,10 @@ def main():
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        output_extraction_time=extraction.get('output_extraction_time', "mean_last"),
-        n_last=extraction.get('n_last', extraction.get('n', 80)),
         adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
         init_runs_min=config.sampling.get('init_runs_min', None),
+        output_extraction_time=config.extraction['output_extraction_time'],
+        n_last=config.extraction['n_last'],
     )
     # Report-only physics check on the initial design, BEFORE the BAL loop - the last
     # moment the answer is still cheap to act on. Anti-correlated depth vs. velocity
@@ -776,8 +779,9 @@ def main():
         gp_library=config.sampling['gp_library'],
         include_surrogate_error=config.sampling.get('include_surrogate_error', True),
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
-        posterior_sampling_method=config.sampling.get('posterior_sampling_method',
-                                                      'rejection_sampling'),
+        output_extraction_time=config.extraction['output_extraction_time'],
+        n_last=config.extraction['n_last'],
+        posterior_sampling_method=config.sampling.get('posterior_sampling_method'),
     )
 
 if __name__ == "__main__":

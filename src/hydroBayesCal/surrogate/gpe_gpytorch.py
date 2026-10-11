@@ -919,6 +919,34 @@ class MultiGPyTraining:
         logger_warn.warning(message)
         return mode
 
+    @staticmethod
+    def _posterior_task_covariance(predictions):
+        """
+        Return the posterior predictive covariance between tasks independently
+        for each prediction point.
+
+        Parameters
+        ----------
+        predictions :
+            GPyTorch MultitaskMultivariateNormal returned by
+            likelihood(gp(input_sets)).
+
+        Returns
+        -------
+        np.ndarray
+            Shape [n_samples, n_tasks, n_tasks].
+        """
+        # Convert the multitask MVN into one MVN per input point.
+        # This retains task-to-task posterior covariance at each x while
+        # dropping covariance between different prediction points.
+        data_dist = predictions.to_data_independent_dist()
+
+        return (
+            data_dist.covariance_matrix
+            .detach()
+            .cpu()
+            .numpy()
+        )
     def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
         """
         Predict the outputs and their standard deviations for given input sets using the trained GP models.
@@ -974,7 +1002,6 @@ class MultiGPyTraining:
             multitask_cov_list = [[None] * n_locations for _ in range(n_samples)]
 
         mode = self._resolve_task_mode(n_locations)
-
         if mode == "all":
             model_info = self.gp_list[0]
             gp = model_info['gp']
@@ -1002,20 +1029,35 @@ class MultiGPyTraining:
                     lower_ci[:] = surrogate_prediction - 2 * surrogate_std
 
                 if multitask_cov:
-                    # The single model's tasks span all outputs; the BAL utility
-                    # consumes only the per-location (quantity x quantity) diagonal
-                    # blocks, which are sample-independent up to the input kernel.
-                    scale = self._input_kernel_diag(gp, input_sets)
-                    task_kernel = self._task_kernel(gp, n_obs)
+                    # Full posterior covariance between all output tasks
+                    # independently for each candidate.
+                    #
+                    # Shape:
+                    # [n_samples, n_obs, n_obs]
+                    posterior_cov_norm = (
+                        self._posterior_task_covariance(
+                            predictions
+                        )
+                    )
                     y_std_np = self._as_numpy(y_std)
-                    blocks = []
-                    for i in range(n_locations):
-                        sl = slice(i * n_quantities, (i + 1) * n_quantities)
-                        scaling = np.diag(y_std_np[sl])
-                        blocks.append(scaling @ task_kernel[sl, sl] @ scaling)
+                    # Convert the complete covariance from normalized
+                    # output space into physical units.
+                    D_all = np.diag(
+                        y_std_np
+                    )
                     for j in range(n_samples):
+                        full_cov_physical = ( D_all
+                                @ posterior_cov_norm[j]
+                                @ D_all
+                        )
+                        # Your current BAL interface expects one
+                        # quantity x quantity block per location.
                         for i in range(n_locations):
-                            multitask_cov_list[j][i] = scale[j] * blocks[i]
+                            sl = slice(
+                                i * n_quantities,
+                                (i + 1) * n_quantities)
+                            multitask_cov_list[j][i] = (full_cov_physical[sl,sl]
+                            )
 
         elif mode == "locations":
             for q, model_info in enumerate(self.gp_list):
@@ -1092,19 +1134,34 @@ class MultiGPyTraining:
                     if get_conf_int:
                         upper_ci[:, sl] = mean + 2 * std
                         lower_ci[:, sl] = mean - 2 * std
-
+            # -----------------------------------------
+            # Posterior multitask covariance for BAL
+            # -----------------------------------------
                     if multitask_cov:
-                        # The (n_quantities x n_quantities) task covariance is
-                        # genuinely available in this layout. It does not depend on
-                        # the sample, so build it once per location and only scale it
-                        # by the input kernel at each prediction point.
-                        scaling = np.diag(y_std_np)
-                        task_kernel = self._task_kernel(gp, n_quantities)
-                        block = scaling @ task_kernel @ scaling
-                        scale = self._input_kernel_diag(gp, input_sets)
-                        for j in range(n_samples):
-                            multitask_cov_list[j][i] = scale[j] * block
 
+                        # Posterior predictive covariance between calibration quantities
+                        # at every candidate point, in normalized output space.
+                        # Shape:
+                        # [n_samples, n_quantities, n_quantities]
+                        posterior_cov_norm = self._posterior_task_covariance(
+                            predictions
+                        )
+                        # Back-transform covariance from normalized space to
+                        # physical output units.
+                        #
+                        # If:
+                        #     y = y_mean + D z
+                        #
+                        # then:
+                        #     Cov(y) = D Cov(z) D
+                        scaling = np.diag(y_std_np)
+                        for j in range(n_samples):
+                            cov_physical = (
+                                    scaling
+                                    @ posterior_cov_norm[j]
+                                    @ scaling
+                            )
+                            multitask_cov_list[j][i] = cov_physical
         else:
             raise ValueError(
                 f"Unknown task_mode '{mode}'. Expected 'variables', 'locations' or 'all'.")
@@ -1185,3 +1242,148 @@ class MultitaskGPModel(ExactGP):
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
 
+class SOSequentialGPyTraining:
+    """Container for independent quantity-specific ``GPyTraining`` objects.
+
+    Each contained GPE predicts one calibration quantity at every measurement
+    location.  This adapter exposes the ``training_points`` and ``predict_``
+    interface expected by ``SequentialDesign`` while reconstructing predictions
+    in the original location-major/interleaved ordering::
+
+        [Q1_P1, Q2_P1, ..., Qn_P1, Q1_P2, Q2_P2, ..., Qn_P2, ...]
+
+    The quantity GPEs remain statistically independent; therefore no multitask
+    cross-covariance is constructed.
+    """
+
+    def __init__(self, surrogate_models, calibration_quantities):
+        self.models = dict(surrogate_models)
+        self.calibration_quantities = list(calibration_quantities)
+        self.num_quantities = len(self.calibration_quantities)
+
+        if self.num_quantities == 0:
+            raise ValueError("calibration_quantities cannot be empty.")
+
+        missing = [
+            var for var in self.calibration_quantities
+            if var not in self.models
+        ]
+        if missing:
+            raise KeyError(
+                f"Missing SO surrogate model(s) for calibration quantities: {missing}"
+            )
+
+        first_model = self.models[self.calibration_quantities[0]]
+        self.training_points = np.asarray(first_model.training_points)
+        self.nloc = int(first_model.n_obs)
+        self.n_obs = self.nloc * self.num_quantities
+        self.n_params = self.training_points.shape[1]
+        self.exp_design = None
+
+        # Keep a combined copy of the training outputs in the exact same ordering
+        # used by the complex model, observations and Bayesian likelihood.
+        self.model_evaluations = np.empty(
+            (self.training_points.shape[0], self.n_obs), dtype=float
+        )
+
+        for quantity_idx, var in enumerate(self.calibration_quantities):
+            model = self.models[var]
+
+            if int(model.n_obs) != self.nloc:
+                raise ValueError(
+                    f"All SO GPEs must contain the same number of locations. "
+                    f"'{var}' has {model.n_obs}; expected {self.nloc}."
+                )
+
+            model_tp = np.asarray(model.training_points)
+            if (
+                model_tp.shape != self.training_points.shape
+                or not np.allclose(model_tp, self.training_points)
+            ):
+                raise ValueError(
+                    "All SO GPEs must use exactly the same collocation points."
+                )
+
+            expected_shape = (self.training_points.shape[0], self.nloc)
+            if np.asarray(model.model_evaluations).shape != expected_shape:
+                raise ValueError(
+                    f"Unexpected training-output shape for '{var}': "
+                    f"{np.asarray(model.model_evaluations).shape}; "
+                    f"expected {expected_shape}."
+                )
+
+            self.model_evaluations[
+                :, quantity_idx::self.num_quantities
+            ] = model.model_evaluations
+
+    def __getitem__(self, key):
+        """Allow ``surrogate_object[var]`` access to an individual SO GPE."""
+        return self.models[key]
+
+    def train_(self):
+        """Train all quantity-specific GPEs independently."""
+        for var in self.calibration_quantities:
+            self.models[var].train_()
+
+    def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
+        """Predict all quantities and restore the original interleaved ordering."""
+        if multitask_cov:
+            raise ValueError(
+                "SO_sequential uses independent GPEs and therefore has no "
+                "multitask cross-covariance. Use multitask=False in SequentialDesign."
+            )
+
+        input_sets = np.asarray(input_sets)
+        n_samples = input_sets.shape[0]
+        full_shape = (n_samples, self.n_obs)
+
+        output = np.empty(full_shape, dtype=float)
+        std = np.empty(full_shape, dtype=float)
+
+        if get_conf_int:
+            upper_ci = np.empty(full_shape, dtype=float)
+            lower_ci = np.empty(full_shape, dtype=float)
+
+        for quantity_idx, var in enumerate(self.calibration_quantities):
+            quantity_prediction = self.models[var].predict_(
+                input_sets=input_sets,
+                get_conf_int=get_conf_int,
+            )
+
+            expected_shape = (n_samples, self.nloc)
+            mean_q = np.asarray(quantity_prediction["output"])
+            std_q = np.asarray(quantity_prediction["std"])
+
+            if mean_q.shape != expected_shape or std_q.shape != expected_shape:
+                raise ValueError(
+                    f"Unexpected prediction shape for '{var}'. "
+                    f"Mean={mean_q.shape}, std={std_q.shape}; "
+                    f"expected {expected_shape}."
+                )
+
+            # Restore location-major/interleaved ordering:
+            # Q1_P1, Q2_P1, ..., Qn_P1, Q1_P2, ...
+            output[:, quantity_idx::self.num_quantities] = mean_q
+            std[:, quantity_idx::self.num_quantities] = std_q
+
+            if get_conf_int:
+                if "upper_ci" in quantity_prediction and "lower_ci" in quantity_prediction:
+                    upper_q = np.asarray(quantity_prediction["upper_ci"])
+                    lower_q = np.asarray(quantity_prediction["lower_ci"])
+                else:
+                    upper_q = mean_q + 2.0 * std_q
+                    lower_q = mean_q - 2.0 * std_q
+
+                upper_ci[:, quantity_idx::self.num_quantities] = upper_q
+                lower_ci[:, quantity_idx::self.num_quantities] = lower_q
+
+        result = {
+            "output": output,
+            "std": std,
+        }
+
+        if get_conf_int:
+            result["upper_ci"] = upper_ci
+            result["lower_ci"] = lower_ci
+
+        return result

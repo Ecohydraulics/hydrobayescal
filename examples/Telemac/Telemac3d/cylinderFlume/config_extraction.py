@@ -1,4 +1,4 @@
-"""
+.,/KJM,LNIKJUUUUUUUUUUUUUUKJILLLLLLLLLLL"""
 Configuration File for HydroBayesCal - Telemac
 """
 
@@ -52,7 +52,7 @@ calibration = {
     'parameters': ["FRICTION COEFFICIENT FOR THE BOTTOM"], # Run,
 
     # Cmu range: typical values 0.06-0.12 (default is 0.09)
-    'param_values': [[0.01,0.07]],
+    'param_values': [[0.01,0.06]],
 
     # Quantities to extract from simulation - USE STANDARD NAMES
     'extraction_quantities': ['VELOCITY U','VELOCITY V','VELOCITY W','TURBULENT ENERG','DISSIPATION','3D VELOCITY MAGNITUDE'],
