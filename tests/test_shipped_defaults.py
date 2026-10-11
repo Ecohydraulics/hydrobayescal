@@ -310,3 +310,17 @@ def test_an_unknown_surrogate_layout_is_rejected_at_construction():
     with pytest.raises(ValueError, match="multitask_selection"):
         _Model(multitask_selection="variable")
 
+
+
+@pytest.mark.parametrize("path", CONFIGS, ids=lambda p: p.name)
+def test_plot_labels_cover_every_calibration_parameter(path):
+    """The labels are assigned by position, so a shorter list labels a parameter with the name of another one."""
+    config = _load(path)
+    plotting = getattr(config, "plotting", None)
+    if plotting is None:
+        pytest.skip("no plotting block")
+    n_parameters = len(config.calibration["parameters"])
+
+    assert len(plotting["parameter_names"]) == n_parameters
+    assert len(plotting["parameter_units"]) == n_parameters
+    assert all(0 <= index < n_parameters for index in plotting["parameter_indices"])

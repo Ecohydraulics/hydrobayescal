@@ -260,13 +260,6 @@ class MetricsPlots:
             surrogate_metrics["SurrogateType"]
         )
 
-        validation_sets = np.asarray(
-            surrogate_metrics.get(
-                "ValidationSet",
-                np.ones(len(train_points), dtype=int),
-            )
-        )
-
         rows = []
 
         for quantity in np.unique(quantities):
@@ -286,8 +279,6 @@ class MetricsPlots:
                             mask_base
                             & (train_points == tp)
                     )
-
-                    replicate_ids = validation_sets[mask]
 
                     for metric in metrics:
 

@@ -6,9 +6,6 @@ scatter, and residual plots.
 
 import math
 import os
-import re
-import unicodedata
-
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1811,11 +1808,6 @@ class CalibrationAssessment:
             If a quantity is not specified, its limits are calculated
             automatically from all models.
         """
-
-        import os
-        import numpy as np
-        import matplotlib.pyplot as plt
-        from matplotlib.ticker import MaxNLocator
 
         save_folder = self.save_folder
 
