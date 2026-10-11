@@ -18,8 +18,8 @@ Standard Names Reference:
 
 import os
 
-# Base directory
-BASE_DIR = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac3d/cylinderFlume/"
+# Base directory of this example (resolved relative to this file, so the example runs from any clone location)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ============================================================================
 # PATHS AND DIRECTORIES
@@ -46,12 +46,8 @@ morphodynamic_simulation = {
     'gaia_cas':                   None,
     'gaia_results_filename_base': None,
 
-    'gaia_layer_average': {
-        "LAY1 SAND RAT": {
-            "layers": None,
-            "thicknesses": None
-        }
-    }
+    # No sediment transport in this flume case, so no sand ratio is averaged over GAIA bed layers.
+    'gaia_layer_average': None,
 }
 
 # ============================================================================

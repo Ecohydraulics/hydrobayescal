@@ -1,4 +1,4 @@
-.,/KJM,LNIKJUUUUUUUUUUUUUUKJILLLLLLLLLLL"""
+"""
 Configuration File for HydroBayesCal - Telemac
 """
 

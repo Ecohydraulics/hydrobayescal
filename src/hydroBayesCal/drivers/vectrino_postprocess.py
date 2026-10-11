@@ -60,15 +60,8 @@ from hydroBayesCal.utils.VectrinoPostproc.vertical_plots import (
 # USER INPUT
 # ======================================================================
 
-data_directory = (
-    "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/"
-    "Telemac/Telemac3d/cylinderFlume/measuredData/raw_ascii/"
-)
-
-results_directory = (
-    "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/"
-    "Telemac/Telemac3d/cylinderFlume/measuredData/"
-)
+data_directory = "/home/user/vectrino-data/raw_ascii"
+results_directory = "/home/user/vectrino-data/results"
 
 
 # Base names without ".ntk.dat" or ".ntk.hdr".

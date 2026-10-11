@@ -148,8 +148,8 @@ def main():
         post_loglikelihood_arrays=post_loglikelihood
     )
     comparison_results = plotter.plot_posterior_model_comparison(
-        bal_dictionary_1="/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/auto-saved-results-HydroBayesCal/calibration-data/WATER DEPTH_SCALAR VELOCITY/BAL_dictionary.pkl",
-        bal_dictionary_2="/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/auto-saved-results-HydroBayesCal/calibration-data/WATER DEPTH_SCALAR VELOCITY_SOGPE_postBAL/BAL_dictionary.pkl",
+        bal_dictionary_1=os.path.join(config.paths["res_dir"], "auto-saved-results-HydroBayesCal", "calibration-data", "WATER DEPTH_SCALAR VELOCITY", "BAL_dictionary.pkl"),
+        bal_dictionary_2=os.path.join(config.paths["res_dir"], "auto-saved-results-HydroBayesCal", "calibration-data", "WATER DEPTH_SCALAR VELOCITY_SOGPE_postBAL", "BAL_dictionary.pkl"),
         model_names=("MO-GPE", "SO-GPE"),
         parameter_names=config.plotting["parameter_names"],
         parameter_units=config.plotting["parameter_units"],

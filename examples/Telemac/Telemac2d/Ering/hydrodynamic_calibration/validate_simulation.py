@@ -451,11 +451,11 @@ def main():
         # output_processing() needs the number of validation runs.
         full_complexity_model.init_runs = n_validation_runs
 
-        # Important for the new numbered validation-file system.
-        full_complexity_model.validation_csv_path = os.path.join(
-            restart_data_folder,
-            validation_info["results_csv"],
-        )
+        # The model resolves the files of a validation attempt itself (TelemacModel.validation_paths). Naming the attempt here makes output_processing write the results table of this validation set. The unnumbered files of earlier versions carry no attempt number.
+        if validation_info["results_csv"].endswith(f"_{validation_id}.csv"):
+            full_complexity_model.validation_attempt = validation_id
+        elif hasattr(full_complexity_model, "validation_attempt"):
+            del full_complexity_model.validation_attempt
 
         # ---------------------------------------------------------
         # Full-complexity outputs

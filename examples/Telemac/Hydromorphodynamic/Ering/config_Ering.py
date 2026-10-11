@@ -7,7 +7,8 @@ import os
 # Base directory
 # Base directory of this example (resolved relative to this file, so the
 # example runs from any clone location)
-BASE_DIR = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Hydromorphodynamic/Ering/"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # ============================================================================
 # PATHS AND DIRECTORIES
 # ============================================================================
@@ -35,8 +36,10 @@ morphodynamic_simulation = {
     'gaia_cas':                   "Ering_hydromorphodynamics_gaia.cas",
     'gaia_results_filename_base': "results_hydromorphodynamics_gaia",
 
+    # Sand ratio averaged over bed layers, as a derived extraction quantity. GAIA writes the ratio of a sand class in a bed layer as LAY<layer> SAND RAT<class>, so an average needs the sand class(es) AND the layers. Here: sand class 1, the finest class of this model, in the layers 1 and 2, weighted with the layer thicknesses in meters. The name of the target is free; it has to match the <target>_DATA and <target>_ERROR columns of the calibration points file. List every class that counts as fine sediment in 'sand_classes'; their ratios are summed in each layer.
     'gaia_layer_average': {
         "LAY1 SAND RAT": {
+            "sand_classes": [1],
             "layers": [1, 2],
             "thicknesses": [0.08, 0.60]
         }
@@ -79,8 +82,8 @@ calibration = {
     #                           conditions). Independent of the emulator and NOT
     #                           supplied by include_surrogate_error. Set it only if
     #                           you can defend a value.
-    'measurement_error':      0.03,
-    'gpe_error':              0.02,
+    'measurement_error':      0.10,
+    'gpe_error':              0.0,
     'model_structural_error': 0.0,
 
     'dict_output_name': "extraction-data",

@@ -79,7 +79,8 @@ def main():
 
     posterior_arrays = bayesian_data["posterior"]
     prior = bayesian_data["prior"]
-    post_loglikelihood = bayesian_data["post_loglikelihood"]
+    # Log-likelihood of the posterior samples of every iteration; absent from result files written before version 1.10.0.
+    post_loglikelihood = bayesian_data.get("post_loglikelihood")
 
     # ---------------------------------------------------------------------
     # Find last valid posterior if requested iteration is empty
@@ -117,7 +118,7 @@ def main():
     # ---------------------------------------------------------------------
     map_results = plotter.plot_posterior_updates(
         posterior_arrays=posterior_arrays,
-        posterior_scores=post_loglikelihood,
+        post_loglikelihood_arrays=post_loglikelihood,
         parameter_names=config.plotting["parameter_names"],
         prior=prior,
         param_values=full_complexity_model.param_values,
