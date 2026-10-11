@@ -258,3 +258,84 @@ def test_task_blocks_match_the_dense_predictive_covariance(budget):
         for i in range(n_locations):
             sl = slice(i * n_quantities, (i + 1) * n_quantities)
             assert blocks[j, i] == pytest.approx(dense[j, sl, j, sl], rel=1e-4, abs=1e-6)
+
+
+# --------------------------------------------------------------------------- #
+# the blocks have to be covariances, also where round-off dominates
+# --------------------------------------------------------------------------- #
+class _Prediction:
+    """What ``_posterior_task_blocks`` reads from a prediction, with a covariance that can be set entry by entry."""
+
+    _interleaved = True
+
+    def __init__(self, covariance, n_points, n_tasks):
+        self.mean = torch.zeros(n_points, n_tasks)
+        self.lazy_covariance_matrix = torch.as_tensor(covariance)
+
+
+def test_task_blocks_are_covariances_even_where_round_off_made_them_indefinite():
+    """A block whose covariance term exceeds its variances must not reach the BAL sampler.
+
+    Next to a training run the posterior variance is orders of magnitude below the prior variance, and the single-precision subtraction that yields it leaves an error of the size of the result. The block then has a negative eigenvalue, the sampler of the BAL utility refuses it, and the calibration stops in its active-learning loop.
+    """
+    from scipy import stats
+
+    indefinite = np.array([[1.0e-6, 1.1e-6], [1.1e-6, 1.0e-6]])  # eigenvalues 2.1e-6 and -1.0e-7
+    definite = np.array([[2.0e-6, 0.5e-6], [0.5e-6, 1.0e-6]])
+    joint = np.zeros((4, 4))  # two prediction points, two tasks, interleaved
+    joint[:2, :2], joint[2:, 2:] = indefinite, definite
+
+    blocks = MultiGPyTraining._posterior_task_blocks(_Prediction(joint, 2, 2), block_size=2)
+
+    for block in blocks[:, 0]:
+        stats.multivariate_normal(mean=np.zeros(2), cov=block, allow_singular=True)  # must not raise
+    assert np.linalg.eigvalsh(blocks[0, 0]).min() >= 0.0
+    assert blocks[1, 0] == pytest.approx(definite, rel=1e-12), "a definite block is returned as it is"
+
+
+def test_multitask_cov_next_to_training_points_is_accepted_by_the_bal_sampler():
+    """The case that ended an end-to-end run of the TELEMAC driver, with the driver's emulator settings.
+
+    Whether a trained emulator produces indefinite blocks depends on its hyperparameters; with this seed one in five candidates next to a training point was refused before the blocks were projected.
+    """
+    from scipy import stats
+
+    rng = np.random.default_rng(2)
+    torch.manual_seed(2)
+    stations = np.linspace(0.2, 1.0, 3)
+    x = rng.uniform(size=(9, 2))
+    y = np.empty((9, 6))
+    y[:, 0::2] = [[np.sin(3.0 * a * s) + b * s ** 2 for s in stations] for a, b in x]
+    y[:, 1::2] = [[2.0 + a * s - 0.5 * b * np.cos(2.0 * s) for s in stations] for a, b in x]
+
+    kernel = gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=2))
+    likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+        num_tasks=2, noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
+    likelihood.noise = 1e-5
+    sm = MultiGPyTraining(x, y, kernel, training_iter=150, likelihood=likelihood,
+                          optimizer="adam", lr=0.07, number_quantities=2)
+    sm.train_tasks_variables()
+
+    candidates = np.clip(np.repeat(x, 10, axis=0) + rng.normal(scale=0.01, size=(90, 2)), 0.0, 1.0)
+    covariance = sm.predict_(input_sets=candidates, multitask_cov=True)["multitask_cov"]
+
+    for per_candidate in covariance:
+        stats.multivariate_normal(mean=np.zeros(6), cov=block_diag(*per_candidate), allow_singular=True)
+
+
+def test_task_blocks_stay_covariances_when_converted_to_physical_units():
+    """The projection has to be the last operation on a block.
+
+    The normalization constants of the model are single-precision numbers. Scaling an already projected, hence nearly singular, block with them leaves the form D B D by round-off and can make the block indefinite again: with the scales used here the smallest eigenvalue came out at -4e-9 times the largest, which the sampler refuses.
+    """
+    from scipy import stats
+
+    indefinite = np.array([[1.0e-6, 1.1e-6], [1.1e-6, 1.0e-6]])
+    scale = np.array([1.929037, 0.8458708], dtype=np.float32)
+
+    blocks = MultiGPyTraining._posterior_task_blocks(_Prediction(indefinite, 1, 2), block_size=2, scale=scale)
+
+    stats.multivariate_normal(mean=np.zeros(2), cov=blocks[0, 0], allow_singular=True)  # must not raise
+    assert np.linalg.eigvalsh(blocks[0, 0]).min() >= 0.0
+    # The variances are the normalized ones times the squared scales. Clipping moves them by the size of the negative eigenvalue, which is 5 % of the largest one in this deliberately bad block.
+    assert np.diag(blocks[0, 0]) == pytest.approx(np.diag(indefinite) * scale.astype(float) ** 2, rel=0.2)
