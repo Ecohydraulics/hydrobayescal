@@ -14,7 +14,15 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch supersedes the run of the older one.
+# The jobs only read the repository. Whatever a pushed branch contains, a run of
+# this workflow cannot change a branch, a tag, a release or a pull request, so a
+# push to a contributor branch has no effect on main. (The default token of this
+# repository may write; this narrows it for the workflow.)
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes the run of the older one. The
+# group is per branch, so a run on one branch never cancels a run on another.
 concurrency:
   group: tests-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
