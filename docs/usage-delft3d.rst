@@ -165,6 +165,8 @@ HydroBayesCal field names: ``"WATER_LEVEL"``, ``"WATER_DEPTH"``, ``"U_x"``,
 directions to east/north components using the local grid orientation
 (``ALFAS``); for 3D runs the layers are averaged.
 
+Every quantity in ``extraction_quantities`` is stored for every run and calibration point in ``restart_data/detailed-model-outputs.csv``. Any of them can therefore become a calibration target later without new Delft3D runs: change ``calibration_quantities`` and restart with ``only_bal_mode = True``. The training data are then rebuilt from that table. The conditions are the ones described for OpenFOAM in :doc:`usage-openfoam`: the calibration points file needs the ``<target>_DATA`` and ``<target>_ERROR`` columns of the new targets and the same points as when the runs were made, and the first ``init_runs`` stored runs are used.
+
 .. note::
 
    Bayesian active learning only handles numeric (scalar) parameters. A
