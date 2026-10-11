@@ -23,15 +23,22 @@ def load_config(config_path):
     config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(config)
     return config
+
+
 def main():
     # Initialize full complexity model
-    # Initialize full complexity model
-    parser = argparse.ArgumentParser(description="Assess calibraed deterministic models  against measurements.")
+    parser = argparse.ArgumentParser(description="Validate the surrogate models of a calibration against a set of full-complexity validation runs.")
     parser.add_argument(
         '--config',
         type=str,
-        default='config_Ering.py',
-        help='Path to Python configuration file (default: config_Ering.py)'
+        default='config_Telemac.py',
+        help='Path to Python configuration file (default: config_Telemac.py)'
+    )
+    parser.add_argument(
+        '--attempt',
+        type=int,
+        default=None,
+        help='Number of the validation attempt to evaluate (default: the latest one in restart_data)'
     )
     args = parser.parse_args()
     config = load_config(args.config)
@@ -60,6 +67,9 @@ def main():
     # Load the surrogate model
     results_folder_path = full_complexity_model.asr_dir
     restart_data_folder = full_complexity_model.restart_data_folder
+    # Validation runs are stored per attempt (collocation-points-validation_<n>.csv, model-results-validation_<n>.json); the unnumbered files of earlier versions are read when no numbered attempt exists.
+    validation_points_path, validation_results_path, _ = full_complexity_model.validation_paths(attempt=args.attempt)
+    print(f"Validation set: {os.path.basename(validation_points_path)}, {os.path.basename(validation_results_path)}")
     coordinates = full_complexity_model.calibration_pts_df[["x", "y"]]
 
     plotter = BayesianPlotter(results_folder_path=results_folder_path)
@@ -97,14 +107,13 @@ def main():
             sm = full_complexity_model.read_data(results_folder_path, surrogate_filename)
 
             # Load validation sets
-            validation_sets = full_complexity_model.read_data(restart_data_folder, "collocation-points-validation.csv")
+            validation_sets = full_complexity_model.read_data(restart_data_folder, os.path.basename(validation_points_path))
 
             # Predict
             sm_predictions = sm.predict_(input_sets=validation_sets, get_conf_int=True)
 
             # Load complex model outputs
-            cm_outputs = full_complexity_model.output_processing(output_data_path=os.path.join(full_complexity_model.restart_data_folder,
-                                                                                                      f'model-results-validation.json'),
+            cm_outputs = full_complexity_model.output_processing(output_data_path=validation_results_path,
                                                                         validation=full_complexity_model.validation,
                                                                         filter_outputs=True,
                                                                         run_range_filtering=(1, full_complexity_model.init_runs))
