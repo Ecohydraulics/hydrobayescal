@@ -1274,6 +1274,60 @@ class SOSequentialGPyTraining:
                 :, quantity_idx::self.num_quantities
             ] = model.model_evaluations
 
+    @classmethod
+    def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
+                           training_iter=150, lr=0.07, verbose=False):
+        """Build the container from the training data of a calibration.
+
+        One single-output GPE is set up per calibration target, with the kernel, likelihood and optimizer settings the drivers use for a calibration on one target, so a target is emulated the same way whether it is calibrated alone or together with others. The models are not trained yet, call :meth:`train_`.
+
+        Parameters
+        ----------
+        collocation_points : numpy.ndarray
+            Parameter sets of the training runs, shape ``[n_runs, n_params]``.
+        model_outputs : numpy.ndarray
+            Model outputs in the interleaved (location, quantity) order, shape ``[n_runs, n_locations * n_quantities]``.
+        calibration_quantities : list of str
+            Names of the calibration targets, in the order of the output columns of one location.
+        training_iter : int
+            Number of optimizer iterations per GPE.
+        lr : float
+            Learning rate of the optimizer.
+        verbose : bool
+            Passed on to :class:`GPyTraining`.
+
+        Returns
+        -------
+        SOSequentialGPyTraining
+        """
+        collocation_points = np.atleast_2d(np.asarray(collocation_points, dtype=float))
+        model_outputs = np.atleast_2d(np.asarray(model_outputs, dtype=float))
+        calibration_quantities = list(calibration_quantities)
+        n_quantities = len(calibration_quantities)
+        if n_quantities == 0:
+            raise ValueError("calibration_quantities cannot be empty.")
+        if model_outputs.shape[1] % n_quantities:
+            raise ValueError(
+                f"The model outputs have {model_outputs.shape[1]} columns, which is not a multiple of the "
+                f"{n_quantities} calibration quantities {calibration_quantities}.")
+
+        surrogate_models = {}
+        for quantity_idx, quantity in enumerate(calibration_quantities):
+            kernel = gpytorch.kernels.ScaleKernel(
+                gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=collocation_points.shape[1]))
+            likelihood = gpytorch.likelihoods.GaussianLikelihood(
+                noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
+            likelihood.noise = 1e-5
+            # Interleaved ordering: quantity q occupies every n_quantities-th column, starting at q.
+            surrogate_models[quantity] = GPyTraining(
+                collocation_points=collocation_points,
+                model_evaluations=model_outputs[:, quantity_idx::n_quantities],
+                likelihood=likelihood, kernel=kernel,
+                training_iter=training_iter,
+                optimizer="adam", lr=lr,
+                verbose=verbose)
+        return cls(surrogate_models=surrogate_models, calibration_quantities=calibration_quantities)
+
     def __getitem__(self, key):
         """Allow ``surrogate_object[var]`` access to an individual SO GPE."""
         return self.models[key]

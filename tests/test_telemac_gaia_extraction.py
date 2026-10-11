@@ -246,6 +246,28 @@ def test_an_unknown_quantity_is_refused_instead_of_dropped(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# the configuration is checked when the model is built
+# --------------------------------------------------------------------------- #
+INCOMPLETE = {"LAY1 SAND RAT": {"layers": [1, 2], "thicknesses": [0.08, 0.60]}}
+
+
+def test_an_incomplete_average_stops_the_model_before_any_simulation(tmp_path):
+    with pytest.raises(ValueError, match="sand_classes"):
+        TelemacModel(res_dir=str(tmp_path), model_dir=str(tmp_path),
+                     extraction_quantities=["WATER DEPTH", "LAY1 SAND RAT"],
+                     calibration_quantities=["WATER DEPTH"], gaia_layer_average=INCOMPLETE)
+
+
+def test_an_average_that_is_configured_but_not_used_is_left_alone(tmp_path):
+    """A configuration shared between cases may carry an entry this case never extracts."""
+    model = TelemacModel(res_dir=str(tmp_path), model_dir=str(tmp_path),
+                         extraction_quantities=["WATER DEPTH"],
+                         calibration_quantities=["WATER DEPTH"], gaia_layer_average=INCOMPLETE)
+
+    assert model.gaia_layer_average == INCOMPLETE
+
+
+# --------------------------------------------------------------------------- #
 # validation attempts
 # --------------------------------------------------------------------------- #
 def _bare_model(tmp_path):

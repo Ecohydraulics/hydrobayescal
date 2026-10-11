@@ -91,8 +91,10 @@ class TelemacModel(HydroSimulations):
         self.tm_xd = tm_xd
         self.gaia_steering_file = gaia_steering_file
         self.gaia_results_filename_base = gaia_results_filename_base
-        # Resolved once, to fail on an incomplete entry now rather than at the first extraction.
-        config_telemac.resolve_gaia_layer_average(gaia_layer_average)
+        # Resolved once, to fail on an incomplete entry now rather than at the first extraction. Only the targets this model extracts or calibrates on are checked, so an entry that is configured but not used cannot stop a calibration.
+        config_telemac.resolve_gaia_layer_average(
+            gaia_layer_average,
+            requested=list(self.extraction_quantities or []) + list(self.calibration_quantities or []))
         self.gaia_layer_average = gaia_layer_average or None
         self.fortran_file = fortran_file
         self.results_filename_base = results_filename_base

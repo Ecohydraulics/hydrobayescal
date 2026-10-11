@@ -19,6 +19,9 @@ from hydroBayesCal.utils.config_logging import logger, logger_error, logger_warn
 #: Name of the detailed results table in ``restart_data``: every extracted quantity for every run x calibration point, whichever calibration targets were active when the run was simulated.
 DETAILED_OUTPUTS_FILE = "detailed-model-outputs.csv"
 
+#: Values of ``multitask_selection``, i.e. of ``sampling['multitask_selection']`` in a configuration.
+MULTITASK_SELECTIONS = ("variables", "locations", "all", "SO_sequential")
+
 
 class HydroSimulations(ABC):
     def __init__(
@@ -200,8 +203,8 @@ class HydroSimulations(ABC):
             If True, deletes complex model outputs after processing.
         validation : bool
             If True, the model is run in validation mode.
-        multitask_selection : bool
-            If True, enables multitask selection for surrogate modeling.
+        multitask_selection : str
+            How the GPE treats several outputs, one of :data:`MULTITASK_SELECTIONS`. ``"variables"``: one multitask GPE per location whose tasks are the calibration quantities. ``"locations"``: one multitask GPE per calibration quantity whose tasks are the locations. ``"all"``: one multitask GPE whose tasks are all outputs. ``"SO_sequential"``: independent single-output GPEs for all calibration quantities, without any correlation between them.
         dict_output_name : str
             Name of the output dictionary file. Appends "-validation" if validation mode is enabled.
         nloc : int
@@ -263,6 +266,10 @@ class HydroSimulations(ABC):
         self.only_bal_mode = only_bal_mode
         self.delete_complex_outputs=delete_complex_outputs
         self.validation=validation
+        # Checked here because the drivers branch on this value only when they build the surrogate, after the initial design has been simulated. An unknown value used to match none of those branches.
+        if multitask_selection not in MULTITASK_SELECTIONS:
+            raise ValueError(
+                f"multitask_selection is {multitask_selection!r}, expected one of {list(MULTITASK_SELECTIONS)}.")
         self.multitask_selection = multitask_selection
         self.user_param_values = user_param_values
         self.gpe_error = gpe_error
