@@ -493,11 +493,11 @@ class OpenFOAMController:
             return
         print("VTK conversion completed.")
 
-    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any]:
+    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any, Any]:
         """
-        Extract velocity (U) and turbulent kinetic energy (k) from the finished run,
-        averaged over the last ``n_avg_timesteps`` write times, restricted to the
-        water phase.
+        Extract velocity (U), turbulent kinetic energy (k) and water volume
+        fraction (alpha.water) from the finished run, averaged over the last
+        ``n_avg_timesteps`` write times, restricted to the water phase.
 
         Reads the **case directory itself** through pyvista's OpenFOAM reader rather
         than a ``foamToVTK`` tree. The previous implementation required the ESI
@@ -518,8 +518,12 @@ class OpenFOAMController:
             n_avg_timesteps: number of trailing write times to average.
 
         Returns:
-            (coordinates, U_mean, k_mean) for water-phase points; k_mean is None
-            when the case carries no k field.
+            (coordinates, U_mean, k_mean, alpha_mean) for water-phase points; k_mean
+            is None when the case carries no k field, alpha_mean is None when it
+            carries no alpha.water (single-phase case). alpha_mean is kept so
+            ALPHA_WATER can be reported at the control points; on a water-masked
+            extraction it is by construction above the threshold, but it is still
+            useful as a free-surface proximity check.
         """
         foam_files = sorted(glob.glob(os.path.join(self.case_dir, "*.foam")))
         foam_file = foam_files[0] if foam_files else os.path.join(self.case_dir, "case.foam")
@@ -558,8 +562,10 @@ class OpenFOAMController:
         coords = None
         water_mask = None
         has_k = False
+        has_alpha = False
         U_sum = None
         k_sum = None
+        alpha_sum = None
 
         for time_value in selected:
             reader.set_active_time_value(time_value)
@@ -575,7 +581,8 @@ class OpenFOAMController:
             if coords is None:
                 coords = mesh.points
                 has_k = "k" in mesh.point_data
-                if "alpha.water" in mesh.point_data:
+                has_alpha = "alpha.water" in mesh.point_data
+                if has_alpha:
                     alpha = mesh.point_data["alpha.water"]
                     water_mask = alpha > alpha_threshold
                     coords = coords[water_mask]
@@ -587,11 +594,13 @@ class OpenFOAMController:
                     # A rigid-lid / single-phase case has no alpha.water because
                     # every cell IS water - not because information is missing.
                     logger.info("no alpha.water field (single-phase case) - using all points")
+                # Accumulate U, k and alpha.water across the selected write times
                 U_sum = np.zeros_like(
                     mesh.point_data["U"][water_mask] if water_mask is not None
                     else mesh.point_data["U"]
                 )
                 k_sum = np.zeros(U_sum.shape[0]) if has_k else None
+                alpha_sum = np.zeros(U_sum.shape[0]) if has_alpha else None
 
             U_t = mesh.point_data["U"]
             if water_mask is not None:
@@ -604,8 +613,15 @@ class OpenFOAMController:
                     k_t = k_t[water_mask]
                 k_sum += k_t
 
+            if has_alpha and "alpha.water" in mesh.point_data:
+                alpha_t = mesh.point_data["alpha.water"]
+                if water_mask is not None:
+                    alpha_t = alpha_t[water_mask]
+                alpha_sum += alpha_t
+
         U_mean = U_sum / n
         k_mean = k_sum / n if has_k else None
+        alpha_mean = alpha_sum / n if has_alpha else None
 
         if k_mean is None:
             logger.warning("k field not found - TKE will be NaN")
@@ -614,7 +630,7 @@ class OpenFOAMController:
                 f"k (averaged over {n} step(s)): Mean={k_mean.mean():.4e}, Max={k_mean.max():.4e}"
             )
 
-        return coords, U_mean, k_mean
+        return coords, U_mean, k_mean, alpha_mean
 
 
 # =============================================================================
@@ -634,14 +650,21 @@ class OpenFOAMModel(HydroSimulations):
     """
 
     #: Field names ``_extract_at_control_points`` returns, and therefore the only
-    #: valid entries in ``calibration_quantities``. ``U_magnitude`` is a legacy
-    #: alias of ``U_MAG``, kept so the detailed result CSVs and per-run JSONs
-    #: written by earlier versions stay readable.
+    #: valid entries in ``calibration_quantities`` and ``extraction_quantities``.
+    #: ``U_magnitude`` is a legacy alias of ``U_MAG``, kept so the detailed result
+    #: CSVs and per-run JSONs written by earlier versions stay readable.
+    #: Every one of these is written to ``results-detailed-*.csv`` for every run x
+    #: control point regardless of what is being calibrated, so the calibration
+    #: quantities can be re-chosen afterwards from stored data (see
+    #: :meth:`output_processing` and ``--only_bal_mode``). ``ALPHA_WATER`` is the
+    #: interFoam water volume fraction at the point; it is extracted and stored but
+    #: is rarely a sensible calibration target on its own.
     EXTRACTABLE_QUANTITIES = (
         "U_x", "U_y", "U_z",
         "U_MAG", "U_magnitude",
         "u_fluct", "v_fluct", "w_fluct",
         "TKE",
+        "ALPHA_WATER",
     )
 
     def __init__(
@@ -996,7 +1019,7 @@ class OpenFOAMModel(HydroSimulations):
                     foam.convert_to_vtk()
 
                 # Extract fields, averaged over the last n_avg_timesteps write times
-                coords, U, k = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
+                coords, U, k, alpha = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
 
                 # Sanity check: verify fields differ from previous run.
                 # Identical fields across runs indicate a VTK extraction bug (e.g. missing -latestTime).
@@ -1024,6 +1047,8 @@ class OpenFOAMModel(HydroSimulations):
                     np.save(os.path.join(raw_dir, f"U_{run_idx:04d}.npy"), U)
                     if k is not None:
                         np.save(os.path.join(raw_dir, f"k_{run_idx:04d}.npy"), k)
+                    if alpha is not None:
+                        np.save(os.path.join(raw_dir, f"alpha_{run_idx:04d}.npy"), alpha)
                     logger.info(f"No measurements file  raw fields saved to {raw_dir} for run {run_idx}.")
 
                     # Save collocation points so they can be reloaded later
@@ -1033,7 +1058,7 @@ class OpenFOAMModel(HydroSimulations):
 
                 else:
                     # Measurements file exists  interpolate to control points as normal
-                    results = self._extract_at_control_points(coords, U, k)
+                    results = self._extract_at_control_points(coords, U, k, alpha)
 
                     # calibration_quantities is validated against
                     # EXTRACTABLE_QUANTITIES in __init__, so a missing key here
@@ -1046,7 +1071,11 @@ class OpenFOAMModel(HydroSimulations):
 
                     all_results.append(run_results)
 
-                    # Store detailed results: one row per control point
+                    # Store detailed results: one row per control point. Every
+                    # extractable quantity is written here regardless of what is
+                    # being calibrated, so calibration_quantities can be re-chosen
+                    # later from this table without re-running OpenFOAM (see
+                    # output_processing / --only_bal_mode).
                     for pt_idx, cp in enumerate(self.control_points):
                         row = {
                             "run_idx": run_idx,
@@ -1060,6 +1089,7 @@ class OpenFOAMModel(HydroSimulations):
                             "v_fluct": float(results["v_fluct"][pt_idx]),
                             "w_fluct": float(results["w_fluct"][pt_idx]),
                             "TKE": float(results["TKE"][pt_idx]),
+                            "ALPHA_WATER": float(results["ALPHA_WATER"][pt_idx]),
                         }
                         all_detailed_results.append(row)
 
@@ -1106,6 +1136,7 @@ class OpenFOAMModel(HydroSimulations):
                             "U_magnitude": np.nan,
                             "u_fluct": np.nan, "v_fluct": np.nan, "w_fluct": np.nan,
                             "TKE": np.nan,
+                            "ALPHA_WATER": np.nan,
                         }
                         all_detailed_results.append(row)
 
@@ -1119,8 +1150,8 @@ class OpenFOAMModel(HydroSimulations):
                 all_cp = design
             self._save_all_results(all_cp, all_detailed_results)
 
-    def _extract_at_control_points(self, coords, U, k=None):
-        """Extract velocity and TKE at control points.
+    def _extract_at_control_points(self, coords, U, k=None, alpha=None):
+        """Extract velocity, TKE and water fraction at control points.
 
         TKE is read directly from the OpenFOAM k field (RANS turbulent kinetic energy).
 
@@ -1128,11 +1159,12 @@ class OpenFOAMModel(HydroSimulations):
             coords: Array of VTK point coordinates (water phase only)
             U: Velocity array at VTK points, shape (n_points, 3)
             k: RANS turbulent kinetic energy array from OpenFOAM k field, or None
+            alpha: interFoam alpha.water array at VTK points, or None (single-phase)
 
         Returns:
             dict keyed by :attr:`EXTRACTABLE_QUANTITIES`: U_x, U_y, U_z, U_MAG
             (with U_magnitude retained as a legacy alias of the same values),
-            u_fluct, v_fluct, w_fluct and TKE at the control points
+            u_fluct, v_fluct, w_fluct, TKE and ALPHA_WATER at the control points
         """
         if len(self.control_points) == 0:
             # Built from the constant so both return paths always expose the
@@ -1153,6 +1185,11 @@ class OpenFOAMModel(HydroSimulations):
             k_cp = np.full(len(self.control_points), np.nan)
             fluct = np.full(len(self.control_points), np.nan)
 
+        if alpha is not None:
+            alpha_cp = alpha[indices]
+        else:
+            alpha_cp = np.full(len(self.control_points), np.nan)
+
         u_mag = np.linalg.norm(U_cp, axis=1)
 
         return {
@@ -1165,6 +1202,7 @@ class OpenFOAMModel(HydroSimulations):
             "v_fluct": fluct,
             "w_fluct": fluct,
             "TKE": k_cp,        # k from OpenFOAM k-epsilon field
+            "ALPHA_WATER": alpha_cp,  # interFoam water volume fraction at the point
         }
 
     def _save_run_results(self, case_dir, run_idx, params, results):
@@ -1192,11 +1230,11 @@ class OpenFOAMModel(HydroSimulations):
             logger.info(f"Deleted run folder to free disk space: {case_dir}")
 
     def output_processing(self, output_data_path=None, **kwargs):
-        """Load existing results for BAL restart."""
-        if output_data_path and os.path.isfile(output_data_path):
-            with open(output_data_path, 'r') as f:
-                data = json.load(f)
-            self.restart_collocation_points = np.array(data["collocation_points"])
-            self.model_evaluations = np.array(data["model_evaluations"])
-            return self.model_evaluations
-        raise FileNotFoundError(f"Output data not found: {output_data_path}") 
+        """Load stored model outputs for a BAL restart or a pure re-analysis.
+
+        The stored matrix is returned as it is when it was written for the ``calibration_quantities`` configured now. When they differ it is rebuilt from ``restart_data/detailed-model-outputs.csv``, which holds every quantity in :attr:`EXTRACTABLE_QUANTITIES` for every run x control point, so the calibration quantities can be chosen after the expensive runs: restart with ``--only_bal_mode True --calibration_quantities "..."`` and only the surrogate and BAL are recomputed. See :meth:`~hydroBayesCal.hysim.HydroSimulations._load_stored_outputs`.
+
+        ``run_range_filtering=(lo, hi)`` (1-indexed, inclusive), if passed by the driver, trims a rebuilt matrix to those runs.
+        """
+        return self._load_stored_outputs(
+            output_data_path, run_range_filtering=kwargs.get("run_range_filtering"))

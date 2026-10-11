@@ -173,3 +173,28 @@ execution = {
     'validation':             False,
     'user_param_values':      False,
 }
+# ============================================================================
+# PLOTTING AND REPORTING SETTINGS
+# ============================================================================
+plotting = {
+
+    # Used for plotting and reporting - must be in same order as 'parameters'
+    'parameter_names': [
+        r"$\tau_{*,\mathrm{cr},1}$",
+        r"$\tau_{*,\mathrm{cr},2}$",
+        r"$k_{\mathrm{s,pool}}$",
+        r"$k_{\mathrm{s,slack}}$",
+        r"$k_{\mathrm{s,glide}}$",
+        r"$k_{\mathrm{s,riff}}$",
+        r"$k_{\mathrm{s,run}}$"
+    ],
+    # Units for reporting and plotting - must be in same order as 'parameters'
+    'parameter_units': ["-", "-", "m", "m", "m", "m", "m"],
+    # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
+    # When all parameters are plotted all indices must be included.
+    'parameter_indices': [0, 1, 2, 3, 4, 5, 6],
+    # BAL iteration(s) to plot (0-based); an iteration without a posterior is replaced by the last one that has one.
+    'iterations_to_plot': [11],
+    # Estimate marked in the posterior histograms: "posterior_mean", "posterior_marginal_peak" or "joint_posterior_MAP"
+    'posterior_plotting_option': "posterior_marginal_peak",
+}

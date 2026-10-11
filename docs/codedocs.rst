@@ -23,6 +23,10 @@ TELEMAC binding
    :members:
    :show-inheritance:
 
+.. autofunction:: hydroBayesCal.telemac.config_telemac.gaia_sand_ratio_variable
+
+.. autofunction:: hydroBayesCal.telemac.config_telemac.resolve_gaia_layer_average
+
 OpenFOAM binding
 ++++++++++++++++
 

@@ -68,9 +68,11 @@ class _StubModel:
         self.variances = self.measurement_errors ** 2
         self.model_evaluations = None
         self.calls = []
+        self.keywords = []
 
     def run_multiple_simulations(self, collocation_points=None, start_index=0, **kwargs):
         self.calls.append((int(start_index), int(np.atleast_2d(collocation_points).shape[0])))
+        self.keywords.append(kwargs)
         self.model_evaluations = _response(collocation_points)
         return self.model_evaluations
 
@@ -275,3 +277,66 @@ def test_adaptive_off_runs_the_configured_design_in_one_block(tmp_path):
     assert points.shape[0] == 24
     assert model.calls == [(0, 24)]
     assert model.init_runs == 24
+
+
+def test_adaptive_off_forwards_the_solver_keywords(tmp_path):
+    """Keywords such as TELEMAC's extraction window reach the binding without the ladder too."""
+    model = _StubModel(tmp_path, init_runs=8)
+    design = _ExpDesign(RANGES)
+    design.x = design.generate_samples(8, "sobol")
+
+    run_staged_initial_design(model, design, adaptive=False,
+                              output_extraction_time="mean_last", n=80)
+
+    assert model.keywords[0]["output_extraction_time"] == "mean_last"
+    assert model.keywords[0]["n"] == 80
+    assert model.keywords[0]["validation"] is False
+
+
+# ---------------------------------------------------------------------------
+# designs the ladder must not touch
+# ---------------------------------------------------------------------------
+def test_a_user_supplied_design_is_run_as_given_and_in_one_block(tmp_path):
+    """No sampling rule regenerates a user design, so the ladder cannot extend it.
+
+    With the ladder on, which is the default, the first block asked the sampler for rule ``user`` and the calibration stopped before its first simulation.
+    """
+    user_points = _ExpDesign(RANGES).generate_samples(12, "latin_hypercube")
+    model = _StubModel(tmp_path, init_runs=12)
+    model.user_collocation_points = user_points
+    design = _ExpDesign(RANGES, sampling_method="user")
+    design.x = user_points
+
+    points, outputs = run_staged_initial_design(model, design)
+
+    assert model.calls == [(0, 12)]
+    assert np.array_equal(points, user_points)
+    assert outputs.shape[0] == 12
+
+
+def test_a_user_supplied_design_of_the_wrong_size_is_rejected_before_any_run(tmp_path):
+    """Running fewer or more simulations than configured must not happen silently."""
+    user_points = _ExpDesign(RANGES).generate_samples(12, "latin_hypercube")
+    model = _StubModel(tmp_path, init_runs=16)
+    model.user_collocation_points = user_points
+    design = _ExpDesign(RANGES, sampling_method="user")
+    design.x = user_points
+
+    with pytest.raises(ValueError, match="init_runs"):
+        run_staged_initial_design(model, design)
+    assert model.calls == []
+
+
+def test_a_validation_set_is_not_staged(tmp_path):
+    """A validation set has the size that was asked for, whatever an emulator of it would say."""
+    model = _StubModel(tmp_path, init_runs=64)
+    model.validation = True
+    design = _ExpDesign(RANGES)
+    design.x = design.generate_samples(64, "sobol")
+
+    points, _ = run_staged_initial_design(model, design)
+
+    assert model.calls == [(0, 64)]
+    assert points.shape[0] == 64
+    assert model.keywords[0]["validation"] is True
+

@@ -65,9 +65,8 @@ def main():
     # ---------------------------------------------------------------------
     # User settings
     # ---------------------------------------------------------------------
-    iterations_to_plot = config.plotting["iterations_to_plot"]  # BAL iteration to plot (0-based index)
-
-
+    # BAL iteration(s) to plot (0-based index): a single index or a list of indices
+    iterations_to_plot = np.atleast_1d(config.plotting["iterations_to_plot"]).astype(int).tolist()
 
     # ---------------------------------------------------------------------
     # Read BAL dictionary
@@ -87,20 +86,19 @@ def main():
         i for i, posterior in enumerate(posterior_arrays)
         if posterior is not None and np.asarray(posterior).size > 0
     ]
-
     if len(valid_posterior_iterations) == 0:
         raise ValueError("No valid posterior found in BAL_dictionary.pkl")
 
     last_valid_iteration = valid_posterior_iterations[-1]
-
-    if iterations_to_plot not in valid_posterior_iterations:
+    without_posterior = [i for i in iterations_to_plot if i not in valid_posterior_iterations]
+    if without_posterior:
         print(
-            f"Iteration {iterations_to_plot} has no valid posterior. "
-            f"Using last valid posterior iteration: {last_valid_iteration}"
+            f"Iteration(s) {without_posterior} have no valid posterior. "
+            f"Using last valid posterior iteration instead: {last_valid_iteration}"
         )
-        iterations_to_plot = last_valid_iteration
-
-    print(f"Plotting posterior iteration: {iterations_to_plot}")
+        iterations_to_plot = ([i for i in iterations_to_plot if i in valid_posterior_iterations]
+                              or [last_valid_iteration])
+    print(f"Plotting posterior iteration(s): {iterations_to_plot}")
 
     # ---------------------------------------------------------------------
     # Plot BME and RE evolution
@@ -119,12 +117,14 @@ def main():
         parameter_names=config.plotting["parameter_names"],
         prior=prior,
         param_values=full_complexity_model.param_values,
-        iterations_to_plot=[iterations_to_plot],
+        iterations_to_plot=iterations_to_plot,
         bins=40,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
         parameter_indices = config.plotting["parameter_indices"],
-        best_estimate_value="posterior_marginal_peak",
+        # "posterior_mean", "posterior_marginal_peak" or "joint_posterior_MAP"; the last one needs the log-likelihoods stored since version 1.10.0.
+        best_estimate_value=config.plotting.get("posterior_plotting_option", "posterior_marginal_peak"),
+        post_loglikelihood_arrays=bayesian_data.get("post_loglikelihood"),
     )
 
     # ---------------------------------------------------------------------

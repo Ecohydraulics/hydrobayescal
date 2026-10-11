@@ -237,6 +237,8 @@ Configuration
 Set ``adaptive_init_runs = False`` for the fixed-size initial design of earlier versions,
 in which all ``init_runs`` simulations are run in one block and no gate is applied.
 
+Two kinds of design are never staged, whatever ``adaptive_init_runs`` is set to. A design supplied by the user is run exactly as given, because no sampling rule regenerates it and the ladder could not extend it; the number of supplied parameter sets has to equal ``init_runs``, otherwise the calibration stops before the first simulation. Validation runs (``validation = True``) are also run in one block, because a validation set that stops as soon as an emulator of it is sufficient no longer has the size that was asked for.
+
 .. warning::
 
    When the ladder stops early, the number of initial runs actually carried out is
@@ -336,7 +338,7 @@ This class contains the general attributes that a hydrodynamic simulation requir
     Any of these additional extracted variables can be used for calibration purposes.
 * **dict_output_name**: Base name for output dictionary files where the outputs are saved as `.json` files.
 
-* **user_param_values**: (Default: ``False``). Boolean variable that enables the use of user-defined collocation points taken from a .csv file located in the restart folder.
+* **user_param_values**: (Default: ``False``). Boolean variable that enables the use of user-defined collocation points taken from a .csv file located in the restart folder. In the TELEMAC drivers, selecting ``"user"`` as ``parameter_sampling_method`` has the same effect.
 
   - If ``True``: Collocation points are taken from the user-defined .csv file.
   - If ``False``: Sampling methods from BayesValidRox according to the available sampling options.
@@ -380,7 +382,18 @@ This class contains the general attributes that a hydrodynamic simulation requir
     **or if only the initial runs have been executed** (``complete_bal_mode = False`` and ``only_bal_mode = False``). It is possible also to build the surrogate model with either **ALL** the restart data or just a **PART** of it. To use only a part of it, initialize the ``initial_runs`` accordingly.
 
 * **validation**: (Default: ``False``). Boolean variable to select the creation of a independent set of collocation points and outputs for surrogate validation purposes.
-  If ``True``, creates output files (inputs and outputs) for validation of the surrogate model. If it is True, the validation data is saved in the restart data folder.
+  If ``True``, creates output files (inputs and outputs) for validation of the surrogate model. If it is True, the validation data is saved in the restart data folder. In the TELEMAC binding every validation experiment is stored under its own number (``collocation-points-validation_<n>.csv``, ``model-results-validation_<n>.json``), so a repeated validation does not overwrite or extend the previous one.
+
+* **extraction** (optional block of a TELEMAC configuration): defines when the model outputs are read from the result files.
+
+    .. code-block:: python
+
+       extraction = {
+           'output_extraction_time': "mean_last",  # "mean_last", "last" or "index"
+           'n_last':                 80,           # time steps averaged by "mean_last"
+       }
+
+  ``"mean_last"`` averages the last ``n_last`` printout time steps, which suits a simulation that has reached a steady state, ``"last"`` takes the final time step. The same setting applies to the runs of the initial design and to every run selected by Bayesian active learning, so that the surrogate is trained on one consistently defined quantity. Without the block, the last 80 time steps are averaged.
 
 * **Shortcut Combinations and Their Corresponding Tasks**:
 
@@ -416,7 +429,10 @@ For telemac simulations, the following parameters should be defined in the **Tel
    tm_xd = "2"  # Telemac 3D
 
 * **gaia_steering_file**:
-  Name of the Gaia steering file; should be provided if required. Not implemented in this HydroBayesCal version.
+  Name of the GAIA steering file of a coupled hydro-morphodynamic simulation; ``None`` for a hydrodynamic simulation.
+
+* **gaia_layer_average** (optional, ``morphodynamic_simulation['gaia_layer_average']`` in a configuration):
+  Sand ratios averaged over several GAIA bed layers, as derived extraction quantities that can serve as calibration targets, see :ref:`gaia-layer-average`.
 
 * **results_filename_base** :
   Base name for the results file, which will be iteratively updated in the ``.cas`` file.
@@ -474,6 +490,26 @@ With the initial model setup and the measurement points, the Bayesian model opti
         - `Single GP Regression  <https://docs.gpytorch.ai/en/v1.13/examples/01_Exact_GPs/Simple_GP_Regression.html>`_
         - `Multi-task GP Regression <https://docs.gpytorch.ai/en/v1.13/examples/03_Multitask_Exact_GPs/Multitask_GP_Regression.html>`_
         - `Gaussian Process Kernels <https://docs.gpytorch.ai/en/v1.13/kernels.html>`_
+
+      How the emulator treats several outputs is set by ``sampling['multitask_selection']``:
+
+      .. list-table::
+         :header-rows: 1
+         :widths: 20 80
+
+         * - Value
+           - Gaussian process emulator
+         * - ``"variables"`` (default)
+           - One multitask emulator per calibration point, whose tasks are the calibration targets. It learns the correlation between the targets, e.g. between water depth and flow velocity, at each point. With one calibration target it reduces to one independent emulator per calibration point.
+         * - ``"locations"``
+           - One multitask emulator per calibration target, whose tasks are the calibration points. It learns the correlation between the points. No correlation between the targets is modeled.
+         * - ``"all"``
+           - One multitask emulator whose tasks are all outputs. Its memory demand grows with the square of the number of outputs, so it suits small problems only.
+         * - ``"SO_sequential"``
+           - Independent single-output emulators for all calibration targets, each set up as for a calibration on that target alone. No correlation is modeled. It serves as the reference a multitask emulator has to improve on.
+
+      An unknown value is rejected when the model is constructed, before any simulation. ``sampling['bal_n_jobs']`` (default ``-1``, all cores) sets the number of processes that score the candidate parameter sets of the Bayesian active learning; ``1`` scores them in the calling process.
+
     *  **Surrogate model predictions**  using the trained metamodel to predict the model outputs at  Monte Carlo collocation points according to the user-defined prior samples (taken from a uniform distribution).
 2. Bayesian Inference in light of measured data
     *  **Bayesian Inference** through the calculation of likelihood functions based on surrogate model predictions , measurements and the errors. Note that the errors are taken from the calibration points file (.csv) in **calibration_pts_file_path**. Those errors must include measurement and surrogate errors :math:`{\varepsilon}^2=({\varepsilon}^2_{measured} + {\varepsilon}^2_{surrogate})`

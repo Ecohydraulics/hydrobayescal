@@ -461,7 +461,6 @@ class BayesianInference:
 
             # 2. Get posterior distributions:
             self.post_loglikelihood = np.take(self.log_likelihood, post_index, axis=0)
-
         else:
             max_likelihood = np.max(self.likelihood)  # Max likelihood
             post_index = np.array(np.where(self.likelihood / max_likelihood > rn)[0])
@@ -944,9 +943,9 @@ class SequentialDesign:
                 y_mean = y_cand[idx, :]
                 if self.multitask:
                     y_std = multi_cov[idx]
-                    # block_cov_matrix = block_diag(*cov_blocks)
                 else:
                     y_std = std_cand[idx, :]
+
                 if utility_func.lower() == "bme" or not self.gaussian_assumption:
                     U_J_d[idx] = self.bayesian_active_learning(y_mean=y_mean, y_std=y_std,
                                                                observations=self.observations, error=m_error,

@@ -95,3 +95,60 @@ def test_plots_are_written(tmp_path):
     assert "parameter_optimum_convergence.png" in written
     assert "parameter_optimum_convergence_variance_reduction.png" in written
     assert "marginal_vs_joint.png" in written
+
+
+# --------------------------------------------------------------------------- #
+# best estimate of the posterior histograms
+# --------------------------------------------------------------------------- #
+def _updates(tmp_path, dictionary, **kwargs):
+    matplotlib.pyplot.rcParams.update({"text.usetex": False})
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return _Plotter(tmp_path).plot_posterior_updates(
+        posterior_arrays=dictionary["posterior"], parameter_names=NAMES, prior=dictionary["prior"],
+        param_values=BOUNDS, iterations_to_plot=[3], bins=20, **kwargs)
+
+
+def test_the_legacy_estimator_name_still_plots_without_log_likelihoods(tmp_path):
+    """``"posterior_MAP"`` was the default up to 1.9.0, so calls written for it must keep working."""
+    dictionary = _bal_dictionary()
+
+    legacy = _updates(tmp_path / "legacy", dictionary, best_estimate_value="posterior_MAP")
+    marginal = _updates(tmp_path / "marginal", dictionary, best_estimate_value="posterior_marginal_peak")
+
+    assert legacy is not None
+    assert str(legacy) == str(marginal), "without log-likelihoods the legacy name is the marginal peak"
+
+
+def test_the_joint_maximum_is_the_posterior_sample_of_highest_likelihood(tmp_path):
+    dictionary = _bal_dictionary()
+    posterior = dictionary["posterior"][3]
+    # Log-likelihood that peaks at one known sample of the posterior.
+    best = 123
+    log_likelihood = -np.sum((posterior - posterior[best]) ** 2, axis=1)
+    scores = [None, None, None, log_likelihood]
+
+    result = _updates(tmp_path, dictionary, best_estimate_value="joint_posterior_MAP",
+                      post_loglikelihood_arrays=scores)
+
+    values = np.ravel([np.asarray(v, dtype=float) for v in _numbers(result)])
+    assert any(np.isclose(values, posterior[best, 0], atol=1e-9))
+    assert any(np.isclose(values, posterior[best, 1], atol=1e-9))
+
+
+def test_the_joint_maximum_needs_the_log_likelihoods(tmp_path):
+    with pytest.raises(ValueError, match="post_loglikelihood_arrays"):
+        _updates(tmp_path, _bal_dictionary(), best_estimate_value="joint_posterior_MAP")
+
+
+def _numbers(obj):
+    """All numbers in a nested result of dicts, lists and arrays."""
+    if isinstance(obj, dict):
+        for value in obj.values():
+            yield from _numbers(value)
+    elif isinstance(obj, (list, tuple)):
+        for value in obj:
+            yield from _numbers(value)
+    elif isinstance(obj, np.ndarray):
+        yield from obj.ravel().tolist()
+    elif isinstance(obj, (int, float, np.floating, np.integer)):
+        yield float(obj)

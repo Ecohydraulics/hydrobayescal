@@ -860,28 +860,6 @@ class MultiGPyTraining:
             likelihood = self.likelihood
         return likelihood
 
-    @staticmethod
-    def _task_kernel(gp, n_tasks):
-        """Task covariance matrix of a multitask GP, shape ``[n_tasks, n_tasks]``."""
-        task_indices = torch.arange(n_tasks)
-        task_kernel = gp.covar_module.task_covar_module(task_indices).evaluate()
-        return task_kernel.detach().cpu().numpy()
-
-    @staticmethod
-    def _input_kernel_diag(gp, input_sets):
-        """k(x, x) at every prediction point, shape ``[n_samples]``."""
-        base_kernel = gp.covar_module.data_covar_module.base_kernel
-        try:
-            diag = base_kernel(input_sets, input_sets, diag=True)
-            return MultiGPyTraining._as_numpy(diag).reshape(-1)
-        except (TypeError, RuntimeError):
-            # Fall back to the per-point evaluation used before vectorisation.
-            values = np.empty(input_sets.shape[0])
-            for j in range(input_sets.shape[0]):
-                x = input_sets[j].unsqueeze(0)
-                values[j] = float(base_kernel(x, x).evaluate().squeeze())
-            return values
-
     def _resolve_task_mode(self, n_locations):
         """Return the task layout of the trained models.
 
@@ -919,6 +897,57 @@ class MultiGPyTraining:
         logger_warn.warning(message)
         return mode
 
+    @staticmethod
+    def _posterior_task_blocks(predictions, block_size, n_train=1, budget=2.0e7):
+        """Posterior predictive covariance between the tasks at every prediction point.
+
+        Only the blocks the Bayesian active-learning utility consumes are evaluated: for each prediction point, the covariance within consecutive groups of ``block_size`` tasks. The covariance between different prediction points, and between tasks of different groups, is never formed. With the tasks spanning all outputs (``task_mode="all"``) that is the difference between ``n_locations * n_quantities**2`` and ``(n_locations * n_quantities)**2`` entries per point, and the latter does not fit into memory for a real calibration.
+
+        Parameters
+        ----------
+        predictions : gpytorch.distributions.MultitaskMultivariateNormal
+            Predictive distribution returned by ``likelihood(gp(input_sets))``.
+        block_size : int
+            Number of consecutive tasks per block, i.e. the number of calibration quantities.
+        n_train : int
+            Number of training points of the model. Only used to size the chunks.
+        budget : float
+            Upper bound on the entries handled per chunk of prediction points. Evaluating one covariance entry costs memory in proportion to ``n_train * n_tasks``, so the prediction points are processed in chunks.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape ``[n_samples, n_tasks // block_size, block_size, block_size]``, in the normalized output space of the model.
+        """
+        covariance = predictions.lazy_covariance_matrix
+        n_points, n_tasks = predictions.mean.shape[-2:]
+        n_blocks = n_tasks // block_size
+        interleaved = getattr(predictions, "_interleaved", True)
+
+        inner = torch.arange(block_size, device=covariance.device)
+        first_task = torch.arange(n_blocks, device=covariance.device) * block_size
+        task_rows = first_task.view(1, -1, 1, 1) + inner.view(1, 1, -1, 1)
+        task_cols = first_task.view(1, -1, 1, 1) + inner.view(1, 1, 1, -1)
+
+        entries_per_point = n_blocks * block_size ** 2
+        chunk = max(1, int(budget // (entries_per_point * max(1, int(n_train)) * n_tasks)))
+
+        blocks = np.empty((n_points, n_blocks, block_size, block_size))
+        for start in range(0, n_points, chunk):
+            points = torch.arange(start, min(start + chunk, n_points),
+                                  device=covariance.device).view(-1, 1, 1, 1)
+            if interleaved:
+                rows, cols = points * n_tasks + task_rows, points * n_tasks + task_cols
+            else:
+                rows, cols = task_rows * n_points + points, task_cols * n_points + points
+            rows, cols = torch.broadcast_tensors(rows, cols)
+            values = covariance[rows, cols]
+            if not isinstance(values, torch.Tensor):
+                values = values.to_dense()
+            blocks[start:start + chunk] = MultiGPyTraining._as_numpy(values)
+        # The two triangles are evaluated separately and differ by round-off in single precision.
+        return 0.5 * (blocks + blocks.transpose(0, 1, 3, 2))
+
     def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
         """
         Predict the outputs and their standard deviations for given input sets using the trained GP models.
@@ -948,11 +977,7 @@ class MultiGPyTraining:
 
         Note
         ----
-        The returned task covariance is the prior Kronecker term (task kernel times
-        the input kernel at the prediction point), not the posterior predictive
-        covariance. With ``task_mode="locations"`` the tasks are the locations, so
-        the cross-quantity covariance is not part of the model at all and a diagonal
-        covariance built from the marginal standard deviations is returned instead.
+        The returned task covariance is the posterior predictive covariance between the calibration quantities at the prediction point, the same distribution the returned ``std`` is the marginal of. With ``task_mode="locations"`` the tasks are the locations, so the cross-quantity covariance is not part of the model at all and a diagonal covariance built from the marginal standard deviations is returned instead.
         """
         input_sets = torch.tensor(input_sets, dtype=torch.float32)
         n_samples = input_sets.shape[0]
@@ -974,7 +999,6 @@ class MultiGPyTraining:
             multitask_cov_list = [[None] * n_locations for _ in range(n_samples)]
 
         mode = self._resolve_task_mode(n_locations)
-
         if mode == "all":
             model_info = self.gp_list[0]
             gp = model_info['gp']
@@ -1002,20 +1026,15 @@ class MultiGPyTraining:
                     lower_ci[:] = surrogate_prediction - 2 * surrogate_std
 
                 if multitask_cov:
-                    # The single model's tasks span all outputs; the BAL utility
-                    # consumes only the per-location (quantity x quantity) diagonal
-                    # blocks, which are sample-independent up to the input kernel.
-                    scale = self._input_kernel_diag(gp, input_sets)
-                    task_kernel = self._task_kernel(gp, n_obs)
-                    y_std_np = self._as_numpy(y_std)
-                    blocks = []
-                    for i in range(n_locations):
-                        sl = slice(i * n_quantities, (i + 1) * n_quantities)
-                        scaling = np.diag(y_std_np[sl])
-                        blocks.append(scaling @ task_kernel[sl, sl] @ scaling)
+                    # The tasks span all outputs. BAL consumes one quantity x quantity block per location, so only those blocks are evaluated.
+                    blocks = self._posterior_task_blocks(
+                        predictions, n_quantities, n_train=self.training_points.shape[0])
+                    # Back to physical units: with y = y_mean + D z, Cov(y) = D Cov(z) D.
+                    scale = self._as_numpy(y_std).reshape(n_locations, n_quantities)
+                    blocks = blocks * scale[None, :, :, None] * scale[None, :, None, :]
                     for j in range(n_samples):
                         for i in range(n_locations):
-                            multitask_cov_list[j][i] = scale[j] * blocks[i]
+                            multitask_cov_list[j][i] = blocks[j, i]
 
         elif mode == "locations":
             for q, model_info in enumerate(self.gp_list):
@@ -1094,17 +1113,13 @@ class MultiGPyTraining:
                         lower_ci[:, sl] = mean - 2 * std
 
                     if multitask_cov:
-                        # The (n_quantities x n_quantities) task covariance is
-                        # genuinely available in this layout. It does not depend on
-                        # the sample, so build it once per location and only scale it
-                        # by the input kernel at each prediction point.
-                        scaling = np.diag(y_std_np)
-                        task_kernel = self._task_kernel(gp, n_quantities)
-                        block = scaling @ task_kernel @ scaling
-                        scale = self._input_kernel_diag(gp, input_sets)
+                        # Posterior predictive covariance between the calibration quantities at this location, for every prediction point.
+                        blocks = self._posterior_task_blocks(
+                            predictions, n_quantities, n_train=self.training_points.shape[0])[:, 0]
+                        # Back to physical units: with y = y_mean + D z, Cov(y) = D Cov(z) D.
+                        blocks = blocks * np.outer(y_std_np, y_std_np)[None, :, :]
                         for j in range(n_samples):
-                            multitask_cov_list[j][i] = scale[j] * block
-
+                            multitask_cov_list[j][i] = blocks[j]
         else:
             raise ValueError(
                 f"Unknown task_mode '{mode}'. Expected 'variables', 'locations' or 'all'.")
@@ -1185,3 +1200,202 @@ class MultitaskGPModel(ExactGP):
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
 
+class SOSequentialGPyTraining:
+    """Container for independent quantity-specific ``GPyTraining`` objects.
+
+    Each contained GPE predicts one calibration quantity at every measurement
+    location.  This adapter exposes the ``training_points`` and ``predict_``
+    interface expected by ``SequentialDesign`` while reconstructing predictions
+    in the original location-major/interleaved ordering::
+
+        [Q1_P1, Q2_P1, ..., Qn_P1, Q1_P2, Q2_P2, ..., Qn_P2, ...]
+
+    The quantity GPEs remain statistically independent; therefore no multitask
+    cross-covariance is constructed.
+    """
+
+    def __init__(self, surrogate_models, calibration_quantities):
+        self.models = dict(surrogate_models)
+        self.calibration_quantities = list(calibration_quantities)
+        self.num_quantities = len(self.calibration_quantities)
+
+        if self.num_quantities == 0:
+            raise ValueError("calibration_quantities cannot be empty.")
+
+        missing = [
+            var for var in self.calibration_quantities
+            if var not in self.models
+        ]
+        if missing:
+            raise KeyError(
+                f"Missing SO surrogate model(s) for calibration quantities: {missing}"
+            )
+
+        first_model = self.models[self.calibration_quantities[0]]
+        self.training_points = np.asarray(first_model.training_points)
+        self.nloc = int(first_model.n_obs)
+        self.n_obs = self.nloc * self.num_quantities
+        self.n_params = self.training_points.shape[1]
+        self.exp_design = None
+
+        # Keep a combined copy of the training outputs in the exact same ordering
+        # used by the complex model, observations and Bayesian likelihood.
+        self.model_evaluations = np.empty(
+            (self.training_points.shape[0], self.n_obs), dtype=float
+        )
+
+        for quantity_idx, var in enumerate(self.calibration_quantities):
+            model = self.models[var]
+
+            if int(model.n_obs) != self.nloc:
+                raise ValueError(
+                    f"All SO GPEs must contain the same number of locations. "
+                    f"'{var}' has {model.n_obs}; expected {self.nloc}."
+                )
+
+            model_tp = np.asarray(model.training_points)
+            if (
+                model_tp.shape != self.training_points.shape
+                or not np.allclose(model_tp, self.training_points)
+            ):
+                raise ValueError(
+                    "All SO GPEs must use exactly the same collocation points."
+                )
+
+            expected_shape = (self.training_points.shape[0], self.nloc)
+            if np.asarray(model.model_evaluations).shape != expected_shape:
+                raise ValueError(
+                    f"Unexpected training-output shape for '{var}': "
+                    f"{np.asarray(model.model_evaluations).shape}; "
+                    f"expected {expected_shape}."
+                )
+
+            self.model_evaluations[
+                :, quantity_idx::self.num_quantities
+            ] = model.model_evaluations
+
+    @classmethod
+    def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
+                           training_iter=150, lr=0.07, verbose=False):
+        """Build the container from the training data of a calibration.
+
+        One single-output GPE is set up per calibration target, with the kernel, likelihood and optimizer settings the drivers use for a calibration on one target, so a target is emulated the same way whether it is calibrated alone or together with others. The models are not trained yet, call :meth:`train_`.
+
+        Parameters
+        ----------
+        collocation_points : numpy.ndarray
+            Parameter sets of the training runs, shape ``[n_runs, n_params]``.
+        model_outputs : numpy.ndarray
+            Model outputs in the interleaved (location, quantity) order, shape ``[n_runs, n_locations * n_quantities]``.
+        calibration_quantities : list of str
+            Names of the calibration targets, in the order of the output columns of one location.
+        training_iter : int
+            Number of optimizer iterations per GPE.
+        lr : float
+            Learning rate of the optimizer.
+        verbose : bool
+            Passed on to :class:`GPyTraining`.
+
+        Returns
+        -------
+        SOSequentialGPyTraining
+        """
+        collocation_points = np.atleast_2d(np.asarray(collocation_points, dtype=float))
+        model_outputs = np.atleast_2d(np.asarray(model_outputs, dtype=float))
+        calibration_quantities = list(calibration_quantities)
+        n_quantities = len(calibration_quantities)
+        if n_quantities == 0:
+            raise ValueError("calibration_quantities cannot be empty.")
+        if model_outputs.shape[1] % n_quantities:
+            raise ValueError(
+                f"The model outputs have {model_outputs.shape[1]} columns, which is not a multiple of the "
+                f"{n_quantities} calibration quantities {calibration_quantities}.")
+
+        surrogate_models = {}
+        for quantity_idx, quantity in enumerate(calibration_quantities):
+            kernel = gpytorch.kernels.ScaleKernel(
+                gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=collocation_points.shape[1]))
+            likelihood = gpytorch.likelihoods.GaussianLikelihood(
+                noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
+            likelihood.noise = 1e-5
+            # Interleaved ordering: quantity q occupies every n_quantities-th column, starting at q.
+            surrogate_models[quantity] = GPyTraining(
+                collocation_points=collocation_points,
+                model_evaluations=model_outputs[:, quantity_idx::n_quantities],
+                likelihood=likelihood, kernel=kernel,
+                training_iter=training_iter,
+                optimizer="adam", lr=lr,
+                verbose=verbose)
+        return cls(surrogate_models=surrogate_models, calibration_quantities=calibration_quantities)
+
+    def __getitem__(self, key):
+        """Allow ``surrogate_object[var]`` access to an individual SO GPE."""
+        return self.models[key]
+
+    def train_(self):
+        """Train all quantity-specific GPEs independently."""
+        for var in self.calibration_quantities:
+            self.models[var].train_()
+
+    def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
+        """Predict all quantities and restore the original interleaved ordering."""
+        if multitask_cov:
+            raise ValueError(
+                "SO_sequential uses independent GPEs and therefore has no "
+                "multitask cross-covariance. Use multitask=False in SequentialDesign."
+            )
+
+        input_sets = np.asarray(input_sets)
+        n_samples = input_sets.shape[0]
+        full_shape = (n_samples, self.n_obs)
+
+        output = np.empty(full_shape, dtype=float)
+        std = np.empty(full_shape, dtype=float)
+
+        if get_conf_int:
+            upper_ci = np.empty(full_shape, dtype=float)
+            lower_ci = np.empty(full_shape, dtype=float)
+
+        for quantity_idx, var in enumerate(self.calibration_quantities):
+            quantity_prediction = self.models[var].predict_(
+                input_sets=input_sets,
+                get_conf_int=get_conf_int,
+            )
+
+            expected_shape = (n_samples, self.nloc)
+            mean_q = np.asarray(quantity_prediction["output"])
+            std_q = np.asarray(quantity_prediction["std"])
+
+            if mean_q.shape != expected_shape or std_q.shape != expected_shape:
+                raise ValueError(
+                    f"Unexpected prediction shape for '{var}'. "
+                    f"Mean={mean_q.shape}, std={std_q.shape}; "
+                    f"expected {expected_shape}."
+                )
+
+            # Restore location-major/interleaved ordering:
+            # Q1_P1, Q2_P1, ..., Qn_P1, Q1_P2, ...
+            output[:, quantity_idx::self.num_quantities] = mean_q
+            std[:, quantity_idx::self.num_quantities] = std_q
+
+            if get_conf_int:
+                if "upper_ci" in quantity_prediction and "lower_ci" in quantity_prediction:
+                    upper_q = np.asarray(quantity_prediction["upper_ci"])
+                    lower_q = np.asarray(quantity_prediction["lower_ci"])
+                else:
+                    upper_q = mean_q + 2.0 * std_q
+                    lower_q = mean_q - 2.0 * std_q
+
+                upper_ci[:, quantity_idx::self.num_quantities] = upper_q
+                lower_ci[:, quantity_idx::self.num_quantities] = lower_q
+
+        result = {
+            "output": output,
+            "std": std,
+        }
+
+        if get_conf_int:
+            result["upper_ci"] = upper_ci
+            result["lower_ci"] = lower_ci
+
+        return result

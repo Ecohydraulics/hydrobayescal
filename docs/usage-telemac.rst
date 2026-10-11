@@ -105,6 +105,8 @@ In addition to the common :ref:`HydroSimulations_class` parameters, the
        output extraction.
    * - ``gaia_steering_file``
      - GAIA steering file for morphodynamics (optional).
+   * - ``gaia_layer_average``
+     - Sand ratios averaged over GAIA bed layers as derived extraction quantities (optional, keyword-only), see :ref:`gaia-layer-average`.
 
 Calibration parameters and TELEMAC keywords
 --------------------------------------------
@@ -134,11 +136,44 @@ the model files:
 names, e.g. ``"WATER DEPTH"``, ``"SCALAR VELOCITY"``, ``"TURBULENT ENERG"``,
 ``"VELOCITY U"``, ``"VELOCITY V"``, ``"CUMUL BED EVOL"``.
 
+A quantity that is not a variable of the TELEMAC or the GAIA result file, and is not configured as a layer average (next section), is refused at the first extraction with a message that names it.
+
 .. note::
 
    Bayesian active learning only handles numeric (scalar) parameters. A
    parameter that takes a non-numeric value (e.g. a solver-type keyword) cannot
    be used as a calibration parameter.
+
+.. _gaia-layer-average:
+
+Sand ratio averaged over GAIA bed layers
+----------------------------------------
+
+A sediment sample taken over a known depth below the bed surface, e.g. the fine sediment fraction of a freeze core, corresponds to no single variable of a GAIA result file. GAIA writes the ratio of every sand class in every bed layer as its own variable, named ``LAY<layer> SAND RAT<class>``: the number after ``LAY`` is the bed layer, counted from the bed surface, and the trailing number is the sand class, in the order of ``CLASSES SEDIMENT DIAMETERS`` in the GAIA steering file. ``LAY1 SAND RAT2`` is thus the ratio of sand class 2 in the top layer, and ``LAY2 SAND RAT1`` the ratio of sand class 1 in the second layer.
+
+HydroBayesCal derives the quantity that matches such a sample: the ratio of one or several sand classes, averaged over several bed layers with the layer thicknesses as weights. It is configured in the ``morphodynamic_simulation`` block:
+
+.. code-block:: python
+
+   morphodynamic_simulation = {
+       'gaia_cas': "gaia_model.cas",
+       'gaia_results_filename_base': "results_gaia",
+       'gaia_layer_average': {
+           "FINE SEDIMENT FRACTION": {       # name of the derived quantity
+               "sand_classes": [1],          # ratios of these classes are summed in every layer
+               "layers": [1, 2],             # bed layers that are averaged
+               "thicknesses": [0.08, 0.60],  # weight of every layer, in meters
+           },
+       },
+   }
+
+   calibration = {
+       'extraction_quantities': ["WATER DEPTH", "CUMUL BED EVOL", "FINE SEDIMENT FRACTION"],
+       'calibration_quantities': ["FINE SEDIMENT FRACTION"],
+       # ...
+   }
+
+With this configuration the extraction reads ``LAY1 SAND RAT1`` and ``LAY2 SAND RAT1`` and stores :math:`(0.08\,r_{1,1} + 0.60\,r_{2,1}) / 0.68` under the name ``FINE SEDIMENT FRACTION``, where :math:`r_{l,c}` is the ratio of sand class :math:`c` in layer :math:`l`. The name of the derived quantity is free; the calibration points file needs its ``<name>_DATA`` and ``<name>_ERROR`` columns. The GAIA steering file has to list the layer ratios among its printout variables, and the model needs at least as many bed layers and sand classes as the configuration names; a missing variable is reported with its name. All three entries are required. An entry without ``sand_classes`` is rejected when the model is constructed, because reading the class number for the layer number yields a value between 0 and 1 that looks plausible and is wrong.
 
 Running the calibration
 -----------------------

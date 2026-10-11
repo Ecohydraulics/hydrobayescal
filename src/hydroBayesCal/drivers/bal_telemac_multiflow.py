@@ -81,12 +81,16 @@ def build_multiflow_model(config):
         gpe_error=config.calibration.get("gpe_error", 0.0),
         measurement_error=config.calibration.get("measurement_error", 0.10),
         model_structural_error=config.calibration.get("model_structural_error", 0.0),
-        user_param_values=config.execution["user_param_values"],
+        # A design supplied by the user is selected by execution['user_param_values'] or, to the same effect, by 'user' as the sampling method. Both read the parameter sets from restart_data/user-collocation-points.csv.
+        user_param_values=(bool(config.execution.get("user_param_values", False))
+                           or str(config.sampling["parameter_sampling_method"]).strip().lower() == "user"),
         max_runs=config.sampling["max_runs"],
         complete_bal_mode=config.execution["complete_bal_mode"],
         only_bal_mode=config.execution["only_bal_mode"],
         delete_complex_outputs=config.execution["delete_complex_outputs"],
         validation=config.execution["validation"],
+        multitask_selection=config.sampling.get("multitask_selection", "variables"),
+        gaia_layer_average=config.morphodynamic_simulation.get("gaia_layer_average", None),
     )
 
 
@@ -119,11 +123,13 @@ def main():
     # values the surrogate is trained on, and the two modes silently disagreed
     # about what was being calibrated.
     extraction = getattr(config, 'extraction', {})
+    output_extraction_time = extraction.get('output_extraction_time', "mean_last")
+    n_last = extraction.get('n_last', extraction.get('n', 80))
     init_collocation_points, model_evaluations = run_complex_model(
         complex_model=multiflow_model,
         experiment_design=exp_design,
-        output_extraction_time=extraction.get('output_extraction_time', "mean_last"),
-        n_last=extraction.get('n_last', extraction.get('n', 80)),
+        output_extraction_time=output_extraction_time,
+        n_last=n_last,
         adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
         init_runs_min=config.sampling.get('init_runs_min', None),
     )
@@ -159,8 +165,12 @@ def main():
         gp_library=config.sampling["gp_library"],
         include_surrogate_error=config.sampling.get("include_surrogate_error", True),
         bal_exploration_tradeoff=config.sampling.get("bal_exploration_tradeoff", "auto"),
+        # The same window as the initial design above: run_bal_model extracts the runs BAL selects with it.
+        output_extraction_time=output_extraction_time,
+        n_last=n_last,
         posterior_sampling_method=config.sampling.get("posterior_sampling_method",
                                                       "rejection_sampling"),
+        bal_n_jobs=config.sampling.get("bal_n_jobs", -1),
     )
 
 

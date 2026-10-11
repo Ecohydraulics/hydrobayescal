@@ -13,7 +13,6 @@ import pandas as pd
 from matplotlib.ticker import FormatStrFormatter, MaxNLocator
 from scipy.stats import spearmanr
 from sklearn.preprocessing import StandardScaler
-
 from hydroBayesCal.visualize.axis_utils import (
     compute_nice_limits,
     format_tick_label,
@@ -34,6 +33,7 @@ class CalibrationAssessment:
             sm_upper_ci_split,
             sm_lower_ci_split,
             obs_split,
+            err_split,
             coordinates_df,
             model_names=None,
             quantity_names=None,
@@ -80,6 +80,18 @@ class CalibrationAssessment:
             sm_quantities_matrix = []
             obs_quantities_matrix = []
 
+            # Store all uncertainty-normalized residuals from all quantities.
+            # These arrays are pooled after the quantity loop to calculate
+            # the true overall NRMSE and NMAE for the current model.
+            all_normalized_residuals_cm = []
+            all_normalized_residuals_sm = []
+
+            # Store residuals normalized by the observed spatial standard
+            # deviation of each quantity. Each quantity therefore has its
+            # own normalization scale, shared by all locations for that target.
+            all_stdobs_normalized_residuals_cm = []
+            all_stdobs_normalized_residuals_sm = []
+
             for i in range(n_quantities):
                 cm_vals = cm_outputs_split[f'cm_outputs_{i + 1}'][p]
                 sm_vals = sm_outputs_split[f'sm_outputs_{i + 1}'][p]
@@ -88,6 +100,29 @@ class CalibrationAssessment:
 
                 obs_vals_raw = obs_split[f'obs_{i + 1}']
                 obs_vals = obs_vals_raw[0] if obs_vals_raw.ndim > 1 else obs_vals_raw
+
+                # Measurement uncertainty (standard deviation) at each location.
+                err_vals_raw = err_split[f'err_{i + 1}']
+                err_vals = err_vals_raw[0] if err_vals_raw.ndim > 1 else err_vals_raw
+
+                obs_vals = np.asarray(obs_vals, dtype=float).squeeze()
+                err_vals = np.asarray(err_vals, dtype=float).squeeze()
+
+                if obs_vals.shape != err_vals.shape:
+                    raise ValueError(
+                        f"Observation and uncertainty shapes differ for Q{i + 1}: "
+                        f"{obs_vals.shape} versus {err_vals.shape}"
+                    )
+
+                if np.any(~np.isfinite(err_vals)):
+                    raise ValueError(
+                        f"Non-finite measurement uncertainties found for Q{i + 1}"
+                    )
+
+                if np.any(err_vals <= 0.0):
+                    raise ValueError(
+                        f"Measurement uncertainties must be greater than zero for Q{i + 1}"
+                    )
 
                 cm_quantities_matrix.append(cm_vals)
                 sm_quantities_matrix.append(sm_vals)
@@ -115,20 +150,103 @@ class CalibrationAssessment:
                     else rmse_sm_total / mae_sm_total
                 )
 
-                # Normalized RMSE and normalized MAE.
-                # Both are normalized by the observed standard deviation.
-                obs_std = np.std(obs_vals)
+                # ---------------------------------------------------------
+                # Uncertainty-normalized RMSE and MAE
+                # ---------------------------------------------------------
+                # Normalize each residual with the measurement uncertainty
+                # associated with the same location before aggregating.
+                normalized_residuals_cm = residuals_cm / err_vals
+                normalized_residuals_sm = residuals_sm / err_vals
 
-                if np.isclose(obs_std, 0.0):
-                    nrmse_cm_total = np.nan
-                    nrmse_sm_total = np.nan
-                    nmae_cm_total = np.nan
-                    nmae_sm_total = np.nan
-                else:
-                    nrmse_cm_total = rmse_cm_total / obs_std
-                    nrmse_sm_total = rmse_sm_total / obs_std
-                    nmae_cm_total = mae_cm_total / obs_std
-                    nmae_sm_total = mae_sm_total / obs_std
+                nrmse_cm_total = np.sqrt(
+                    np.mean(normalized_residuals_cm ** 2)
+                )
+                nrmse_sm_total = np.sqrt(
+                    np.mean(normalized_residuals_sm ** 2)
+                )
+
+                nmae_cm_total = np.mean(
+                    np.abs(normalized_residuals_cm)
+                )
+                nmae_sm_total = np.mean(
+                    np.abs(normalized_residuals_sm)
+                )
+
+                # Ratio of uncertainty-normalized RMSE to uncertainty-normalized MAE.
+                # This is different from RMSE / MAE when the measurement
+                # uncertainty varies among observation locations.
+                nrmse_nmae_ratio_cm = (
+                    np.nan
+                    if (
+                        not np.isfinite(nmae_cm_total)
+                        or np.isclose(nmae_cm_total, 0.0)
+                    )
+                    else nrmse_cm_total / nmae_cm_total
+                )
+
+                nrmse_nmae_ratio_sm = (
+                    np.nan
+                    if (
+                        not np.isfinite(nmae_sm_total)
+                        or np.isclose(nmae_sm_total, 0.0)
+                    )
+                    else nrmse_sm_total / nmae_sm_total
+                )
+
+                # ---------------------------------------------------------
+                # Observation-standard-deviation-normalized RMSE and MAE
+                # ---------------------------------------------------------
+                # The normalization is target-specific: for quantity Q_i,
+                # compute one standard deviation from its observations across
+                # locations, then normalize every location residual of Q_i
+                # using that same target-specific scale.
+                #
+                # ddof=1 gives the sample standard deviation. If you want the
+                # population standard deviation of the finite set of observed
+                # locations instead, change ddof=1 to ddof=0.
+                finite_obs = obs_vals[np.isfinite(obs_vals)]
+
+                if finite_obs.size < 2:
+                    raise ValueError(
+                        f"At least two finite observations are required to compute "
+                        f"the observation standard deviation for Q{i + 1}"
+                    )
+
+                obs_std = np.std(finite_obs, ddof=1)
+
+                if not np.isfinite(obs_std) or obs_std <= 0.0:
+                    raise ValueError(
+                        f"Observation standard deviation must be finite and greater "
+                        f"than zero for Q{i + 1}; got {obs_std}"
+                    )
+
+                stdobs_normalized_residuals_cm = residuals_cm / obs_std
+                stdobs_normalized_residuals_sm = residuals_sm / obs_std
+
+                nrmse_stdobs_cm_total = np.sqrt(
+                    np.nanmean(stdobs_normalized_residuals_cm ** 2)
+                )
+                nrmse_stdobs_sm_total = np.sqrt(
+                    np.nanmean(stdobs_normalized_residuals_sm ** 2)
+                )
+
+                nmae_stdobs_cm_total = np.nanmean(
+                    np.abs(stdobs_normalized_residuals_cm)
+                )
+                nmae_stdobs_sm_total = np.nanmean(
+                    np.abs(stdobs_normalized_residuals_sm)
+                )
+
+                # Keep both normalization schemes for pooled overall metrics.
+                all_normalized_residuals_cm.append(normalized_residuals_cm)
+                all_normalized_residuals_sm.append(normalized_residuals_sm)
+
+                all_stdobs_normalized_residuals_cm.append(
+                    stdobs_normalized_residuals_cm
+                )
+                all_stdobs_normalized_residuals_sm.append(
+                    stdobs_normalized_residuals_sm
+                )
 
                 spearman_cm = spearmanr(cm_vals, obs_vals).correlation
                 spearman_sm = spearmanr(sm_vals, obs_vals).correlation
@@ -148,8 +266,20 @@ class CalibrationAssessment:
                 model_summary[f"NMAE_CM_Q{i + 1}"] = nmae_cm_total
                 model_summary[f"NMAE_SM_Q{i + 1}"] = nmae_sm_total
 
+                # Observation-standard-deviation normalization.
+                model_summary[f"Obs_STD_Q{i + 1}"] = obs_std
+                model_summary[f"NRMSE_STDOBS_CM_Q{i + 1}"] = nrmse_stdobs_cm_total
+                model_summary[f"NRMSE_STDOBS_SM_Q{i + 1}"] = nrmse_stdobs_sm_total
+                model_summary[f"NMAE_STDOBS_CM_Q{i + 1}"] = nmae_stdobs_cm_total
+                model_summary[f"NMAE_STDOBS_SM_Q{i + 1}"] = nmae_stdobs_sm_total
+
+                # Raw RMSE / MAE ratio.
                 model_summary[f"RMSE_MAE_CM_Q{i + 1}"] = rmse_mae_ratio_cm
                 model_summary[f"RMSE_MAE_SM_Q{i + 1}"] = rmse_mae_ratio_sm
+
+                # Uncertainty-normalized NRMSE / NMAE ratio.
+                model_summary[f"NRMSE_NMAE_CM_Q{i + 1}"] = nrmse_nmae_ratio_cm
+                model_summary[f"NRMSE_NMAE_SM_Q{i + 1}"] = nrmse_nmae_ratio_sm
 
                 model_summary[f"Spearman_CM_Q{i + 1}"] = spearman_cm
                 model_summary[f"Spearman_SM_Q{i + 1}"] = spearman_sm
@@ -181,6 +311,12 @@ class CalibrationAssessment:
                         "y": coordinates_df.iloc[j]['y'],
                         "residuals_cm": residuals_cm[j],
                         "residuals_sm": residuals_sm[j],
+                        "measurement_error": err_vals[j],
+                        "normalized_residual_cm": normalized_residuals_cm[j],
+                        "normalized_residual_sm": normalized_residuals_sm[j],
+                        "obs_std": obs_std,
+                        "stdobs_normalized_residual_cm": stdobs_normalized_residuals_cm[j],
+                        "stdobs_normalized_residual_sm": stdobs_normalized_residuals_sm[j],
                         "ci_width": ci_width,
                         "cm_rank": cm_ranks[j],
                         "sm_rank": sm_ranks[j],
@@ -209,11 +345,110 @@ class CalibrationAssessment:
             overall_spearman_cm = spearmanr(cm_composite, obs_composite).correlation
             overall_spearman_sm = spearmanr(sm_composite, obs_composite).correlation
 
-            model_summary["Overall_NRMSE_CM"] = np.nanmean(total_nrmse_cm)
-            model_summary["Overall_NRMSE_SM"] = np.nanmean(total_nrmse_sm)
+            # ---------------------------------------------------------
+            # Pooled overall uncertainty-normalized metrics
+            # ---------------------------------------------------------
+            # Concatenate the normalized residuals from every quantity and
+            # every measurement location. This does not average the separate
+            # per-quantity NRMSE/NMAE values.
+            pooled_normalized_residuals_cm = np.concatenate(
+                all_normalized_residuals_cm
+            )
+            pooled_normalized_residuals_sm = np.concatenate(
+                all_normalized_residuals_sm
+            )
 
-            model_summary["Overall_NMAE_CM"] = np.nanmean(total_nmae_cm)
-            model_summary["Overall_NMAE_SM"] = np.nanmean(total_nmae_sm)
+            valid_overall_cm = np.isfinite(pooled_normalized_residuals_cm)
+            valid_overall_sm = np.isfinite(pooled_normalized_residuals_sm)
+
+            if np.any(valid_overall_cm):
+                valid_cm_values = pooled_normalized_residuals_cm[valid_overall_cm]
+
+                model_summary["Overall_NRMSE_CM"] = np.sqrt(
+                    np.mean(valid_cm_values ** 2)
+                )
+                model_summary["Overall_NMAE_CM"] = np.mean(
+                    np.abs(valid_cm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_CM"] = np.nan
+                model_summary["Overall_NMAE_CM"] = np.nan
+
+            if np.any(valid_overall_sm):
+                valid_sm_values = pooled_normalized_residuals_sm[valid_overall_sm]
+
+                model_summary["Overall_NRMSE_SM"] = np.sqrt(
+                    np.mean(valid_sm_values ** 2)
+                )
+                model_summary["Overall_NMAE_SM"] = np.mean(
+                    np.abs(valid_sm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_SM"] = np.nan
+                model_summary["Overall_NMAE_SM"] = np.nan
+
+            # Ratio calculated from the pooled overall uncertainty-normalized
+            # metrics. It is not an average of the per-quantity ratios.
+            overall_nmae_cm = model_summary["Overall_NMAE_CM"]
+            overall_nmae_sm = model_summary["Overall_NMAE_SM"]
+
+            model_summary["Overall_NRMSE_NMAE_CM"] = (
+                np.nan
+                if (
+                    not np.isfinite(overall_nmae_cm)
+                    or np.isclose(overall_nmae_cm, 0.0)
+                )
+                else model_summary["Overall_NRMSE_CM"] / overall_nmae_cm
+            )
+
+            model_summary["Overall_NRMSE_NMAE_SM"] = (
+                np.nan
+                if (
+                    not np.isfinite(overall_nmae_sm)
+                    or np.isclose(overall_nmae_sm, 0.0)
+                )
+                else model_summary["Overall_NRMSE_SM"] / overall_nmae_sm
+            )
+
+            # ---------------------------------------------------------
+            # Pooled overall observation-STD-normalized metrics
+            # ---------------------------------------------------------
+            # Each residual was first normalized by the observation standard
+            # deviation of its own quantity. Pooling afterward makes the
+            # quantities dimensionless and comparable in the global metric.
+            pooled_stdobs_residuals_cm = np.concatenate(
+                all_stdobs_normalized_residuals_cm
+            )
+            pooled_stdobs_residuals_sm = np.concatenate(
+                all_stdobs_normalized_residuals_sm
+            )
+
+            valid_stdobs_cm = np.isfinite(pooled_stdobs_residuals_cm)
+            valid_stdobs_sm = np.isfinite(pooled_stdobs_residuals_sm)
+
+            if np.any(valid_stdobs_cm):
+                valid_cm_values = pooled_stdobs_residuals_cm[valid_stdobs_cm]
+                model_summary["Overall_NRMSE_STDOBS_CM"] = np.sqrt(
+                    np.mean(valid_cm_values ** 2)
+                )
+                model_summary["Overall_NMAE_STDOBS_CM"] = np.mean(
+                    np.abs(valid_cm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_STDOBS_CM"] = np.nan
+                model_summary["Overall_NMAE_STDOBS_CM"] = np.nan
+
+            if np.any(valid_stdobs_sm):
+                valid_sm_values = pooled_stdobs_residuals_sm[valid_stdobs_sm]
+                model_summary["Overall_NRMSE_STDOBS_SM"] = np.sqrt(
+                    np.mean(valid_sm_values ** 2)
+                )
+                model_summary["Overall_NMAE_STDOBS_SM"] = np.mean(
+                    np.abs(valid_sm_values)
+                )
+            else:
+                model_summary["Overall_NRMSE_STDOBS_SM"] = np.nan
+                model_summary["Overall_NMAE_STDOBS_SM"] = np.nan
 
             model_summary["Overall_Spearman_CM"] = overall_spearman_cm
             model_summary["Overall_Spearman_SM"] = overall_spearman_sm
@@ -227,6 +462,20 @@ class CalibrationAssessment:
 
         df_summary["Rank_NMAE_CM"] = df_summary["Overall_NMAE_CM"].rank(method="min")
         df_summary["Rank_NMAE_SM"] = df_summary["Overall_NMAE_SM"].rank(method="min")
+
+        df_summary["Rank_NRMSE_STDOBS_CM"] = df_summary[
+            "Overall_NRMSE_STDOBS_CM"
+        ].rank(method="min")
+        df_summary["Rank_NRMSE_STDOBS_SM"] = df_summary[
+            "Overall_NRMSE_STDOBS_SM"
+        ].rank(method="min")
+
+        df_summary["Rank_NMAE_STDOBS_CM"] = df_summary[
+            "Overall_NMAE_STDOBS_CM"
+        ].rank(method="min")
+        df_summary["Rank_NMAE_STDOBS_SM"] = df_summary[
+            "Overall_NMAE_STDOBS_SM"
+        ].rank(method="min")
 
         df_summary["Rank_Spearman_CM"] = df_summary["Overall_Spearman_CM"].rank(
             ascending=False,
@@ -568,7 +817,66 @@ class CalibrationAssessment:
         )
 
         # ---------- Unified subplots for NMAE vs NRMSE ----------
-        def plot_nmae_vs_nrmse_subplots(metric_tag, filename):
+        def set_precise_metric_ticks(
+                ax,
+                axis,
+                values,
+                n_ticks=6
+        ):
+            """
+            Set tight metric limits with a fixed number of ticks and always
+            display tick labels with exactly two decimal places.
+
+            Six ticks are used for the STDOBS figures, i.e. one more horizontal
+            and vertical tick than the previous five-tick layout.
+            """
+            vals = np.asarray(values, dtype=float)
+            vals = vals[np.isfinite(vals)]
+
+            if vals.size == 0:
+                return
+
+            vmin, vmax = tight_metric_limits(vals)
+
+            if not np.isfinite(vmin) or not np.isfinite(vmax):
+                return
+
+            if np.isclose(vmin, vmax):
+                pad = 0.02 * max(abs(vmin), 1.0)
+                vmin -= pad
+                vmax += pad
+
+            ticks = np.linspace(vmin, vmax, n_ticks)
+            formatter = FormatStrFormatter('%.3f')
+
+            if axis == 'x':
+                ax.set_xlim(vmin, vmax)
+                ax.set_xticks(ticks)
+                ax.xaxis.set_major_formatter(formatter)
+            elif axis == 'y':
+                ax.set_ylim(vmin, vmax)
+                ax.set_yticks(ticks)
+                ax.yaxis.set_major_formatter(formatter)
+            else:
+                raise ValueError("axis must be either 'x' or 'y'")
+
+        def plot_nmae_vs_nrmse_subplots(
+                metric_tag,
+                filename,
+                normalization_tag=None
+        ):
+            """
+            Plot NMAE versus NRMSE for one model-output type.
+
+            normalization_tag
+                None     -> existing measurement-uncertainty normalization
+                "STDOBS" -> observation-standard-deviation normalization
+
+            For STDOBS plots, the axis labels use subscripts rather than
+            '/ sigma_obs'. The metric has already been normalized by
+            sigma_obs, so writing 'NRMSE / sigma_obs' would incorrectly imply
+            a second normalization.
+            """
             n_panels = n_quantities + 1
             ncols_local = 2
             nrows_local = math.ceil(n_panels / ncols_local)
@@ -580,14 +888,43 @@ class CalibrationAssessment:
                 sharey=False
             )
 
-            axes = axes.flatten()
+            axes = np.atleast_1d(axes).flatten()
             colors = plt.cm.get_cmap('tab10', len(df_plot))
+
+            if normalization_tag is None:
+                overall_x_col = f"Overall_NRMSE_{metric_tag}"
+                overall_y_col = f"Overall_NMAE_{metric_tag}"
+                x_label = "NRMSE"
+                y_label = "NMAE"
+
+                def quantity_cols(q):
+                    return (
+                        f"NRMSE_{metric_tag}_{q}",
+                        f"NMAE_{metric_tag}_{q}"
+                    )
+
+            elif normalization_tag == "STDOBS":
+                overall_x_col = f"Overall_NRMSE_STDOBS_{metric_tag}"
+                overall_y_col = f"Overall_NMAE_STDOBS_{metric_tag}"
+
+                # Correct notation: these quantities are already normalized
+                # by the target-specific observation standard deviation.
+                x_label = r"$\mathrm{NRMSE}_{\sigma_{\mathrm{obs}}}$"
+                y_label = r"$\mathrm{NMAE}_{\sigma_{\mathrm{obs}}}$"
+
+                def quantity_cols(q):
+                    return (
+                        f"NRMSE_STDOBS_{metric_tag}_{q}",
+                        f"NMAE_STDOBS_{metric_tag}_{q}"
+                    )
+
+            else:
+                raise ValueError(
+                    "normalization_tag must be None or 'STDOBS'"
+                )
 
             # Overall panel
             ax = axes[0]
-
-            overall_x_col = f"Overall_NRMSE_{metric_tag}"
-            overall_y_col = f"Overall_NMAE_{metric_tag}"
 
             for color_idx, (_, row) in enumerate(df_plot.iterrows()):
                 ax.scatter(
@@ -601,23 +938,36 @@ class CalibrationAssessment:
                 )
 
             ax.set_title("Overall", fontsize=20)
-            ax.set_xlabel("NRMSE", fontsize=16)
-            ax.set_ylabel("NMAE", fontsize=16)
+            ax.set_xlabel(x_label, fontsize=16)
+            ax.set_ylabel(y_label, fontsize=16)
             ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
 
             overall_x_vals = df_plot[overall_x_col].values
             overall_y_vals = df_plot[overall_y_col].values
 
-            ax.set_xlim(tight_metric_limits(overall_x_vals))
-            ax.set_ylim(tight_metric_limits(overall_y_vals))
+            if normalization_tag == "STDOBS":
+                # Six ticks = one more than the previous five-tick layout.
+                # Tick labels are forced to exactly two decimal places.
+                set_precise_metric_ticks(
+                    ax, 'x', overall_x_vals, n_ticks=6
+                )
+                set_precise_metric_ticks(
+                    ax, 'y', overall_y_vals, n_ticks=6
+                )
+            else:
+                ax.set_xlim(tight_metric_limits(overall_x_vals))
+                ax.set_ylim(tight_metric_limits(overall_y_vals))
 
-            # Important: do not force zero here.
-            # For tiny differences, start_at_zero=True destroys visual separation.
-            set_nice_ticks(ax, 'x', n_ticks=5)
-            set_nice_ticks(ax, 'y', n_ticks=5)
+                # Keep the existing uncertainty-normalized plots unchanged.
+                set_nice_ticks(ax, 'x', n_ticks=5)
+                set_nice_ticks(ax, 'y', n_ticks=5)
 
-            set_adaptive_decimal_formatter(ax, axis='x', values=overall_x_vals)
-            set_adaptive_decimal_formatter(ax, axis='y', values=overall_y_vals)
+                set_adaptive_decimal_formatter(
+                    ax, axis='x', values=overall_x_vals, max_decimals=1
+                )
+                set_adaptive_decimal_formatter(
+                    ax, axis='y', values=overall_y_vals, max_decimals=1
+                )
 
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
@@ -626,9 +976,7 @@ class CalibrationAssessment:
             for i in range(n_quantities):
                 ax = axes[i + 1]
                 q = f"Q{i + 1}"
-
-                x_col = f"NRMSE_{metric_tag}_{q}"
-                y_col = f"NMAE_{metric_tag}_{q}"
+                x_col, y_col = quantity_cols(q)
 
                 for color_idx, (_, row) in enumerate(df_plot.iterrows()):
                     ax.scatter(
@@ -642,22 +990,33 @@ class CalibrationAssessment:
                     )
 
                 ax.set_title(quantity_names[i], fontsize=20)
-                ax.set_xlabel("NRMSE", fontsize=16)
-                ax.set_ylabel("NMAE", fontsize=16)
+                ax.set_xlabel(x_label, fontsize=16)
+                ax.set_ylabel(y_label, fontsize=16)
                 ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
 
                 x_vals = df_plot[x_col].values
                 y_vals = df_plot[y_col].values
 
-                ax.set_xlim(tight_metric_limits(x_vals))
-                ax.set_ylim(tight_metric_limits(y_vals))
+                if normalization_tag == "STDOBS":
+                    set_precise_metric_ticks(
+                        ax, 'x', x_vals, n_ticks=6
+                    )
+                    set_precise_metric_ticks(
+                        ax, 'y', y_vals, n_ticks=6
+                    )
+                else:
+                    ax.set_xlim(tight_metric_limits(x_vals))
+                    ax.set_ylim(tight_metric_limits(y_vals))
 
-                # Important: do not force zero here.
-                set_nice_ticks(ax, 'x', n_ticks=5)
-                set_nice_ticks(ax, 'y', n_ticks=5)
+                    set_nice_ticks(ax, 'x', n_ticks=5)
+                    set_nice_ticks(ax, 'y', n_ticks=5)
 
-                set_adaptive_decimal_formatter(ax, axis='x', values=x_vals)
-                set_adaptive_decimal_formatter(ax, axis='y', values=y_vals)
+                    set_adaptive_decimal_formatter(
+                        ax, axis='x', values=x_vals, max_decimals=1
+                    )
+                    set_adaptive_decimal_formatter(
+                        ax, axis='y', values=y_vals, max_decimals=1
+                    )
 
                 for spine in ax.spines.values():
                     spine.set_linewidth(1.5)
@@ -679,7 +1038,9 @@ class CalibrationAssessment:
 
             fig.tight_layout(rect=[0, 0, 1, 0.93])
             fig.savefig(os.path.join(save_folder, filename), dpi=300)
+            plt.close(fig)
 
+        # Existing measurement-uncertainty normalization.
         plot_nmae_vs_nrmse_subplots(
             metric_tag="CM",
             filename="combined_nMAE_vs_nRMSE_CM.svg"
@@ -688,6 +1049,19 @@ class CalibrationAssessment:
         plot_nmae_vs_nrmse_subplots(
             metric_tag="SM",
             filename="combined_nMAE_vs_nRMSE_SM.svg"
+        )
+
+        # Observation-standard-deviation normalization.
+        plot_nmae_vs_nrmse_subplots(
+            metric_tag="CM",
+            filename="combined_nMAE_vs_nRMSE_STDOBS_CM.svg",
+            normalization_tag="STDOBS"
+        )
+
+        plot_nmae_vs_nrmse_subplots(
+            metric_tag="SM",
+            filename="combined_nMAE_vs_nRMSE_STDOBS_SM.svg",
+            normalization_tag="STDOBS"
         )
 
         df_spatial = pd.DataFrame(spatial_records)
@@ -834,7 +1208,7 @@ class CalibrationAssessment:
                     ax, obs, cm,
                     downstream_set, upstream_set,
                     collect_legend=(row_idx == 0 and col_idx == 0),
-                    s=160, alpha=0.85, marker="*"
+                    s=80, alpha=0.85, marker="*"
                 )
                 legend_handles.extend(group_handles)
                 legend_labels.extend(group_labels)
@@ -853,12 +1227,12 @@ class CalibrationAssessment:
                 # Titles and labels
                 # ----------------------------------------------------
                 if row_idx == 0:
-                    ax.set_title(f"{qname}", fontsize=32, pad=16)
+                    ax.set_title(f"{qname}", fontsize=22, pad=16)
 
                 if row_idx == 0 or row_idx == n_models - 1:
-                    ax.set_xlabel(f"Observed {qname}", fontsize=36)
+                    ax.set_xlabel(f"Observed {qname}", fontsize=22)
 
-                ax.set_ylabel(f"Modeled {qname}", fontsize=36)
+                ax.set_ylabel(f"Modeled {qname}", fontsize=22)
 
                 if col_idx == 0:
                     ax.annotate(
@@ -868,7 +1242,7 @@ class CalibrationAssessment:
                         rotation=90,
                         va="center",
                         ha="center",
-                        fontsize=28,
+                        fontsize=22,
                         fontweight="bold"
                     )
 
@@ -890,7 +1264,7 @@ class CalibrationAssessment:
                 ax.set_xticklabels(xlabels)
                 ax.set_yticklabels(ylabels)
 
-                ax.tick_params(axis="both", which="both", direction="in", labelsize=28)
+                ax.tick_params(axis="both", which="both", direction="in", labelsize=22)
 
                 # Grid and spines
                 ax.grid(True, linestyle="--", linewidth=0.5, color="gray")
@@ -912,7 +1286,7 @@ class CalibrationAssessment:
                     transform=ax.transAxes,
                     va="top",
                     ha="right",
-                    fontsize=24,
+                    fontsize=22,
                     bbox=dict(facecolor="white", alpha=0.85, edgecolor="none")
                 )
 
@@ -945,175 +1319,418 @@ class CalibrationAssessment:
             points_group_1=None,
             points_group_2=None,
     ):
-        """
-        Surrogate Model (X-axis) vs Deterministic/Complex Model (Y-axis)
+        r"""
+        Plots Surrogate Model vs Deterministic/Complex Model with:
 
-        • Rows = quantities
-        • Columns = surrogate models
-        • Wider subplots
-        • Red dashed 1:1 line
-        • Star markers
+            Rows    = surrogate models
+            Columns = quantities / calibration targets
+
+        The plotting style is consistent with observed_vs_modeled_compare():
+            - Same subplot dimensions
+            - Same font sizes
+            - Same tick formatting
+            - 6 ticks per axis, every second label displayed
+            - Shared axis limits per quantity
+            - Equal x/y aspect ratio
+            - Model names shown vertically on the left
+            - Quantity names shown at the top
+            - Common legend above the figure
 
         Parameters
         ----------
+        df_spatial : DataFrame
+            Spatial comparison data containing:
+                - model_id
+                - quantity
+                - sm_output
+                - cm_output
+
+        df_summary : DataFrame
+            Summary table containing model_id and model_name.
+
+        model_ids : list
+            List of surrogate model IDs to plot.
+
+        quantity_names : list
+            Quantity names corresponding to Q1, Q2, Q3, ...
+            Example:
+                [r"$h$", r"$\bar{U}$", r"$\delta_z$"]
+
         points_group_1 : list or range, optional
-            Node positions to color as downstream (gray).
+            First group of points, e.g. downstream nodes.
+
         points_group_2 : list or range, optional
-            Node positions to color as upstream (black).
+            Second group of points, e.g. upstream nodes.
         """
 
         save_folder = self.save_folder
+
         n_models = len(model_ids)
         n_quantities = len(quantity_names)
 
-        # Convert to sets for faster lookup (only if provided)
-        downstream_set = set(points_group_1) if points_group_1 is not None else None
-        upstream_set = set(points_group_2) if points_group_2 is not None else None
+        downstream_set = (
+            set(points_group_1)
+            if points_group_1 is not None
+            else None
+        )
 
-        # ---- Wider figure ----
+        upstream_set = (
+            set(points_group_2)
+            if points_group_2 is not None
+            else None
+        )
+
+        # ------------------------------------------------------------
+        # Create subplot grid
+        # Rows    = models
+        # Columns = quantities
+        # ------------------------------------------------------------
         fig, axes = plt.subplots(
-            nrows=n_quantities,
-            ncols=n_models,
-            figsize=(7.5 * n_models, 6 * n_quantities),  # widened
+            nrows=n_models,
+            ncols=n_quantities,
+            figsize=(9.5 * n_quantities, 5.0 * n_models),
+            sharex=False,
             sharey=False
         )
 
-        if n_quantities == 1:
+        # Force axes into a 2D array
+        if n_models == 1 and n_quantities == 1:
+            axes = np.array([[axes]])
+        elif n_models == 1:
             axes = axes[np.newaxis, :]
-        if n_models == 1:
+        elif n_quantities == 1:
             axes = axes[:, np.newaxis]
 
-        colors = plt.cm.get_cmap('tab10', n_models)
+        # ------------------------------------------------------------
+        # Compute shared nice axis limits for each quantity column
+        # ------------------------------------------------------------
+        axis_limits_by_quantity = {}
 
-        # Track if we need to create legend (only when grouping is specified)
+        for q_idx, qname in enumerate(quantity_names):
+
+            all_sm_q = []
+            all_cm_q = []
+
+            for model_id in model_ids:
+
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == f"Q{q_idx + 1}")
+                    ]
+
+                if not df_model.empty:
+                    all_sm_q.append(df_model["sm_output"].values)
+                    all_cm_q.append(df_model["cm_output"].values)
+
+            # Fallback if no data exists for this quantity
+            if len(all_sm_q) == 0 or len(all_cm_q) == 0:
+                axis_limits_by_quantity[q_idx] = (0.0, 1.0)
+                continue
+
+            all_sm_q = np.concatenate(all_sm_q)
+            all_cm_q = np.concatenate(all_cm_q)
+
+            combined = np.concatenate([
+                all_sm_q,
+                all_cm_q
+            ])
+
+            min_val = np.nanmin(combined)
+            max_val = np.nanmax(combined)
+
+            axis_limits_by_quantity[q_idx] = compute_nice_limits(
+                min_val,
+                max_val,
+                n_ticks=5
+            )
+
+        # ------------------------------------------------------------
+        # Legend bookkeeping
+        # ------------------------------------------------------------
         legend_handles = []
         legend_labels = []
 
-        for i, qname in enumerate(quantity_names):
+        # Units used for RMSE
+        units_map = {
+            r"$h$": "m",
+            r"$\bar{U}$": "m/s",
+            r"$\delta_z$": "m",
+        }
 
-            # ===================================
-            # Collect all outputs for this quantity
-            # ===================================
-            all_surrogate = []
-            all_complex = []
+        # ------------------------------------------------------------
+        # Plot loop
+        # ------------------------------------------------------------
+        for row_idx, model_id in enumerate(model_ids):
 
-            for model_id in model_ids:
-                df_q = df_spatial[
+            # Model name
+            model_name_series = df_summary.loc[
+                df_summary["model_id"] == model_id,
+                "model_name"
+            ]
+
+            model_name = (
+                model_name_series.iloc[0]
+                if not model_name_series.empty
+                else f"M{model_id}"
+            )
+
+            for col_idx, qname in enumerate(quantity_names):
+
+                ax = axes[row_idx, col_idx]
+
+                df_model = df_spatial[
                     (df_spatial["model_id"] == model_id) &
-                    (df_spatial["quantity"] == f"Q{i + 1}")
+                    (df_spatial["quantity"] == f"Q{col_idx + 1}")
                     ]
 
-                all_surrogate.append(df_q["sm_output"].values)
-                all_complex.append(df_q["cm_output"].values)
+                # ----------------------------------------------------
+                # Handle missing data
+                # ----------------------------------------------------
+                if df_model.empty:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No data",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=18
+                    )
 
-            all_surrogate = np.concatenate(all_surrogate)
-            all_complex = np.concatenate(all_complex)
+                    ax.set_axis_off()
+                    continue
 
-            vmin = min(all_surrogate.min(), all_complex.min())
-            vmax = max(all_surrogate.max(), all_complex.max())
-            margin = 0.05 * (vmax - vmin)
-            lims = (vmin - margin, vmax + margin)
+                surrogate = df_model["sm_output"].values
+                deterministic = df_model["cm_output"].values
 
-            # ===================================
-            # Plot per surrogate model
-            # ===================================
-            for j, model_id in enumerate(model_ids):
+                axis_limits = axis_limits_by_quantity[col_idx]
 
-                ax = axes[i, j]
-
-                df_q = df_spatial[
-                    (df_spatial["model_id"] == model_id) &
-                    (df_spatial["quantity"] == f"Q{i + 1}")
-                    ]
-
-                model_name = df_summary[
-                    df_summary["model_id"] == model_id
-                    ]["model_name"].values[0]
-
-                surrogate = df_q["sm_output"].values
-                complex_m = df_q["cm_output"].values
-
+                # ----------------------------------------------------
+                # Scatter points
+                # ----------------------------------------------------
                 group_handles, group_labels = scatter_node_groups(
-                    ax, surrogate, complex_m,
-                    downstream_set, upstream_set,
-                    collect_legend=(i == 0 and j == 0),
-                    s=110, marker='*', alpha=0.9, edgecolor='k', linewidth=0.6
+                    ax,
+                    surrogate,
+                    deterministic,
+                    downstream_set,
+                    upstream_set,
+                    collect_legend=(
+                            row_idx == 0 and col_idx == 0
+                    ),
+                    s=80,
+                    alpha=0.85,
+                    marker="*"
                 )
+
                 legend_handles.extend(group_handles)
                 legend_labels.extend(group_labels)
 
-                # ---- Red dashed 1:1 line (no label) ----
+                # ----------------------------------------------------
+                # 1:1 line
+                # ----------------------------------------------------
                 ax.plot(
-                    lims,
-                    lims,
-                    linestyle='--',
-                    color='red',
-                    linewidth=1.5
+                    axis_limits,
+                    axis_limits,
+                    color="red",
+                    linestyle="--",
+                    lw=1.2
                 )
 
-                # ===================================
-                # Statistics
-                # ===================================
-                rmse = np.sqrt(np.mean((complex_m - surrogate) ** 2))
-                rho = spearmanr(complex_m, surrogate).correlation
+                # Same x/y limits within each quantity column
+                ax.set_xlim(axis_limits)
+                ax.set_ylim(axis_limits)
 
-                # Axis limits
-                ax.set_xlim(lims)
-                ax.set_ylim(lims)
-                ax.set_aspect("equal", adjustable="box")
+                # Keep the plotting area geometrically symmetric
+                ax.set_aspect(
+                    "equal",
+                    adjustable="box"
+                )
 
-                ax.set_title(f"{model_name} — {qname}", fontsize=20)
-                ax.set_xlabel("Surrogate Model", fontsize=18)
-                ax.set_ylabel("Deterministic Model", fontsize=18)
+                # ----------------------------------------------------
+                # Titles and axis labels
+                # ----------------------------------------------------
 
-                ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.tick_params(axis='both', direction='in', labelsize=20)
+                # Quantity title only on top row
+                if row_idx == 0:
+                    ax.set_title(
+                        f"{qname}",
+                        fontsize=22,
+                        pad=16
+                    )
 
-                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-                ax.minorticks_on()
-                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
+                # Same behavior as observed_vs_modeled_compare:
+                # x-axis label on first and last model rows
+                if row_idx == 0 or row_idx == n_models - 1:
+                    ax.set_xlabel(
+                        f"Surrogate Model {qname}",
+                        fontsize=22
+                    )
+
+                ax.set_ylabel(
+                    f"Deterministic Model {qname}",
+                    fontsize=22
+                )
+
+                # ----------------------------------------------------
+                # Model name on left side of each row
+                # ----------------------------------------------------
+                if col_idx == 0:
+                    ax.annotate(
+                        model_name,
+                        xy=(-0.48, 0.5),
+                        xycoords="axes fraction",
+                        rotation=90,
+                        va="center",
+                        ha="center",
+                        fontsize=22,
+                        fontweight="bold"
+                    )
+
+                # ----------------------------------------------------
+                # Tick formatting
+                #
+                # 6 ticks exactly.
+                # Display label every second tick.
+                # ----------------------------------------------------
+                ticks = np.linspace(
+                    axis_limits[0],
+                    axis_limits[1],
+                    6
+                )
+
+                # Remove tiny floating-point values around zero
+                ticks = np.array([
+                    0.0 if np.isclose(t, 0.0, atol=1e-12) else t
+                    for t in ticks
+                ])
+
+                ax.set_xticks(ticks)
+                ax.set_yticks(ticks)
+
+                xlabels = [
+                    format_tick_label(tick)
+                    if k % 2 == 0
+                    else ""
+                    for k, tick in enumerate(ticks)
+                ]
+
+                ylabels = [
+                    format_tick_label(tick)
+                    if k % 2 == 0
+                    else ""
+                    for k, tick in enumerate(ticks)
+                ]
+
+                ax.set_xticklabels(xlabels)
+                ax.set_yticklabels(ylabels)
+
+                ax.tick_params(
+                    axis="both",
+                    which="both",
+                    direction="in",
+                    labelsize=22
+                )
+
+                # ----------------------------------------------------
+                # Grid and spines
+                # ----------------------------------------------------
+                ax.grid(
+                    True,
+                    linestyle="--",
+                    linewidth=0.5,
+                    color="gray"
+                )
 
                 for spine in ax.spines.values():
-                    spine.set_linewidth(1.5)
+                    spine.set_linewidth(1.2)
 
-                # ---- Metrics box ----
-                textstr = (
-                    f"RMSE = {rmse:.3f}\n"
-                    f"$\\rho$ = {rho:.2f}"
+                # ----------------------------------------------------
+                # Metrics
+                # ----------------------------------------------------
+                residuals = deterministic - surrogate
+
+                rmse = np.sqrt(
+                    np.mean(residuals ** 2)
                 )
 
+                rho = spearmanr(
+                    deterministic,
+                    surrogate
+                ).correlation
+
+                unit = units_map.get(qname, "")
+
+                rmse_text = (
+                        f"RMSE={rmse:.3f}"
+                        + (f" {unit}" if unit else "")
+                )
+
+                metrics_text = (
+                    f"{rmse_text}\n"
+                    f"$\\rho$={rho:.2f}"
+                )
+
+                # ----------------------------------------------------
+                # Metrics box
+                # Same position/font size as observed-vs-modeled
+                # ----------------------------------------------------
                 ax.text(
-                    0.05,
-                    0.95,
-                    textstr,
+                    0.97,
+                    0.97,
+                    metrics_text,
                     transform=ax.transAxes,
-                    va='top',
-                    ha='left',
-                    fontsize=14,
-                    bbox=dict(facecolor="white", alpha=0.85, edgecolor="none")
+                    va="top",
+                    ha="right",
+                    fontsize=22,
+                    bbox=dict(
+                        facecolor="white",
+                        alpha=0.85,
+                        edgecolor="none"
+                    )
                 )
 
-        # Add general horizontal legend at the top if grouping was specified
+        # ------------------------------------------------------------
+        # Figure legend
+        # ------------------------------------------------------------
         if legend_handles:
-            fig.legend(legend_handles, legend_labels,
-                       loc='upper center',
-                       ncol=len(legend_handles),
-                       fontsize=14,
-                       framealpha=0.9,
-                       bbox_to_anchor=(0.5, 0.98))
-            fig.tight_layout(rect=[0, 0, 1, 0.96])
-        else:
-            fig.tight_layout(rect=[0, 0, 1, 0.95])
 
+            fig.legend(
+                legend_handles,
+                legend_labels,
+                loc="upper center",
+                ncol=len(legend_handles),
+                fontsize=18,
+                framealpha=0.9,
+                bbox_to_anchor=(0.5, 0.995)
+            )
+
+            fig.tight_layout(
+                rect=[0.08, 0.03, 1, 0.95]
+            )
+
+        else:
+
+            fig.tight_layout(
+                rect=[0.08, 0.03, 1, 0.98]
+            )
+
+        # ------------------------------------------------------------
+        # Save figure
+        # ------------------------------------------------------------
         save_path = os.path.join(
             save_folder,
-            "scatter_surrogate_vs_complex.svg"
+            "scatter_surrogate_vs_deterministic_rows_models_cols_targets.svg"
         )
 
-        fig.savefig(save_path, dpi=300)
+        fig.savefig(
+            save_path,
+            dpi=300,
+            bbox_inches="tight"
+        )
 
-        print(f"Surrogate vs deterministic plots saved to {save_path}")
+        print(
+            f"Surrogate vs deterministic figure saved to {save_path}"
+        )
 
     def plot_residuals(
             self,
@@ -1125,168 +1742,634 @@ class CalibrationAssessment:
             points_group_2=None,
             mm_col="sm_output",
             cm_col="cm_output",
-            figsize_per_panel=(6, 4)
+            figsize_per_panel=(6, 4),
+            residual_limits=None
     ):
         """
-        Residuals (Complex Model - Metamodel) vs Location Index for multiple models and quantities.
+        Residuals (Complex Model - Metamodel) vs Location Index.
+
         Rows    -> quantities
         Columns -> models
+
+        Residuals are defined as:
+
+            residual = Complex Model - Metamodel
 
         Parameters
         ----------
         df_spatial : pd.DataFrame
-            Must contain: model_id, quantity, mm_output, cm_output
+            Must contain:
+                model_id, quantity, mm_col, cm_col
+
         df_summary : pd.DataFrame
-            Must contain: model_id, model_name
+            Must contain:
+                model_id, model_name
+
         model_ids : list[int]
-            Model IDs to visualize
+            Model IDs to visualize.
+
         quantity_names : list[str]
-            Names for subplot titles (ordered as Q1, Q2, ...)
+            Quantity names ordered as Q1, Q2, Q3, ...
+
+            Example:
+                [
+                    r"$h$",
+                    r"$\\bar{U}$",
+                ]
+
         points_group_1 : list or range, optional
-            Node positions to color as downstream (gray).
+            First point group, e.g. downstream nodes.
+
         points_group_2 : list or range, optional
-            Node positions to color as upstream (black).
+            Second point group, e.g. upstream nodes.
+
         mm_col : str
-            Column name of metamodel output
+            Column name containing metamodel predictions.
+
         cm_col : str
-            Column name of complex model output
+            Column name containing complex/deterministic model outputs.
+
         figsize_per_panel : tuple
-            Size per subplot (width, height)
+            Width and height of each subplot.
+
+        residual_limits : dict, optional
+            User-defined residual limits for each quantity.
+
+            Example:
+
+                residual_limits = {
+                    "Q1": (-0.05, 0.05),
+                    "Q2": (-0.10, 0.10),
+                }
+
+            The same limits are applied to all models belonging to
+            a given quantity.
+
+            If a quantity is not specified, its limits are calculated
+            automatically from all models.
         """
+
         save_folder = self.save_folder
+
         n_models = len(model_ids)
         n_quantities = len(quantity_names)
 
-        # Convert to sets for faster lookup (only if provided)
-        downstream_set = set(points_group_1) if points_group_1 is not None else None
-        upstream_set = set(points_group_2) if points_group_2 is not None else None
+        # ============================================================
+        # Plot settings
+        # ============================================================
 
-        # Arrange subplots: rows = quantities, cols = models
+        # EXACT number of Y-axis ticks in every subplot.
+        #
+        # Seven is useful for symmetric residual plots because zero
+        # becomes the central tick:
+        #
+        #  -3  -2  -1   0   1   2   3
+        #
+        n_y_ticks = 7
+
+        # ============================================================
+        # Node groups
+        # ============================================================
+        downstream_set = (
+            set(points_group_1)
+            if points_group_1 is not None
+            else None
+        )
+
+        upstream_set = (
+            set(points_group_2)
+            if points_group_2 is not None
+            else None
+        )
+
+        # ============================================================
+        # Units
+        # ============================================================
+        units_map = {
+            r"$h$": "m",
+            r"$\bar{U}$": "m/s",
+            r"$\delta_z$": "m",
+        }
+
+        # ============================================================
+        # Create subplot grid
+        #
+        # Rows    = quantities
+        # Columns = models
+        # ============================================================
         fig, axes = plt.subplots(
             nrows=n_quantities,
             ncols=n_models,
-            figsize=(figsize_per_panel[0] * n_models,
-                     figsize_per_panel[1] * n_quantities),
+            figsize=(
+                figsize_per_panel[0] * n_models,
+                figsize_per_panel[1] * n_quantities
+            ),
             sharex=False,
-            sharey=False
+            sharey=False,
+            squeeze=False
         )
 
-        # Ensure axes is 2D array even if n_models or n_quantities = 1
-        if n_quantities == 1:
-            axes = axes[np.newaxis, :]
-        if n_models == 1:
-            axes = axes[:, np.newaxis]
-
-        # Track if we need to create legend (only when grouping is specified)
+        # ============================================================
+        # Legend bookkeeping
+        # ============================================================
         legend_handles = []
         legend_labels = []
 
+        # ============================================================
+        # LOOP OVER QUANTITIES
+        # ============================================================
         for i, qname in enumerate(quantity_names):
-            # ----- Compute per-variable global limits across all models -----
-            max_points = 0
+
+            quantity_id = f"Q{i + 1}"
+
+            # --------------------------------------------------------
+            # Collect residuals across ALL selected models for this
+            # quantity.
+            #
+            # This is used only if residual_limits is not explicitly
+            # provided for the quantity.
+            # --------------------------------------------------------
             all_residuals_q = []
+            max_points = 0
 
             for model_id in model_ids:
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) &
-                                      (df_spatial["quantity"] == f"Q{i + 1}")]
-                cm = df_model[cm_col].values
-                mm = df_model[mm_col].values
-                residuals = cm - mm
-                all_residuals_q.append(residuals)
-                max_points = max(max_points, len(df_model))
 
-            # Concatenate all residuals for this quantity
-            all_residuals_q = np.concatenate(all_residuals_q)
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == quantity_id)
+                    ]
 
-            # X-axis limits based on location indices (1 to n_points)
-            x_limits = (0.5, max_points + 0.5)
+                if df_model.empty:
+                    continue
 
-            # Y-axis limits based on all residuals for this quantity
-            min_residual = all_residuals_q.min()
-            max_residual = all_residuals_q.max()
-            margin = 0.05 * (max_residual - min_residual)
-            y_limits = (min_residual - margin, max_residual + margin)
+                cm = df_model[
+                    cm_col
+                ].to_numpy(dtype=float)
 
-            # ----- Plot each model in this row -----
+                mm = df_model[
+                    mm_col
+                ].to_numpy(dtype=float)
+
+                valid = (
+                        np.isfinite(cm) &
+                        np.isfinite(mm)
+                )
+
+                residuals = (
+                        cm[valid] -
+                        mm[valid]
+                )
+
+                if residuals.size > 0:
+                    all_residuals_q.append(
+                        residuals
+                    )
+
+                max_points = max(
+                    max_points,
+                    len(df_model)
+                )
+
+            # ========================================================
+            # X-axis limits
+            # ========================================================
+            if max_points > 0:
+                x_limits = (
+                    0.5,
+                    max_points + 0.5
+                )
+            else:
+                x_limits = (
+                    0.5,
+                    1.5
+                )
+
+            # ========================================================
+            # Y-axis residual limits
+            # ========================================================
+
+            # --------------------------------------------------------
+            # User-defined limits
+            # --------------------------------------------------------
+            if (
+                    residual_limits is not None
+                    and quantity_id in residual_limits
+            ):
+
+                y_limits = residual_limits[
+                    quantity_id
+                ]
+
+            # --------------------------------------------------------
+            # Automatic fallback
+            # --------------------------------------------------------
+            else:
+
+                if len(all_residuals_q) > 0:
+
+                    all_residuals_q = np.concatenate(
+                        all_residuals_q
+                    )
+
+                    max_abs = np.max(
+                        np.abs(all_residuals_q)
+                    )
+
+                    if np.isclose(
+                            max_abs,
+                            0.0
+                    ):
+                        max_abs = 1.0
+
+                    # 5 % margin
+                    max_abs *= 1.05
+
+                    y_limits = (
+                        -max_abs,
+                        max_abs
+                    )
+
+                else:
+
+                    y_limits = (
+                        -1.0,
+                        1.0
+                    )
+
+            # --------------------------------------------------------
+            # Validate limits
+            # --------------------------------------------------------
+            if y_limits[0] >= y_limits[1]:
+                raise ValueError(
+                    f"Invalid residual limits for {quantity_id}: "
+                    f"{y_limits}. Lower limit must be smaller "
+                    f"than upper limit."
+                )
+
+            # ========================================================
+            # EXACT SAME NUMBER OF Y TICKS FOR EVERY VARIABLE
+            # ========================================================
+            y_ticks = np.linspace(
+                y_limits[0],
+                y_limits[1],
+                n_y_ticks
+            )
+
+            # Remove tiny floating point values around zero
+            y_ticks = np.array([
+                0.0
+                if np.isclose(tick, 0.0, atol=1e-12)
+                else tick
+                for tick in y_ticks
+            ])
+
+            # ========================================================
+            # LOOP OVER MODELS
+            # ========================================================
             for j, model_id in enumerate(model_ids):
+
                 ax = axes[i, j]
 
-                df_model = df_spatial[(df_spatial["model_id"] == model_id) &
-                                      (df_spatial["quantity"] == f"Q{i + 1}")]
-                model_name = df_summary[df_summary["model_id"] == model_id]["model_name"].values[0]
+                df_model = df_spatial[
+                    (df_spatial["model_id"] == model_id) &
+                    (df_spatial["quantity"] == quantity_id)
+                    ]
 
-                cm = df_model[cm_col].values
-                mm = df_model[mm_col].values
-                residuals = cm - mm
-                n_points = len(cm)
+                # ====================================================
+                # Model name
+                # ====================================================
+                model_name_series = df_summary.loc[
+                    df_summary["model_id"] == model_id,
+                    "model_name"
+                ]
 
-                # Create location indices (1, 2, 3, ..., n_points)
-                location_indices = np.arange(1, n_points + 1)
-
-                group_handles, group_labels = scatter_node_groups(
-                    ax, location_indices, residuals,
-                    downstream_set, upstream_set,
-                    collect_legend=(i == 0 and j == 0),
-                    s=60, alpha=0.8, marker='*'
+                model_name = (
+                    model_name_series.iloc[0]
+                    if not model_name_series.empty
+                    else f"M{model_id}"
                 )
-                legend_handles.extend(group_handles)
-                legend_labels.extend(group_labels)
 
-                # Zero reference line
-                ax.axhline(0.0, color='red', linestyle='--', linewidth=1)
-
-                # Apply identical X and Y axis limits for all models in this row
-                ax.set_xlim(x_limits)
-                ax.set_ylim(y_limits)
-
-                # Titles and labels
-                ax.set_title(f"{model_name} — {qname}", fontsize=18)
-                ax.set_xlabel(f"Location Index", fontsize=16)
-                if j == 0:  # first column
-                    ax.set_ylabel(f"Residuals", fontsize=16)
-
-                # Tick formatting - synchronized across row
-                ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=10))
-                ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
-                ax.tick_params(axis='both', which='both', direction='in', labelsize=20)
-
-                # Grid and spines
-                ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
-                ax.minorticks_on()
-                ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.4)
-                for spine in ax.spines.values():
-                    spine.set_linewidth(1.5)
-
-                # Metrics box: RMSE and Mean residual
-                rmse = np.sqrt(np.mean(residuals ** 2))
-                mean_res = np.mean(residuals)
-
-                # Position text box at top right
-                ax.text(0.98, 0.98,
-                        f"RMSE={rmse:.3f} $\\mathrm{{m/s}}$\nMean={mean_res:.3f} $\\mathrm{{m/s}}$",
+                # ====================================================
+                # No data
+                # ====================================================
+                if df_model.empty:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No data",
+                        ha="center",
+                        va="center",
                         transform=ax.transAxes,
-                        va='top', ha='right',
-                        fontsize=12,
-                        bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+                        fontsize=16
+                    )
 
-        # Add general horizontal legend at the top if grouping was specified
+                    ax.set_axis_off()
+
+                    continue
+
+                # ====================================================
+                # Data
+                # ====================================================
+                cm = df_model[
+                    cm_col
+                ].to_numpy(dtype=float)
+
+                mm = df_model[
+                    mm_col
+                ].to_numpy(dtype=float)
+
+                valid = (
+                        np.isfinite(cm) &
+                        np.isfinite(mm)
+                )
+
+                # ----------------------------------------------------
+                # Preserve original spatial indices
+                # ----------------------------------------------------
+                location_indices = np.arange(
+                    1,
+                    len(df_model) + 1
+                )
+
+                location_indices = (
+                    location_indices[valid]
+                )
+
+                residuals = (
+                        cm[valid] -
+                        mm[valid]
+                )
+
+                # ====================================================
+                # No valid values
+                # ====================================================
+                if residuals.size == 0:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No valid data",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                        fontsize=16
+                    )
+
+                    ax.set_axis_off()
+
+                    continue
+
+                # ====================================================
+                # Residual scatter
+                # ====================================================
+                group_handles, group_labels = scatter_node_groups(
+                    ax,
+                    location_indices,
+                    residuals,
+                    downstream_set,
+                    upstream_set,
+                    collect_legend=(
+                            i == 0 and j == 0
+                    ),
+                    s=60,
+                    alpha=0.8,
+                    marker="*"
+                )
+
+                legend_handles.extend(
+                    group_handles
+                )
+
+                legend_labels.extend(
+                    group_labels
+                )
+
+                # ====================================================
+                # Zero residual reference line
+                # ====================================================
+                ax.axhline(
+                    0.0,
+                    color="red",
+                    linestyle="--",
+                    linewidth=1.2
+                )
+
+                # ====================================================
+                # Axis limits
+                #
+                # Identical Y limits across all models for the same
+                # quantity.
+                # ====================================================
+                ax.set_xlim(
+                    x_limits
+                )
+
+                ax.set_ylim(
+                    y_limits
+                )
+
+                # ====================================================
+                # Titles and labels
+                #
+                # Use normal hyphen instead of Unicode em dash to
+                # avoid problems with text.usetex=True.
+                # ====================================================
+                ax.set_title(
+                    f"{model_name} - {qname}",
+                    fontsize=18
+                )
+
+                ax.set_xlabel(
+                    "Location Index",
+                    fontsize=16
+                )
+
+                # Y label only on first column
+                if j == 0:
+
+                    unit = units_map.get(
+                        qname,
+                        ""
+                    )
+
+                    if unit:
+
+                        ax.set_ylabel(
+                            f"Residual [{unit}]",
+                            fontsize=16
+                        )
+
+                    else:
+
+                        ax.set_ylabel(
+                            "Residual",
+                            fontsize=16
+                        )
+
+                # ====================================================
+                # X-axis ticks
+                # ====================================================
+                ax.xaxis.set_major_locator(
+                    MaxNLocator(
+                        integer=True,
+                        nbins=10
+                    )
+                )
+
+                # ====================================================
+                # Y-axis ticks
+                #
+                # IMPORTANT:
+                # Do not use MaxNLocator here.
+                #
+                # np.linspace guarantees exactly the same number of
+                # major ticks for Q1, Q2, Q3, etc.
+                # ====================================================
+                ax.set_yticks(
+                    y_ticks
+                )
+
+                # ====================================================
+                # Tick appearance
+                # ====================================================
+                ax.tick_params(
+                    axis="both",
+                    which="both",
+                    direction="in",
+                    labelsize=20
+                )
+
+                # ====================================================
+                # Grid
+                # ====================================================
+                ax.grid(
+                    True,
+                    which="major",
+                    linestyle="--",
+                    linewidth=0.5,
+                    color="gray"
+                )
+
+                # Minor ticks
+                ax.minorticks_on()
+
+                ax.grid(
+                    True,
+                    which="minor",
+                    linestyle=":",
+                    linewidth=0.5,
+                    alpha=0.4
+                )
+
+                # ====================================================
+                # Spines
+                # ====================================================
+                for spine in ax.spines.values():
+                    spine.set_linewidth(
+                        1.5
+                    )
+
+                # ====================================================
+                # Statistics
+                # ====================================================
+                rmse = np.sqrt(
+                    np.mean(
+                        residuals ** 2
+                    )
+                )
+
+                mean_res = np.mean(
+                    residuals
+                )
+
+                unit = units_map.get(
+                    qname,
+                    ""
+                )
+
+                if unit:
+
+                    metrics_text = (
+                        f"RMSE={rmse:.3f} {unit}\n"
+                        f"Mean={mean_res:.3f} {unit}"
+                    )
+
+                else:
+
+                    metrics_text = (
+                        f"RMSE={rmse:.3f}\n"
+                        f"Mean={mean_res:.3f}"
+                    )
+
+                # ====================================================
+                # Metrics box
+                # ====================================================
+                ax.text(
+                    0.98,
+                    0.98,
+                    metrics_text,
+                    transform=ax.transAxes,
+                    va="top",
+                    ha="right",
+                    fontsize=12,
+                    bbox=dict(
+                        facecolor="white",
+                        alpha=0.8,
+                        edgecolor="none"
+                    )
+                )
+
+        # ============================================================
+        # General figure legend
+        # ============================================================
         if legend_handles:
-            fig.legend(legend_handles, legend_labels,
-                       loc='upper center',
-                       ncol=len(legend_handles),
-                       fontsize=14,
-                       framealpha=0.9,
-                       bbox_to_anchor=(0.5, 0.98))
-            fig.tight_layout(rect=[0, 0, 1, 0.96])
-        else:
-            fig.tight_layout(rect=[0, 0, 1, 0.95])
 
+            fig.legend(
+                legend_handles,
+                legend_labels,
+                loc="upper center",
+                ncol=len(legend_handles),
+                fontsize=14,
+                framealpha=0.9,
+                bbox_to_anchor=(0.5, 0.98)
+            )
+
+            fig.tight_layout(
+                rect=[
+                    0,
+                    0,
+                    1,
+                    0.96
+                ]
+            )
+
+        else:
+
+            fig.tight_layout(
+                rect=[
+                    0,
+                    0,
+                    1,
+                    0.95
+                ]
+            )
+
+        # ============================================================
+        # Save figure
+        # ============================================================
         if save_folder is not None:
             save_path = os.path.join(
                 save_folder,
                 "residuals_CM_vs_MM_individual_models.svg"
             )
-            fig.savefig(save_path, dpi=300)
-            print(f"Residuals plot saved to {save_path}")
+
+            fig.savefig(
+                save_path,
+                dpi=300,
+                bbox_inches="tight"
+            )
+
+            print(
+                f"Residuals plot saved to {save_path}"
+            )
 
 

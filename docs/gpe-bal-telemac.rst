@@ -351,9 +351,13 @@ The generated folders and their contents are as follows:
 
      For validating surrogate model with independent collocation points:
 
-   - **``collocation-points-validation.csv``**: Contains the parameter combinations used for surrogate validation, independent of the training data.
-   - **``collocation-points-validation.json``**: Stores the corresponding model outputs associated with the validation collocation points.
-   - **``model-results-validation.csv``**: Contains the model outputs obtained from evaluating the validation collocation points, used for assessing the surrogate model's accuracy.
+   Every validation experiment is stored under its own number ``<n>``, starting at 1, so that repeating a validation does not mix its results with those of the previous one:
+
+   - **``collocation-points-validation_<n>.csv``**: Contains the parameter combinations used for surrogate validation, independent of the training data.
+   - **``model-results-validation_<n>.json``**: Stores the corresponding model outputs associated with the validation collocation points.
+   - **``model-results-validation_<n>.csv``**: Contains the model outputs obtained from evaluating the validation collocation points, used for assessing the surrogate model's accuracy.
+
+   ``TelemacModel.validation_paths()`` returns the three paths of the latest attempt, or of a given one. The unnumbered files written by versions up to 1.9.0 are read when no numbered attempt exists.
 
 
 ---

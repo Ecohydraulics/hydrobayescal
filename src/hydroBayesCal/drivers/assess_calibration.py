@@ -243,6 +243,7 @@ def main():
                 sm_upper_ci_split,
                 sm_lower_ci_split,
                 obs_split,
+                err_split,
                 coordinates,
                 model_names=[
                                      r"MO-GPE: $h, \bar{U}, \delta_{z}$",
@@ -250,8 +251,8 @@ def main():
                                      r"SO-GPE: $h$",
                                      r"SO-GPE: $\bar{U}$",
                                      r"SO-GPE: $\delta_{z}$",
-                                     r"Benchmark: $k_{s} = \mathrm{mean}$",
-                                     r"Benchmark: $k_{s} = 3 \times d_{50}$"
+                                     # r"Benchmark: $k_{s} = \mathrm{mean}$",
+                                     # r"Benchmark: $k_{s} = 3 \times d_{50}$"
                                  ],
                 quantity_names=calibration_names,
                 plot_models=list(range(5)))
