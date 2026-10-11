@@ -23,12 +23,12 @@ and TELEMAC bindings but are not yet extracted here.
 
 Choosing the calibration quantities after the runs: the binding writes *every*
 extractable quantity to ``results-detailed-*.csv`` for every run x control point,
-regardless of ``calibration_quantities``, and mirrors that table to
+regardless of ``calibration_quantities``, and keeps the rows of all runs in
 ``restart_data/detailed-model-outputs.csv``. To re-calibrate on a different
 subset without re-running OpenFOAM, change ``calibration_quantities`` (or pass
 ``--calibration_quantities "U_x TKE"``) and run with ``--only_bal_mode True``:
 ``output_processing`` rebuilds the surrogate training data for the new subset
-from that mirrored table.
+from that table.
 """
 
 import os

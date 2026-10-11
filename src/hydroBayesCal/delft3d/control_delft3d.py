@@ -824,11 +824,9 @@ class Delft3DModel(HydroSimulations):
             logger.info(f"Deleted run folder to free disk space: {case_dir}")
 
     def output_processing(self, output_data_path=None, **kwargs):
-        """Load existing results for BAL restart."""
-        if output_data_path and os.path.isfile(output_data_path):
-            with open(output_data_path, "r") as f:
-                data = json.load(f)
-            self.restart_collocation_points = np.array(data["collocation_points"])
-            self.model_evaluations = np.array(data["model_evaluations"])
-            return self.model_evaluations
-        raise FileNotFoundError(f"Output data not found: {output_data_path}")
+        """Load stored model outputs for a BAL restart or a pure re-analysis.
+
+        The stored matrix is returned as it is when it was written for the ``calibration_quantities`` configured now. When they differ it is rebuilt from ``restart_data/detailed-model-outputs.csv``, which holds every quantity in ``extraction_quantities`` for every run x control point, so any extracted quantity can become a calibration target on a restart with ``only_bal_mode`` without re-running Delft3D. See :meth:`~hydroBayesCal.hysim.HydroSimulations._load_stored_outputs`.
+        """
+        return self._load_stored_outputs(
+            output_data_path, run_range_filtering=kwargs.get("run_range_filtering"))

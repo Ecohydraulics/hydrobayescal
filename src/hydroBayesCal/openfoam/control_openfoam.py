@@ -1111,7 +1111,6 @@ class OpenFOAMModel(HydroSimulations):
 
                     # Save cumulative results after every run
                     self._save_all_results(current_cp, all_detailed_results)
-                    self._mirror_detailed_results_for_reselection()
 
                 # Delete the run folder immediately to free disk space
                 if self.delete_complex_outputs:
@@ -1150,7 +1149,6 @@ class OpenFOAMModel(HydroSimulations):
             else:
                 all_cp = design
             self._save_all_results(all_cp, all_detailed_results)
-            self._mirror_detailed_results_for_reselection()
 
     def _extract_at_control_points(self, coords, U, k=None, alpha=None):
         """Extract velocity, TKE and water fraction at control points.
@@ -1231,159 +1229,12 @@ class OpenFOAMModel(HydroSimulations):
             shutil.rmtree(case_dir)
             logger.info(f"Deleted run folder to free disk space: {case_dir}")
 
-    #: Filename of the quantity-independent detailed results table copied into
-    #: ``restart_data`` so ``output_processing`` can rebuild ``model_evaluations``
-    #: for any subset of quantities without new simulations.
-    RESELECTION_DETAILED_FILE = "detailed-model-outputs.csv"
-
-    def _mirror_detailed_results_for_reselection(self):
-        """Copy the detailed per-point results table to a quantity-independent path.
-
-        ``calibration_folder`` is named after ``calibration_quantities``
-        (``calibration-data/<q1>_<q2>_.../``), so a later run that picks a
-        different subset lands in a fresh, empty folder and cannot see the
-        detailed CSV the original run wrote. This mirror in ``restart_data`` is
-        what :meth:`output_processing` reads to rebuild ``model_evaluations`` for
-        the new subset, so choosing the calibration quantities *after* the
-        expensive runs are done needs no new OpenFOAM runs. The detailed table
-        already holds every quantity in :attr:`EXTRACTABLE_QUANTITIES` for every
-        run x control point regardless of what was calibrated, so this is a
-        straight copy of the newest full table.
-        """
-        quantities_str = "_".join(self.calibration_quantities)
-        src = os.path.join(self.calibration_folder, f"results-detailed-{quantities_str}.csv")
-        if not os.path.isfile(src):
-            return
-        dst = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
-        shutil.copyfile(src, dst)
-        logger.info(f"Mirrored detailed results for quantity re-selection to {dst}")
-
-    def _rebuild_model_evaluations_from_detailed(self):
-        """Assemble the GP training matrix for the current ``calibration_quantities``
-        from the quantity-independent detailed results table.
-
-        Returns
-        -------
-        (model_evaluations, collocation_points) : tuple of numpy.ndarray
-            ``model_evaluations`` has shape ``[n_runs, nloc * n_calibration_quantities]``
-            with columns ordered exactly as :meth:`run_multiple_simulations` builds
-            them: for each control point, every calibration quantity in order.
-            ``collocation_points`` has shape ``[n_runs, n_params]``.
-
-        Notes
-        -----
-        Rows for one run are matched to control points by their order in the
-        table, which is the order :meth:`run_multiple_simulations` wrote them
-        (``for pt_idx, cp in enumerate(self.control_points)``) and the same order
-        :meth:`_load_control_points` restores from the measurements file. A count
-        mismatch against ``nloc`` is raised rather than guessed past.
-        """
-        path = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
-        if not os.path.isfile(path):
-            raise FileNotFoundError(
-                f"Cannot rebuild model_evaluations for {self.calibration_quantities}: "
-                f"{path} not found. Run the initial simulations once (with any "
-                "calibration_quantities) so the detailed per-point table is written."
-            )
-        with open(path, newline="") as f:
-            rows = list(csv.DictReader(f))
-        if not rows:
-            raise ValueError(f"Detailed results table is empty: {path}")
-
-        missing = [q for q in self.calibration_quantities if q not in rows[0]]
-        if missing:
-            available = [c for c in rows[0] if c in self.EXTRACTABLE_QUANTITIES]
-            raise ValueError(
-                f"Detailed results table {path} has no column(s) for {missing}. "
-                f"Quantity columns present: {available}."
-            )
-
-        by_run = {}
-        for r in rows:
-            by_run.setdefault(int(float(r["run_idx"])), []).append(r)
-
-        param_names = list(self.calibration_parameters)
-        evaluations, collocation = [], []
-        for run_idx in sorted(by_run):
-            run_rows = by_run[run_idx]
-            if self.nloc and len(run_rows) != self.nloc:
-                raise ValueError(
-                    f"Run {run_idx} in {path} has {len(run_rows)} control-point rows, "
-                    f"expected nloc={self.nloc}. The detailed table and the current "
-                    "measurements file disagree - re-run the simulations or restore "
-                    "the measurements file they were extracted with."
-                )
-            vec = []
-            for loc_row in run_rows:            # already in control-point order
-                for q in self.calibration_quantities:
-                    vec.append(float(loc_row[q]))
-            evaluations.append(vec)
-            collocation.append([float(run_rows[0][p]) for p in param_names])
-
-        return np.array(evaluations), np.array(collocation)
-
     def output_processing(self, output_data_path=None, **kwargs):
-        """Load stored model outputs for a BAL restart or pure re-analysis.
+        """Load stored model outputs for a BAL restart or a pure re-analysis.
 
-        Fast path (unchanged behaviour): the frozen ``initial-model-outputs.json``
-        was written with the same ``calibration_quantities`` that are configured
-        now, so its ``model_evaluations`` matrix is returned as-is.
+        The stored matrix is returned as it is when it was written for the ``calibration_quantities`` configured now. When they differ it is rebuilt from ``restart_data/detailed-model-outputs.csv``, which holds every quantity in :attr:`EXTRACTABLE_QUANTITIES` for every run x control point, so the calibration quantities can be chosen after the expensive runs: restart with ``--only_bal_mode True --calibration_quantities "..."`` and only the surrogate and BAL are recomputed. See :meth:`~hydroBayesCal.hysim.HydroSimulations._load_stored_outputs`.
 
-        Re-selection path: the configured ``calibration_quantities`` differ from
-        the ones in that JSON, so the stored matrix is for the wrong quantities.
-        It is rebuilt from ``restart_data/detailed-model-outputs.csv`` (the
-        quantity-independent per-run x per-point table) by slicing out the
-        requested quantities. This is what lets the calibration quantities be
-        chosen after the expensive runs: extract everything once, then re-run
-        with ``--only_bal_mode True --calibration_quantities "..."`` and only the
-        surrogate + BAL are recomputed.
-
-        ``run_range_filtering=(lo, hi)`` (1-indexed, inclusive), if passed by the
-        driver, trims the rebuilt matrix to those run rows. It is not applied on
-        the fast path, which stays byte-for-byte the previous behaviour.
+        ``run_range_filtering=(lo, hi)`` (1-indexed, inclusive), if passed by the driver, trims a rebuilt matrix to those runs.
         """
-        data = None
-        if output_data_path and os.path.isfile(output_data_path):
-            with open(output_data_path, "r") as f:
-                data = json.load(f)
-
-        # An older JSON without a recorded quantity list is trusted as-is, so this
-        # stays backward compatible: the rebuild path only triggers when the stored
-        # quantities are known and actually differ from what is configured now.
-        stored_q = data.get("calibration_quantities") if data is not None else None
-        same_quantities = (
-            data is not None
-            and (stored_q is None or list(stored_q) == list(self.calibration_quantities))
-        )
-
-        if same_quantities:
-            self.restart_collocation_points = np.array(data["collocation_points"])
-            self.model_evaluations = np.array(data["model_evaluations"])
-            return self.model_evaluations
-
-        # Re-selection / no matching JSON: rebuild from the detailed table.
-        mirror = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
-        if data is None and not os.path.isfile(mirror):
-            raise FileNotFoundError(
-                f"Output data not found: neither {output_data_path} nor {mirror} exists. "
-                "Run the initial simulations first to execute only Bayesian Active Learning."
-            )
-        if data is not None:
-            logger.info(
-                f"output_processing: configured calibration_quantities {self.calibration_quantities} "
-                f"differ from the stored run's {data.get('calibration_quantities')}; rebuilding "
-                f"model_evaluations from {os.path.basename(mirror)} (no new simulations)."
-            )
-
-        model_evaluations, collocation = self._rebuild_model_evaluations_from_detailed()
-
-        run_range = kwargs.get("run_range_filtering")
-        if run_range is not None:
-            lo, hi = int(run_range[0]), int(run_range[1])
-            hi = min(hi, model_evaluations.shape[0])
-            model_evaluations = model_evaluations[lo - 1:hi]
-            collocation = collocation[lo - 1:hi]
-
-        self.restart_collocation_points = collocation
-        self.model_evaluations = model_evaluations
-        return self.model_evaluations
+        return self._load_stored_outputs(
+            output_data_path, run_range_filtering=kwargs.get("run_range_filtering"))

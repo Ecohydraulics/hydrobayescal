@@ -14,7 +14,10 @@ import numpy as np
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from hydroBayesCal.utils.config_logging import logger, logger_error
+from hydroBayesCal.utils.config_logging import logger, logger_error, logger_warn
+
+#: Name of the detailed results table in ``restart_data``: every extracted quantity for every run x calibration point, whichever calibration targets were active when the run was simulated.
+DETAILED_OUTPUTS_FILE = "detailed-model-outputs.csv"
 
 
 class HydroSimulations(ABC):
@@ -745,6 +748,7 @@ class HydroSimulations(ABC):
           point, with the point coordinates and every extracted quantity
         - ``results-detailed-{quantities}.npy``: the same table as a structured
           array
+        - ``detailed-model-outputs.csv``: written to ``restart_data_folder``, the same rows for all runs made under any calibration targets, see :meth:`_load_stored_outputs`
 
         Parameters
         ----------
@@ -752,9 +756,7 @@ class HydroSimulations(ABC):
             Calibration parameter values tested so far, shape
             ``(n_runs, n_params)``.
         detailed_results : list of dict, optional
-            Rows to append to the detailed results table, one dict per run x
-            calibration point. All values must be numeric. When omitted, only
-            the array/JSON/CSV outputs above are written.
+            Rows to store in the detailed results table, one dict per run x calibration point. All values must be numeric. Rows of a run that is already stored replace it, so passing the rows of a whole block after every run is safe. When omitted, only the array/JSON/CSV outputs above are written.
 
         Returns
         -------
@@ -808,27 +810,234 @@ class HydroSimulations(ABC):
             detailed_csv_path = os.path.join(
                 self.calibration_folder, f"results-detailed-{quantities_str}.csv"
             )
-            fieldnames = list(detailed_results[0].keys())
-            # Append if file exists, write fresh if not
-            file_exists = os.path.isfile(detailed_csv_path)
-            with open(detailed_csv_path, mode="a", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                if not file_exists:
-                    writer.writeheader()
-                writer.writerows(detailed_results)
+            # Merged by run rather than appended: the bindings save after every run and once more after the loop, each time with all rows of the block, so a blind append stored run 0 of an N-run block N+1 times.
+            fieldnames, full_rows = HydroSimulations._merge_detailed_rows(
+                detailed_csv_path, detailed_results)
             logger.info(f"Saved detailed results CSV to {detailed_csv_path}")
 
-            # Also save as npy structured array. Rebuilt from the full CSV (not just
-            # this call's new rows) so the .npy reflects the complete history across
-            # all calls/BAL iterations, matching what's on disk in the CSV.
-            full_rows = list(csv.DictReader(open(detailed_csv_path, newline="")))
+            # Also save as npy structured array, from the same merged rows, so the .npy and the .csv hold the complete history across all calls.
             dtype = [(k, "f8") for k in fieldnames]
-            arr = np.array([tuple(float(r[k]) for k in fieldnames) for r in full_rows], dtype=dtype)
+            arr = np.array(
+                [tuple(HydroSimulations._as_float(r.get(k)) for k in fieldnames)
+                 for r in full_rows], dtype=dtype)
             npy_path = os.path.join(
                 self.calibration_folder, f"results-detailed-{quantities_str}.npy"
             )
             np.save(npy_path, arr)
             logger.info(f"Saved detailed results npy to {npy_path}")
+
+            # The same rows go into one table in restart_data that does not depend on the calibration targets. calibration_folder is named after them, so a restart on other targets starts in an empty folder; this table is what lets it reuse the runs already simulated (_load_stored_outputs). It is merged on its own rather than copied from the per-target table, which after such a restart holds only the runs made since.
+            HydroSimulations._merge_detailed_rows(
+                os.path.join(self.restart_data_folder, DETAILED_OUTPUTS_FILE),
+                detailed_results)
+
+    @staticmethod
+    def _as_float(value):
+        """A stored table cell as float; an empty or missing cell is NaN."""
+        if value is None or value == "":
+            return float("nan")
+        return float(value)
+
+    @staticmethod
+    def _merge_detailed_rows(path, rows, run_key="run_idx"):
+        """Merge the rows of one or more runs into a detailed results table.
+
+        The table holds one row per run x calibration point. Rows of a run that is already stored are replaced, rows of all other runs are kept, so saving the same run twice leaves one copy and the call is safe to repeat. Columns are matched by name: a column that only the new rows or only the stored rows have is kept, and the cells it lacks are written as ``nan``. The file is replaced in one step, so an interrupted save cannot truncate the history.
+
+        Parameters
+        ----------
+        path : str
+            Table to update (``.csv``). Created when it does not exist.
+        rows : list of dict
+            Rows to store, one dict per run x calibration point, numeric values.
+        run_key : str
+            Column that identifies the run. Falls back to the first column of ``rows`` when that name is absent.
+
+        Returns
+        -------
+        tuple
+            ``(fieldnames, all_rows)`` of the table as written.
+        """
+        rows = list(rows)
+        if run_key not in rows[0]:
+            run_key = next(iter(rows[0]))
+
+        stored_rows, fieldnames = [], []
+        if os.path.isfile(path):
+            with open(path, newline="") as f:
+                reader = csv.DictReader(f)
+                stored_rows = list(reader)
+                fieldnames = list(reader.fieldnames or [])
+        for row in rows:
+            for name in row:
+                if name not in fieldnames:
+                    fieldnames.append(name)
+
+        resaved = {HydroSimulations._as_float(row[run_key]) for row in rows}
+        kept = [row for row in stored_rows
+                if HydroSimulations._as_float(row.get(run_key)) not in resaved]
+        all_rows = kept + rows
+
+        temporary_path = path + ".tmp"
+        with open(temporary_path, mode="w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, restval="nan")
+            writer.writeheader()
+            writer.writerows(all_rows)
+        os.replace(temporary_path, path)
+        return fieldnames, all_rows
+
+    #: Filename of the detailed results table in ``restart_data`` that
+    #: :meth:`_load_stored_outputs` rebuilds ``model_evaluations`` from.
+    RESELECTION_DETAILED_FILE = DETAILED_OUTPUTS_FILE
+
+    def _rebuild_model_evaluations_from_detailed(self):
+        """Assemble the GP training matrix for the current ``calibration_quantities`` from the detailed results table in ``restart_data``.
+
+        Returns
+        -------
+        (model_evaluations, collocation_points) : tuple of numpy.ndarray
+            ``model_evaluations`` has shape ``[n_runs, nloc * n_calibration_quantities]`` with the quantities interleaved per location, the ordering every binding and the surrogate code assume. ``collocation_points`` has shape ``[n_runs, n_params]``.
+
+        Notes
+        -----
+        Rows of one run are matched to calibration points by their order in the table, which is the order the binding wrote them in and the order of the calibration points file. A count that does not match ``nloc`` is raised rather than guessed past. The one exception are tables written up to version 1.9.0, which repeat the rows of a run: identical repeats are dropped, because they carry no information.
+        """
+        path = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(
+                f"Cannot rebuild model_evaluations for {self.calibration_quantities}: "
+                f"{path} not found. Run the initial simulations once (with any "
+                "calibration_quantities) so the detailed per-point table is written."
+            )
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            raise ValueError(f"Detailed results table is empty: {path}")
+
+        run_key = "run_idx" if "run_idx" in rows[0] else next(iter(rows[0]))
+        param_names = list(self.calibration_parameters)
+        missing = [q for q in self.calibration_quantities if q not in rows[0]]
+        if missing:
+            available = [c for c in rows[0]
+                         if c not in (run_key, "x", "y", "z", *param_names)]
+            raise ValueError(
+                f"Detailed results table {path} has no column(s) for {missing}. "
+                f"Quantity columns present: {available}."
+            )
+
+        by_run = {}
+        for r in rows:
+            by_run.setdefault(int(float(r[run_key])), []).append(r)
+
+        evaluations, collocation = [], []
+        repeated_runs = 0
+        for run_idx in sorted(by_run):
+            run_rows = by_run[run_idx]
+            if self.nloc and len(run_rows) != self.nloc:
+                blocks = [run_rows[i:i + self.nloc]
+                          for i in range(0, len(run_rows), self.nloc)]
+                if (len(run_rows) % self.nloc == 0
+                        and all(block == blocks[0] for block in blocks[1:])):
+                    run_rows = blocks[-1]
+                    repeated_runs += 1
+                else:
+                    raise ValueError(
+                        f"Run {run_idx} in {path} has {len(run_rows)} control-point rows, "
+                        f"expected nloc={self.nloc}. The detailed table and the current "
+                        "measurements file disagree - re-run the simulations or restore "
+                        "the measurements file they were extracted with."
+                    )
+            vec = []
+            for loc_row in run_rows:            # already in control-point order
+                for q in self.calibration_quantities:
+                    vec.append(float(loc_row[q]))
+            evaluations.append(vec)
+            collocation.append([float(run_rows[0][p]) for p in param_names])
+
+        if repeated_runs:
+            logger.info(
+                f"{os.path.basename(path)} repeats the rows of {repeated_runs} run(s), as "
+                "tables written up to version 1.9.0 do; the identical repeats were ignored.")
+        return np.array(evaluations), np.array(collocation)
+
+    def _load_stored_outputs(self, output_data_path=None, run_range_filtering=None):
+        """Load stored model outputs for a BAL restart or a pure re-analysis.
+
+        Shared by the bindings that keep their results through
+        :meth:`_save_all_results`; their ``output_processing`` delegates here.
+
+        Fast path: ``initial-model-outputs.json`` was written with the ``calibration_quantities`` that are configured now, so its ``model_evaluations`` matrix is returned as stored.
+
+        Re-selection path: the configured ``calibration_quantities`` differ from the ones in that JSON, so the stored matrix belongs to other calibration targets. It is rebuilt from ``restart_data/detailed-model-outputs.csv`` by slicing out the requested quantities. This is what lets the calibration targets be chosen after the expensive runs: extract everything once, then restart with ``only_bal_mode`` and another ``calibration_quantities``, and only the surrogate and BAL are recomputed.
+
+        Parameters
+        ----------
+        output_data_path : str, optional
+            Path to ``initial-model-outputs.json``.
+        run_range_filtering : tuple of int, optional
+            ``(lo, hi)``, 1-indexed and inclusive. Trims a rebuilt matrix to those runs. It is not applied on the fast path, which returns every stored run as it always has; the number of runs found and used is logged for both paths, so the difference does not go unnoticed.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``model_evaluations``, also stored on the instance together with ``restart_collocation_points``.
+        """
+        data = None
+        if output_data_path and os.path.isfile(output_data_path):
+            with open(output_data_path, "r") as f:
+                data = json.load(f)
+
+        # An older JSON without a recorded quantity list is trusted as-is, so this stays backward compatible: the rebuild path only triggers when the stored quantities are known and actually differ from what is configured now.
+        stored_q = data.get("calibration_quantities") if data is not None else None
+        same_quantities = (
+            data is not None
+            and (stored_q is None or list(stored_q) == list(self.calibration_quantities))
+        )
+
+        if same_quantities:
+            self.restart_collocation_points = np.array(data["collocation_points"])
+            self.model_evaluations = np.array(data["model_evaluations"])
+            logger.info(
+                f"Loaded {self.model_evaluations.shape[0]} stored run(s) for "
+                f"{list(self.calibration_quantities)} from "
+                f"{os.path.basename(output_data_path)}.")
+            return self.model_evaluations
+
+        # Re-selection / no matching JSON: rebuild from the detailed table.
+        detailed_path = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
+        if data is None and not os.path.isfile(detailed_path):
+            raise FileNotFoundError(
+                f"Output data not found: neither {output_data_path} nor {detailed_path} exists. "
+                "Run the initial simulations first to execute only Bayesian Active Learning."
+            )
+        if data is not None:
+            logger.info(
+                f"Configured calibration_quantities {self.calibration_quantities} differ from "
+                f"the stored run's {data.get('calibration_quantities')}; rebuilding "
+                f"model_evaluations from {os.path.basename(detailed_path)} (no new simulations)."
+            )
+
+        model_evaluations, collocation = self._rebuild_model_evaluations_from_detailed()
+
+        n_stored = model_evaluations.shape[0]
+        if run_range_filtering is not None:
+            lo, hi = int(run_range_filtering[0]), int(run_range_filtering[1])
+            hi = min(hi, n_stored)
+            model_evaluations = model_evaluations[lo - 1:hi]
+            collocation = collocation[lo - 1:hi]
+        n_used = model_evaluations.shape[0]
+        if n_used < n_stored:
+            logger_warn.warning(
+                f"{n_stored} stored runs are available for {list(self.calibration_quantities)}, "
+                f"but only {n_used} are used because of the requested run range. Set "
+                f"sampling['init_runs'] = {n_stored} to train the surrogate on all of them.")
+        else:
+            logger.info(
+                f"Rebuilt {n_used} stored run(s) for {list(self.calibration_quantities)}.")
+
+        self.restart_collocation_points = collocation
+        self.model_evaluations = model_evaluations
+        return self.model_evaluations
 
     def save_calibration_data(self, it, collocation_points, bayesian_dict):
         """Write the per-iteration BAL bookkeeping to ``calibration-data/<quantities>/``.

@@ -128,3 +128,95 @@ def test_the_initial_design_stays_in_the_leading_rows(saver):
     restart = np.loadtxt(path, delimiter=",", skiprows=1, max_rows=2, ndmin=2)
 
     assert restart.tolist() == [[10.0], [20.0]]
+
+
+# --------------------------------------------------------------------------- #
+# the call pattern the bindings actually use
+# --------------------------------------------------------------------------- #
+def _binding_rows(run_idx, n=2):
+    """Rows as the OpenFOAM and Delft3D bindings build them.
+
+    Keyed by ``run_idx`` and carrying every extracted quantity, whichever of them is
+    a calibration target at the moment.
+    """
+    return [{"run_idx": run_idx, "ks": 0.01 * (run_idx + 1), "x": float(p), "y": 0.0,
+             "U_x": run_idx + p / 10, "TKE": 0.1 * run_idx + p / 100}
+            for p in range(n)]
+
+
+def _read_csv(path):
+    import csv
+    with open(path, newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def test_saving_the_cumulative_rows_after_every_run_does_not_repeat_them(saver):
+    """One row set per run, however often the block is saved.
+
+    ``run_multiple_simulations`` saves after every run, so that a crash loses one run
+    and not the block, and once more after the loop, each time with all rows of the
+    block. Appending them blindly stored run 0 of an N-run block N+1 times, which
+    inflated the table and made it impossible to match rows to calibration points.
+    """
+    rows = []
+    for run_idx in range(3):
+        rows.extend(_binding_rows(run_idx))
+        _save(saver, run_idx, run_idx + 1, list(rows))
+    _save(saver, 2, 3, list(rows))  # the final save after the loop
+
+    arr = np.load(f"{saver.calibration_folder}/results-detailed-U_x.npy")
+    table = _read_csv(f"{saver.calibration_folder}/results-detailed-U_x.csv")
+
+    assert list(arr["run_idx"]) == [0, 0, 1, 1, 2, 2]
+    assert [float(r["run_idx"]) for r in table] == [0, 0, 1, 1, 2, 2]
+    assert arr["U_x"][-1] == pytest.approx(2.1)
+
+
+def test_a_rerun_replaces_the_stored_rows_of_that_run(saver):
+    """A run simulated again, e.g. after a failure, must not leave its old rows behind."""
+    failed = [dict(row, U_x=float("nan"), TKE=float("nan")) for row in _binding_rows(0)]
+    _save(saver, 0, 1, failed)
+    _save(saver, 0, 1, _binding_rows(0))
+
+    arr = np.load(f"{saver.calibration_folder}/results-detailed-U_x.npy")
+
+    assert list(arr["run_idx"]) == [0, 0]
+    assert np.isfinite(arr["U_x"]).all()
+
+
+def test_restart_table_survives_a_change_of_calibration_targets(saver, tmp_path):
+    """The table in ``restart_data`` keeps the runs made under other calibration targets.
+
+    A different target set gets its own, initially empty calibration folder, so the
+    per-target table of that folder knows only the runs simulated since the switch. The
+    table in ``restart_data`` is what a re-selection of the calibration targets reads,
+    and it has to hold all runs, not a copy of whichever per-target table was written
+    last.
+    """
+    _save(saver, 1, 2, _binding_rows(0) + _binding_rows(1))
+
+    other_folder = tmp_path / "calibration-data-TKE"
+    other_folder.mkdir()
+    saver.calibration_folder = str(other_folder)
+    saver.calibration_quantities = ["TKE"]
+    _save(saver, 2, 3, _binding_rows(2))  # one BAL run under the new targets
+
+    restart = _read_csv(f"{saver.restart_data_folder}/detailed-model-outputs.csv")
+    per_target = np.load(f"{other_folder}/results-detailed-TKE.npy")
+
+    assert [float(r["run_idx"]) for r in restart] == [0, 0, 1, 1, 2, 2]
+    assert [float(r["TKE"]) for r in restart][-1] == pytest.approx(0.21)
+    assert list(per_target["run_idx"]) == [2, 2]
+
+
+def test_a_quantity_extracted_only_by_later_runs_gets_its_own_column(saver):
+    """Columns are merged, never shifted: earlier runs read NaN for the new quantity."""
+    early = [{k: v for k, v in row.items() if k != "TKE"} for row in _binding_rows(0)]
+    _save(saver, 0, 1, early)
+    _save(saver, 1, 2, _binding_rows(1))
+
+    restart = _read_csv(f"{saver.restart_data_folder}/detailed-model-outputs.csv")
+
+    assert [float(r["U_x"]) for r in restart] == pytest.approx([0.0, 0.1, 1.0, 1.1])
+    assert np.isnan([float(r["TKE"]) for r in restart[:2]]).all()
+    assert [float(r["TKE"]) for r in restart[2:]] == pytest.approx([0.1, 0.11])
