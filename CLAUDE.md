@@ -22,6 +22,7 @@ pytest                                   # test runner of record; the suite in t
 python env-scripts/sync-example-drivers.py  # after editing drivers/bal_telemac.py: regenerate its example copies
 sphinx-build -b html -W docs docs/_build/html
 ruff check src                           # linter declared in the dev extra
+ruff check --target-version py310 --select E9,F63,F7,F82 src tests examples env-scripts docs/conf.py   # the error-only gate CI enforces
 python -m build && twine check dist/*    # local release sanity check
 ```
 
@@ -178,4 +179,5 @@ with no model instance or folder conventions involved.
   `bash env-scripts/update-large-file-ignores.sh` and commit the updated `.gitignore`. Enforced by
   pre-commit locally and by `.github/workflows/check-file-size.yml` server-side.
 * Branch off `main` and open a pull request rather than pushing to `main`.
+* `.github/workflows/tests.yml` runs on every push to any branch and on every pull request: the error-only ruff gate, `pytest` on Python 3.10 and 3.12 (CPU build of torch), and the documentation build with the Read the Docs inputs (`docs/requirements-docs.txt`, mocked heavy imports, `-W`). A workflow runs for a push only if the pushed branch contains the workflow file.
 * Update `CHANGELOG.md` (Keep a Changelog format) for user-visible changes.
