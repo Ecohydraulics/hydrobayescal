@@ -475,7 +475,7 @@ class HydroSimulations(ABC):
             calibration_quantities,
             extraction_quantities,
             gpe_error=0.0,
-            measurement_error=0.0,
+            measurement_error=0.10,
             model_structural_error=0.0):
         """
         Reads calibration point data and constructs observation variances.

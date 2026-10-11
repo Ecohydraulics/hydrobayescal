@@ -966,10 +966,10 @@ class CalibrationAssessment:
                 set_nice_ticks(ax, 'y', n_ticks=5)
 
                 set_adaptive_decimal_formatter(
-                    ax, axis='x', values=overall_x_vals
+                    ax, axis='x', values=overall_x_vals, max_decimals=1
                 )
                 set_adaptive_decimal_formatter(
-                    ax, axis='y', values=overall_y_vals
+                    ax, axis='y', values=overall_y_vals, max_decimals=1
                 )
 
             for spine in ax.spines.values():
@@ -1015,10 +1015,10 @@ class CalibrationAssessment:
                     set_nice_ticks(ax, 'y', n_ticks=5)
 
                     set_adaptive_decimal_formatter(
-                        ax, axis='x', values=x_vals
+                        ax, axis='x', values=x_vals, max_decimals=1
                     )
                     set_adaptive_decimal_formatter(
-                        ax, axis='y', values=y_vals
+                        ax, axis='y', values=y_vals, max_decimals=1
                     )
 
                 for spine in ax.spines.values():
