@@ -20,6 +20,7 @@ from gpytorch.means import MultitaskMean, ConstantMean
 from gpytorch.kernels import MultitaskKernel, RBFKernel, LinearKernel, ScaleKernel, ProductKernel, AdditiveKernel, MaternKernel, PeriodicKernel
 from scipy.optimize import dual_annealing, differential_evolution
 
+from hydroBayesCal.surrogate.bal_functions import project_to_psd
 from hydroBayesCal.utils.config_logging import logger, logger_warn
 
 
@@ -898,7 +899,7 @@ class MultiGPyTraining:
         return mode
 
     @staticmethod
-    def _posterior_task_blocks(predictions, block_size, n_train=1, budget=2.0e7):
+    def _posterior_task_blocks(predictions, block_size, n_train=1, budget=2.0e7, scale=None):
         """Posterior predictive covariance between the tasks at every prediction point.
 
         Only the blocks the Bayesian active-learning utility consumes are evaluated: for each prediction point, the covariance within consecutive groups of ``block_size`` tasks. The covariance between different prediction points, and between tasks of different groups, is never formed. With the tasks spanning all outputs (``task_mode="all"``) that is the difference between ``n_locations * n_quantities**2`` and ``(n_locations * n_quantities)**2`` entries per point, and the latter does not fit into memory for a real calibration.
@@ -913,11 +914,13 @@ class MultiGPyTraining:
             Number of training points of the model. Only used to size the chunks.
         budget : float
             Upper bound on the entries handled per chunk of prediction points. Evaluating one covariance entry costs memory in proportion to ``n_train * n_tasks``, so the prediction points are processed in chunks.
+        scale : array_like, optional
+            Standard deviation of the output normalization of every task, shape ``[n_tasks]``. When given, the blocks are converted from the normalized output space of the model to physical units: with ``y = y_mean + D z``, ``Cov(y) = D Cov(z) D``.
 
         Returns
         -------
         numpy.ndarray
-            Shape ``[n_samples, n_tasks // block_size, block_size, block_size]``, in the normalized output space of the model.
+            Shape ``[n_samples, n_tasks // block_size, block_size, block_size]``, in physical units if ``scale`` is given and in the normalized output space of the model otherwise. Every block is symmetric positive semidefinite.
         """
         covariance = predictions.lazy_covariance_matrix
         n_points, n_tasks = predictions.mean.shape[-2:]
@@ -945,8 +948,12 @@ class MultiGPyTraining:
             if not isinstance(values, torch.Tensor):
                 values = values.to_dense()
             blocks[start:start + chunk] = MultiGPyTraining._as_numpy(values)
-        # The two triangles are evaluated separately and differ by round-off in single precision.
-        return 0.5 * (blocks + blocks.transpose(0, 1, 3, 2))
+        if scale is not None:
+            # In double precision: a scaling rounded to single precision is not exactly of the form D B D and can itself tip a nearly singular block over.
+            scale = np.asarray(MultiGPyTraining._as_numpy(scale), dtype=float).reshape(n_blocks, block_size)
+            blocks = blocks * scale[None, :, :, None] * scale[None, :, None, :]
+        # The blocks are evaluated in single precision as the difference between the prior covariance and the part explained by the training data. Next to a training point the result is orders of magnitude smaller than both, so its error is of the size of the result: the two triangles differ, and the covariance term can exceed the variances, which gives the block a negative eigenvalue. The sampler of the BAL utility refuses such a block, and the calibration would stop in its active-learning loop. The blocks are therefore symmetrized and the indefinite ones projected, as the last operation on them; a positive semidefinite block is returned as it is.
+        return project_to_psd(blocks)
 
     def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
         """
@@ -1028,10 +1035,7 @@ class MultiGPyTraining:
                 if multitask_cov:
                     # The tasks span all outputs. BAL consumes one quantity x quantity block per location, so only those blocks are evaluated.
                     blocks = self._posterior_task_blocks(
-                        predictions, n_quantities, n_train=self.training_points.shape[0])
-                    # Back to physical units: with y = y_mean + D z, Cov(y) = D Cov(z) D.
-                    scale = self._as_numpy(y_std).reshape(n_locations, n_quantities)
-                    blocks = blocks * scale[None, :, :, None] * scale[None, :, None, :]
+                        predictions, n_quantities, n_train=self.training_points.shape[0], scale=y_std)
                     for j in range(n_samples):
                         for i in range(n_locations):
                             multitask_cov_list[j][i] = blocks[j, i]
@@ -1115,9 +1119,7 @@ class MultiGPyTraining:
                     if multitask_cov:
                         # Posterior predictive covariance between the calibration quantities at this location, for every prediction point.
                         blocks = self._posterior_task_blocks(
-                            predictions, n_quantities, n_train=self.training_points.shape[0])[:, 0]
-                        # Back to physical units: with y = y_mean + D z, Cov(y) = D Cov(z) D.
-                        blocks = blocks * np.outer(y_std_np, y_std_np)[None, :, :]
+                            predictions, n_quantities, n_train=self.training_points.shape[0], scale=y_std_np)[:, 0]
                         for j in range(n_samples):
                             multitask_cov_list[j][i] = blocks[j]
         else:

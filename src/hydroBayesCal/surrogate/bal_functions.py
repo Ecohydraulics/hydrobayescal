@@ -14,6 +14,52 @@ from hydroBayesCal.surrogate.exploration import Exploration
 from hydroBayesCal.utils.config_logging import logger, logger_warn
 
 
+#: Set once the clipping of an indefinite emulator covariance has been reported (SequentialDesign.bayesian_active_learning).
+_WARNED_INDEFINITE_COVARIANCE = False
+
+
+def project_to_psd(matrix, relative_floor=1e-9, return_ratio=False):
+    """Clip the negative eigenvalues of a covariance matrix that round-off has made indefinite.
+
+    A covariance computed as a difference of nearly equal terms, such as the posterior covariance of a Gaussian process next to a training point, carries an absolute error of the size of the terms. Where the result is orders of magnitude smaller than they are, it can come out with a negative eigenvalue, and a sampler then refuses it as a covariance. The matrix is symmetrized and its eigenvalues are clipped at ``relative_floor`` times the largest one. A matrix that is positive semidefinite already is returned unchanged.
+
+    Parameters
+    ----------
+    matrix : array_like
+        Symmetric matrix, shape ``[n, n]``, or a stack of matrices ``[..., n, n]``.
+    relative_floor : float
+        Smallest eigenvalue allowed, as a fraction of the largest eigenvalue of the same matrix.
+    return_ratio : bool
+        Also return the most negative ratio of smallest to largest eigenvalue found, ``0.0`` if nothing was clipped. It measures how far the input was from a covariance: about ``-1e-2`` and smaller in magnitude is round-off of a single-precision result, a value near ``-1`` means the input was not a covariance at all.
+
+    Returns
+    -------
+    numpy.ndarray or tuple
+        The projected matrix or stack, and the ratio if requested.
+
+    Raises
+    ------
+    ValueError
+        If the matrix contains non-finite entries, which no clipping can repair.
+    """
+    matrix = np.asarray(matrix, dtype=float)
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError("The covariance matrix contains non-finite entries.")
+    symmetric = 0.5 * (matrix + np.swapaxes(matrix, -1, -2))
+    eigenvalues, eigenvectors = np.linalg.eigh(symmetric)
+    largest = np.maximum(eigenvalues[..., -1], 0.0)
+    indefinite = eigenvalues[..., 0] < 0.0
+    if not np.any(indefinite):
+        return (symmetric, 0.0) if return_ratio else symmetric
+
+    ratio = float(np.min(np.where(indefinite, eigenvalues[..., 0] / np.where(largest > 0.0, largest, 1.0), 0.0)))
+    clipped = np.maximum(eigenvalues, relative_floor * largest[..., None])
+    rebuilt = (eigenvectors * clipped[..., None, :]) @ np.swapaxes(eigenvectors, -1, -2)
+    rebuilt = 0.5 * (rebuilt + np.swapaxes(rebuilt, -1, -2))
+    projected = np.where(indefinite[..., None, None], rebuilt, symmetric)
+    return (projected, ratio) if return_ratio else projected
+
+
 class BayesianInference:
     """Bayesian inference of model parameters from surrogate predictions.
 
@@ -780,7 +826,20 @@ class SequentialDesign:
         else:
             cov = np.diag(y_std ** 2)
         # else:
-        rv = stats.multivariate_normal(mean=y_mean, cov=cov,allow_singular=True)  # stats object with y_mean, y_var
+        try:
+            rv = stats.multivariate_normal(mean=y_mean, cov=cov,allow_singular=True)  # stats object with y_mean, y_var
+        except ValueError:
+            # The sampler refuses a covariance with a negative eigenvalue. An emulator can hand one over where its posterior variance is at the level of its round-off, and this point of the calibration is reached only after full-complexity simulations have been run, so the round-off is clipped instead of ending the run. A matrix with non-finite entries is not repaired and raises here.
+            cov, ratio = project_to_psd(cov, return_ratio=True)
+            global _WARNED_INDEFINITE_COVARIANCE
+            if not _WARNED_INDEFINITE_COVARIANCE:
+                logger_warn.warning(
+                    f"BAL: the emulator covariance of a candidate was not positive semidefinite (smallest eigenvalue "
+                    f"{ratio:.1e} times the largest). Its negative eigenvalues were clipped. Ratios of about -1e-2 and "
+                    f"smaller in magnitude are round-off; a ratio near -1 points to an error in the emulator. "
+                    f"This message is shown once per process.")
+                _WARNED_INDEFINITE_COVARIANCE = True
+            rv = stats.multivariate_normal(mean=y_mean, cov=cov, allow_singular=True)
         y_mc = rv.rvs(size=self.mc_exploration)                 # sample from posterior space
         logPriorLikelihoods = rv.logpdf(y_mc)                   # get prior probability
 

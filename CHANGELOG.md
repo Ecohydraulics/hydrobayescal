@@ -4,6 +4,14 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **BAL could stop with `ValueError: The input matrix must be symmetric positive semidefinite` in a calibration on several targets** with a multitask emulator (`multitask_selection` `"variables"`, the default, or `"all"`). 1.10.0 hands BAL the exact posterior covariance between the calibration targets at every candidate parameter set. That covariance is computed in single precision as the difference between the prior covariance and the part explained by the training runs. Close to a training run the result is orders of magnitude smaller than both, its error is of the size of the result, and the covariance term can exceed the variances, which gives the 2 x 2 or 3 x 3 block a negative eigenvalue. The sampler of the BAL utility refuses such a block. In a reproduction with the emulator settings of the drivers, one in eight trained emulators produced such blocks, for about 8 % of its candidates, so a calibration with that emulator stopped in its first BAL iteration, after the initial design had been simulated. The blocks are now converted to physical units in double precision and their negative eigenvalues are clipped as the last step (`surrogate.bal_functions.project_to_psd`); a positive semidefinite block is unchanged. The BAL utility applies the same projection if any emulator hands it an indefinite covariance, and reports that once. The defect entered with 1.10.0, whose evaluation of the covariance removed the diagonal jitter that had hidden it, and was found by the new end-to-end test of the TELEMAC driver, which failed in one of ten runs of the test workflow.
+
+### Added
+- **Every push and every pull request is tested on GitHub** (`.github/workflows/tests.yml`): a lint for definite errors, the test suite on Python 3.10 and 3.12, and the documentation build with the Read the Docs settings. The workflow and the file-size check run with a read-only token.
+
 ## [1.10.0] - 2026-10-11
 
 An integration release. It merges the branches `of-dev` of Federica Scolari and `hbc-telemac-andres` of Andrés Heredia into `main`. Several of the problems the two branches solved for one solver binding or one example case turned out to be defects of the shared code, and are corrected there, so that all bindings and all drivers get the correction. Two of the changes alter the numbers of a calibration and are listed first under Changed: the covariance that Bayesian active learning (BAL) draws from for a multitask emulator, and the time window over which TELEMAC runs selected by BAL are extracted.
