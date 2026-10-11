@@ -191,3 +191,70 @@ def test_unwritten_columns_raise():
     sm.task_mode = "variables"
     with pytest.raises(RuntimeError, match="unwritten"):
         sm.predict_(input_sets=x)
+
+
+# --------------------------------------------------------------------------- #
+# the covariance handed to Bayesian active learning
+# --------------------------------------------------------------------------- #
+FAR_FROM_THE_DESIGN = [[5.0, 5.0]]
+
+
+@pytest.mark.parametrize("mode", ["variables", "all"])
+def test_multitask_cov_diagonal_is_the_predictive_variance(mode):
+    """BAL samples the emulator from this covariance, so it has to be the predictive one.
+
+    The blocks used to be the prior term, the task kernel times the input kernel at the prediction point. That term does not depend on the training data, while the standard deviation returned by the same call does, so the two described different distributions.
+    """
+    n_locations, n_quantities = 3, 2
+    sm, x, _ = _train(n_locations, n_quantities, mode)
+    probe = np.vstack([x[:2], FAR_FROM_THE_DESIGN])
+
+    output = sm.predict_(input_sets=probe, multitask_cov=True)
+
+    for j in range(len(probe)):
+        diagonal = np.concatenate([np.diag(block) for block in output["multitask_cov"][j]])
+        assert diagonal == pytest.approx(output["std"][j] ** 2, rel=1e-3)
+        for block in output["multitask_cov"][j]:
+            assert np.allclose(block, block.T, rtol=1e-5, atol=1e-10)
+
+
+@pytest.mark.parametrize("mode", ["variables", "all"])
+def test_multitask_cov_is_smaller_where_the_emulator_was_trained(mode):
+    """A candidate next to a training point is less uncertain than one far outside the design.
+
+    This difference is what lets the BAL utility tell an explored region from an unexplored one. The prior term gave every candidate the same covariance.
+    """
+    sm, x, _ = _train(3, 2, mode)
+
+    output = sm.predict_(input_sets=np.vstack([x[:1], FAR_FROM_THE_DESIGN]), multitask_cov=True)
+
+    at_training_point = sum(np.trace(block) for block in output["multitask_cov"][0])
+    far_away = sum(np.trace(block) for block in output["multitask_cov"][1])
+    assert at_training_point < 0.9 * far_away
+
+
+@pytest.mark.parametrize("budget", [2.0e7, 1.0])
+def test_task_blocks_match_the_dense_predictive_covariance(budget):
+    """The block-wise evaluation must return what the full covariance holds at those entries.
+
+    With the tasks spanning all outputs the full covariance per prediction point does not fit into memory for a real calibration, so only the quantity x quantity blocks are evaluated, in chunks of prediction points. ``budget=1.0`` forces one point per chunk.
+    """
+    n_locations, n_quantities, n_points = 3, 2, 5
+    sm, x, _ = _train(n_locations, n_quantities, "all")
+    model_info = sm.gp_list[0]
+    gp, likelihood = model_info["gp"], sm._model_likelihood(model_info)
+    gp.eval()
+    likelihood.eval()
+    n_tasks = n_locations * n_quantities
+
+    with torch.no_grad():
+        predictions = likelihood(gp(torch.tensor(x[:n_points], dtype=torch.float32)))
+        blocks = MultiGPyTraining._posterior_task_blocks(
+            predictions, n_quantities, n_train=N_TRAIN, budget=budget)
+        dense = predictions.covariance_matrix.numpy().reshape(n_points, n_tasks, n_points, n_tasks)
+
+    assert blocks.shape == (n_points, n_locations, n_quantities, n_quantities)
+    for j in range(n_points):
+        for i in range(n_locations):
+            sl = slice(i * n_quantities, (i + 1) * n_quantities)
+            assert blocks[j, i] == pytest.approx(dense[j, sl, j, sl], rel=1e-4, abs=1e-6)
