@@ -89,7 +89,7 @@ def _driver(name):
     return module
 
 
-def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=False):
+def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=False, **bal_options):
     """Initial design and one BAL iteration through the functions of one driver."""
     matplotlib.pyplot.rcParams.update({"text.usetex": False})
     driver = _driver(driver_name)
@@ -104,7 +104,7 @@ def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=F
     driver.run_bal_model(
         collocation_points=points, model_outputs=outputs, complex_model=model,
         experiment_design=design, eval_steps=1, prior_samples=300, mc_samples_al=30,
-        mc_exploration=60, gp_library="gpy", bal_n_jobs=1, **extraction)
+        mc_exploration=60, gp_library="gpy", bal_n_jobs=1, **extraction, **bal_options)
 
     with open(pathlib.Path(model.calibration_folder) / "BAL_dictionary.pkl", "rb") as handle:
         return model, pickle.load(handle)
@@ -168,3 +168,13 @@ def test_a_calibration_runs_through_when_a_calibration_point_never_responds(tmp_
     assert np.all(model.model_evaluations[:, -len(quantities):] == 0.0)
     assert np.all(np.isfinite(bal["log_BME"]))
     assert all(bal["util_func"])
+
+
+def test_a_calibration_runs_through_with_the_exploration_trade_off(tmp_path):
+    """With the trade-off on, every candidate of the prior sample gets a space-filling score from the experimental design of the driver."""
+    model, bal = _calibrate("bal_telemac", tmp_path, ("WATER DEPTH", "SCALAR VELOCITY"), "variables",
+                            bal_exploration_tradeoff=True)
+
+    assert model.model_evaluations.shape[0] == MAX_RUNS
+    assert np.all(bal["exploration_tradeoff_active"])
+    assert np.all(np.isfinite(bal["log_BME"]))

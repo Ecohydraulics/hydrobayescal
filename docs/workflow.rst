@@ -74,6 +74,8 @@ Sobol has one further property the workflow depends on: it is **extensible**. Th
 length :math:`n`, so the design can be grown without discarding a single simulation that
 has already been run. Latin hypercube and random designs have no such guarantee.
 
+In a staged initial design (``adaptive_init_runs``, see below), a ``random`` or ``latin_hypercube`` design is therefore grown by a fresh block of the same rule. The nodes of ``chebyshev`` and ``grid`` depend on the size of the design, so a second set of nodes neither continues nor complements the first; their later blocks are drawn as a Latin hypercube, with a warning in the log. ``initial-design.json`` records the rule every block was drawn with.
+
 The full list of accepted methods is ``random``, ``latin_hypercube``, ``sobol``,
 ``halton``, ``hammersley``, ``chebyshev``, ``grid`` and ``user``. Invalid values are
 rejected before the first simulation starts rather than several minutes into the run.
@@ -546,6 +548,12 @@ iteration in ``BAL_dictionary.pkl`` so an archived result shows which points wer
 under which regime. Setting the key to ``True`` or ``False`` forces one behaviour for the
 whole calibration.
 
+Exploration is scored by the distance of a candidate parameter set from the parameter sets that have been simulated, measured in the unit hypercube of the calibration ranges so that parameters with different units count alike. The exploration score and the utility, each normalized to a sum of one over the candidates, enter the ranking with equal weight. A candidate whose utility cannot be computed is ranked last. If the utility says nothing at all, because it failed or is zero for every candidate, the next point is the one farthest from the simulated ones, and the iteration is recorded as ``global_mc``.
+
+.. note::
+
+    Up to release 1.10.1 the exploration score was zero in all drivers. The switch was logged and recorded, but the points were selected by exploitation alone. An archived ``BAL_dictionary.pkl`` of such a version with ``exploration_tradeoff_active = True`` therefore holds points that were chosen without exploration.
+
 .. warning::
 
     The last training point of the calibration is **not** the calibrated parameter set.
@@ -641,7 +649,7 @@ getting the wrong answer:
 3. **Multi-start local refinement** (``--refine``, needs ``--surrogate``). The emulator's
    joint posterior is maximised over the continuous calibration ranges with a bounded
    quasi-Newton method, started from the highest-density samples **and from one
-   representative of every detected mode**.
+   representative of every detected mode**. The likelihood is the one of the calibration: it includes the variance of the emulator unless the calibration was run with ``include_surrogate_error = False``, a setting that is read from ``BAL_dictionary.pkl``. The search runs in the unit hypercube of the calibration ranges and takes the slope of the likelihood over a step of 1e-3 of each range, which the single-precision emulators can resolve.
 
 Stage 3 is what makes the reported optimum both precise and global:
 
@@ -806,6 +814,8 @@ file:
        **not** supplied by ``include_surrogate_error``, which only ever accounts for
        the surrogate's approximation of the solver, never for the solver's own error.
        Set it if you can defend a value.
+
+A measured value of zero has no relative error, so it needs a non-zero ``<target>_ERROR``; an observation without variance is refused before the first simulation. A calibration target that comes out the same in every run at a calibration point, such as the water depth at a point that stays dry, does not stop the emulator: the emulator returns that value there without emulator uncertainty, and the log names the point once. Such a point carries no information on the calibration parameters and is better removed from the calibration-points file.
 
 .. warning::
 
