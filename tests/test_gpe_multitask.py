@@ -29,12 +29,14 @@ def _outputs(x, n_locations, n_quantities):
     The coefficients deliberately vary in sign and direction. Columns that are all
     increasing functions of the same inputs come out almost perfectly correlated with
     each other, and then no test can tell which column is which.
+
+    The levels are three units apart, more than a column varies (at most about 1.7), so that even a prediction that is flat at the mean of a column is closest to that column.
     """
     columns = []
     for i in range(n_locations):
         for q in range(n_quantities):
             k = i * n_quantities + q
-            columns.append(np.cos(k) * x[:, 0] + np.sin(2.0 * k) * x[:, 1] + k)
+            columns.append(np.cos(k) * x[:, 0] + np.sin(2.0 * k) * x[:, 1] + 3.0 * k)
     return np.column_stack(columns)
 
 
@@ -48,6 +50,18 @@ def _column_match(predicted, truth):
                           for j in range(truth.shape[1])]
                          for k in range(predicted.shape[1])])
     return np.argmin(distance, axis=1)
+
+
+def test_the_test_columns_can_be_told_apart_even_by_a_flat_prediction():
+    """The synthetic columns have to differ in level by more than they vary.
+
+    The column-order tests train for a handful of iterations, so a predicted column can come out nearly flat at the mean of its training outputs. If two columns have about the same mean, the flat prediction of the one that varies more lies closer to the other one, and the column-order check fails although the columns are in the right order. With levels one unit apart, columns 7 and 8 of a 3 x 3 layout had means of 7.87 and 7.78, and ``test_column_order_test_detects_the_legacy_mis_dispatch`` failed about once in a hundred runs, depending on the random initialization of the task covariance.
+    """
+    x = np.random.default_rng(0).uniform(0.0, 1.0, size=(N_TRAIN, N_PARAMS))
+    y = _outputs(x, 3, 3)
+    flat = np.tile(y.mean(axis=0), (len(y), 1))
+
+    assert np.array_equal(_column_match(flat, y), np.arange(y.shape[1]))
 
 
 def _train(n_locations, n_quantities, mode, seed=0):
@@ -67,7 +81,13 @@ def _train(n_locations, n_quantities, mode, seed=0):
     sm = MultiGPyTraining(x, y, kernel, training_iter=TRAINING_ITER,
                           likelihood=likelihood, optimizer="adam", lr=0.1,
                           number_quantities=n_quantities)
-    getattr(sm, f"train_tasks_{mode}")()
+    # The task covariance of the multitask kernel is initialized from torch's global generator, whose state differs from run to run. Seeded here, so that a test trains the same emulator every time; the state is restored for the tests that follow.
+    generator_state = torch.random.get_rng_state()
+    torch.manual_seed(seed)
+    try:
+        getattr(sm, f"train_tasks_{mode}")()
+    finally:
+        torch.random.set_rng_state(generator_state)
     return sm, x, y
 
 
