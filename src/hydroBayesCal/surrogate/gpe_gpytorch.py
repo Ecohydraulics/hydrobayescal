@@ -26,6 +26,64 @@ from hydroBayesCal.utils.config_logging import logger, logger_warn
 #: Set once the clipping of an indefinite posterior covariance has been reported (MultiGPyTraining._posterior_task_blocks).
 _REPORTED_CLIPPED_COVARIANCE = False
 
+#: Combinations of constant output columns that have been reported (_report_constant_outputs): one warning per combination and process.
+_REPORTED_CONSTANT_OUTPUTS = set()
+
+
+def _output_normalization(outputs):
+    """Level and spread for the normalization of the training outputs, column by column.
+
+    The emulators are trained on ``(outputs - level) / divisor`` and transform their predictions back with ``scale * prediction + level``. For an output that varies between the training runs, level and spread are its mean and its standard deviation. An output that is the same in every run, such as the water depth at a calibration point that stays dry, has no spread to divide by: the division gave NaN and stopped the training. Such a column is trained on zeros (``divisor`` 1) and transformed back with ``scale`` 0, so that the emulator returns the value of the training runs without any emulator uncertainty.
+
+    Parameters
+    ----------
+    outputs : numpy.ndarray or torch.Tensor
+        Shape ``[n_runs]`` or ``[n_runs, n_columns]``. For a tensor, the spread is ``torch.std`` (n - 1 in the denominator), as before.
+
+    Returns
+    -------
+    level, divisor, scale, constant
+        Arrays or tensors of shape ``[n_columns]`` (scalars for one column); ``constant`` flags the columns whose values are all equal.
+    """
+    if isinstance(outputs, torch.Tensor):
+        constant = outputs.max(dim=0).values == outputs.min(dim=0).values
+        spread = torch.std(outputs, dim=0)
+        level = torch.where(constant, outputs[0], torch.mean(outputs, dim=0))
+        return level, torch.where(constant, torch.ones_like(spread), spread), torch.where(constant, torch.zeros_like(spread), spread), constant
+    outputs = np.asarray(outputs)
+    constant = np.ptp(outputs, axis=0) == 0
+    spread = np.std(outputs, axis=0)
+    level = np.where(constant, outputs[0], np.mean(outputs, axis=0)).astype(spread.dtype)
+    return level, np.where(constant, 1.0, spread).astype(spread.dtype), np.where(constant, 0.0, spread).astype(spread.dtype), constant
+
+
+def _report_constant_outputs(columns, n_runs, n_quantities=None):
+    """Warn once that some output columns are the same in all training runs.
+
+    Parameters
+    ----------
+    columns : iterable of int
+        Zero-based columns of ``model_evaluations``.
+    n_runs : int
+        Number of training runs.
+    n_quantities : int, optional
+        Number of calibration targets, to name calibration point and target of a column (quantities interleaved per point).
+    """
+    columns = tuple(sorted(int(column) for column in columns))
+    if not columns or columns in _REPORTED_CONSTANT_OUTPUTS:
+        return
+    _REPORTED_CONSTANT_OUTPUTS.add(columns)
+    if n_quantities:
+        where = "; ".join(f"calibration point {column // n_quantities + 1}, target {column % n_quantities + 1}"
+                          for column in columns)
+    else:
+        where = ", ".join(f"output column {column + 1}" for column in columns)
+    logger_warn.warning(
+        f"The model output is the same in all {n_runs} training runs at: {where}. The emulator returns that value "
+        f"there, without emulator uncertainty. An output that does not respond to the calibration parameters, such as "
+        f"the water depth at a point that stays dry, carries no information for the calibration; consider removing it "
+        f"from the calibration points. This message is shown once per process.")
+
 
 class MyExactGPyModel(gpytorch.models.ExactGP):
     """
@@ -193,7 +251,8 @@ class GPyTraining:
 
         Returns: <tensor> with normalized input values.
         """
-        norm_y = (train_y - np.mean(train_y))/(np.std(train_y))
+        level, divisor, _, _ = _output_normalization(train_y)
+        norm_y = (train_y - level) / divisor
         train_y = self.convert_to_tensor(norm_y)
         return train_y
 
@@ -205,6 +264,10 @@ class GPyTraining:
         """
         # Convert training points and prior parameter sets to tensor:
         train_x = self.convert_to_tensor(self.training_points)
+
+        if self.y_norm:
+            constant = np.ptp(np.asarray(self.model_evaluations), axis=0) == 0
+            _report_constant_outputs(np.flatnonzero(constant), self.model_evaluations.shape[0])
 
         if self.parallel and self.n_obs > 1:
             out = Parallel(n_jobs=-1, backend='multiprocessing')(delayed(self._fit_adam)(train_x=train_x,
@@ -363,7 +426,8 @@ class GPyTraining:
             return_out_dic['cl_hp'] = gp.covar_module.base_kernel.lengthscale.numpy()[0, :]
             return_out_dic['noise_hp'] = gp.likelihood.noise.item()
             if self.y_norm:
-                return_out_dic['y_norm'] = [np.mean(model_y), np.std(model_y)]
+                level, _, scale, _ = _output_normalization(model_y)
+                return_out_dic['y_norm'] = [level, scale]
 
         return return_out_dic
 
@@ -641,15 +705,17 @@ class MultiGPyTraining:
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities
 
+        constant_columns = []
+
         # Iterate over each location
         for loc in range(num_locations):
             # Extract the columns corresponding to the current location
             Y_loc = Y[:, self.number_quantities * loc : self.number_quantities * (loc + 1)].numpy()
 
-            # Normalize outputs
-            y_mean = np.mean(Y_loc, axis=0)
-            y_std = np.std(Y_loc, axis=0)
-            Y_loc_norm = (Y_loc - y_mean) / y_std
+            # Normalize outputs. A target that is the same in every run at this location is trained on zeros and returned without emulator uncertainty, see _output_normalization.
+            y_mean, divisor, y_std, constant = _output_normalization(Y_loc)
+            Y_loc_norm = (Y_loc - y_mean) / divisor
+            constant_columns.extend(self.number_quantities * loc + np.flatnonzero(constant))
 
             # Save normalization parameters
             self.normalization_params.append((y_mean, y_std))
@@ -731,6 +797,8 @@ class MultiGPyTraining:
             self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std),
                                  'likelihood': likelihood})
 
+        _report_constant_outputs(constant_columns, Y.shape[0], self.number_quantities)
+
     def train_tasks_locations(self):
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
@@ -754,11 +822,13 @@ class MultiGPyTraining:
 
         # The model outputs interleave the quantities per location, so quantity q
         # occupies columns q, q + n_quantities, q + 2*n_quantities, ...
+        constant_columns = []
         for q in range(self.number_quantities):
             Y_output_var = Y[:, q::self.number_quantities]
-            y_mean = torch.mean(Y_output_var, dim=0)
-            y_std = torch.std(Y_output_var, dim=0)
-            Y_output_var_norm = ((Y_output_var - y_mean) / y_std).to(torch.float32)
+            # A location where this quantity is the same in every run is trained on zeros and returned without emulator uncertainty, see _output_normalization.
+            y_mean, divisor, y_std, constant = _output_normalization(Y_output_var)
+            Y_output_var_norm = ((Y_output_var - y_mean) / divisor).to(torch.float32)
+            constant_columns.extend(q + self.number_quantities * np.flatnonzero(self._as_numpy(constant)))
             self.normalization_params.append((f'output_{q + 1}', y_mean, y_std))
 
             # Initialize multitask GP model for the entire set of locations (tasks).
@@ -793,6 +863,8 @@ class MultiGPyTraining:
             self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std),
                                  'likelihood': likelihood})
 
+        _report_constant_outputs(constant_columns, Y.shape[0], self.number_quantities)
+
     def train_tasks_all(self):
         """
         Train a single multitask Gaussian Process model using all outputs (water depth and velocity)
@@ -805,10 +877,10 @@ class MultiGPyTraining:
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities  # Total number of locations
 
-        # Normalize Y
-        y_mean = torch.mean(Y, dim=0)  # Compute mean per (location, quantity)
-        y_std = torch.std(Y, dim=0)  # Compute std per (location, quantity)
-        Y_norm = (Y - y_mean) / y_std  # Normalize Y
+        # Normalize Y per (location, quantity). An output that is the same in every run is trained on zeros and returned without emulator uncertainty, see _output_normalization.
+        y_mean, divisor, y_std, constant = _output_normalization(Y)
+        Y_norm = (Y - y_mean) / divisor
+        _report_constant_outputs(np.flatnonzero(self._as_numpy(constant)), Y.shape[0], self.number_quantities)
 
         # Save normalization parameters
         self.normalization_params = {'y_mean': y_mean, 'y_std': y_std}

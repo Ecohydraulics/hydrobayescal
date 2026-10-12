@@ -24,14 +24,19 @@ TRUTH = np.array([0.4, 0.7])
 INIT_RUNS, MAX_RUNS = 8, 9
 
 
-def _response(points, n_quantities):
-    """Smooth analytic stand-in for a solver: interleaved columns [Q1_P1, Q2_P1, Q1_P2, ...]."""
+def _response(points, n_quantities, dry_point=False):
+    """Smooth analytic stand-in for a solver: interleaved columns [Q1_P1, Q2_P1, Q1_P2, ...].
+
+    With ``dry_point``, a further calibration point follows whose targets are 0.0 for every parameter set, as at a point that stays dry in all runs.
+    """
     points = np.atleast_2d(points)
     q1 = np.array([[np.sin(3.0 * a * s) + b * s ** 2 for s in STATIONS] for a, b in points])
     q2 = np.array([[2.0 + a * s - 0.5 * b * np.cos(2.0 * s) for s in STATIONS] for a, b in points])
+    if dry_point:
+        q1, q2 = (np.column_stack([q, np.zeros(len(points))]) for q in (q1, q2))
     if n_quantities == 1:
         return q1
-    out = np.empty((points.shape[0], 2 * len(STATIONS)))
+    out = np.empty((points.shape[0], 2 * q1.shape[1]))
     out[:, 0::2], out[:, 1::2] = q1, q2
     return out
 
@@ -39,16 +44,18 @@ def _response(points, n_quantities):
 class _AnalyticModel(HydroSimulations):
     """A binding without a solver, recording how the driver called it."""
 
-    def __init__(self, folder, quantities, multitask_selection):
-        observations = _response(TRUTH, len(quantities))[0]
+    def __init__(self, folder, quantities, multitask_selection, dry_point=False):
+        self.dry_point = dry_point
+        observations = _response(TRUTH, len(quantities), dry_point)[0]
         points_file = folder / "calibration-points.csv"
         header = ["Point", "X", "Y"] + [f"{q}_{suffix}" for q in quantities for suffix in ("DATA", "ERROR")]
         rows = []
-        for i, station in enumerate(STATIONS):
+        for i, station in enumerate(list(STATIONS) + [1.2] * dry_point):
             values = observations[i * len(quantities):(i + 1) * len(quantities)]
             row = [f"P{i + 1}", f"{station:.3f}", "0.0"]
             for value in values:
-                row += [f"{value:.6f}", f"{0.02 * abs(value):.6f}"]
+                # a measured 0.0 needs an absolute error: a relative one would give the observation a variance of zero
+                row += [f"{value:.6f}", f"{max(0.02 * abs(value), 0.01):.6f}"]
             rows.append(",".join(row))
         points_file.write_text(",".join(header) + "\n" + "\n".join(rows) + "\n")
 
@@ -65,9 +72,9 @@ class _AnalyticModel(HydroSimulations):
                                  start_index=0, **kwargs):
         self.calls.append(dict(kwargs, bal=bal_new_set_parameters is not None))
         if bal_new_set_parameters is None:
-            self.model_evaluations = _response(collocation_points, len(self.calibration_quantities))
+            self.model_evaluations = _response(collocation_points, len(self.calibration_quantities), self.dry_point)
         else:
-            new = _response(bal_new_set_parameters, len(self.calibration_quantities))
+            new = _response(bal_new_set_parameters, len(self.calibration_quantities), self.dry_point)
             self.model_evaluations = np.vstack([self.model_evaluations, new])
         return self.model_evaluations
 
@@ -82,11 +89,11 @@ def _driver(name):
     return module
 
 
-def _calibrate(driver_name, folder, quantities, multitask_selection):
+def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=False):
     """Initial design and one BAL iteration through the functions of one driver."""
     matplotlib.pyplot.rcParams.update({"text.usetex": False})
     driver = _driver(driver_name)
-    model = _AnalyticModel(folder, quantities, multitask_selection)
+    model = _AnalyticModel(folder, quantities, multitask_selection, dry_point)
     design = driver.setup_experiment_design(
         complex_model=model, tp_selection_criteria="dkl",
         parameter_distribution="uniform", parameter_sampling_method="sobol")
@@ -144,3 +151,20 @@ def test_the_runs_bal_selects_are_extracted_with_the_window_of_the_initial_desig
     for call in initial + selected:
         assert call["output_extraction_time"] == "index"
         assert call["n"] == 3
+
+
+@pytest.mark.parametrize("quantities, multitask_selection", LAYOUTS,
+                         ids=[f"{len(q)}target-{m}" for q, m in LAYOUTS])
+def test_a_calibration_runs_through_when_a_calibration_point_never_responds(tmp_path, quantities,
+                                                                           multitask_selection):
+    """A calibration point that stays dry gives the same output in every run, which must not stop the emulator.
+
+    The emulators normalize every output by its spread over the training runs. For a constant output the spread is zero, the normalized output was NaN, and the training stopped with ``NanError`` after the initial design had been simulated.
+    """
+    model, bal = _calibrate("bal_telemac", tmp_path, quantities, multitask_selection, dry_point=True)
+
+    n_outputs = (len(STATIONS) + 1) * len(quantities)
+    assert model.model_evaluations.shape == (MAX_RUNS, n_outputs)
+    assert np.all(model.model_evaluations[:, -len(quantities):] == 0.0)
+    assert np.all(np.isfinite(bal["log_BME"]))
+    assert all(bal["util_func"])
