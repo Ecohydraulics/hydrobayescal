@@ -328,7 +328,7 @@ def validate_sampling_method(name):
 
 
 def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol",
-                tolerance=1e-8):
+                tolerance=1e-8, return_rule=False):
     """Rows ``n_from`` to ``n_to`` of the design, continuing the existing sequence.
 
     A Sobol sequence of order ``n_to`` starts with the order-``n_from`` sequence, so a
@@ -342,6 +342,8 @@ def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol"
     back to a Latin hypercube block, because a silently reordered design would attach
     every stored model output to the wrong parameter set.
 
+    The remaining rules (``grid``, ``chebyshev`` and their nested forms) place their nodes according to the size of the design, so a second set of nodes neither continues nor complements the first. Their later blocks are drawn as a Latin hypercube as well, with a warning.
+
     Parameters
     ----------
     exp_design : object
@@ -354,11 +356,13 @@ def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol"
         Rule to continue. Default ``'sobol'``.
     tolerance : float
         Absolute tolerance of the prefix check.
+    return_rule : bool
+        Also return the rule the block was drawn with, which differs from ``sampling_method`` after a fallback.
 
     Returns
     -------
-    array
-        The ``[n_to - n_from, ndim]`` block of new parameter sets.
+    array or tuple
+        The ``[n_to - n_from, ndim]`` block of new parameter sets, and the name of its rule if ``return_rule`` is set.
     """
     n_from, n_to = int(n_from), int(n_to)
     if n_to <= n_from:
@@ -369,8 +373,12 @@ def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol"
     extensible = method in ("sobol", "halton", "hammersley", "korobov",
                             "additive_recursion")
 
+    def result(block, rule):
+        block = np.atleast_2d(block)
+        return (block, rule) if return_rule else block
+
     if n_from == 0:
-        return np.atleast_2d(exp_design.generate_samples(n_to, method))
+        return result(exp_design.generate_samples(n_to, method), method)
 
     if extensible:
         full = np.atleast_2d(exp_design.generate_samples(n_to, method))
@@ -381,14 +389,23 @@ def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol"
                          and np.allclose(full[:existing.shape[0]], existing,
                                          atol=tolerance, rtol=0.0))
         if prefix_ok:
-            return full[n_from:]
+            return result(full[n_from:], method)
         logger_warn.warning(
             f"The '{method}' sequence did not reproduce the {n_from} parameter sets that "
             f"were already simulated, so the design cannot be extended along it. Falling "
             f"back to a Latin hypercube block of {n_to - n_from} points; the design is "
             f"still valid, only less uniform than a pure {method} design.")
+    elif method in ("random", "latin_hypercube"):
+        # No sequence to continue: a fresh block of the configured rule extends the design. Every later block used to be a Latin hypercube whatever the rule, while log and record kept naming the configured one.
+        return result(exp_design.generate_samples(n_to - n_from, method), method)
+    else:
+        logger_warn.warning(
+            f"The sampling rule '{method}' places its nodes according to the size of the design, so the "
+            f"{n_from} parameter sets that were already simulated cannot be extended along it. Runs "
+            f"{n_from + 1} to {n_to} are drawn as a Latin hypercube block instead; the design is still valid. "
+            f"Use 'sobol' for a staged initial design that stays one sequence.")
 
-    return np.atleast_2d(exp_design.generate_samples(n_to - n_from, "latin_hypercube"))
+    return result(exp_design.generate_samples(n_to - n_from, "latin_hypercube"), "latin_hypercube")
 
 
 # ---------------------------------------------------------------------------
@@ -1092,8 +1109,8 @@ def run_staged_initial_design(complex_model, experiment_design, adaptive=True,
     n_from = 0
 
     for n_to in ladder:
-        block = sobol_block(experiment_design, n_from, n_to, existing=collocation_points,
-                            sampling_method=sampling_method)
+        block, block_rule = sobol_block(experiment_design, n_from, n_to, existing=collocation_points,
+                                        sampling_method=sampling_method, return_rule=True)
         collocation_points = (block if collocation_points is None
                               else np.vstack((collocation_points, block)))
         # The binding reads init_runs as the size of the design it is running, and
@@ -1118,7 +1135,8 @@ def run_staged_initial_design(complex_model, experiment_design, adaptive=True,
             prior=experiment_design.generate_samples,
             previous=report)
         log_initial_design(report)
-        stages.append({"n_runs": n_to, "verdict": report["verdict"],
+        # sampling_method is the rule this block was drawn with, which differs from the configured one after a fallback.
+        stages.append({"n_runs": n_to, "sampling_method": block_rule, "verdict": report["verdict"],
                        "q2_median": report["q2_median"], "coverage": report["coverage"],
                        "post_size": report["post_size"],
                        "failed": list(report["failed"])})

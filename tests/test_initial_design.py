@@ -340,3 +340,80 @@ def test_a_validation_set_is_not_staged(tmp_path):
     assert points.shape[0] == 64
     assert model.keywords[0]["validation"] is True
 
+
+
+# ---------------------------------------------------------------------------
+# blocks of rules that are not extensible sequences
+# ---------------------------------------------------------------------------
+class _RecordingDesign(_ExpDesign):
+    """Records which rule every block was requested with."""
+
+    def __init__(self, ranges, sampling_method="sobol"):
+        super().__init__(ranges, sampling_method)
+        self.requests = []
+
+    def generate_samples(self, n_samples, sampling_method=None):
+        self.requests.append((int(n_samples), sampling_method))
+        return super().generate_samples(n_samples, sampling_method)
+
+
+def _warnings_of(monkeypatch):
+    from hydroBayesCal.surrogate import initial_design
+
+    messages = []
+    monkeypatch.setattr(initial_design.logger_warn, "warning", lambda message, *a, **k: messages.append(str(message)))
+    return messages
+
+
+@pytest.mark.parametrize("rule", ["random", "latin_hypercube"])
+def test_a_rule_without_a_sequence_is_continued_with_a_fresh_block_of_the_same_rule(monkeypatch, rule):
+    """A random design extended by random points is a random design, and the record says so.
+
+    Every block after the first was drawn as a Latin hypercube whatever the configured rule, while the log and ``initial-design.json`` kept naming the configured one.
+    """
+    messages = _warnings_of(monkeypatch)
+    design = _RecordingDesign(RANGES)
+    existing = design.generate_samples(8, rule)
+    design.requests.clear()
+
+    block, used = sobol_block(design, 8, 12, existing=existing, sampling_method=rule, return_rule=True)
+
+    assert block.shape == (4, 3)
+    assert design.requests == [(4, rule)]
+    assert used == rule
+    assert not messages
+
+
+@pytest.mark.parametrize("rule", ["grid", "chebyshev"])
+def test_a_rule_that_cannot_be_continued_falls_back_to_a_latin_hypercube_and_says_so(monkeypatch, rule):
+    """The nodes of a grid depend on its size, so a second grid would repeat or miss the first. The fallback was silent."""
+    messages = _warnings_of(monkeypatch)
+    design = _RecordingDesign(RANGES)
+
+    block, used = sobol_block(design, 8, 12, existing=np.zeros((8, 3)), sampling_method=rule, return_rule=True)
+
+    assert block.shape == (4, 3)
+    assert design.requests == [(4, "latin_hypercube")]
+    assert used == "latin_hypercube"
+    assert len(messages) == 1 and rule in messages[0] and "Latin hypercube" in messages[0]
+
+
+def test_a_block_is_returned_alone_unless_the_rule_is_asked_for():
+    design = _ExpDesign(RANGES)
+    block = sobol_block(design, 0, 16)
+    assert isinstance(block, np.ndarray) and block.shape == (16, 3)
+    _, used = sobol_block(design, 0, 16, return_rule=True)
+    assert used == "sobol"
+
+
+@pytest.mark.parametrize("rule", ["sobol", "random"])
+def test_the_record_names_the_rule_every_block_was_drawn_with(tmp_path, rule):
+    model = _StubModel(tmp_path, init_runs=128)
+    design = _ExpDesign(RANGES, sampling_method=rule)
+
+    run_staged_initial_design(model, design)
+
+    with open(os.path.join(str(tmp_path), "initial-design.json")) as handle:
+        record = json.load(handle)
+    assert record["sampling_method"] == rule
+    assert [stage["sampling_method"] for stage in record["stages"]] == [rule] * len(record["stages"])
