@@ -1054,14 +1054,29 @@ def run_staged_initial_design(complex_model, experiment_design, adaptive=True,
     ceiling = int(complex_model.init_runs)
     sampling_method = getattr(experiment_design, "sampling_method", "sobol")
 
+    # A design supplied by the user and a validation set are run exactly as given. The ladder cannot extend a user design, because no sampling rule regenerates it, and a validation set that stops as soon as an emulator of it is "sufficient" is no longer the sample that was asked for.
+    user_design = (str(sampling_method).lower() == "user"
+                   or getattr(complex_model, "user_collocation_points", None) is not None)
+    validation = bool(getattr(complex_model, "validation", False))
+    if adaptive and (user_design or validation):
+        reason = "the design is supplied by the user" if user_design else "these are validation runs"
+        logger.info(f"The initial design is not staged because {reason}; all {ceiling} runs are carried out in one block.")
+        adaptive = False
+
     if not adaptive or ceiling <= 1:
         logger.info(f"Sampling {ceiling} collocation points for the selected calibration "
                     f"parameters with {sampling_method} sampling method.")
         collocation_points = experiment_design.x
+        if user_design:
+            n_points = int(np.atleast_2d(collocation_points).shape[0])
+            if n_points != ceiling:
+                raise ValueError(
+                    f"The user-supplied design holds {n_points} parameter sets but sampling['init_runs'] is {ceiling}. "
+                    f"Set init_runs to {n_points} or supply {ceiling} parameter sets, so that the number of simulations is the one that was configured.")
         complex_model.run_multiple_simulations(
             collocation_points=collocation_points,
             complete_bal_mode=complex_model.complete_bal_mode,
-            validation=complex_model.validation
+            validation=complex_model.validation,
             **run_kwargs)
         return collocation_points, complex_model.model_evaluations
 

@@ -3,6 +3,8 @@ Bayesian active learning (BAL) diagnostics: BME and RE evolution, BME
 surfaces, and collocation-point plots.
 """
 
+import glob
+import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -850,6 +852,8 @@ class BALPlots:
 
         plt.tight_layout()
         plt.show()
+
+    @staticmethod
     def _locate_collocation_points_file(folder, variable_name):
         """
         Build the expected collocation-points file path from the same
@@ -1017,7 +1021,7 @@ class BALPlots:
                         "or collocation_points_path directly - could not find "
                         "self.variable_name on the plotter instance."
                     )
-                collocation_points_path = _locate_collocation_points_file(folder, var_name)
+                collocation_points_path = self._locate_collocation_points_file(folder, var_name)
     
             points_df = pd.read_csv(collocation_points_path)
     

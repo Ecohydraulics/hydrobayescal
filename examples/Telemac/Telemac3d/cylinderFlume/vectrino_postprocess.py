@@ -29,8 +29,9 @@ from hydroBayesCal.utils.VectrinoPostproc.vertical_plots import extract_vertical
 # USER INPUT
 # ======================================================================
 
-data_directory = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac3d/cylinderFlume/measuredData/raw_ascii/"
-results_directory = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac3d/cylinderFlume/measuredData/results_postprocessing"
+# Folders of this example, resolved relative to this file
+data_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "measuredData", "raw_ascii")
+results_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), "measuredData", "results_postprocessing")
 # Base names WITHOUT ".ntk.dat" or ".ntk.hdr"
 case_names = [
     #Calibration points at different locations (Q=50 l/s)

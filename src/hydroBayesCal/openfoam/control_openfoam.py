@@ -58,6 +58,18 @@ class OpenFOAMController:
 
         return os.path.join(self.case_dir, rp)
 
+    # The turbulence dictionary this case actually carries. OpenFOAM Foundation 8+
+    # renamed 'constant/turbulenceProperties' to 'constant/momentumTransport'; the
+    # ESI line kept the old name. Both are checked so one binding serves both, and
+    # the ESI spelling is returned unchanged when neither exists, so a missing-file
+    # error still names the conventional path.
+    def _turbulence_dictionary(self) -> str:
+        for candidate in ("constant/momentumTransport",
+                          "constant/turbulenceProperties"):
+            if os.path.isfile(self._case_path(candidate)):
+                return candidate
+        return "constant/turbulenceProperties"
+
     # Runs a command and streams output line by line to stdout and optionally to a log file.
     # Raises RuntimeError if the process exits with a non-zero return code.
     def _run_streamed(self, cmd: Iterable[str], log_path: Optional[str] = None) -> None:
@@ -342,9 +354,21 @@ class OpenFOAMController:
 
             if patch in KEPSILON_COEFFS.values():
                 value = float(param["value"])
-                print(f"Updating model coefficient '{patch}' in constant/turbulenceProperties...")
+                # The turbulence dictionary is 'constant/turbulenceProperties' in
+                # the ESI line but 'constant/momentumTransport' in OpenFOAM
+                # Foundation 8+. Callers name the ESI spelling (it is the default
+                # in the config), so honouring the caller's file UNCONDITIONALLY
+                # targets a file that does not exist on a Foundation case - which
+                # fails on the first perturbed run, after the whole experimental
+                # design has been sampled. Resolve on EXISTENCE, not on spelling:
+                # take the caller's file when it is really there, otherwise
+                # whichever turbulence dictionary this case actually carries.
+                turb_file = param.get("file") or self._turbulence_dictionary()
+                if not os.path.isfile(self._case_path(turb_file)):
+                    turb_file = self._turbulence_dictionary()
+                print(f"Updating model coefficient '{patch}' in {turb_file}...")
                 self.update_dictionary_entry(
-                    file="constant/turbulenceProperties",
+                    file=turb_file,
                     subdict="kEpsilonCoeffs",
                     key=patch,
                     value=value,
@@ -423,10 +447,13 @@ class OpenFOAMController:
 
         if int(nprocs) > 1:
             self.decompose_parallel_case(int(nprocs))
-            mpi_cmd = (
-                f"source $HOME/OpenFOAM/OpenFOAM-v2412/etc/bashrc && "
-                f"mpirun -np {int(nprocs)} {solver} -parallel"
-            )
+            # No `source .../etc/bashrc` here: the caller is expected to have
+            # entered an OpenFOAM environment already (that is how every other
+            # command in this class is run), and a hard-coded install path made
+            # the binding usable on exactly one machine. HBC_MPI_LAUNCHER covers
+            # the installs whose launcher is not `mpirun` (MS-MPI's `mpiexec`).
+            launcher = os.environ.get("HBC_MPI_LAUNCHER", "mpirun")
+            mpi_cmd = f"{launcher} -np {int(nprocs)} {solver} -parallel"
             self._run_streamed(
                 ["bash", "-c", mpi_cmd],
                 log_path=run_log,
@@ -447,121 +474,134 @@ class OpenFOAMController:
             shutil.rmtree(vtk_dir_pre)
             print(f"Removed pre-existing VTK folder: {vtk_dir_pre}", flush=True)
         print("Converting to VTK...")
-        cmd = (
-            f"source $HOME/OpenFOAM/OpenFOAM-v2412/etc/bashrc && "
-            f"foamToVTK -case {self.case_dir}"
-        )
+        cmd = f"foamToVTK -case {self.case_dir}"
         env = os.environ.copy()
         env.pop("DISPLAY", None)
         result = subprocess.run(["bash", "-c", cmd], env=env, cwd=self.case_dir,
                                 capture_output=True, text=True)
         if result.returncode != 0:
+            # Not fatal any more. Extraction reads the case directly (see
+            # extract_fields_from_vtk), so VTK output is a convenience for
+            # ParaView/VisIt rather than a dependency, and foamToVTK's output
+            # layout differs between the Foundation and ESI lines anyway.
             print(f"foamToVTK stderr: {result.stderr}", flush=True)
             print(f"foamToVTK stdout: {result.stdout}", flush=True)
-            raise RuntimeError(f"foamToVTK failed with exit code {result.returncode}")
+            logger.warning(
+                f"foamToVTK failed with exit code {result.returncode}; continuing, "
+                f"since field extraction reads the case directory itself."
+            )
+            return
         print("VTK conversion completed.")
 
-    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any]:
+    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any, Any]:
         """
-        Extract velocity (U) and turbulent kinetic energy (k) fields from VTK output,
-        averaged over the last n_avg_timesteps timesteps, filtered to water phase only.
+        Extract velocity (U), turbulent kinetic energy (k) and water volume
+        fraction (alpha.water) from the finished run, averaged over the last
+        ``n_avg_timesteps`` write times, restricted to the water phase.
 
-        k is read directly from the OpenFOAM k field (k-epsilon RANS turbulent kinetic energy).
+        Reads the **case directory itself** through pyvista's OpenFOAM reader rather
+        than a ``foamToVTK`` tree. The previous implementation required the ESI
+        layout (``VTK/*.vtm`` plus ``VTK/<stem>/internal.vtu``); OpenFOAM Foundation
+        writes legacy ``VTK/<case>_<n>.vtk`` instead, so the binding could only ever
+        run against one of the two OpenFOAM lines. Reading the case works for both,
+        for ASCII and binary ``writeFormat``, and skips writing a full duplicate of
+        every run to disk.
 
-        If n_avg_timesteps=1 (default), only the last timestep is used (original behaviour).
-        If n_avg_timesteps=N, the last N VTK files are averaged, giving a time-averaged result
-        over N * writeInterval seconds.
+        k is the OpenFOAM ``k`` field (RANS turbulent kinetic energy). Time values
+        come from the reader, so the sort is by real simulation time - a hot-started
+        run whose step indices exceed the new run's cannot reorder the window.
 
         Args:
-            alpha_threshold: Only include points where alpha.water > threshold (default 0.5)
+            alpha_threshold: keep only points with alpha.water > this (default 0.5).
+                A single-phase (rigid-lid) case carries no alpha.water; every cell
+                is then water and all points are kept.
+            n_avg_timesteps: number of trailing write times to average.
 
         Returns:
-            Tuple of (coordinates, U_mean, k_mean) for water-phase points only.
-            k is None if not found in the VTK files.
+            (coordinates, U_mean, k_mean, alpha_mean) for water-phase points; k_mean
+            is None when the case carries no k field, alpha_mean is None when it
+            carries no alpha.water (single-phase case). alpha_mean is kept so
+            ALPHA_WATER can be reported at the control points; on a water-masked
+            extraction it is by construction above the threshold, but it is still
+            useful as a free-surface proximity check.
         """
-        vtk_dir = os.path.join(self.case_dir, "VTK")
-        if not os.path.isdir(vtk_dir):
-            raise FileNotFoundError(f"VTK directory does not exist: {vtk_dir}")
+        foam_files = sorted(glob.glob(os.path.join(self.case_dir, "*.foam")))
+        foam_file = foam_files[0] if foam_files else os.path.join(self.case_dir, "case.foam")
+        if not os.path.isfile(foam_file):
+            # pyvista's reader needs a .foam handle; create the conventional empty
+            # marker rather than failing on a case that is otherwise complete.
+            open(foam_file, "a").close()
 
-        # Collect and sort VTK files by actual simulation time.
-        # OpenFOAM v2412 foamToVTK creates one .vtm per timestep in VTK/.
-        # Each .vtm contains <!-- time='T' --> giving the real simulation time.
-        # Sorting by step index is WRONG because hot-start step indices (e.g. 78496)
-        # are larger than new run step indices, causing the hot-start t=600 field
-        # to be sorted last and incorrectly included in the averaging window.
+        reader = pv.OpenFOAMReader(foam_file)
+        reader.enable_all_cell_arrays()
+        try:
+            reader.enable_all_point_arrays()
+        except AttributeError:
+            pass
 
-        def _get_vtm_time(vtm_path):
-            # Deliberately does not swallow a missing/unparseable time attribute into
-            # a default value: a silent fallback here would degrade the sort back to
-            # arbitrary order for the affected file(s) - the exact failure mode this
-            # time-based sort exists to prevent. Fail loudly instead.
-            with open(vtm_path, "r") as f:
-                for line in f:
-                    m = re.search(r"time='([0-9.eE+\-]+)'", line)
-                    if m:
-                        return float(m.group(1))
-            raise ValueError(
-                f"Could not find a parseable time attribute in {vtm_path}. "
-                f"Refusing to fall back to a default time, since that would "
-                f"silently reintroduce the stale/wrong-timestep bug this sort exists to fix."
+        times = [float(x) for x in reader.time_values]
+        # t=0 is the initial condition, not a result: averaging it in would drag the
+        # window towards the hot-start state. Kept only if it is all there is.
+        positive = [x for x in times if x > 0.0]
+        times = positive or times
+        if not times:
+            raise RuntimeError(
+                f"No time steps found in {self.case_dir}. Did the solver run?"
             )
+        times.sort()
 
-        vtm_files = [
-            f for f in glob.glob(os.path.join(vtk_dir, "*.vtm"))
-            if not f.endswith(".series")
-        ]
-        if not vtm_files:
-            raise FileNotFoundError(f"No .vtm files found in: {vtk_dir}")
-
-        # Sort by real simulation time
-        vtm_files_sorted = sorted(vtm_files, key=_get_vtm_time)
-
-        # Build list of internal.vtu paths in time order
-        vtk_files_sorted = []
-        for vtm in vtm_files_sorted:
-            stem = os.path.splitext(os.path.basename(vtm))[0]
-            vtu = os.path.join(vtk_dir, stem, "internal.vtu")
-            if os.path.isfile(vtu):
-                vtk_files_sorted.append(vtu)
-
-        if not vtk_files_sorted:
-            raise FileNotFoundError(f"No internal.vtu files found in: {vtk_dir}")
-        print(f"Found {len(vtk_files_sorted)} VTK timesteps, averaging last {n_avg_timesteps}", flush=True)
-
-        # Select last n_avg_timesteps files
-        n = min(n_avg_timesteps, len(vtk_files_sorted))
-        if n < n_avg_timesteps:
+        n = min(int(n_avg_timesteps), len(times))
+        if n < int(n_avg_timesteps):
             logger.warning(
-                f"Requested n_avg_timesteps={n_avg_timesteps} but only {n} VTK files available. "
-                f"Averaging over {n} timesteps."
+                f"Requested n_avg_timesteps={n_avg_timesteps} but only {n} write "
+                f"time(s) available. Averaging over {n}."
             )
-        selected_files = vtk_files_sorted[-n:]
-        logger.info(f"Averaging over {n} VTK timesteps: "
-                    f"{[os.path.basename(os.path.dirname(f)) for f in selected_files]}")
+        selected = times[-n:]
+        logger.info(f"Averaging over {n} write time(s): {selected}")
 
-        # Read first file to get coords and water mask (assumed fixed across timesteps)
-        mesh0 = pv.read(selected_files[0])
-        if "U" not in mesh0.point_data:
-            raise KeyError("Velocity field 'U' not found in VTK point_data.")
+        coords = None
+        water_mask = None
+        has_k = False
+        has_alpha = False
+        U_sum = None
+        k_sum = None
+        alpha_sum = None
 
-        coords = mesh0.points
-        has_k = "k" in mesh0.point_data
+        for time_value in selected:
+            reader.set_active_time_value(time_value)
+            mesh = reader.read()["internalMesh"]
+            # OpenFOAM writes cell-centred data; the calibration samples at points.
+            mesh = mesh.cell_data_to_point_data()
 
-        if "alpha.water" in mesh0.point_data:
-            alpha = mesh0.point_data["alpha.water"]
-            water_mask = alpha > alpha_threshold
-            coords = coords[water_mask]
-            logger.info(f"Water phase: {water_mask.sum()}/{len(alpha)} points (alpha > {alpha_threshold})")
-        else:
-            logger.warning("alpha.water not found in VTK - using all points")
-            water_mask = None
+            if "U" not in mesh.point_data:
+                raise KeyError(
+                    f"Velocity field 'U' not found at t={time_value} in {self.case_dir}."
+                )
 
-        # Accumulate U and k across selected timesteps
-        U_sum = np.zeros_like(mesh0.point_data["U"][water_mask] if water_mask is not None else mesh0.point_data["U"])
-        k_sum = np.zeros(U_sum.shape[0]) if has_k else None
+            if coords is None:
+                coords = mesh.points
+                has_k = "k" in mesh.point_data
+                has_alpha = "alpha.water" in mesh.point_data
+                if has_alpha:
+                    alpha = mesh.point_data["alpha.water"]
+                    water_mask = alpha > alpha_threshold
+                    coords = coords[water_mask]
+                    logger.info(
+                        f"Water phase: {int(water_mask.sum())}/{len(alpha)} points "
+                        f"(alpha > {alpha_threshold})"
+                    )
+                else:
+                    # A rigid-lid / single-phase case has no alpha.water because
+                    # every cell IS water - not because information is missing.
+                    logger.info("no alpha.water field (single-phase case) - using all points")
+                # Accumulate U, k and alpha.water across the selected write times
+                U_sum = np.zeros_like(
+                    mesh.point_data["U"][water_mask] if water_mask is not None
+                    else mesh.point_data["U"]
+                )
+                k_sum = np.zeros(U_sum.shape[0]) if has_k else None
+                alpha_sum = np.zeros(U_sum.shape[0]) if has_alpha else None
 
-        for vtk_file in selected_files:
-            mesh = pv.read(vtk_file)
             U_t = mesh.point_data["U"]
             if water_mask is not None:
                 U_t = U_t[water_mask]
@@ -573,15 +613,26 @@ class OpenFOAMController:
                     k_t = k_t[water_mask]
                 k_sum += k_t
 
+            if has_alpha and "alpha.water" in mesh.point_data:
+                alpha_t = mesh.point_data["alpha.water"]
+                if water_mask is not None:
+                    alpha_t = alpha_t[water_mask]
+                alpha_sum += alpha_t
+
         U_mean = U_sum / n
         k_mean = k_sum / n if has_k else None
+        alpha_mean = alpha_sum / n if has_alpha else None
 
         if k_mean is None:
-            logger.warning("k field not found in VTK - TKE will be NaN")
+            logger.warning("k field not found - TKE will be NaN")
         else:
-            logger.info(f"k (averaged over {n} steps): Mean={k_mean.mean():.4e}, Max={k_mean.max():.4e}")
+            logger.info(
+                f"k (averaged over {n} step(s)): Mean={k_mean.mean():.4e}, Max={k_mean.max():.4e}"
+            )
 
-        return coords, U_mean, k_mean
+        return coords, U_mean, k_mean, alpha_mean
+
+
 # =============================================================================
 # OpenFOAMModel - BAL-compatible wrapper around OpenFOAMController
 # =============================================================================
@@ -599,14 +650,21 @@ class OpenFOAMModel(HydroSimulations):
     """
 
     #: Field names ``_extract_at_control_points`` returns, and therefore the only
-    #: valid entries in ``calibration_quantities``. ``U_magnitude`` is a legacy
-    #: alias of ``U_MAG``, kept so the detailed result CSVs and per-run JSONs
-    #: written by earlier versions stay readable.
+    #: valid entries in ``calibration_quantities`` and ``extraction_quantities``.
+    #: ``U_magnitude`` is a legacy alias of ``U_MAG``, kept so the detailed result
+    #: CSVs and per-run JSONs written by earlier versions stay readable.
+    #: Every one of these is written to ``results-detailed-*.csv`` for every run x
+    #: control point regardless of what is being calibrated, so the calibration
+    #: quantities can be re-chosen afterwards from stored data (see
+    #: :meth:`output_processing` and ``--only_bal_mode``). ``ALPHA_WATER`` is the
+    #: interFoam water volume fraction at the point; it is extracted and stored but
+    #: is rarely a sensible calibration target on its own.
     EXTRACTABLE_QUANTITIES = (
         "U_x", "U_y", "U_z",
         "U_MAG", "U_magnitude",
         "u_fluct", "v_fluct", "w_fluct",
         "TKE",
+        "ALPHA_WATER",
     )
 
     def __init__(
@@ -637,6 +695,10 @@ class OpenFOAMModel(HydroSimulations):
         validation=False,
         multitask_selection="variables",
         n_avg_timesteps=1,
+        gpe_error=0.0,
+        measurement_error=0.10,
+        model_structural_error=0.0,
+        write_vtk=False,
         *args,
         **kwargs
     ):
@@ -677,6 +739,13 @@ class OpenFOAMModel(HydroSimulations):
             delete_complex_outputs=delete_complex_outputs,
             validation=validation,
             multitask_selection=multitask_selection,
+            # The three error terms have to be forwarded, not just accepted: the
+            # base class builds the observation variances from them, so leaving
+            # them to **kwargs meant a configured measurement_error was silently
+            # replaced by HydroSimulations' own default on every OpenFOAM run.
+            gpe_error=gpe_error,
+            measurement_error=measurement_error,
+            model_structural_error=model_structural_error,
         )
 
         # OpenFOAM-specific attributes
@@ -688,6 +757,10 @@ class OpenFOAMModel(HydroSimulations):
         self.water_surface_alpha = water_surface_alpha
         self.reference_z = reference_z
         self.n_avg_timesteps = max(1, int(n_avg_timesteps))  # minimum 1
+        # Write foamToVTK output per run (for ParaView/VisIt). Off by default:
+        # field extraction reads the case directly, so this is only ever a
+        # convenience, and with delete_complex_outputs it is deleted immediately.
+        self.write_vtk = bool(write_vtk)
         # Alias consumed by the GP layer (see bal_openfoam.py).
         self.parameter_ranges = self.param_values
 
@@ -936,10 +1009,17 @@ class OpenFOAMModel(HydroSimulations):
                 foam.run_simulation(nprocs=self.n_processors, solver=self.solver_name)
 
                 # Convert to VTK
-                foam.convert_to_vtk()
+                # Extraction reads the case directory itself, so VTK output is
+                # no longer required to get the fields out. It is still written on
+                # request (write_vtk=True), for opening a run in ParaView/VisIt -
+                # but not by default: with delete_complex_outputs the whole run
+                # folder is removed straight after extraction, so converting every
+                # run would write a full duplicate of it only to delete it again.
+                if getattr(self, "write_vtk", False):
+                    foam.convert_to_vtk()
 
-                # Extract fields from VTK (averaged over n_avg_timesteps)
-                coords, U, k = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
+                # Extract fields, averaged over the last n_avg_timesteps write times
+                coords, U, k, alpha = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
 
                 # Sanity check: verify fields differ from previous run.
                 # Identical fields across runs indicate a VTK extraction bug (e.g. missing -latestTime).
@@ -967,6 +1047,8 @@ class OpenFOAMModel(HydroSimulations):
                     np.save(os.path.join(raw_dir, f"U_{run_idx:04d}.npy"), U)
                     if k is not None:
                         np.save(os.path.join(raw_dir, f"k_{run_idx:04d}.npy"), k)
+                    if alpha is not None:
+                        np.save(os.path.join(raw_dir, f"alpha_{run_idx:04d}.npy"), alpha)
                     logger.info(f"No measurements file  raw fields saved to {raw_dir} for run {run_idx}.")
 
                     # Save collocation points so they can be reloaded later
@@ -976,7 +1058,7 @@ class OpenFOAMModel(HydroSimulations):
 
                 else:
                     # Measurements file exists  interpolate to control points as normal
-                    results = self._extract_at_control_points(coords, U, k)
+                    results = self._extract_at_control_points(coords, U, k, alpha)
 
                     # calibration_quantities is validated against
                     # EXTRACTABLE_QUANTITIES in __init__, so a missing key here
@@ -989,7 +1071,11 @@ class OpenFOAMModel(HydroSimulations):
 
                     all_results.append(run_results)
 
-                    # Store detailed results: one row per control point
+                    # Store detailed results: one row per control point. Every
+                    # extractable quantity is written here regardless of what is
+                    # being calibrated, so calibration_quantities can be re-chosen
+                    # later from this table without re-running OpenFOAM (see
+                    # output_processing / --only_bal_mode).
                     for pt_idx, cp in enumerate(self.control_points):
                         row = {
                             "run_idx": run_idx,
@@ -1003,6 +1089,7 @@ class OpenFOAMModel(HydroSimulations):
                             "v_fluct": float(results["v_fluct"][pt_idx]),
                             "w_fluct": float(results["w_fluct"][pt_idx]),
                             "TKE": float(results["TKE"][pt_idx]),
+                            "ALPHA_WATER": float(results["ALPHA_WATER"][pt_idx]),
                         }
                         all_detailed_results.append(row)
 
@@ -1049,6 +1136,7 @@ class OpenFOAMModel(HydroSimulations):
                             "U_magnitude": np.nan,
                             "u_fluct": np.nan, "v_fluct": np.nan, "w_fluct": np.nan,
                             "TKE": np.nan,
+                            "ALPHA_WATER": np.nan,
                         }
                         all_detailed_results.append(row)
 
@@ -1062,8 +1150,8 @@ class OpenFOAMModel(HydroSimulations):
                 all_cp = design
             self._save_all_results(all_cp, all_detailed_results)
 
-    def _extract_at_control_points(self, coords, U, k=None):
-        """Extract velocity and TKE at control points.
+    def _extract_at_control_points(self, coords, U, k=None, alpha=None):
+        """Extract velocity, TKE and water fraction at control points.
 
         TKE is read directly from the OpenFOAM k field (RANS turbulent kinetic energy).
 
@@ -1071,11 +1159,12 @@ class OpenFOAMModel(HydroSimulations):
             coords: Array of VTK point coordinates (water phase only)
             U: Velocity array at VTK points, shape (n_points, 3)
             k: RANS turbulent kinetic energy array from OpenFOAM k field, or None
+            alpha: interFoam alpha.water array at VTK points, or None (single-phase)
 
         Returns:
             dict keyed by :attr:`EXTRACTABLE_QUANTITIES`: U_x, U_y, U_z, U_MAG
             (with U_magnitude retained as a legacy alias of the same values),
-            u_fluct, v_fluct, w_fluct and TKE at the control points
+            u_fluct, v_fluct, w_fluct, TKE and ALPHA_WATER at the control points
         """
         if len(self.control_points) == 0:
             # Built from the constant so both return paths always expose the
@@ -1096,6 +1185,11 @@ class OpenFOAMModel(HydroSimulations):
             k_cp = np.full(len(self.control_points), np.nan)
             fluct = np.full(len(self.control_points), np.nan)
 
+        if alpha is not None:
+            alpha_cp = alpha[indices]
+        else:
+            alpha_cp = np.full(len(self.control_points), np.nan)
+
         u_mag = np.linalg.norm(U_cp, axis=1)
 
         return {
@@ -1108,6 +1202,7 @@ class OpenFOAMModel(HydroSimulations):
             "v_fluct": fluct,
             "w_fluct": fluct,
             "TKE": k_cp,        # k from OpenFOAM k-epsilon field
+            "ALPHA_WATER": alpha_cp,  # interFoam water volume fraction at the point
         }
 
     def _save_run_results(self, case_dir, run_idx, params, results):
@@ -1135,11 +1230,11 @@ class OpenFOAMModel(HydroSimulations):
             logger.info(f"Deleted run folder to free disk space: {case_dir}")
 
     def output_processing(self, output_data_path=None, **kwargs):
-        """Load existing results for BAL restart."""
-        if output_data_path and os.path.isfile(output_data_path):
-            with open(output_data_path, 'r') as f:
-                data = json.load(f)
-            self.restart_collocation_points = np.array(data["collocation_points"])
-            self.model_evaluations = np.array(data["model_evaluations"])
-            return self.model_evaluations
-        raise FileNotFoundError(f"Output data not found: {output_data_path}") 
+        """Load stored model outputs for a BAL restart or a pure re-analysis.
+
+        The stored matrix is returned as it is when it was written for the ``calibration_quantities`` configured now. When they differ it is rebuilt from ``restart_data/detailed-model-outputs.csv``, which holds every quantity in :attr:`EXTRACTABLE_QUANTITIES` for every run x control point, so the calibration quantities can be chosen after the expensive runs: restart with ``--only_bal_mode True --calibration_quantities "..."`` and only the surrogate and BAL are recomputed. See :meth:`~hydroBayesCal.hysim.HydroSimulations._load_stored_outputs`.
+
+        ``run_range_filtering=(lo, hi)`` (1-indexed, inclusive), if passed by the driver, trims a rebuilt matrix to those runs.
+        """
+        return self._load_stored_outputs(
+            output_data_path, run_range_filtering=kwargs.get("run_range_filtering"))

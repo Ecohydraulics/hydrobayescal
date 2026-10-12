@@ -13,12 +13,8 @@ import pandas as pd
 import seaborn as sns
 import pickle
 from matplotlib.lines import Line2D
-from scipy.stats import spearmanr, pearsonr
-from scipy.stats import gaussian_kde
 
-
-
-from hydroBayesCal.surrogate.posterior_analysis import marginal_optima, track_iteration
+from hydroBayesCal.surrogate.posterior_analysis import track_iteration
 
 
 def _latex_safe(text):
@@ -458,7 +454,9 @@ class PosteriorPlots:
             Backward-compatible aliases:
 
             - "posterior_peak" -> "posterior_marginal_peak"
-            - "posterior_MAP" -> "joint_posterior_MAP"
+            - "posterior_MAP" -> "joint_posterior_MAP" when ``post_loglikelihood_arrays`` is given, otherwise "posterior_marginal_peak", which is what this name returned up to version 1.9.0
+
+            The joint maximum is the posterior sample of highest likelihood. It is the joint posterior mode for the uniform priors the drivers use by default; with another prior the prior density of each sample would have to be added.
 
         post_loglikelihood_arrays : list of array-like or array-like, optional
             Post-rejection log-likelihood values.
@@ -485,6 +483,13 @@ class PosteriorPlots:
         # ------------------------------------------------------------------
         # Backward-compatible estimator names
         # ------------------------------------------------------------------
+        # Up to version 1.9.0 "posterior_MAP" was the peak of each marginal histogram, which is "posterior_marginal_peak" here. The name now stands for the joint maximum, and that needs the log-likelihood of every posterior sample. A call written for an earlier version passes none, so it gets the estimate it got then instead of an error.
+        if best_estimate_value == "posterior_MAP" and post_loglikelihood_arrays is None:
+            print("plot_posterior_updates: best_estimate_value='posterior_MAP' without post_loglikelihood_arrays "
+                  "plots the peak of each marginal ('posterior_marginal_peak'), as versions up to 1.9.0 did. "
+                  "Pass post_loglikelihood_arrays (BAL_dictionary['post_loglikelihood']) for the joint maximum.")
+            best_estimate_value = "posterior_marginal_peak"
+
         estimate_aliases = {
             "posterior_peak": "posterior_marginal_peak",
             "posterior_MAP": "joint_posterior_MAP"

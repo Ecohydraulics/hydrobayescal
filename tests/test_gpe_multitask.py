@@ -29,12 +29,14 @@ def _outputs(x, n_locations, n_quantities):
     The coefficients deliberately vary in sign and direction. Columns that are all
     increasing functions of the same inputs come out almost perfectly correlated with
     each other, and then no test can tell which column is which.
+
+    The levels are three units apart, more than a column varies (at most about 1.7), so that even a prediction that is flat at the mean of a column is closest to that column.
     """
     columns = []
     for i in range(n_locations):
         for q in range(n_quantities):
             k = i * n_quantities + q
-            columns.append(np.cos(k) * x[:, 0] + np.sin(2.0 * k) * x[:, 1] + k)
+            columns.append(np.cos(k) * x[:, 0] + np.sin(2.0 * k) * x[:, 1] + 3.0 * k)
     return np.column_stack(columns)
 
 
@@ -48,6 +50,18 @@ def _column_match(predicted, truth):
                           for j in range(truth.shape[1])]
                          for k in range(predicted.shape[1])])
     return np.argmin(distance, axis=1)
+
+
+def test_the_test_columns_can_be_told_apart_even_by_a_flat_prediction():
+    """The synthetic columns have to differ in level by more than they vary.
+
+    The column-order tests train for a handful of iterations, so a predicted column can come out nearly flat at the mean of its training outputs. If two columns have about the same mean, the flat prediction of the one that varies more lies closer to the other one, and the column-order check fails although the columns are in the right order. With levels one unit apart, columns 7 and 8 of a 3 x 3 layout had means of 7.87 and 7.78, and ``test_column_order_test_detects_the_legacy_mis_dispatch`` failed about once in a hundred runs, depending on the random initialization of the task covariance.
+    """
+    x = np.random.default_rng(0).uniform(0.0, 1.0, size=(N_TRAIN, N_PARAMS))
+    y = _outputs(x, 3, 3)
+    flat = np.tile(y.mean(axis=0), (len(y), 1))
+
+    assert np.array_equal(_column_match(flat, y), np.arange(y.shape[1]))
 
 
 def _train(n_locations, n_quantities, mode, seed=0):
@@ -67,7 +81,13 @@ def _train(n_locations, n_quantities, mode, seed=0):
     sm = MultiGPyTraining(x, y, kernel, training_iter=TRAINING_ITER,
                           likelihood=likelihood, optimizer="adam", lr=0.1,
                           number_quantities=n_quantities)
-    getattr(sm, f"train_tasks_{mode}")()
+    # The task covariance of the multitask kernel is initialized from torch's global generator, whose state differs from run to run. Seeded here, so that a test trains the same emulator every time; the state is restored for the tests that follow.
+    generator_state = torch.random.get_rng_state()
+    torch.manual_seed(seed)
+    try:
+        getattr(sm, f"train_tasks_{mode}")()
+    finally:
+        torch.random.set_rng_state(generator_state)
     return sm, x, y
 
 
@@ -191,3 +211,165 @@ def test_unwritten_columns_raise():
     sm.task_mode = "variables"
     with pytest.raises(RuntimeError, match="unwritten"):
         sm.predict_(input_sets=x)
+
+
+# --------------------------------------------------------------------------- #
+# the covariance handed to Bayesian active learning
+# --------------------------------------------------------------------------- #
+FAR_FROM_THE_DESIGN = [[5.0, 5.0]]
+
+
+@pytest.mark.parametrize("mode", ["variables", "all"])
+def test_multitask_cov_diagonal_is_the_predictive_variance(mode):
+    """BAL samples the emulator from this covariance, so it has to be the predictive one.
+
+    The blocks used to be the prior term, the task kernel times the input kernel at the prediction point. That term does not depend on the training data, while the standard deviation returned by the same call does, so the two described different distributions.
+    """
+    n_locations, n_quantities = 3, 2
+    sm, x, _ = _train(n_locations, n_quantities, mode)
+    probe = np.vstack([x[:2], FAR_FROM_THE_DESIGN])
+
+    output = sm.predict_(input_sets=probe, multitask_cov=True)
+
+    for j in range(len(probe)):
+        diagonal = np.concatenate([np.diag(block) for block in output["multitask_cov"][j]])
+        assert diagonal == pytest.approx(output["std"][j] ** 2, rel=1e-3)
+        for block in output["multitask_cov"][j]:
+            assert np.allclose(block, block.T, rtol=1e-5, atol=1e-10)
+
+
+@pytest.mark.parametrize("mode", ["variables", "all"])
+def test_multitask_cov_is_smaller_where_the_emulator_was_trained(mode):
+    """A candidate next to a training point is less uncertain than one far outside the design.
+
+    This difference is what lets the BAL utility tell an explored region from an unexplored one. The prior term gave every candidate the same covariance.
+    """
+    sm, x, _ = _train(3, 2, mode)
+
+    output = sm.predict_(input_sets=np.vstack([x[:1], FAR_FROM_THE_DESIGN]), multitask_cov=True)
+
+    at_training_point = sum(np.trace(block) for block in output["multitask_cov"][0])
+    far_away = sum(np.trace(block) for block in output["multitask_cov"][1])
+    assert at_training_point < 0.9 * far_away
+
+
+@pytest.mark.parametrize("budget", [2.0e7, 1.0])
+def test_task_blocks_match_the_dense_predictive_covariance(budget):
+    """The block-wise evaluation must return what the full covariance holds at those entries.
+
+    With the tasks spanning all outputs the full covariance per prediction point does not fit into memory for a real calibration, so only the quantity x quantity blocks are evaluated, in chunks of prediction points. ``budget=1.0`` forces one point per chunk.
+    """
+    n_locations, n_quantities, n_points = 3, 2, 5
+    sm, x, _ = _train(n_locations, n_quantities, "all")
+    model_info = sm.gp_list[0]
+    gp, likelihood = model_info["gp"], sm._model_likelihood(model_info)
+    gp.eval()
+    likelihood.eval()
+    n_tasks = n_locations * n_quantities
+
+    with torch.no_grad():
+        predictions = likelihood(gp(torch.tensor(x[:n_points], dtype=torch.float32)))
+        blocks = MultiGPyTraining._posterior_task_blocks(
+            predictions, n_quantities, n_train=N_TRAIN, budget=budget)
+        dense = predictions.covariance_matrix.numpy().reshape(n_points, n_tasks, n_points, n_tasks)
+
+    assert blocks.shape == (n_points, n_locations, n_quantities, n_quantities)
+    for j in range(n_points):
+        for i in range(n_locations):
+            sl = slice(i * n_quantities, (i + 1) * n_quantities)
+            assert blocks[j, i] == pytest.approx(dense[j, sl, j, sl], rel=1e-4, abs=1e-6)
+
+
+# --------------------------------------------------------------------------- #
+# the blocks have to be covariances, also where round-off dominates
+# --------------------------------------------------------------------------- #
+class _Prediction:
+    """What ``_posterior_task_blocks`` reads from a prediction, with a covariance that can be set entry by entry."""
+
+    _interleaved = True
+
+    def __init__(self, covariance, n_points, n_tasks):
+        self.mean = torch.zeros(n_points, n_tasks)
+        self.lazy_covariance_matrix = torch.as_tensor(covariance)
+
+
+def test_task_blocks_are_covariances_even_where_round_off_made_them_indefinite():
+    """A block whose covariance term exceeds its variances must not reach the BAL sampler.
+
+    Where the emulator is nearly certain, its posterior variance is orders of magnitude below its prior variance, and the single-precision subtraction that yields it leaves an error of the size of the result. The block then has a negative eigenvalue, the sampler of the BAL utility refuses it, and the calibration stops in its active-learning loop.
+    """
+    from scipy import stats
+
+    indefinite = np.array([[1.0e-6, 1.1e-6], [1.1e-6, 1.0e-6]])  # eigenvalues 2.1e-6 and -1.0e-7
+    definite = np.array([[2.0e-6, 0.5e-6], [0.5e-6, 1.0e-6]])
+    joint = np.zeros((4, 4))  # two prediction points, two tasks, interleaved
+    joint[:2, :2], joint[2:, 2:] = indefinite, definite
+
+    blocks = MultiGPyTraining._posterior_task_blocks(_Prediction(joint, 2, 2), block_size=2)
+
+    for block in blocks[:, 0]:
+        stats.multivariate_normal(mean=np.zeros(2), cov=block, allow_singular=True)  # must not raise
+    assert np.linalg.eigvalsh(blocks[0, 0]).min() >= 0.0
+    assert blocks[1, 0] == pytest.approx(definite, rel=1e-12), "a definite block is returned as it is"
+
+
+def test_multitask_cov_next_to_training_points_is_accepted_by_the_bal_sampler():
+    """The case that ended an end-to-end run of the TELEMAC driver, with the driver's emulator settings.
+
+    Whether a trained emulator produces indefinite blocks depends on its hyperparameters. With this seed, on the machine the test was written on, the correlation lengths at one calibration point come out at about ten times the parameter ranges, the posterior variance there is six orders of magnitude below the prior variance, and one in five of the candidates below was refused before the blocks were projected. A double-precision evaluation of the same emulator gives a valid covariance at every candidate.
+    """
+    from scipy import stats
+
+    rng = np.random.default_rng(2)
+    torch.manual_seed(2)
+    stations = np.linspace(0.2, 1.0, 3)
+    x = rng.uniform(size=(9, 2))
+    y = np.empty((9, 6))
+    y[:, 0::2] = [[np.sin(3.0 * a * s) + b * s ** 2 for s in stations] for a, b in x]
+    y[:, 1::2] = [[2.0 + a * s - 0.5 * b * np.cos(2.0 * s) for s in stations] for a, b in x]
+
+    kernel = gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=2))
+    likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+        num_tasks=2, noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
+    likelihood.noise = 1e-5
+    sm = MultiGPyTraining(x, y, kernel, training_iter=150, likelihood=likelihood,
+                          optimizer="adam", lr=0.07, number_quantities=2)
+    sm.train_tasks_variables()
+
+    candidates = np.clip(np.repeat(x, 10, axis=0) + rng.normal(scale=0.01, size=(90, 2)), 0.0, 1.0)
+    covariance = sm.predict_(input_sets=candidates, multitask_cov=True)["multitask_cov"]
+
+    for per_candidate in covariance:
+        stats.multivariate_normal(mean=np.zeros(6), cov=block_diag(*per_candidate), allow_singular=True)
+
+
+def test_task_blocks_stay_covariances_when_converted_to_physical_units():
+    """The projection has to be the last operation on a block.
+
+    The normalization constants of the model are single-precision numbers. Scaling an already projected, hence nearly singular, block with them leaves the form D B D by round-off and can make the block indefinite again: with the scales used here the smallest eigenvalue came out at -4e-9 times the largest, which the sampler refuses.
+    """
+    from scipy import stats
+
+    indefinite = np.array([[1.0e-6, 1.1e-6], [1.1e-6, 1.0e-6]])
+    scale = np.array([1.929037, 0.8458708], dtype=np.float32)
+
+    blocks = MultiGPyTraining._posterior_task_blocks(_Prediction(indefinite, 1, 2), block_size=2, scale=scale)
+
+    stats.multivariate_normal(mean=np.zeros(2), cov=blocks[0, 0], allow_singular=True)  # must not raise
+    assert np.linalg.eigvalsh(blocks[0, 0]).min() >= 0.0
+    # The variances are the normalized ones times the squared scales. Clipping moves them by the size of the negative eigenvalue, which is 5 % of the largest one in this deliberately bad block.
+    assert np.diag(blocks[0, 0]) == pytest.approx(np.diag(indefinite) * scale.astype(float) ** 2, rel=0.2)
+
+
+def test_clipping_of_an_indefinite_block_is_reported_once(monkeypatch):
+    """A block that had to be clipped tells that the emulator is at the resolution of its arithmetic; a silent repair would hide that."""
+    from hydroBayesCal.surrogate import gpe_gpytorch
+
+    monkeypatch.setattr(gpe_gpytorch, "_REPORTED_CLIPPED_COVARIANCE", False)
+    definite = np.array([[2.0e-6, 0.5e-6], [0.5e-6, 1.0e-6]])
+    MultiGPyTraining._posterior_task_blocks(_Prediction(definite, 1, 2), block_size=2)
+    assert not gpe_gpytorch._REPORTED_CLIPPED_COVARIANCE, "a valid covariance is not reported"
+
+    indefinite = np.array([[1.0e-6, 1.1e-6], [1.1e-6, 1.0e-6]])
+    MultiGPyTraining._posterior_task_blocks(_Prediction(indefinite, 1, 2), block_size=2)
+    assert gpe_gpytorch._REPORTED_CLIPPED_COVARIANCE

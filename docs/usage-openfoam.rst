@@ -130,15 +130,32 @@ is constructed, before a simulation starts.
 
 ``calibration_quantities`` uses the standard field names. The OpenFOAM binding
 extracts ``"U_x"``, ``"U_y"``, ``"U_z"``, ``"U_MAG"`` (velocity components and
-magnitude), ``"TKE"`` (turbulent kinetic energy ``k``) and the isotropic
-fluctuation components ``"u_fluct"``, ``"v_fluct"``, ``"w_fluct"``. These are
+magnitude), ``"TKE"`` (turbulent kinetic energy ``k``), the isotropic
+fluctuation components ``"u_fluct"``, ``"v_fluct"``, ``"w_fluct"`` and ``"ALPHA_WATER"`` (the ``interFoam`` water volume fraction at the point). These are
 listed in ``OpenFOAMModel.EXTRACTABLE_QUANTITIES``, and any other name raises a
-``ValueError`` when the model is constructed, before a simulation starts.
+``ValueError`` when the model is constructed, before a simulation starts. ``ALPHA_WATER`` is sampled at the nearest water-phase point, so it lies above the water-surface threshold by construction. It indicates how close a calibration point is to the free surface and is rarely a meaningful calibration target on its own.
 Free-surface quantities such as ``"WATER_DEPTH"`` and ``"FREE_SURFACE"`` are
 available in the Delft3D and TELEMAC bindings but are not yet extracted here.
 As for TELEMAC, the calibration CSV provides a
 ``<target>_DATA`` and ``<target>_ERROR`` column per calibration target, together with
 the ``X``, ``Y`` (and ``Z``) coordinates of the measurement points.
+
+Choosing the calibration targets after the runs
+-----------------------------------------------
+
+The binding writes every extractable quantity for every run and calibration point, whichever of them are calibration targets at the time. The rows of all runs are kept in ``restart_data/detailed-model-outputs.csv``, one row per run and calibration point. The calibration targets can therefore be chosen, or changed, after the simulations have been paid for. To calibrate on another set of targets, change ``calibration_quantities`` in the configuration, or pass it on the command line, and restart from the stored runs:
+
+.. code-block:: bash
+
+   python src/hydroBayesCal/drivers/bal_openfoam.py --config config_OpenFOAM.py --only_bal_mode True --calibration_quantities "U_x TKE"
+
+When the configured targets are the ones the runs were stored for, the stored training data are read back unchanged. When they differ, the training data are rebuilt from the table, and only the surrogate and the Bayesian active learning are recomputed. Three points are worth knowing:
+
+* The calibration points file needs a ``<target>_DATA`` and a ``<target>_ERROR`` column for every new target, and the same points in the same order as when the runs were made. A different number of points is reported as an error.
+* A rebuild uses the first ``sampling['init_runs']`` stored runs. To train the surrogate on all stored runs, including those selected by Bayesian active learning for the earlier targets, set ``init_runs`` to their number. The log states how many runs were found and how many are used.
+* Runs added after a change of targets are appended to the same table, so the targets can be changed again later without losing runs.
+
+The Delft3D binding offers the same for the quantities listed in ``extraction_quantities``, see :doc:`usage-delft3d`.
 
 Running the calibration
 -----------------------

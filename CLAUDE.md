@@ -18,9 +18,11 @@ delegated to `bayesvalidrox`; the GPEs and the BAL logic are in-tree.
 ```bash
 pip install -e ".[dev,docs,mesh]"       # editable dev install (Python >= 3.10, tested 3.10-3.12)
 pre-commit install                       # once per clone (20 MB file-size gate)
-pytest                                   # test runner of record (no test files exist in-tree yet)
+pytest                                   # test runner of record; the suite in tests/ runs without any solver
+python env-scripts/sync-example-drivers.py  # after editing drivers/bal_telemac.py: regenerate its example copies
 sphinx-build -b html -W docs docs/_build/html
 ruff check src                           # linter declared in the dev extra
+ruff check --target-version py310 --select E9,F63,F7,F82 src tests examples env-scripts docs/conf.py   # the error-only gate CI enforces
 python -m build && twine check dist/*    # local release sanity check
 ```
 
@@ -59,6 +61,8 @@ Concrete bindings: `telemac/control_telemac.py` (`TelemacModel`, by far the most
 `TelemacModel` instances (one per steady discharge) and re-exposes the same attribute surface the
 driver reads, concatenating per-flow observations and outputs into one combined space.
 
+`HydroSimulations` also owns the result bookkeeping of the bindings that do not have their own (OpenFOAM, Delft3D): `_save_all_results()` writes the stored runs and merges the detailed results table by run index, and `_load_stored_outputs()` reads them back for `only_bal_mode`, rebuilding the training matrix from `restart_data/detailed-model-outputs.csv` when the configured calibration targets differ from the stored ones. The bindings call `_save_all_results()` with all rows of the current block after every run, so it has to stay idempotent per run.
+
 Key data contract, assumed everywhere downstream: `model_evaluations` is a 2D array of shape
 `[num_runs, nloc * num_calibration_quantities]`, with quantities interleaved per location (two
 quantities, two locations => columns 1-2 are location 1, columns 3-4 are location 2). Keep this
@@ -95,6 +99,8 @@ they are near-duplicates across solvers, so a change to the workflow usually has
 `run_bal_model` from `bal_telemac.py` verbatim and only swaps in `MultiflowTelemacModel`, so
 `bal_telemac.py` is the canonical driver, keep the two in sync.
 
+The copies of `bal_telemac.py` in `examples/Telemac/**` are generated from it by `env-scripts/sync-example-drivers.py` and may differ in their header line and default config only; `tests/test_shipped_defaults.py` enforces that. Workflow changes go into the canonical driver, never into a copy. The same test module pins the `.get()` fallbacks of optional config keys, and `tests/test_driver_end_to_end.py` runs the three `run_bal_model` on an analytic model for every emulator layout.
+
 ### Execution modes
 
 `complete_bal_mode` and `only_bal_mode` (from the `execution` config block) select the task:
@@ -110,12 +116,16 @@ they are near-duplicates across solvers, so a change to the workflow usually has
 `initial-model-outputs.json`, which is why `extraction_quantities` should be a superset of
 `calibration_quantities`: any extracted quantity can become the calibration target on restart
 without re-running the solver.
+TELEMAC filters the stored JSON for the new targets; OpenFOAM (every extractable quantity) and Delft3D (`extraction_quantities`) rebuild from `restart_data/detailed-model-outputs.csv`.
+
+A user-supplied design (`user_param_values`, or `'user'` as sampling method in the TELEMAC drivers) and validation runs are never staged: `run_staged_initial_design` runs them in one block.
 
 ### Surrogate and BAL internals
 
 * `surrogate/gpe_gpytorch.py`: `GPyTraining` (single quantity, one independent GP per output column)
   and `MultiGPyTraining` (multitask). `multitask_selection` picks the task axis: `"variables"`
   (tasks = calibration quantities, the default), `"locations"`, or `"all"`.
+  `"SO_sequential"` uses `SOSequentialGPyTraining` instead, independent `GPyTraining` models per calibration quantity behind the same `predict_` interface. The value comes from `sampling['multitask_selection']` in all four drivers and is validated in `HydroSimulations.__init__` (`hysim.MULTITASK_SELECTIONS`). `MultiGPyTraining.predict_(multitask_cov=True)` returns the posterior predictive covariance between the quantities per location (`_posterior_task_blocks`), which is what BAL samples from. The emulators compute in single precision. Where an emulator is nearly certain (posterior variance about six orders of magnitude below the prior variance, which a smooth model response produces at every candidate, not only next to a training run), that covariance is at the resolution of the arithmetic and can come out indefinite, which the BAL sampler refuses. Every block therefore passes through `bal_functions.project_to_psd` as the last operation on it; the projection makes the block valid, it does not restore the lost digits.
 * `surrogate/gpe_skl.py`: `SklTraining`, the scikit-learn alternative (`gp_library="skl"`).
 * `surrogate/bal_functions.py`: `BayesianInference` (likelihood, rejection sampling, BME/RE/ELPD/IE)
   and `SequentialDesign` (candidate exploration plus the `dkl`/`bme` utility functions).
@@ -159,7 +169,7 @@ with no model instance or folder conventions involved.
   as both `KEYWORD = value` and `KEYWORD : value`), friction-zone names in the `.tbl` file (a
   calibration parameter naming a friction zone must be prefixed `zone`/`Zone`/`ZONE`), GAIA
   `CLASSES SHIELDS PARAMETERS n` (prefixed `gaia` in the config), SELAFIN variable names (16-char,
-  e.g. `TURBULENT ENERG.`), OpenFOAM `system/controlDict`, Delft3D `.mdf` keywords. The Python
+  e.g. `TURBULENT ENERG.`), GAIA layer ratios `LAY<layer> SAND RAT<class>` (layer first, sand class last; built by `config_telemac.gaia_sand_ratio_variable`, used by the `gaia_layer_average` extraction), OpenFOAM `system/controlDict`, Delft3D `.mdf` keywords. The Python
   attribute names are shared across bindings, the software-facing values are not.
   `telemac/config_telemac.py` maps variable names to TELEMAC vs GAIA and holds the parameter CSVs
   shipped as package data.
@@ -169,4 +179,5 @@ with no model instance or folder conventions involved.
   `bash env-scripts/update-large-file-ignores.sh` and commit the updated `.gitignore`. Enforced by
   pre-commit locally and by `.github/workflows/check-file-size.yml` server-side.
 * Branch off `main` and open a pull request rather than pushing to `main`.
+* `.github/workflows/tests.yml` runs on every push to any branch and on every pull request: the error-only ruff gate, `pytest` on Python 3.10 and 3.12 (CPU build of torch), and the documentation build with the Read the Docs inputs (`docs/requirements-docs.txt`, mocked heavy imports, `-W`). A workflow runs for a push only if the pushed branch contains the workflow file.
 * Update `CHANGELOG.md` (Keep a Changelog format) for user-visible changes.

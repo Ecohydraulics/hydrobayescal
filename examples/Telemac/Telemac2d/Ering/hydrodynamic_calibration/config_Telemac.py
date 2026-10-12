@@ -16,8 +16,8 @@ e.g. "WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U/V",
 
 import os
 
-# Base directory
-BASE_DIR = "/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/"
+# Base directory of this example (resolved relative to this file, so the example runs from any clone location)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ============================================================================
 # PATHS AND DIRECTORIES

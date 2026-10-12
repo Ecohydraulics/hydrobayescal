@@ -4,6 +4,94 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-10-12
+
+### Fixed
+- **BAL could stop with `ValueError: The input matrix must be symmetric positive semidefinite` in a calibration on several targets** with a multitask emulator (`multitask_selection` `"variables"`, the default, or `"all"`). 1.10.0 hands BAL the exact posterior covariance between the calibration targets at every candidate parameter set. The emulator computes that covariance in single precision, as the difference between the prior covariance and the part explained by the training runs. Where the emulator is nearly certain, the result is orders of magnitude smaller than both, its error reaches the size of the result, and the 2 x 2 or 3 x 3 block can come out with a negative eigenvalue, which the sampler of the BAL utility refuses. This is not confined to candidates next to a training run: an emulator that finds the model response smooth over the whole parameter ranges is that certain everywhere. In a reproduction with the emulator settings of the drivers and nine training runs of an analytic model, one of eight trained emulators produced such blocks, for 3 to 8 % of its candidates. Its correlation lengths at one calibration point were about ten times the parameter ranges, its posterior variance there was six orders of magnitude below its prior variance, and a double-precision evaluation of the same emulator gave a valid covariance at every candidate. A calibration with such an emulator stopped in a BAL iteration, after the initial design had been simulated. The blocks are now converted to physical units in double precision and their negative eigenvalues are clipped as the last step (`surrogate.bal_functions.project_to_psd`); a positive semidefinite block is unchanged. The clipping yields a valid covariance, it does not restore the digits lost in single precision; in the reproduction these correspond to a standard deviation of about 1 % of the spread of the training outputs. The emulator reports once per run that it had to clip. The BAL utility applies the same projection if any emulator hands it an indefinite covariance, and reports that once as well. The defect entered with 1.10.0, the first release that hands BAL the posterior covariance instead of the prior one, and was found by the new end-to-end test of the TELEMAC driver, which failed in one of about ten runs of the test workflow. A calibration on one target, or with `multitask_selection` `"locations"` or `"SO_sequential"`, was not affected: BAL samples those emulators with their standard deviations.
+
+### Added
+- **Every push and every pull request is tested on GitHub** (`.github/workflows/tests.yml`): a lint for definite errors, the test suite on Python 3.10 and 3.12, and the documentation build with the Read the Docs settings. The workflow and the file-size check run with a read-only token.
+
+## [1.10.0] - 2026-10-11
+
+An integration release. It merges the branches `of-dev` of Federica Scolari and `hbc-telemac-andres` of Andrés Heredia into `main`. Several of the problems the two branches solved for one solver binding or one example case turned out to be defects of the shared code, and are corrected there, so that all bindings and all drivers get the correction. Two of the changes alter the numbers of a calibration and are listed first under Changed: the covariance that Bayesian active learning (BAL) draws from for a multitask emulator, and the time window over which TELEMAC runs selected by BAL are extracted.
+
+### Added
+- **OpenFOAM and Delft3D: the calibration targets can be chosen after the runs.** Both bindings store every extracted quantity for every run and calibration point in `restart_data/detailed-model-outputs.csv`. A restart with `only_bal_mode` and other `calibration_quantities` rebuilds the surrogate training data from that table instead of repeating the simulations. Contributed for OpenFOAM by Federica Scolari. The rebuild now lives in `HydroSimulations._load_stored_outputs`, which is why Delft3D shares it, and the table is written by `HydroSimulations._save_all_results` itself, see Fixed. Result folders written by earlier versions remain usable.
+- **OpenFOAM: `ALPHA_WATER`**, the `interFoam` water volume fraction at the calibration point, is an extractable quantity. Contributed by Federica Scolari.
+- **`sampling['multitask_selection']` sets the layout of the emulator in every driver.** The setting existed on the model, but no driver passed it, so it could be changed only by editing a driver. `"variables"` (default), `"locations"` and `"all"` are the multitask layouts that existed. Two layouts are new, both contributed by Andrés Heredia in his example drivers and now part of all drivers: `"SO_sequential"` trains independent single-output emulators for several calibration targets (class `SOSequentialGPyTraining`), and `"locations"` with a single calibration target trains one multitask emulator over the calibration points instead of one emulator per point. An unknown value is rejected when the model is constructed.
+- **TELEMAC and GAIA: a sand ratio averaged over bed layers as a calibration target.** `morphodynamic_simulation['gaia_layer_average']` derives the ratio of one or several sand classes, averaged over several bed layers with the layer thicknesses as weights, which is what a sediment sample taken over a known depth measures. Contributed by Andrés Heredia, with the GAIA variable naming corrected, see Fixed. Documented in the TELEMAC usage guide.
+- **TELEMAC: numbered validation attempts.** Every validation experiment writes its own `collocation-points-validation_<n>.csv` and `model-results-validation_<n>.json`. Contributed by Andrés Heredia. `TelemacModel.validation_paths()` returns the files of the latest attempt or of a given one, and still reads the unnumbered files of earlier versions.
+- **`sampling['bal_n_jobs']`** sets the number of processes that score the BAL candidates (default `-1`, all cores) in all drivers.
+- **The log-likelihood of the posterior samples is stored per iteration** in `BAL_dictionary.pkl` under `post_loglikelihood` (additive key). `plot_posterior_updates` can mark the joint posterior maximum with it (`best_estimate_value="joint_posterior_MAP"`). Contributed by Andrés Heredia.
+- **New figures**, contributed by Andrés Heredia: `plot_collocation_points` (initial design and BAL-selected points in parameter space), `plot_posterior_model_comparison` (posteriors of two calibrations side by side), `summarize_validation_metrics` (emulator error over several validation attempts), a trend window in `plot_bme_re` and fixed limits in `plot_residuals`. A tilt correction for Vectrino velocity records is added in `utils/VectrinoPostproc/tilt_correction.py`.
+- **Examples** for the Ering reach (TELEMAC-2D hydrodynamics, with emulator validation and a comparison of multitask and single-output emulators) and for a laboratory flume with a cylinder (TELEMAC-3D), contributed by Andrés Heredia. The examples contain scripts and configurations; the model and measurement files are not part of the repository.
+- **`env-scripts/sync-example-drivers.py`** regenerates the example copies of `bal_telemac.py` from the template.
+- **End-to-end tests of the drivers.** `tests/test_driver_end_to_end.py` runs the BAL loop of the TELEMAC, OpenFOAM and Delft3D drivers on an analytic model, once per emulator layout. Until now the drivers were checked by parsing their sources only.
+
+### Changed
+- **BAL draws a multitask emulator from its posterior covariance.** For a calibration on several targets with a multitask emulator, the TELEMAC drivers hand BAL the covariance between the targets at every candidate parameter set. Up to 1.9.0 this was the prior term, task kernel times input kernel, which is the same at every candidate for the kernels in use and does not depend on the training runs. It is now the posterior predictive covariance, which is small next to a training run and large far from the design. This changes which training points BAL selects. Found and corrected by Andrés Heredia. The evaluation was rewritten to return the exact covariance, without the jitter of the first version, and to evaluate only the blocks BAL uses, which keeps the `"all"` layout within memory (it needed 4.9 GB for 36 outputs and 250 candidates, and did not finish for 111 outputs).
+- **TELEMAC: runs selected by BAL are extracted like the initial design.** `run_bal_model` extracted every BAL run with `"mean_last"` over 40 time steps, whatever the `extraction` block of the configuration said, while the initial design used the configured window (default: 80 time steps). The surrogate was therefore trained on two differently defined quantities. Both TELEMAC drivers now pass the configured window to the BAL loop. Noticed by Andrés Heredia.
+- **User-supplied designs and validation runs are no longer staged.** The staged initial design could not handle either, see Fixed. Both are run in one block, and a user design whose size differs from `init_runs` is rejected before the first simulation.
+- **TELEMAC: result files are moved to `saved_slf_files`, not copied.** The copy left one result file per run in the model directory, which `delete_complex_outputs` never removed. The result file of a module no quantity was read from is moved as well.
+- **An extraction quantity unknown to both TELEMAC and GAIA is refused** at the first extraction, with its name. It used to be left out silently, and the run then failed on a missing key.
+- `CalibrationAssessment.evaluate_calibration` takes the measurement errors as `err_split` after `obs_split`. `plot_posterior_updates` marks the peak of each marginal by default under its proper name `"posterior_marginal_peak"`. The former default name `"posterior_MAP"` still returns that peak when no log-likelihoods are passed, and the joint maximum when they are.
+- The shipped example configuration `config_Ering.py` describes the current hydro-morphodynamic Ering case of Andrés Heredia. It keeps the shipped defaults `measurement_error = 0.10` and `gpe_error = 0.0`; with `include_surrogate_error = True`, a non-zero `gpe_error` counts the emulator uncertainty twice.
+
+### Fixed
+- **`results-detailed-*.csv` and `.npy` held every run several times** (OpenFOAM and Delft3D bindings). `HydroSimulations._save_all_results` appended the rows it was given, and the bindings give it all rows of the current block after every run and once more at the end, so run 0 of an N-run block was stored N+1 times. The table is now merged by run. This also made the re-selection of calibration targets work on real output, which matches rows to calibration points by count.
+- **The table for the re-selection of calibration targets lost runs when BAL continued after a change of targets.** It was a copy of the per-target table, and a restart on other targets starts a new, empty per-target table. One further BAL run replaced the copy by a table holding that run alone, and the next re-selection would have trained the surrogate on it without any message.
+- **A design supplied by the user stopped the calibration before its first simulation** when the staged initial design was on, which is the default. The staged design asked the sampler for a rule named `user`, which does not exist. Andrés Heredia worked around this in his example drivers; the correction is in `run_staged_initial_design`.
+- **TELEMAC, initial runs only (`complete_bal_mode = False`): every block of a staged design simulated all earlier runs again.** The loop ignored the index of the first new run. Fixed by Andrés Heredia.
+- **TELEMAC: a repeated validation mixed two experiments.** The parameter sets were overwritten while the results were appended. Fixed by the numbered validation attempts of Andrés Heredia, which now also resolve on a model that has not just run a validation; the first version raised `AttributeError` there, which is the way the shipped `validate_simulation.py` uses them.
+- **GAIA layer average read sand classes for layers.** GAIA names the ratio of a sand class in a bed layer `LAY<layer> SAND RAT<class>`. The first version of the layer average appended the layer number to `LAY1 SAND RAT` and thus read the sand classes 1 and 2 of the top layer, weighted with the layer thicknesses. For a file holding class 1 at ratios of 0.20 and 0.50 in the layers 1 and 2 it returned 0.73 instead of 0.46. A configuration entry now names `sand_classes`, `layers` and `thicknesses`, and one without `sand_classes` is rejected with the naming rule. Results extracted with the first version have to be extracted again.
+- **`bal_delft3d.py` raised `NameError` in its first BAL iteration**, after the whole initial design had been simulated: `do_tradeoff` was read but never assigned. 1.9.0 had corrected this in `bal_openfoam.py` only.
+- **Regressions of the merged branch `hbc-telemac-andres` that did not reach a release**, corrected during the merge: a deleted comma that turned an argument of `run_staged_initial_design` into `validation ** run_kwargs`; shared defaults changed for one case (`measurement_error` 0.10 to 0.0, BAL `n_jobs` -1 to 1, plot decimals 2 to 1); configuration keys read without fallback in `bal_telemac.py`, so that configurations without an `extraction` block or without `posterior_sampling_method` failed; `plot_collocation_points` calling a helper and two modules it had not defined or imported; a plotting block in the shipped `config_Telemac.py` with five labels for seven calibration parameters; paths on one user's disk in shipped configurations and scripts; a stray line that made an example configuration unparsable; example copies of `bal_telemac.py` that carried their own version of the workflow.
+
+## [1.9.0] - 2026-09-04
+
+An OpenFOAM release. The binding shipped since 1.7 could not run against **OpenFOAM
+Foundation** at all, and three further defects surfaced only *after* an experimental
+design had already been simulated - i.e. at the point where the runs they invalidate
+have already been paid for.
+
+### Added
+- **OpenFOAM Foundation support.** The turbulence dictionary is resolved by which file
+  EXISTS rather than by name, so one binding serves both lines: ESI calls it
+  `constant/turbulenceProperties`, Foundation 8+ calls it `constant/momentumTransport`.
+  The caller's `param["file"]` is honoured only when it is really there, because the
+  config's default names the ESI spelling.
+- `OpenFOAMModel(write_vtk=...)`, default **off**. Field extraction no longer needs
+  `foamToVTK`, and with `delete_complex_outputs` the converted copy was deleted moments
+  after being written.
+- `HBC_MPI_LAUNCHER` for installs whose MPI launcher is not `mpirun`.
+
+### Fixed
+- **`do_tradeoff` was read before assignment in `bal_openfoam.py`**, so the first BAL
+  iteration raised `NameError` - after the whole initial design had run.
+  `bal_telemac.py` initialises it; this driver did not.
+- **`OpenFOAMModel.__init__` dropped `gpe_error`, `measurement_error` and
+  `model_structural_error`.** They were accepted and never forwarded to
+  `HydroSimulations`, so observation variances were always built from the base-class
+  defaults and a configured `measurement_error` was silently ignored.
+- **`update_model_controls` hard-coded the turbulence file** while reading
+  `param["file"]` one line above, so every k-epsilon perturbation raised
+  `FileNotFoundError` on a Foundation case.
+- **`extract_fields_from_vtk` required the ESI `foamToVTK` layout** (`VTK/*.vtm` plus
+  `VTK/<stem>/internal.vtu`). Foundation writes legacy `VTK/<case>_<n>.vtk`, so the
+  extractor could never run against it. It now reads the case directory through
+  pyvista's OpenFOAM reader - both lines, ASCII and binary `writeFormat`, with and
+  without `alpha.water` (a single-phase or rigid-lid case has none, which correctly
+  means every cell is water). Times come from the reader, so a hot-started run's step
+  indices cannot reorder the averaging window.
+- **`run_simulation` sourced a hard-coded `$HOME/OpenFOAM/OpenFOAM-v2412/etc/bashrc`**,
+  which made the binding usable on exactly one machine.
+
+### Verified
+Against a real OpenFOAM Foundation 9 build: parameter routing into the dictionaries,
+the MPI launch, field extraction and per-run accumulation, over a 3-run plumbing test
+and a multi-run campaign on the Inn KB15 reach.
+
 ## [1.8.1] - 2026-08-28
 
 ### Fixed
@@ -52,6 +140,7 @@ and the roughness-identifiability check now runs on the path calibrations actual
   Since the friction table is rewritten before every model evaluation, a hand-edited
   table with a trailing or separating blank line stopped the calibration at its first
   run, after the design had been sampled and before any usable output existed.
+
 ## [1.7.0] - 2026-08-18
 
 ### Added
@@ -672,6 +761,9 @@ an OpenFOAM or Delft3D workflow should upgrade; TELEMAC workflows are unaffected
   (Gaussian Process Emulator + Bayesian Active Learning) for TELEMAC, OpenFOAM and
   Delft3D-FLOW.
 
+[1.10.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.10.1
+[1.10.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.10.0
+[1.9.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.9.0
 [1.8.1]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.8.1
 [1.8.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.8.0
 [1.7.0]: https://github.com/Ecohydraulics/hydrobayescal/releases/tag/v1.7.0

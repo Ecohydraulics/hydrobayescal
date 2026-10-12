@@ -6,9 +6,6 @@ scatter, and residual plots.
 
 import math
 import os
-import re
-import unicodedata
-
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -966,10 +963,10 @@ class CalibrationAssessment:
                 set_nice_ticks(ax, 'y', n_ticks=5)
 
                 set_adaptive_decimal_formatter(
-                    ax, axis='x', values=overall_x_vals
+                    ax, axis='x', values=overall_x_vals, max_decimals=1
                 )
                 set_adaptive_decimal_formatter(
-                    ax, axis='y', values=overall_y_vals
+                    ax, axis='y', values=overall_y_vals, max_decimals=1
                 )
 
             for spine in ax.spines.values():
@@ -1015,10 +1012,10 @@ class CalibrationAssessment:
                     set_nice_ticks(ax, 'y', n_ticks=5)
 
                     set_adaptive_decimal_formatter(
-                        ax, axis='x', values=x_vals
+                        ax, axis='x', values=x_vals, max_decimals=1
                     )
                     set_adaptive_decimal_formatter(
-                        ax, axis='y', values=y_vals
+                        ax, axis='y', values=y_vals, max_decimals=1
                     )
 
                 for spine in ax.spines.values():
@@ -1811,11 +1808,6 @@ class CalibrationAssessment:
             If a quantity is not specified, its limits are calculated
             automatically from all models.
         """
-
-        import os
-        import numpy as np
-        import matplotlib.pyplot as plt
-        from matplotlib.ticker import MaxNLocator
 
         save_folder = self.save_folder
 

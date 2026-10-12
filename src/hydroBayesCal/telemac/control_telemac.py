@@ -27,6 +27,7 @@ class TelemacModel(HydroSimulations):
             stdout=6,
             python_shebang="#!/usr/bin/env python3",
             *args,
+            gaia_layer_average=None,
             **kwargs
     ):
         """
@@ -45,6 +46,8 @@ class TelemacModel(HydroSimulations):
             Base name for the results file, which will be iteratively updated in the .cas file.
         python_shebang : str, optional
             Shebang line for Python scripts (default is "#!/usr/bin/env python3").
+        gaia_layer_average : dict, optional
+            Sand ratios averaged over several GAIA bed layers, as derived extraction quantities and possible calibration targets. Keyword-only. See :func:`~hydroBayesCal.telemac.config_telemac.resolve_gaia_layer_average` for the format. It is checked here, so an incomplete entry stops the calibration before the first simulation.
         *args : tuple
             Additional positional arguments.
         **kwargs : dict
@@ -89,6 +92,11 @@ class TelemacModel(HydroSimulations):
         self.tm_xd = tm_xd
         self.gaia_steering_file = gaia_steering_file
         self.gaia_results_filename_base = gaia_results_filename_base
+        # Resolved once, to fail on an incomplete entry now rather than at the first extraction. Only the targets this model extracts or calibrates on are checked, so an entry that is configured but not used cannot stop a calibration.
+        config_telemac.resolve_gaia_layer_average(
+            gaia_layer_average,
+            requested=list(self.extraction_quantities or []) + list(self.calibration_quantities or []))
+        self.gaia_layer_average = gaia_layer_average or None
         self.fortran_file = fortran_file
         self.results_filename_base = results_filename_base
         self.python_shebang = python_shebang
@@ -533,6 +541,37 @@ class TelemacModel(HydroSimulations):
 
         return max(existing_ids, default=0) + 1
 
+    def validation_paths(self, attempt=None, new_attempt=False):
+        """Files of one validation attempt in ``restart_data``.
+
+        Every validation experiment gets its own number. Without it a repeated experiment overwrote the parameter sets of the previous one while appending to its results, so the two files no longer described the same runs.
+
+        Parameters
+        ----------
+        attempt : int, optional
+            Attempt to address. Default: the attempt this instance is running, else the latest one on disk, else the unnumbered files written up to version 1.9.0.
+        new_attempt : bool
+            Start the next attempt and remember it on the instance.
+
+        Returns
+        -------
+        tuple of str
+            Paths of ``collocation-points-validation_<n>.csv``, ``model-results-validation_<n>.json`` and ``model-results-validation_<n>.csv``.
+        """
+        if new_attempt:
+            self.validation_attempt = self._next_validation_attempt()
+            logger.info(f"Starting validation attempt {self.validation_attempt}")
+        if attempt is None:
+            attempt = getattr(self, "validation_attempt", None)
+        if attempt is None:
+            latest = self._next_validation_attempt() - 1
+            attempt = latest if latest >= 1 else None
+        suffix = "" if attempt is None else f"_{int(attempt)}"
+        folder = self.restart_data_folder
+        return (os.path.join(folder, f"collocation-points-validation{suffix}.csv"),
+                os.path.join(folder, f"model-results-validation{suffix}.json"),
+                os.path.join(folder, f"model-results-validation{suffix}.csv"))
+
     def run_multiple_simulations(
             self,
             collocation_points=None,
@@ -605,37 +644,12 @@ class TelemacModel(HydroSimulations):
         # Validation attempt bookkeeping
         # --------------------------------------------------------------
         if validation:
-
-            # start_index == 0 means that a NEW validation experiment
-            # is starting.
-            #
-            # For staged designs, subsequent blocks have start_index > 0
-            # and therefore reuse the same validation attempt number.
-            if int(start_index) == 0 or not hasattr(
-                    self, "validation_attempt"):
-                self.validation_attempt = self._next_validation_attempt()
-
-                logger.info(
-                    f"Starting validation attempt "
-                    f"{self.validation_attempt}"
-                )
-
-            suffix = f"_{self.validation_attempt}"
-
-            self.validation_collocation_path = os.path.join(
-                restart_data_path,
-                f"collocation-points-validation{suffix}.csv"
-            )
-
-            self.validation_json_path = os.path.join(
-                restart_data_path,
-                f"model-results-validation{suffix}.json"
-            )
-
-            self.validation_csv_path = os.path.join(
-                restart_data_path,
-                f"model-results-validation{suffix}.csv"
-            )
+            # A new design starts a new attempt. A later block of a staged design (start_index > 0) and a BAL iteration continue the attempt that is running.
+            starts_new_design = bal_new_set_parameters is None and int(start_index) == 0
+            (self.validation_collocation_path,
+             self.validation_json_path,
+             self.validation_csv_path) = self.validation_paths(
+                new_attempt=starts_new_design or not hasattr(self, "validation_attempt"))
         logger.info(
             "* Running multiple Telemac simulations can take time -- check CPU acitivity...")
         start_time = datetime.now()
@@ -782,7 +796,7 @@ class TelemacModel(HydroSimulations):
 
                 if validation:
                     with open(
-                            self.validation_collocation_path,
+                            self.validation_paths()[0],
                             mode='w',
                             newline=''
                     ) as file:
@@ -849,7 +863,7 @@ class TelemacModel(HydroSimulations):
                                             output_extraction_time=output_extraction_time,
                                             n=n,gaia_layer_average=gaia_layer_average )
                     if validation:
-                        output_data_path = self.validation_json_path
+                        output_data_path = self.validation_paths()[1]
                     else:
                         output_data_path = os.path.join(
                             self.calibration_folder,
@@ -991,7 +1005,7 @@ class TelemacModel(HydroSimulations):
 
                 if validation:
                     np.savetxt(
-                        self.validation_csv_path,
+                        self.validation_paths()[2],
                         model_results_calibration,
                         delimiter=',',
                         fmt='%.8f',
@@ -1044,7 +1058,7 @@ class TelemacModel(HydroSimulations):
                         column_headers_extraction.append(f'{i}_{quantity}')
                 if validation:
                     np.savetxt(
-                        self.validation_csv_path,
+                        self.validation_paths()[2],
                         model_results_extraction,
                         delimiter=',',
                         fmt='%.8f',
@@ -1119,36 +1133,106 @@ class TelemacModel(HydroSimulations):
         Extract model results at specified calibration or validation points from
         TELEMAC and/or GAIA SELAFIN result files.
 
-        The method dynamically opens TELEMAC and/or GAIA result files depending on
-        the requested extraction quantities and ``classification_tm_gaia_dict``.
+        The method supports extraction of scalar variables,
+        vertical layer selection based on measurement height, inverse-distance
+        interpolation, and optional wall-law diagnostics.
+        Extracted values are written to JSON files and result files are moved to
+        the designated results directory.
 
-        GAIA layer-averaged quantities can be configured through
-        ``morphodynamic_simulation['gaia_layer_average']`` or passed explicitly via
-        ``gaia_layer_average``.
+        Parameters
+        ----------
+        input_file : str
+            Name of the TELEMAC result file (.slf) to extract data from.
 
-        Example::
+        calibration_pts_df : pandas.DataFrame
+            DataFrame containing extraction locations. The first column must
+            contain point identifiers. The following columns are expected to be:
+            - column 1: x-coordinate
+            - column 2: y-coordinate
+            - column 3: vertical measurement offset (z)
 
-            gaia_layer_average = {
-                "SAND RAT": {
-                    "layers": [1, 2],
-                    "thicknesses": [0.08, 0.60],
-                    "classes": [1, 2, 3, 4, 5]
-                }
-            }
+        output_name : str
+            Base name used for generated JSON output files.
 
-        The class-specific output names must be classified as ``"gaia"`` in
-        ``classification_tm_gaia_dict`` and requested through ``extraction_quantity``.
-        For example::
+        extraction_quantity : list of str
+            Quantities to extract from the model results. Variables may originate
+            from TELEMAC or GAIA according to the configuration mapping
+            ``classification_tm_gaia_dict``.
 
-            "SAND RAT1": "gaia"
-            "SAND RAT2": "gaia"
+        simulation_number : int
+            Current simulation number within the calibration workflow.
 
-        The ``gaia_layer_average`` entry uses the common base name ``SAND RAT`` only
-        to define how class-specific quantities are constructed internally. For a
-        requested quantity ``SAND RAT1``, the extractor looks for
-        ``LAY1 SAND RAT1`` and ``LAY2 SAND RAT1`` in the GAIA SLF, computes the
-        thickness-weighted average, and saves the result under the original requested
-        name ``SAND RAT1``.
+        model_directory : str
+            Directory containing TELEMAC and GAIA result files.
+
+        results_folder_directory : str
+            Directory where extracted results and moved result files are stored.
+
+        validation : bool, optional
+            If True, extracted values are treated as validation results and are
+            written to validation-specific JSON files. Default is False.
+
+        user_param_values : bool, optional
+            Flag controlling restart-data generation. Default is False.
+
+        output_extraction : {"nearest", "interpolated"}, optional
+            Spatial extraction method.
+
+            - ``"nearest"``: use the closest model node.
+            - ``"interpolated"``: perform inverse-distance-weighted interpolation
+              using the k nearest nodes.
+
+            Default is ``"interpolated"``.
+
+        k : int, optional
+            Number of nearest nodes used for interpolation when
+            ``output_extraction="interpolated"``. Ignored when using nearest-node
+            extraction. Default is 3.
+
+        output_extraction_time : {"last", "index", "mean_last"}, optional
+            Temporal aggregation mode applied to the extracted time series.
+
+            - ``"last"``: use the final time step.
+            - ``"index"``: use the time step specified by ``time_index``.
+            - ``"mean_last"``: average the last ``n`` time steps.
+
+            Default is ``"last"``.
+
+        time_index : int, optional
+            Time-step index used when
+            ``output_extraction_time="index"``.
+            Default is 0.
+
+        n : int, optional
+            Number of final time steps used when
+            ``output_extraction_time="mean_last"``.
+            Default is 5.
+
+        compute_wall_law_diagnostics : bool, optional
+            If True, compute wall-law diagnostic quantities from TELEMAC 3D
+            results and the generated 2D result file. Diagnostics include
+            friction velocity, y-plus values, bottom friction parameters,
+            near-bed velocity information, and the complete modeled vertical
+            velocity profile. Default is False.
+
+        gaia_layer_average : dict, optional
+            Sand ratios averaged over several GAIA bed layers, see :func:`~hydroBayesCal.telemac.config_telemac.resolve_gaia_layer_average`. Default is the configuration the model was constructed with. A quantity named there is not read from the GAIA result file under its own name: the ratios of its ``sand_classes`` are summed in each of its ``layers`` and averaged with the ``thicknesses`` as weights, and the result is stored under the name of the quantity.
+
+        Returns
+        -------
+        None
+            Results are written to JSON files and model result files are moved
+            to the results directory.
+
+        Notes
+        -----
+        - If ``"3D VELOCITY MAGNITUDE"`` is requested, it is computed from
+          ``VELOCITY U``, ``VELOCITY V``, and ``VELOCITY W``.
+        - For 3D simulations, the vertical layer closest to the measurement
+          elevation is automatically selected using ``ELEVATION Z``.
+        - Wall-law diagnostics require at least two vertical planes
+          (``NPLAN >= 2``).
+        - The TELEMAC and the GAIA result file are each opened only when a quantity of that module is requested, so a calibration on GAIA quantities alone does not read the TELEMAC file.
         """
 
         # In the normal coupled workflow, input_file is the TELEMAC result file.
@@ -1157,7 +1241,6 @@ class TelemacModel(HydroSimulations):
         self.tm_results_filename = input_file
 
         classification_tm_gaia_dict = config_telemac.classification_tm_gaia_dict
-        print(gaia_layer_average)
         # ============================================================
         # WALL-LAW CONSTANTS FROM CONFIG
         # ============================================================
@@ -1214,171 +1297,43 @@ class TelemacModel(HydroSimulations):
         ]
 
         # ============================================================
+        # GAIA LAYER-AVERAGED QUANTITIES
+        # ============================================================
+        # An explicitly passed configuration has priority over the one the model was constructed with. A quantity named in it is derived from the GAIA result file, whatever its name, so it is classified as GAIA here and not through classification_tm_gaia_dict.
+        if gaia_layer_average is None:
+            gaia_layer_average = getattr(self, "gaia_layer_average", None)
+        gaia_layer_average_specs = config_telemac.resolve_gaia_layer_average(
+            gaia_layer_average, requested=calibration_extraction_quantity)
+        for target, spec in gaia_layer_average_specs.items():
+            logger.info(
+                f"GAIA layer average '{target}': sand classes {spec['sand_classes']} in layers {spec['layers']}, "
+                f"variables {spec['variables']}, thicknesses {spec['thicknesses'].tolist()}")
+
+        # ============================================================
         # CLASSIFY REQUESTED QUANTITIES
         # ============================================================
         telemac_quantities = [
             q for q in calibration_extraction_quantity
             if classification_tm_gaia_dict.get(q) == "telemac"
+            and q not in gaia_layer_average_specs
         ]
 
         gaia_quantities = [
             q for q in calibration_extraction_quantity
             if classification_tm_gaia_dict.get(q) == "gaia"
+            or q in gaia_layer_average_specs
         ]
-
-        # ============================================================
-        # GAIA LAYER-AVERAGED QUANTITIES
-        # ============================================================
-        # ``gaia_layer_average`` defines a common base quantity and the bed
-        # layers/classes used to construct derived class-specific quantities.
-        #
-        # Example configuration:
-        #
-        #   "SAND RAT": {
-        #       "layers": [1, 2],
-        #       "thicknesses": [0.08, 0.60],
-        #       "classes": [1, 2, 3, 4, 5]
-        #   }
-        #
-        # The user-facing requested/classified quantities are class specific:
-        #
-        #   "SAND RAT1": "gaia"
-        #   "SAND RAT2": "gaia"
-        #   ...
-        #
-        # For requested ``SAND RAT1`` the actual SLF variables are:
-        #
-        #   LAY1 SAND RAT1
-        #   LAY2 SAND RAT1
-        #
-        # and the weighted result is stored under the SAME requested name:
-        #
-        #   SAND RAT1
-        # ============================================================
-        if gaia_layer_average is None:
-            gaia_layer_average = getattr(
-                self,
-                "gaia_layer_average",
-                None
+        # A quantity that belongs to neither module would be left out of the output without a word, and the run would fail later on a missing key.
+        unclassified = [
+            q for q in calibration_extraction_quantity
+            if q not in telemac_quantities and q not in gaia_quantities
+        ]
+        if unclassified:
+            raise ValueError(
+                f"The extraction quantities {unclassified} are not known as TELEMAC or GAIA result variables "
+                f"(classification_tm_gaia_dict in telemac/config_telemac.py) and are not configured in "
+                f"morphodynamic_simulation['gaia_layer_average']. Check the spelling, or add the variable to the classification."
             )
-
-        # Backward-compatible fallback only.
-        if gaia_layer_average is None:
-            morphodynamic_settings = getattr(
-                config_telemac,
-                "morphodynamic_simulation",
-                {}
-            ) or {}
-
-            gaia_layer_average = morphodynamic_settings.get(
-                "gaia_layer_average",
-                {}
-            )
-
-        gaia_layer_average = gaia_layer_average or {}
-
-        logger.info(
-            f"Resolved GAIA layer-average configuration: "
-            f"{list(gaia_layer_average.keys())}"
-        )
-
-        # Keyed by the exact user-facing quantity, e.g. ``SAND RAT1``.
-        gaia_layer_average_specs = {}
-
-        for base_quantity, spec in gaia_layer_average.items():
-
-            if not isinstance(spec, dict):
-                raise ValueError(
-                    f"GAIA layer-average configuration for '{base_quantity}' "
-                    "must be a dictionary."
-                )
-
-            layers = spec.get("layers")
-            thicknesses = spec.get("thicknesses")
-            classes = spec.get("classes")
-
-            if layers is None or thicknesses is None or classes is None:
-                raise ValueError(
-                    f"gaia_layer_average['{base_quantity}'] must contain "
-                    "'layers', 'thicknesses', and 'classes'."
-                )
-
-            layers = [int(layer) for layer in layers]
-            classes = [int(sed_class) for sed_class in classes]
-            thicknesses = np.asarray(thicknesses, dtype=float)
-
-            if len(layers) == 0:
-                raise ValueError(
-                    f"No layers were configured for GAIA layer average "
-                    f"'{base_quantity}'."
-                )
-
-            if len(classes) == 0:
-                raise ValueError(
-                    f"No sediment classes were configured for GAIA layer average "
-                    f"'{base_quantity}'."
-                )
-
-            if len(layers) != len(thicknesses):
-                raise ValueError(
-                    f"GAIA layer average '{base_quantity}' has {len(layers)} "
-                    f"layers but {len(thicknesses)} thicknesses."
-                )
-
-            if np.any(thicknesses <= 0.0):
-                raise ValueError(
-                    f"All layer thicknesses for '{base_quantity}' must be > 0."
-                )
-
-            if len(set(layers)) != len(layers):
-                raise ValueError(
-                    f"Duplicate bed layers were configured for '{base_quantity}': "
-                    f"{layers}."
-                )
-
-            if len(set(classes)) != len(classes):
-                raise ValueError(
-                    f"Duplicate sediment classes were configured for "
-                    f"'{base_quantity}': {classes}."
-                )
-
-            # Build specs ONLY for quantities that are actually requested and
-            # classified as GAIA. This preserves the external/user-facing name.
-            #
-            # Example:
-            #   requested q = "SAND RAT1"
-            #   internal SLF vars = ["LAY1 SAND RAT1", "LAY2 SAND RAT1"]
-            #   output key = "SAND RAT1"
-            for sed_class in classes:
-                output_quantity = f"{base_quantity}{sed_class}"
-
-                if output_quantity not in gaia_quantities:
-                    continue
-
-                layer_variables = [
-                    f"LAY{layer} {base_quantity}{sed_class}"
-                    for layer in layers
-                ]
-
-                gaia_layer_average_specs[output_quantity] = {
-                    "base_quantity": base_quantity,
-                    "class": sed_class,
-                    "layers": layers,
-                    "thicknesses": thicknesses,
-                    "variables": layer_variables
-                }
-
-                logger.info(
-                    f"GAIA layer average '{output_quantity}' activated: "
-                    f"variables={layer_variables}, "
-                    f"thicknesses={thicknesses.tolist()}"
-                )
-
-        logger.info(
-            "Resolved class-specific GAIA layer-average outputs: "
-            f"{list(gaia_layer_average_specs.keys())}"
-        )
-
         # ============================================================
         # INTERNAL TELEMAC HELPERS
         # ============================================================
@@ -1523,11 +1478,7 @@ class TelemacModel(HydroSimulations):
             # --------------------------------------------------------
             # CHECK AVAILABLE VARIABLES
             # --------------------------------------------------------
-            # IMPORTANT:
-            # A configured GAIA layer-average base quantity such as
-            # "LAY1 SAND RAT" must NOT be searched literally in the SLF.
-            # Instead, check the suffixed variables generated from the configured
-            # layers, e.g. "LAY1 SAND RAT1", "LAY1 SAND RAT2".
+            # A layer-averaged GAIA quantity is not stored under its own name. The variables it is derived from are checked instead, one per sand class and bed layer, e.g. "LAY1 SAND RAT1" and "LAY2 SAND RAT1" for sand class 1 in the layers 1 and 2.
             # --------------------------------------------------------
             missing_quantities = []
 
@@ -1549,9 +1500,11 @@ class TelemacModel(HydroSimulations):
                         model_source == "gaia"
                         and q in gaia_layer_average_specs
                 ):
-                    average_spec = gaia_layer_average_specs[q]
-                    required_layer_variables = average_spec["variables"]
-
+                    required_layer_variables = [
+                        variable_name
+                        for layer_variables in gaia_layer_average_specs[q]["variables"]
+                        for variable_name in layer_variables
+                    ]
                     missing_layer_variables = [
                         variable_name
                         for variable_name in required_layer_variables
@@ -1561,9 +1514,11 @@ class TelemacModel(HydroSimulations):
                     if missing_layer_variables:
                         raise ValueError(
                             f"Cannot compute GAIA layer average '{q}'. "
-                            f"The following required layer/class variables are "
-                            f"missing: {missing_layer_variables}. "
+                            f"The following required variables are missing: "
+                            f"{missing_layer_variables}. "
                             f"Expected variables: {required_layer_variables}. "
+                            f"GAIA writes them as LAY<layer> SAND RAT<class>; check the number of bed layers "
+                            f"and sand classes of the model and the printout variables of the GAIA steering file. "
                             f"Available variables are: {variables}"
                         )
 
@@ -1572,10 +1527,7 @@ class TelemacModel(HydroSimulations):
 
                 # Normal variable: must exist literally in the SLF.
                 if q not in var_index:
-
-                    # Give a targeted diagnostic when a GAIA base quantity
-                    # such as "SAND RAT" was requested but its layer-average
-                    # configuration was not activated/resolved.
+                    # Give a targeted diagnostic if the SLF holds numbered variants of the name (e.g. LAY1 SAND RAT1, LAY1 SAND RAT2), which means a layer average was intended but not configured.
                     if model_source == "gaia":
                         related_matches = [
                             variable_name
@@ -1585,14 +1537,12 @@ class TelemacModel(HydroSimulations):
 
                         if related_matches:
                             raise ValueError(
-                                f"GAIA quantity '{q}' is not stored directly in the "
-                                f"SLF, but related variables were found: "
-                                f"{related_matches}. If '{q}' is a derived layer "
-                                f"average, ensure it is present in "
-                                f"morphodynamic_simulation['gaia_layer_average'] and that "
-                                f"the exact output name is classified as 'gaia'. "
-                                f"Resolved layer-average outputs: "
-                                f"{list(gaia_layer_average_specs.keys())}."
+                                f"GAIA quantity '{q}' is not stored under that name in the "
+                                f"SLF, but numbered variables were found: {suffixed_matches}. "
+                                f"To average a sand ratio over bed layers, name the quantity in "
+                                f"morphodynamic_simulation['gaia_layer_average'] with its "
+                                f"'sand_classes', 'layers' and 'thicknesses'. Configured layer "
+                                f"averages: {list(gaia_layer_average_specs.keys())}."
                             )
 
                     missing_quantities.append(q)
@@ -1915,10 +1865,12 @@ class TelemacModel(HydroSimulations):
                         layer_variables = average_spec["variables"]
                         layer_thicknesses = average_spec["thicknesses"]
 
+                        # Ratio of the selected sand classes in each layer: the ratios of the classes add up within a layer.
                         layer_values = np.asarray(
                             [
-                                results[var_index[variable_name]]
-                                for variable_name in layer_variables
+                                sum(float(results[var_index[variable_name]])
+                                    for variable_name in class_variables)
+                                for class_variables in layer_variables
                             ],
                             dtype=float
                         )
@@ -1928,14 +1880,13 @@ class TelemacModel(HydroSimulations):
                             / np.sum(layer_thicknesses)
                         )
 
-                        # IMPORTANT: preserve the exact requested/classified
-                        # user-facing name, e.g. ``SAND RAT1``.
+                        # Store ONLY the name of the derived quantity.
                         differentiated_values[q] = weighted_average
 
                         logger.info(
                             f"[GAIA] Point {key} - {q}: "
                             f"variables={layer_variables}, "
-                            f"values={layer_values.tolist()}, "
+                            f"ratio per layer={layer_values.tolist()}, "
                             f"thicknesses={layer_thicknesses.tolist()}, "
                             f"weighted_average={weighted_average}"
                         )
@@ -1989,7 +1940,7 @@ class TelemacModel(HydroSimulations):
                 )
 
         if validation:
-            json_target = self.validation_json_path
+            json_target = self.validation_paths()[1]
         else:
             json_target = json_path_detailed
 
@@ -2032,33 +1983,32 @@ class TelemacModel(HydroSimulations):
                 exist_ok=True
             )
 
-            # Move TELEMAC result only if TELEMAC was actually used.
-            if "telemac" in slf_files:
-                tm_result_path = slf_files["telemac"]
+            def archive(path, label=None):
+                """Move one result file out of the model directory.
 
-                if os.path.exists(tm_result_path):
+                The destination is given as a file, not as the folder, so a file of the same name left there by an earlier run is replaced instead of making the move fail. A missing file is reported only when ``label`` names it as expected.
+                """
+                if os.path.exists(path):
                     shutil.move(
-                        tm_result_path,
-                        self.saved_slf_dir
+                        path,
+                        os.path.join(self.saved_slf_dir, os.path.basename(path))
                     )
-                else:
-                    print(
-                        f"TELEMAC result file not found: {tm_result_path}"
-                    )
+                elif label:
+                    print(f"{label} result file not found: {path}")
 
-            # Move GAIA result only if GAIA was actually used.
-            if "gaia" in slf_files:
-                gaia_result_path = slf_files["gaia"]
+            # The result files this extraction read.
+            archived = set()
+            for model_source, slf_path in slf_files.items():
+                archive(slf_path, model_source.upper())
+                archived.add(os.path.abspath(slf_path))
 
-                if os.path.exists(gaia_result_path):
-                    shutil.move(
-                        gaia_result_path,
-                        self.saved_slf_dir
-                    )
-                else:
-                    print(
-                        f"GAIA result file not found: {gaia_result_path}"
-                    )
+            # The result files of this run that were not read because no quantity of that module was requested. They are moved as well: nothing else removes them from the model directory, which would otherwise grow by one file per run.
+            run_results = [os.path.join(model_directory, self.tm_results_filename)]
+            if getattr(self, "gaia_cas", None) is not None and getattr(self, "gaia_results_filename", ""):
+                run_results.append(os.path.join(model_directory, self.gaia_results_filename))
+            for path in run_results:
+                if os.path.abspath(path) not in archived:
+                    archive(path)
 
             # Move TELEMAC 2D result file generated from 3D.
             if getattr(
@@ -2066,21 +2016,10 @@ class TelemacModel(HydroSimulations):
                     "tm_2d_results_filename_from_3d",
                     None
             ):
-                tm_2d_from_3d_path = os.path.join(
-                    model_directory,
-                    self.tm_2d_results_filename_from_3d
+                archive(
+                    os.path.join(model_directory, self.tm_2d_results_filename_from_3d),
+                    "TELEMAC 2D"
                 )
-
-                if os.path.exists(tm_2d_from_3d_path):
-                    shutil.move(
-                        tm_2d_from_3d_path,
-                        self.saved_slf_dir
-                    )
-                else:
-                    print(
-                        "TELEMAC 2D result file not found: "
-                        f"{tm_2d_from_3d_path}"
-                    )
 
             # Move generated 2D result file if it exists.
             if compute_wall_law_diagnostics:
@@ -2101,17 +2040,8 @@ class TelemacModel(HydroSimulations):
                     model_directory,
                     tm_2d_results_filename
                 )
-
-                if os.path.exists(tm_2d_result_path):
-                    shutil.move(
-                        tm_2d_result_path,
-                        self.saved_slf_dir
-                    )
-                else:
-                    print(
-                        "Generated 2D result file not found: "
-                        f"{tm_2d_result_path}"
-                    )
+                if os.path.abspath(tm_2d_result_path) not in archived:
+                    archive(tm_2d_result_path, "Generated 2D")
 
         except Exception as error:
             print(

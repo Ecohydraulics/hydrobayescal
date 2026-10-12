@@ -181,6 +181,7 @@ def run_bal_model(collocation_points,
                   gp_library="gpy",
                   include_surrogate_error=True,
                   bal_exploration_tradeoff="auto",
+                  bal_n_jobs=-1,
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -218,6 +219,10 @@ def run_bal_model(collocation_points,
         surrogate predictions are treated as exact and the posterior comes out
         sharper than the emulator supports; pair that with a non-zero
         ``calibration['gpe_error']`` so the uncertainty is represented somewhere.
+    bal_exploration_tradeoff : {'auto', True, False}
+        Whether the sequential design balances exploitation of the current posterior against exploration of the parameter space. ``'auto'`` (default) turns exploration on once the posterior has more than one well-separated mode.
+    bal_n_jobs : int
+        Number of worker processes that score the BAL candidates, passed to ``joblib``. ``-1`` (default) uses all cores, ``1`` scores them in the calling process.
 
     Returns
     -------
@@ -307,6 +312,26 @@ def run_bal_model(collocation_points,
     # the canonical driver). Additive keys: existing consumers read by key.
     for _key in ITERATION_KEYS:
         bayesian_dict[_key] = [None] * (n_iter + 1)
+    # Log-likelihood, and log prior density where the inference computes it, of the posterior samples of every iteration (kept in sync with bal_telemac.py, the canonical driver). Additive keys, read with .get by the plots.
+    bayesian_dict['post_loglikelihood'] = [None] * (n_iter + 1)
+    bayesian_dict['post_logpdf'] = [None] * (n_iter + 1)
+    # Exploration/exploitation of the sequential design. 'auto' starts as pure
+    # exploitation, which is right while the posterior looks unimodal, and switches
+    # once the per-iteration diagnostic finds a second mode. Kept in sync with
+    # bal_telemac.py, the canonical driver: without this the first BAL iteration
+    # reads do_tradeoff before it is ever assigned and raises NameError - after the
+    # whole initial design has already been simulated.
+    if bal_exploration_tradeoff == "auto":
+        do_tradeoff = False
+        logger.info("BAL point selection: exploitation only, switching to an "
+                    "exploration/exploitation trade-off if the posterior turns out to "
+                    "have more than one mode (sampling['bal_exploration_tradeoff'] = "
+                    "'auto').")
+    else:
+        do_tradeoff = bool(bal_exploration_tradeoff)
+        logger.info(f"BAL point selection: "
+                    f"{'exploration/exploitation trade-off' if do_tradeoff else 'exploitation only'} "
+                    f"(forced by sampling['bal_exploration_tradeoff']).")
     for it in range(0, n_iter + 1):
 
         # 1. Train surrogate
@@ -353,10 +378,26 @@ def run_bal_model(collocation_points,
                 sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                                  likelihood=likelihood, kernel=kernel, training_iter=100,
                                  optimizer="adam", verbose=False)
+                if complex_model.multitask_selection == "locations":
+                    # One calibration target with the locations as tasks: a single multitask GPE that learns the correlation between the calibration points (kept in sync with bal_telemac.py, the canonical driver).
+                    multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=complex_model.nloc,
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
+                    multi_sm_loc = MultiGPyTraining(
+                        collocation_points, model_outputs,
+                        gpytorch.kernels.ScaleKernel(
+                            gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)),
+                        training_iter=150, likelihood=multi_likelihood_loc,
+                        optimizer="adam", lr=0.01,
+                        number_quantities=complex_model.num_calibration_quantities)
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
                                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
                                         )
+                if complex_model.multitask_selection == "SO_sequential":
+                    # Independent single-output GPEs, one per calibration target, without correlation between the targets (kept in sync with bal_telemac.py, the canonical driver).
+                    so_sm = SOSequentialGPyTraining.from_training_data(
+                        collocation_points, model_outputs, complex_model.calibration_quantities)
                 if complex_model.multitask_selection == "variables":
                     # Derive n_tasks_per_loc directly from data shape to avoid config mismatch
                     n_tasks_per_loc = model_outputs.shape[1] // complex_model.nloc
@@ -415,9 +456,16 @@ def run_bal_model(collocation_points,
                 'Starting surrogate model training with the initial collocation points. Please check the .csv file if information required.')
 
         if complex_model.num_calibration_quantities == 1:
-            sm.train_()
-            surrogate_object = sm
+            if gp_library == 'gpy' and complex_model.multitask_selection == "locations":
+                multi_sm_loc.train_tasks_locations()
+                surrogate_object = multi_sm_loc
+            else:
+                sm.train_()
+                surrogate_object = sm
         else:
+            if complex_model.multitask_selection == "SO_sequential":
+                so_sm.train_()
+                surrogate_object = so_sm
             if complex_model.multitask_selection == "variables":
                 multi_sm_var.train_tasks_variables()
                 surrogate_object = multi_sm_var
@@ -432,12 +480,15 @@ def run_bal_model(collocation_points,
         # 2. Validate GPR
         if it % eval_steps == 0:
             if complex_model.num_calibration_quantities == 1:
+                # The multitask GPE over the locations carries its task layout in the name, like the surrogates of several quantities do.
+                task_layout = (f'_{complex_model.multitask_selection}'
+                               if isinstance(surrogate_object, MultiGPyTraining) else '')
                 save_name = os.path.join(gpe_results_folder_bal,
                                          f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}.pkl')
-                sm.exp_design = experiment_design
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.calibration_parameters}{task_layout}.pkl')
+                surrogate_object.exp_design = experiment_design
                 with open(save_name, "wb") as file:
-                    pickle.dump(sm, file)
+                    pickle.dump(surrogate_object, file)
             else:
 				# Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
@@ -450,7 +501,7 @@ def run_bal_model(collocation_points,
         # 3. Compute Bayesian scores in parameter space
         # Surrogate outputs for prior samples
         if complex_model.num_calibration_quantities == 1:
-            surrogate_output = sm.predict_(input_sets=prior, get_conf_int=True)
+            surrogate_output = surrogate_object.predict_(input_sets=prior, get_conf_int=True)
             model_predictions = surrogate_output['output']
             total_error = complex_model.variances
             if it == 0 or it == n_iter:
@@ -493,6 +544,8 @@ def run_bal_model(collocation_points,
         bayesian_dict['log_BME'][it] = bi_gpe.log_BME
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
         bayesian_dict['posterior'][it] = bi_gpe.posterior
+        bayesian_dict['post_loglikelihood'][it] = getattr(bi_gpe, 'post_loglikelihood', None)
+        bayesian_dict['post_logpdf'][it] = getattr(bi_gpe, 'post_logpdf', None)
         # Report-only: where each calibration parameter's own optimum currently sits,
         # how well the data constrain it, and whether those per-parameter optima form
         # a jointly plausible parameter set. Never raises, never touches sampling.
@@ -534,7 +587,8 @@ def run_bal_model(collocation_points,
                                   do_tradeoff=do_tradeoff,
                                   gaussian_assumption=False,
                                   mc_samples=mc_samples_al,
-                                  mc_exploration=mc_exploration)
+                                  mc_exploration=mc_exploration,
+                                  n_jobs=bal_n_jobs)
 
             new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
             logger.info(f"The new collocation point after rejection sampling is {new_tp} obtained with {util_fun}")
@@ -673,6 +727,7 @@ def main():
             only_bal_mode=only_bal_mode,
             delete_complex_outputs=config.execution['delete_complex_outputs'],
             validation=config.execution['validation'],
+            multitask_selection=config.sampling.get('multitask_selection', 'variables'),
             n_avg_timesteps=config.simulation.get('n_avg_timesteps', 1)
         )
 
@@ -708,6 +763,7 @@ def main():
         gp_library=config.sampling['gp_library'],
         include_surrogate_error=config.sampling.get('include_surrogate_error', True),
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
+        bal_n_jobs=config.sampling.get('bal_n_jobs', -1),
     )
 
 
