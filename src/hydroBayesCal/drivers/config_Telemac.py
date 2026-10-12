@@ -149,7 +149,10 @@ sampling = {
     #       proportion to the likelihood weights, returning a full-size posterior
     #       from the same likelihoods at no extra model cost. The samples repeat, so
     #       read the effective sample size it logs alongside the count.
-    # Switch to 'bayesian_weighting' if a run reports the low_posterior_sample verdict.
+    # Switch to 'bayesian_weighting' if a run reports the low_posterior_sample verdict:
+    # the weights use the likelihoods of all prior samples, which is worth more than the
+    # few samples that rejection sampling keeps. The verdict judges the effective sample
+    # size, not the number of rows, so it can persist; then only more prior_samples help.
     'posterior_sampling_method': 'rejection_sampling',
 }
 

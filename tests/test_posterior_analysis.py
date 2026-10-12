@@ -642,3 +642,243 @@ def test_the_decision_reaches_the_candidate_report(tmp_path):
     assert "selected" in header
     column = header.index("selected")
     assert sum(row[column] == "calibrated" for row in rows[1:]) == 1
+
+
+# ---------------------------------------------------------------------------
+# posterior samples with repeated rows (posterior_sampling_method='bayesian_weighting')
+# ---------------------------------------------------------------------------
+def _resampled_posterior(sigma, n_prior=25000, seed=0):
+    """A unimodal, well-identified posterior at (0.6, 0.4), drawn from a uniform prior in the two ways the package offers.
+
+    Returns the prior, the weighted resample of it (rows repeat) and the rejection sample (rows are distinct).
+    """
+    rng = np.random.default_rng(seed)
+    prior = rng.uniform(size=(n_prior, 2))
+    log_weight = -0.5 * (((prior - np.array([0.6, 0.4])) / sigma) ** 2).sum(axis=1)
+    weight = np.exp(log_weight - log_weight.max())
+    resampled = prior[rng.choice(n_prior, size=n_prior, replace=True, p=weight / weight.sum())]
+    accepted = prior[rng.uniform(size=n_prior) < weight]
+    return prior, resampled, accepted
+
+
+def test_effective_sample_size_of_distinct_and_of_repeated_rows():
+    from hydroBayesCal.surrogate.posterior_analysis import effective_sample_size
+
+    distinct = np.arange(12.0).reshape(6, 2)
+    assert effective_sample_size(distinct) == pytest.approx(6.0)
+    repeated = distinct[[0, 0, 0, 1]]  # one row three times, one row once
+    assert effective_sample_size(repeated) == pytest.approx(4.0 ** 2 / (3.0 ** 2 + 1.0 ** 2))
+    assert effective_sample_size(np.repeat(distinct[:1], 500, axis=0)) == pytest.approx(1.0)
+
+
+def test_the_joint_density_of_a_resampled_posterior_is_not_capped_by_its_repeated_rows():
+    """A row that occurs more often than there are neighbors has only itself as neighbors.
+
+    All its neighbor distances were zero then, and its density was set to a cap that most rows shared: about 20,000 of 25,000 here. The joint optimum was a tie-break among them, and any point off the sample ranked near the bottom.
+    """
+    _, resampled, _ = _resampled_posterior(sigma=0.05)
+
+    result = joint_optimum(resampled, method="knn")
+
+    log_density = np.asarray(result["log_density"])
+    assert np.all(np.isfinite(log_density))
+    at_the_maximum = np.unique(resampled[log_density >= log_density.max() - 1e-9], axis=0)
+    assert len(at_the_maximum) == 1, "one parameter set is the densest, not a tie of thousands"
+    assert np.linalg.norm(np.asarray(result["vector"]) - np.array([0.6, 0.4])) < 0.03
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_marginal_peaks_of_a_resampled_unimodal_posterior_are_not_called_inconsistent(seed):
+    """The equifinality check compares the density at the marginal peaks with the densities at the samples.
+
+    With the capped densities, the vector of marginal peaks of this unimodal posterior ranked at the 2nd to 5th percentile, and the verdict was "inconsistent" for every seed.
+    """
+    prior, resampled, _ = _resampled_posterior(sigma=0.012, seed=seed)
+
+    peaks = marginal_optima(resampled, prior=prior)["peak"]
+    joint = joint_optimum(resampled, method="knn", prior=prior)["vector"]
+    verdict = equifinality_diagnostic(resampled, peaks, joint_optimum_vector=joint)
+
+    assert verdict["verdict"] in ("consistent", "acceptable")
+    assert verdict["density_percentile"] > 10.0
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_the_marginals_of_a_resampled_unimodal_posterior_have_one_mode(seed):
+    """The histogram of a marginal can resolve what its samples are worth, not what their rows count.
+
+    Binned by the number of rows, the marginals of this posterior (25,000 rows that repeat about 170 parameter sets) broke up into 8 to 14 modes each.
+    """
+    prior, resampled, _ = _resampled_posterior(sigma=0.012, seed=seed)
+
+    marginals = marginal_optima(resampled, prior=prior)
+
+    assert max(marginals["n_marginal_modes"]) <= 2
+    assert np.allclose(marginals["peak"], [0.6, 0.4], atol=0.03)
+
+
+def test_distinct_samples_are_ranked_as_before():
+    """For a rejection sample nothing changes: the density differs from the earlier estimate by a constant only."""
+    from scipy.spatial import cKDTree
+
+    from hydroBayesCal.surrogate.posterior_analysis import _DensityEstimator
+
+    _, _, accepted = _resampled_posterior(sigma=0.1)
+    estimator = _DensityEstimator(accepted)
+    off_sample = np.array([[0.55, 0.45], [0.2, 0.9]])
+
+    z = (accepted - accepted.mean(axis=0)) / accepted.std(axis=0)
+    tree, k = cKDTree(z), estimator.k_neighbors + 1
+
+    def earlier(points):
+        distances, _ = tree.query((points - accepted.mean(axis=0)) / accepted.std(axis=0), k=k)
+        return np.array([-2.0 * np.log(row[row > 0][-1]) for row in distances])
+
+    assert len(np.unique(accepted, axis=0)) == len(accepted)
+    difference = np.concatenate([estimator.log_density(accepted) - earlier(accepted),
+                                 estimator.log_density(off_sample) - earlier(off_sample)])
+    assert np.ptp(difference) < 1e-9
+
+
+def test_the_sample_size_guards_count_what_a_resampled_posterior_is_worth():
+    """25,000 rows that repeat about a hundred parameter sets are not 25,000 samples.
+
+    The guards compared the number of rows with their thresholds and let such a posterior pass as if it were large.
+    """
+    from hydroBayesCal.surrogate.posterior_analysis import effective_sample_size
+
+    prior, resampled, accepted = _resampled_posterior(sigma=0.012)
+    effective = effective_sample_size(resampled)
+    assert len(resampled) == 25000 and effective < 100
+
+    marginals = marginal_optima(resampled, prior=prior)
+    assert marginals["verdict"] == "low_posterior_sample"
+    assert marginals["post_size"] == 25000
+    assert marginals["effective_post_size"] == pytest.approx(effective)
+    assert "independent" in marginals["message"]
+
+    modes = detect_posterior_modes(resampled, prior=prior)
+    assert modes["n_modes"] == 1 and "skipped" in modes["message"]
+
+    # a rejection sample keeps its count
+    assert marginal_optima(accepted, prior=prior)["effective_post_size"] == pytest.approx(len(accepted))
+
+
+# ---------------------------------------------------------------------------
+# refinement on an emulator that computes in single precision
+# ---------------------------------------------------------------------------
+class _SinglePrecisionSurrogate:
+    """Three outputs that are linear in two parameters, evaluated in single precision like the gpytorch emulators.
+
+    The parameters have the ranges of a friction coefficient and of a parameter in the hundreds, and the observations are reproduced exactly at ``truth``.
+    """
+
+    lower = np.array([0.02, 100.0])
+    span = np.array([0.04, 200.0])
+    truth = np.array([0.045, 230.0])
+
+    def __init__(self, with_std=True):
+        self.with_std = with_std
+
+    def predict_(self, input_sets, **kwargs):
+        unit = ((np.atleast_2d(input_sets) - self.lower) / self.span).astype(np.float32)
+        output = np.column_stack([unit[:, 0] + unit[:, 1], unit[:, 0] - unit[:, 1],
+                                  np.float32(0.5) * unit[:, 0] + np.float32(2.0) * unit[:, 1]])
+        result = {"output": output.astype(float)}
+        if self.with_std:
+            # the emulator is the less certain, the farther the first parameter is from the middle of its range
+            std = np.float32(0.01) + np.float32(0.2) * np.abs(unit[:, [0]] - np.float32(0.5)) * np.ones((1, 3), dtype=np.float32)
+            result["std"] = std.astype(float)
+        return result
+
+
+def _single_precision_case(with_std=False):
+    surrogate = _SinglePrecisionSurrogate(with_std)
+    observations = surrogate.predict_(surrogate.truth)["output"]
+    bounds = np.column_stack([surrogate.lower, surrogate.lower + surrogate.span])
+    starts = surrogate.lower + np.array([[0.2, 0.8], [0.8, 0.2], [0.4, 0.4], [0.9, 0.9], [0.55, 0.7]]) * surrogate.span
+    return surrogate, observations, np.full(3, 0.02 ** 2), bounds, starts
+
+
+def test_refinement_moves_on_a_single_precision_emulator():
+    """The optimizer has to see the slope of the likelihood.
+
+    Its default finite-difference step of 1e-8 is below the resolution of a single-precision emulator: the difference of two likelihoods was zero or round-off, five of six starts did not move, and the unmoved starting points were reported as a refined optimum and as several local maxima. The step is now 1e-3 of the calibration range of every parameter.
+    """
+    from hydroBayesCal.surrogate.posterior_analysis import refine_joint_optimum
+
+    surrogate, observations, error, bounds, starts = _single_precision_case()
+
+    result = refine_joint_optimum(starts, surrogate, observations, error, seeds=starts, prior_bounds=bounds, n_starts=5)
+
+    assert result["refined"] is True
+    assert result["global_agreement"] == 1.0, "one maximum, reached from every start"
+    assert np.all(np.abs(result["refined_vector"] - surrogate.truth) < 2e-3 * surrogate.span)
+    assert np.all(np.abs(result["local_optima"] - surrogate.truth) < 5e-3 * surrogate.span)
+
+
+def test_refinement_on_a_trained_single_precision_emulator():
+    """The same with a trained gpytorch emulator instead of a stand-in."""
+    torch = pytest.importorskip("torch")
+    gpytorch = pytest.importorskip("gpytorch")
+    from hydroBayesCal.surrogate.gpe_gpytorch import GPyTraining
+    from hydroBayesCal.surrogate.posterior_analysis import refine_joint_optimum
+
+    rng = np.random.default_rng(3)
+    model = lambda p: np.column_stack([p[:, 0] + p[:, 1], p[:, 0] - p[:, 1], 0.5 * p[:, 0] + 2.0 * p[:, 1]])
+    x = rng.uniform(size=(25, 2))
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
+    likelihood.noise = 1e-5
+    emulator = GPyTraining(collocation_points=x, model_evaluations=model(x), likelihood=likelihood,
+                           kernel=gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=2)),
+                           training_iter=150, optimizer="adam", lr=0.07, verbose=False)
+    torch.manual_seed(0)
+    emulator.train_()
+    truth = np.array([0.6, 0.4])
+    starts = np.array([[0.3, 0.7], [0.8, 0.3], [0.5, 0.5], [0.7, 0.6]])
+
+    result = refine_joint_optimum(starts, emulator, model(truth[None, :]), np.full(3, 0.02 ** 2), seeds=starts,
+                                  prior_bounds=BOUNDS_UNIT, n_starts=4)
+
+    assert result["global_agreement"] == 1.0
+    assert np.linalg.norm(result["refined_vector"] - truth) < 0.02
+
+
+def test_the_refined_likelihood_is_the_one_of_the_calibration():
+    """The calibration adds the emulator variance to the observation variance (``include_surrogate_error``, on by default).
+
+    The refinement maximized the likelihood without it, although its documentation promised the likelihood of the calibration. An optimum found that way may sit where the emulator is uncertain.
+    """
+    from hydroBayesCal.surrogate.posterior_analysis import _surrogate_log_likelihood
+
+    surrogate, observations, error, _, starts = _single_precision_case(with_std=True)
+    prediction = surrogate.predict_(starts)
+
+    with_emulator_error = _surrogate_log_likelihood(surrogate, starts, observations, error)
+    without = _surrogate_log_likelihood(surrogate, starts, observations, error, include_surrogate_error=False)
+
+    residual = prediction["output"] - observations
+    total = error + prediction["std"] ** 2
+    expected = -0.5 * np.sum(residual ** 2 / total + np.log(total / error), axis=1)
+    assert with_emulator_error == pytest.approx(expected, rel=1e-9)
+    assert without == pytest.approx(-0.5 * np.sum(residual ** 2 / error, axis=1), rel=1e-9)
+
+
+def test_the_analysis_takes_the_likelihood_setting_from_the_stored_calibration(monkeypatch):
+    from hydroBayesCal.surrogate import posterior_analysis
+
+    surrogate, observations, error, bounds, _ = _single_precision_case(with_std=True)
+    rng = np.random.default_rng(0)
+    posterior = surrogate.truth + rng.normal(scale=0.02, size=(600, 2)) * surrogate.span
+    seen = []
+    original = posterior_analysis._surrogate_log_likelihood
+    monkeypatch.setattr(posterior_analysis, "_surrogate_log_likelihood",
+                        lambda *a, include_surrogate_error=True, **k:
+                        (seen.append(include_surrogate_error), original(*a, include_surrogate_error=include_surrogate_error, **k))[1])
+
+    for stored in (False, True):
+        seen.clear()
+        bal = {"posterior": [posterior], "param_values": bounds.tolist(), "calibration_parameters": ["a", "b"],
+               "include_surrogate_error": stored}
+        analyze_posterior(bayesian_dict=bal, surrogate=surrogate, observations=observations, error=error, refine=True)
+        assert seen and set(seen) == {stored}

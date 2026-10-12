@@ -8,7 +8,6 @@ Author: Andres Heredia (2024)
 import numpy as np
 import sys
 import scipy
-import sklearn
 import copy
 from joblib import Parallel, delayed
 import torch
@@ -21,10 +20,86 @@ from gpytorch.kernels import MultitaskKernel, RBFKernel, LinearKernel, ScaleKern
 from scipy.optimize import dual_annealing, differential_evolution
 
 from hydroBayesCal.surrogate.bal_functions import project_to_psd
+# The validation criteria live in validation_metrics.py, one implementation for both emulator libraries. They stay importable from this module, where scripts written for earlier versions look for them.
+from hydroBayesCal.surrogate.validation_metrics import save_valid_criteria, validation_error  # noqa: F401
 from hydroBayesCal.utils.config_logging import logger, logger_warn
 
 #: Set once the clipping of an indefinite posterior covariance has been reported (MultiGPyTraining._posterior_task_blocks).
 _REPORTED_CLIPPED_COVARIANCE = False
+
+#: Combinations of constant output columns that have been reported (_report_constant_outputs): one warning per combination and process.
+_REPORTED_CONSTANT_OUTPUTS = set()
+
+
+def _output_normalization(outputs):
+    """Level and spread for the normalization of the training outputs, column by column.
+
+    The emulators are trained on ``(outputs - level) / divisor`` and transform their predictions back with ``scale * prediction + level``. For an output that varies between the training runs, level and spread are its mean and its standard deviation. An output that is the same in every run, such as the water depth at a calibration point that stays dry, has no spread to divide by: the division gave NaN and stopped the training. Such a column is trained on zeros (``divisor`` 1) and transformed back with ``scale`` 0, so that the emulator returns the value of the training runs without any emulator uncertainty.
+
+    Parameters
+    ----------
+    outputs : numpy.ndarray or torch.Tensor
+        Shape ``[n_runs]`` or ``[n_runs, n_columns]``. For a tensor, the spread is ``torch.std`` (n - 1 in the denominator), as before.
+
+    Returns
+    -------
+    level, divisor, scale, constant
+        Arrays or tensors of shape ``[n_columns]`` (scalars for one column); ``constant`` flags the columns whose values are all equal.
+    """
+    if isinstance(outputs, torch.Tensor):
+        constant = outputs.max(dim=0).values == outputs.min(dim=0).values
+        spread = torch.std(outputs, dim=0)
+        level = torch.where(constant, outputs[0], torch.mean(outputs, dim=0))
+        return level, torch.where(constant, torch.ones_like(spread), spread), torch.where(constant, torch.zeros_like(spread), spread), constant
+    outputs = np.asarray(outputs)
+    constant = np.ptp(outputs, axis=0) == 0
+    spread = np.std(outputs, axis=0)
+    level = np.where(constant, outputs[0], np.mean(outputs, axis=0)).astype(spread.dtype)
+    return level, np.where(constant, 1.0, spread).astype(spread.dtype), np.where(constant, 0.0, spread).astype(spread.dtype), constant
+
+
+def _require_finite_outputs(model_evaluations):
+    """Refuse training outputs that contain NaN or infinite values, naming where they are.
+
+    A full-complexity run that failed, or a calibration point outside the model domain, leaves such a value. Passed on, it surfaces in the first Cholesky factorization of the training as ``NanError``, which names neither the run nor the output.
+    """
+    outputs = np.asarray(model_evaluations, dtype=float)
+    bad = ~np.isfinite(np.atleast_2d(outputs.T).T)
+    if bad.any():
+        runs, columns = np.flatnonzero(bad.any(axis=1)), np.flatnonzero(bad.any(axis=0))
+        raise ValueError(
+            f"The training outputs contain non-finite values (NaN or infinite) in run(s) {runs[:20].tolist()} and "
+            f"output column(s) {columns[:20].tolist()} (both counted from 0; columns interleave the calibration targets "
+            f"per calibration point). An emulator cannot be trained on them. A full-complexity run has probably failed, "
+            f"or a calibration point lies outside the model domain.")
+
+
+def _report_constant_outputs(columns, n_runs, n_quantities=None):
+    """Warn once that some output columns are the same in all training runs.
+
+    Parameters
+    ----------
+    columns : iterable of int
+        Zero-based columns of ``model_evaluations``.
+    n_runs : int
+        Number of training runs.
+    n_quantities : int, optional
+        Number of calibration targets, to name calibration point and target of a column (quantities interleaved per point).
+    """
+    columns = tuple(sorted(int(column) for column in columns))
+    if not columns or columns in _REPORTED_CONSTANT_OUTPUTS:
+        return
+    _REPORTED_CONSTANT_OUTPUTS.add(columns)
+    if n_quantities:
+        where = "; ".join(f"calibration point {column // n_quantities + 1}, target {column % n_quantities + 1}"
+                          for column in columns)
+    else:
+        where = ", ".join(f"output column {column + 1}" for column in columns)
+    logger_warn.warning(
+        f"The model output is the same in all {n_runs} training runs at: {where}. The emulator returns that value "
+        f"there, without emulator uncertainty. An output that does not respond to the calibration parameters, such as "
+        f"the water depth at a point that stays dry, carries no information for the calibration; consider removing it "
+        f"from the calibration points. This message is shown once per process.")
 
 
 class MyExactGPyModel(gpytorch.models.ExactGP):
@@ -193,7 +268,8 @@ class GPyTraining:
 
         Returns: <tensor> with normalized input values.
         """
-        norm_y = (train_y - np.mean(train_y))/(np.std(train_y))
+        level, divisor, _, _ = _output_normalization(train_y)
+        norm_y = (train_y - level) / divisor
         train_y = self.convert_to_tensor(norm_y)
         return train_y
 
@@ -203,8 +279,14 @@ class GPyTraining:
         Returns:
         ToDo: parallelize training
         """
+        _require_finite_outputs(self.model_evaluations)
+
         # Convert training points and prior parameter sets to tensor:
         train_x = self.convert_to_tensor(self.training_points)
+
+        if self.y_norm:
+            constant = np.ptp(np.asarray(self.model_evaluations), axis=0) == 0
+            _report_constant_outputs(np.flatnonzero(constant), self.model_evaluations.shape[0])
 
         if self.parallel and self.n_obs > 1:
             out = Parallel(n_jobs=-1, backend='multiprocessing')(delayed(self._fit_adam)(train_x=train_x,
@@ -273,14 +355,16 @@ class GPyTraining:
             gp.train()
             likelihood_.train()
 
-            if i > 1:
+            if i > 0:
+                # Every restart after the first one starts from new hyperparameters. The condition used to be i > 1, so that the second restart repeated the first one exactly.
                 self.init_model_params(gp)
 
             # Setup Optimizer
             if self.optimizer_ == 'adam':
                 optimizer = torch.optim.Adam(gp.parameters(), lr=self.lr, weight_decay=self.weight_decay)
             elif self.optimizer_ == 'lbfgs':
-                optimizer = torch.optim.lbfgs(gp.parameters(), lr=self.lr)
+                # With a line search: at a fixed step length, L-BFGS overshoots on the marginal likelihood of a Gaussian process.
+                optimizer = torch.optim.LBFGS(gp.parameters(), lr=self.lr, line_search_fn='strong_wolfe')
             else:
                 raise ValueError(f'There is no optimizer {self.optimizer_} available.')
 
@@ -332,8 +416,7 @@ class GPyTraining:
                 # t1 = time.time()
                 result = differential_evolution(negative_log_likelihood, bounds, maxiter=10)
 
-            # Optimize parameters:
-            for j in range(self.training_iter):
+            def closure():
                 # a. Zero gradients from previous iteration
                 optimizer.zero_grad()
                 # b. Output from model
@@ -341,7 +424,16 @@ class GPyTraining:
                 # c. Calculate loss and back propagation gradients
                 loss = -mll(output, train_y)
                 loss.backward()
-                optimizer.step()
+                return loss
+
+            # Optimize parameters:
+            for j in range(self.training_iter):
+                if self.optimizer_ == 'lbfgs':
+                    # L-BFGS evaluates loss and gradient itself, several times per step, and therefore takes them as a closure.
+                    loss = optimizer.step(closure)
+                else:
+                    loss = closure()
+                    optimizer.step()
                 scheduler.step()   # Change learning rate
                 if self.verbose:
                     print(f'Iter {j + 1}/{self.training_iter} - Loss: {loss.item()}',
@@ -352,6 +444,11 @@ class GPyTraining:
                 best_loss = loss
                 best_params = gp.state_dict()
 
+        if best_params is None:
+            raise RuntimeError(
+                f"The emulator could not be trained: the loss was not finite at the end of any of the "
+                f"{self.n_restarts} restart(s), so there are no hyperparameters to keep. Check the kernel and "
+                f"likelihood settings and the scale of the training data.")
         gp.load_state_dict(best_params)
 
         with torch.no_grad():
@@ -363,7 +460,8 @@ class GPyTraining:
             return_out_dic['cl_hp'] = gp.covar_module.base_kernel.lengthscale.numpy()[0, :]
             return_out_dic['noise_hp'] = gp.likelihood.noise.item()
             if self.y_norm:
-                return_out_dic['y_norm'] = [np.mean(model_y), np.std(model_y)]
+                level, _, scale, _ = _output_normalization(model_y)
+                return_out_dic['y_norm'] = [level, scale]
 
         return return_out_dic
 
@@ -418,161 +516,6 @@ class GPyTraining:
             output_dic['lower_ci'] = lower_ci
 
         return output_dic
-
-
-def validation_error(true_y, sim_y, output_names, n_per_type):
-    """Estimate validation criteria for a surrogate model per output location.
-
-    Results for each output type are stored under separate keys in a dictionary.
-
-    Parameters
-    ----------
-    true_y : numpy.ndarray
-        Simulator outputs for the validation samples, shape
-        ``[mc_valid, n_obs]``.
-    sim_y : numpy.ndarray or dict
-        Surrogate/emulator outputs for the validation samples, shape
-        ``[mc_valid, n_obs]``. If a dict, it holds ``output`` and ``std`` keys.
-    output_names : array-like of str
-        Name of each output type, shape ``[n_types]``.
-    n_per_type : int
-        Number of observations per output type.
-
-    Returns
-    -------
-    tuple
-        Validation criteria for each output location and output type.
-
-    Notes
-    -----
-    .. todo:: As in BayesValidRox, optionally estimate the surrogate predictions
-       here by passing a surrogate object.
-    .. todo:: Move into the GPR class and return a dictionary keyed by output
-       type.
-    """
-    criteria_dict = {
-        'rmse': dict(),
-         'mse': dict(),
-         'nse': dict(),
-         'r2': dict(),
-         'mean_error': dict(),
-         'std_error': dict()
-    }
-
-    if isinstance(sim_y, dict):
-        sm_out = sim_y['output']
-        sm_std = sim_y['std']
-        upper_ci = sim_y['upper_ci']
-        lower_ci = sim_y['lower_ci']
-
-        criteria_dict['norm_error'] = dict()
-        criteria_dict['P95'] = dict()
-    else:
-        sm_out = sim_y
-
-    # RMSE for each output location: not a dictionary (yet). [n_obs, ]
-    rmse = sklearn.metrics.mean_squared_error(
-        y_true=true_y,
-        y_pred=sm_out,
-        multioutput='raw_values',
-        squared=False
-    )
-
-    c = 0
-    for i, key in enumerate(output_names):
-        # RMSE
-        criteria_dict['rmse'][key] = sklearn.metrics.mean_squared_error(
-            y_true=true_y[:, c:c + n_per_type],
-            y_pred=sm_out[:, c:c + n_per_type],
-            multioutput='raw_values',
-            squared=False
-        )
-        # NSE
-        criteria_dict['nse'][key] = sklearn.metrics.r2_score(
-            y_true=true_y[:, c:c+n_per_type],
-            y_pred=sm_out[:, c:c+n_per_type],
-            multioutput='raw_values'
-        )
-
-        # NSE
-        criteria_dict['nse'][key] = sklearn.metrics.r2_score(
-            y_true=true_y[:, c:c + n_per_type],
-            y_pred=sm_out[:, c:c + n_per_type],
-            multioutput='raw_values'
-        )
-        criteria_dict['mse'][key] = sklearn.metrics.mean_squared_error(
-            y_true=true_y[:, c:c + n_per_type],
-            y_pred=sm_out[:, c:c + n_per_type],
-            multioutput='raw_values',
-            squared=True
-        )
-
-        # Mean errors
-        criteria_dict['mean_error'][key] = np.abs(
-            np.mean(true_y[:, c:c + n_per_type], axis=0) - np.mean(sm_out[:, c:c + n_per_type], axis=0)) / np.mean(
-            true_y[:, c:c + n_per_type], axis=0)
-
-        criteria_dict['std_error'][key] = np.abs(
-            np.std(true_y[:, c:c + n_per_type], axis=0) - np.std(sm_out[:, c:c + n_per_type], axis=0)) / np.std(
-            true_y[:, c:c + n_per_type], axis=0)
-
-        # Norm error
-        if isinstance(sim_y, dict):
-            # Normalized error
-            ind_val = np.divide(np.subtract(sm_out[:, c:c + n_per_type], true_y[:, c:c + n_per_type]),
-                                sm_std[:, c:c + n_per_type])
-            criteria_dict['norm_error'][key] = np.mean(ind_val ** 2, axis=0)
-
-            # P95
-            p95 = np.where((true_y[:, c:c + n_per_type] <= upper_ci[:, c:c + n_per_type]) & (
-                        true_y[:, c:c + n_per_type] >= lower_ci[:, c:c + n_per_type]), 1, 0)
-            criteria_dict['P95'][key] = np.mean(p95, axis=0)
-
-        criteria_dict['r2'][key] = np.zeros(n_per_type)
-        for j in range(n_per_type):
-            criteria_dict['r2'][key][j] = np.corrcoef(true_y[:, j+c], sm_out[:, j+c])[0, 1]
-
-        c = c + n_per_type
-
-    return rmse, criteria_dict
-
-
-def save_valid_criteria(new_dict, old_dict, n_tp):
-    """Append the current iteration's validation criteria to a results dict.
-
-    Stores the validation criteria for the current iteration (``n_tp``) in an
-    existing dictionary, so the results for all iterations live in one file.
-    Each validation criterion has a key per output type, holding a vector with
-    one value per output location.
-
-    Parameters
-    ----------
-    new_dict : dict
-        Validation criteria for the current iteration.
-    old_dict : dict
-        Validation criteria for all previous iterations, including an ``N_tp``
-        key that tracks the iteration number.
-    n_tp : int
-        Number of training points for the current BAL iteration.
-
-    Returns
-    -------
-    dict
-        The updated dictionary including the current iteration.
-    """
-
-    if len(old_dict) == 0:
-        old_dict = dict(new_dict)
-        old_dict['N_tp'] = [n_tp]
-    else:
-        for key in old_dict:
-            if key == 'N_tp':
-                old_dict[key].append(n_tp)
-            else:
-                for out_type in old_dict[key]:
-                    old_dict[key][out_type] = np.vstack((old_dict[key][out_type], new_dict[key][out_type]))
-
-    return old_dict
 
 
 class MultiGPyTraining:
@@ -636,20 +579,23 @@ class MultiGPyTraining:
         the cross-quantity correlation at a location is modelled explicitly.
         """
         self.task_mode = "variables"
+        _require_finite_outputs(self.model_evaluations)
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities
+
+        constant_columns = []
 
         # Iterate over each location
         for loc in range(num_locations):
             # Extract the columns corresponding to the current location
             Y_loc = Y[:, self.number_quantities * loc : self.number_quantities * (loc + 1)].numpy()
 
-            # Normalize outputs
-            y_mean = np.mean(Y_loc, axis=0)
-            y_std = np.std(Y_loc, axis=0)
-            Y_loc_norm = (Y_loc - y_mean) / y_std
+            # Normalize outputs. A target that is the same in every run at this location is trained on zeros and returned without emulator uncertainty, see _output_normalization.
+            y_mean, divisor, y_std, constant = _output_normalization(Y_loc)
+            Y_loc_norm = (Y_loc - y_mean) / divisor
+            constant_columns.extend(self.number_quantities * loc + np.flatnonzero(constant))
 
             # Save normalization parameters
             self.normalization_params.append((y_mean, y_std))
@@ -731,6 +677,8 @@ class MultiGPyTraining:
             self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std),
                                  'likelihood': likelihood})
 
+        _report_constant_outputs(constant_columns, Y.shape[0], self.number_quantities)
+
     def train_tasks_locations(self):
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
@@ -741,6 +689,7 @@ class MultiGPyTraining:
         can only return a diagonal per-location covariance.
         """
         self.task_mode = "locations"
+        _require_finite_outputs(self.model_evaluations)
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
 
@@ -754,11 +703,13 @@ class MultiGPyTraining:
 
         # The model outputs interleave the quantities per location, so quantity q
         # occupies columns q, q + n_quantities, q + 2*n_quantities, ...
+        constant_columns = []
         for q in range(self.number_quantities):
             Y_output_var = Y[:, q::self.number_quantities]
-            y_mean = torch.mean(Y_output_var, dim=0)
-            y_std = torch.std(Y_output_var, dim=0)
-            Y_output_var_norm = ((Y_output_var - y_mean) / y_std).to(torch.float32)
+            # A location where this quantity is the same in every run is trained on zeros and returned without emulator uncertainty, see _output_normalization.
+            y_mean, divisor, y_std, constant = _output_normalization(Y_output_var)
+            Y_output_var_norm = ((Y_output_var - y_mean) / divisor).to(torch.float32)
+            constant_columns.extend(q + self.number_quantities * np.flatnonzero(self._as_numpy(constant)))
             self.normalization_params.append((f'output_{q + 1}', y_mean, y_std))
 
             # Initialize multitask GP model for the entire set of locations (tasks).
@@ -793,22 +744,25 @@ class MultiGPyTraining:
             self.gp_list.append({'gp': model, 'y_norm': (y_mean, y_std),
                                  'likelihood': likelihood})
 
+        _report_constant_outputs(constant_columns, Y.shape[0], self.number_quantities)
+
     def train_tasks_all(self):
         """
         Train a single multitask Gaussian Process model using all outputs (water depth and velocity)
         at all locations simultaneously.
         """
         self.task_mode = "all"
+        _require_finite_outputs(self.model_evaluations)
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
 
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities  # Total number of locations
 
-        # Normalize Y
-        y_mean = torch.mean(Y, dim=0)  # Compute mean per (location, quantity)
-        y_std = torch.std(Y, dim=0)  # Compute std per (location, quantity)
-        Y_norm = (Y - y_mean) / y_std  # Normalize Y
+        # Normalize Y per (location, quantity). An output that is the same in every run is trained on zeros and returned without emulator uncertainty, see _output_normalization.
+        y_mean, divisor, y_std, constant = _output_normalization(Y)
+        Y_norm = (Y - y_mean) / divisor
+        _report_constant_outputs(np.flatnonzero(self._as_numpy(constant)), Y.shape[0], self.number_quantities)
 
         # Save normalization parameters
         self.normalization_params = {'y_mean': y_mean, 'y_std': y_std}

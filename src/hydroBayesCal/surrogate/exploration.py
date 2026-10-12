@@ -19,6 +19,8 @@ class Exploration:
     that the whole domain is explored. Scores are normalised to ``[0, 1]``; the
     highest values are the best.
 
+    The criteria assume parameters on comparable scales: the distances are taken in the coordinates that are passed in, and the threshold of ``mc-intersite-proj-th`` is a distance in the unit hypercube. Pass training points and candidates scaled to the unit hypercube, as ``SequentialDesign.space_filling_scores`` does. The projected distance is evaluated as the Chebyshev distance.
+
     Based on the Surrogate Modeling Toolbox (SUMO) [1]_ and modelled after code
     in BayesValidRox [2]_.
 
@@ -165,16 +167,10 @@ class Exploration:
             elif mc_criterion == 'mc-intersite-proj-th':
                 alpha = 0.5  # chosen (tradeoff)
                 d_min = 2 * alpha / n_new_samples
-                if any(min_projected_dist < d_min):
-                    candidates = np.delete(
-                        candidates, [min_projected_dist < d_min], axis=0
-                    )
-                    total_dist_scores = np.delete(
-                        min_intersite_dist, [min_projected_dist < d_min],
-                        axis=0
-                    )
-                else:
-                    total_dist_scores = min_intersite_dist
+                # Boolean indexing: the mask wrapped in a list is refused by np.delete in NumPy 2 and removed rows 0 and 1 in older versions, whatever the mask said.
+                too_close = min_projected_dist < d_min
+                candidates = candidates[~too_close]
+                total_dist_scores = min_intersite_dist[~too_close]
             else:
                 raise NameError(
                     'The MC-Criterion you requested is not available.'
@@ -263,9 +259,9 @@ class Exploration:
             if min_euclidean_dist >= maxMinDistance:
                 maxMinDistance = min_euclidean_dist
 
-            # Projected distance
+            # Projected distance. Requested as a distance, like the Euclidean one above: the helper returns squared distances by default, which put the two terms of the score on different scales and compared a squared distance with the threshold d_min below.
             projected_dist = self._build_dist_matrix_point(
-                old_ED_X, candidate, 'chebyshev')
+                old_ED_X, candidate, 'chebyshev', do_sqrt=True)
             min_projected_dist[i] = np.min(projected_dist)
 
         if mc_criterion == 'mc-intersite-proj':
@@ -277,15 +273,10 @@ class Exploration:
         elif mc_criterion == 'mc-intersite-proj-th':
             alpha = 0.5  # chosen (tradeoff)
             d_min = 2 * alpha / n_candidate
-            if any(min_projected_dist < d_min):
-                all_candidates = np.delete(
-                    all_candidates, [min_projected_dist < d_min], axis=0
-                )
-                total_dist_scores = np.delete(
-                    min_intersite_dist, [min_projected_dist < d_min], axis=0
-                )
-            else:
-                total_dist_scores = min_intersite_dist
+            # Boolean indexing, see get_vornoi_samples. Candidates and scores stay aligned.
+            too_close = min_projected_dist < d_min
+            all_candidates = np.asarray(all_candidates)[~too_close]
+            total_dist_scores = min_intersite_dist[~too_close]
         else:
             raise NameError('The MC-Criterion you requested is not available.')
 
