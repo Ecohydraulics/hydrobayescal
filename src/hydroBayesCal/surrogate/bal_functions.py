@@ -523,6 +523,18 @@ class BayesianInference:
         if self.prior_logpdf is not None:
             self.post_logpdf = self.prior_logpdf[post_index]
 
+    def calculate_prior_likelihood(self):
+        """Likelihood of every model prediction, in the form this object was set up for.
+
+        Without a model error the likelihood uses the observation variances alone. With one, e.g. the standard deviation of the emulator, it is added to them per prediction. This is the likelihood of the calibration; anything that has to agree with the calibration, such as the refinement of the joint optimum, calls this method instead of choosing a form itself.
+        """
+        if self.model_error is None:
+            self.calculate_likelihood_manual()
+        elif self._has_diagonal_augmented_covariance():
+            self.calculate_likelihood_with_error_diagonal()
+        else:
+            self.calculate_likelihood_with_error()
+
     def estimate_bme(self):
         """
         Function calculates likelihood and BME (prior based) and then, based on the given posterior sampling criteria,
@@ -535,12 +547,7 @@ class BayesianInference:
             BME = ELPD, and thus RE is also 0, since nothing mas learned.
         """
         # 1. Prior Likelihood
-        if self.model_error is None:
-            self.calculate_likelihood_manual()
-        elif self._has_diagonal_augmented_covariance():
-            self.calculate_likelihood_with_error_diagonal()
-        else:
-            self.calculate_likelihood_with_error()
+        self.calculate_prior_likelihood()
 
         # Posterior sampling:
         if 'bayesian_weighting' in self.post_sampling_method.lower():  # Bayesian weighting
