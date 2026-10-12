@@ -691,8 +691,11 @@ class SequentialDesign:
             candidate_idx = self.select_indexes(prior_samples=prior_samples,
                                                 collocation_points=self.SM.training_points)
             all_candidates = prior_samples[candidate_idx, :]
-            # Update number of mc_samples:
-            score_exploration = np.zeros(self.mc_samples)
+            # One score per candidate that is evaluated: the prior sample can hold fewer unused parameter sets than mc_samples. The space-filling score costs a distance evaluation per candidate and is computed only where it is used.
+            if self.do_tradeoff:
+                score_exploration = self.space_filling_scores(all_candidates, prior_samples)
+            else:
+                score_exploration = np.zeros(all_candidates.shape[0])
         else:
             explore = Exploration(n_candidate=self.mc_samples,
                                   old_tp=self.SM.training_points,
@@ -745,21 +748,35 @@ class SequentialDesign:
                                                 index=1, m_error=self.m_error, utility_func=util_fun)
                 score_exploit = results[1]
 
-            # Normalize exploit score
-            score_exploit_norm = score_exploit / np.nansum(np.abs(score_exploit))
+            # Normalize the exploitation score over the candidates whose utility could be computed. A failed candidate carries -inf (NaN from the closed-form utility) and has to rank last without taking the others with it: divided by a sum that contains an infinite term, every other score became 0, and the sort below returned a candidate that no criterion had chosen.
+            score_exploit = np.asarray(score_exploit, dtype=float)
+            usable = np.isfinite(score_exploit)
+            scale = float(np.sum(np.abs(score_exploit[usable])))
+            score_exploit_norm = np.full(score_exploit.shape, np.nan)
+            score_exploit_norm[usable] = score_exploit[usable] / scale if scale > 0 else 0.0
             self.exploit_score_norm = score_exploit_norm
             self.exploit_score = score_exploit
 
-            if self.do_tradeoff:
+            if scale == 0:
+                # The utility says nothing: it failed for every candidate, or it promises no information from any of them. The next run then goes where the training runs are farthest away, instead of to whichever candidate the sort returns first.
+                if not np.any(usable):
+                    logger_warn.warning(
+                        f"BAL: the utility '{util_fun}' could not be computed for any of the {score_exploit.size} "
+                        f"candidate parameter sets. The next training point is selected by its distance from the "
+                        f"existing training runs instead. Check the emulator predictions and the observation errors.")
+                if prior_samples is not None and not self.do_tradeoff:
+                    score_exploration = self.space_filling_scores(all_candidates, prior_samples)
+                    self.explore_score = score_exploration
+                total_score = np.asarray(score_exploration, dtype=float)
+                self.total_score = total_score
+                util_fun = 'global_mc'
+            elif self.do_tradeoff:
                 # assigning 50-50 score to exploitation and exploration
                 total_score = (0.5 * score_exploration) + (0.5 * score_exploit_norm)
                 self.total_score = total_score
             else:
                 total_score = score_exploit_norm
                 self.total_score = score_exploit
-
-            if np.nansum(score_exploit) == 0:
-                util_fun = 'global_mc'
 
             # Order in descending order
             temp = total_score.copy()  # copy
@@ -970,54 +987,115 @@ class SequentialDesign:
             in descending order.
         """
 
-        if exploit_method.lower() == 'varoptdesign':
-            print('Not yet implemented: method select TP based on surrogate model variance')
+        # The same test as in run_sequential_design, which sends every method that contains 'bal' here. An exact comparison with 'bal' let a name such as 'BAL_global' through to the return statement without any score.
+        if 'bal' not in exploit_method.lower():
+            raise ValueError(
+                f"Unknown exploitation method '{exploit_method}'. The utility of candidate parameter sets can be "
+                f"evaluated for Bayesian active learning ('bal') only.")
 
-        elif exploit_method.lower() == 'bal':
-            n_candidate = candidates.shape[0]   # number of candidates
-            U_J_d = np.zeros(n_candidate)       # array to save scores for each candidate
+        n_candidate = candidates.shape[0]   # number of candidates
+        U_J_d = np.zeros(n_candidate)       # array to save scores for each candidate
 
-            # Evaluate candidates in surrogate model
-            if self.observations.shape[0]>1:
-                output = self.SM.predict_(input_sets=candidates)
-                y_cand = output['output']
-                std_cand = output['std']
+        # The utility either samples the emulator outputs (bayesian_active_learning) or uses the closed form of the Gaussian case (analytical_bal). Only the sampling utility can use the covariance between the calibration targets; the closed form takes one standard deviation per output. The covariance is therefore requested exactly where it is consumed.
+        sampling_utility = utility_func.lower() == "bme" or not self.gaussian_assumption
+        use_task_covariance = self.multitask and sampling_utility
+
+        # Evaluate candidates in surrogate model
+        if use_task_covariance:
+            output = self.SM.predict_(input_sets=candidates, multitask_cov=True)
+            multi_cov = output['multitask_cov']
+        else:
+            output = self.SM.predict_(input_sets=candidates)
+        y_cand = output['output']
+        std_cand = output['std']
+
+        if self.EM is not None:
+            error_out = self.EM.predict_(input_sets=candidates)
+
+            y_cand = y_cand + error_out['output']
+            # The emulator of the model and the emulator of its error are independent, so their variances add, not their standard deviations.
+            error_variance = np.asarray(error_out['std'], dtype=float) ** 2
+            std_cand = np.sqrt(np.asarray(std_cand, dtype=float) ** 2 + error_variance)
+            if use_task_covariance:
+                multi_cov = self._add_variance_to_task_blocks(multi_cov, error_variance)
+
+        for idx, cand in tqdm(enumerate(candidates), ascii=True, desc='Exploring posterior in BAL Design'):
+            '''ToDo: When SM output has dictionaries for each output type'''
+            # y_mean = {key: items[idx] for key, items in y_cand.items()}
+            # y_std = {key: items[idx] for key, items in std_cand.items()}
+            y_mean = y_cand[idx, :]
+            if use_task_covariance:
+                y_std = multi_cov[idx]
             else:
-                if self.multitask:
-                    output = self.SM.predict_(input_sets=candidates, multitask_cov=True)
-                    y_cand = output['output']
-                    std_cand = output['std']
-                    multi_cov = output['multitask_cov']
-                else:
-                    output = self.SM.predict_(input_sets=candidates)
-                    y_cand = output['output']
-                    std_cand = output['std']
-            if self.EM is not None:
-                error_out = self.EM.predict_(input_sets=candidates)
+                y_std = std_cand[idx, :]
 
-                y_cand = y_cand + error_out['output']
-                std_cand = std_cand + error_out['std']
-
-            for idx, cand in tqdm(enumerate(candidates), ascii=True, desc='Exploring posterior in BAL Design'):
-                '''ToDo: When SM output has dictionaries for each output type'''
-                # y_mean = {key: items[idx] for key, items in y_cand.items()}
-                # y_std = {key: items[idx] for key, items in std_cand.items()}
-                y_mean = y_cand[idx, :]
-                if self.multitask:
-                    y_std = multi_cov[idx]
-                else:
-                    y_std = std_cand[idx, :]
-
-                if utility_func.lower() == "bme" or not self.gaussian_assumption:
-                    U_J_d[idx] = self.bayesian_active_learning(y_mean=y_mean, y_std=y_std,
-                                                               observations=self.observations, error=m_error,
-                                                               utility_function=utility_func)
-                else:
-                    U_J_d[idx] = self.analytical_bal(y_mean=y_mean, y_std=y_std,
-                                                     observations=self.observations, error=m_error,
-                                                     utility_function=utility_func)
+            if sampling_utility:
+                U_J_d[idx] = self.bayesian_active_learning(y_mean=y_mean, y_std=y_std,
+                                                           observations=self.observations, error=m_error,
+                                                           utility_function=utility_func)
+            else:
+                U_J_d[idx] = self.analytical_bal(y_mean=y_mean, y_std=y_std,
+                                                 observations=self.observations, error=m_error,
+                                                 utility_function=utility_func)
 
         return index, U_J_d
+
+    @staticmethod
+    def _add_variance_to_task_blocks(task_blocks, variance):
+        """Add a variance per output to the diagonal of the covariance blocks between the calibration targets.
+
+        Parameters
+        ----------
+        task_blocks : list
+            For every candidate, the list of ``[n_quantities, n_quantities]`` blocks, one per calibration point, as ``predict_(multitask_cov=True)`` returns them.
+        variance : numpy.ndarray
+            Shape ``[n_candidates, n_obs]``, in the column order of ``model_evaluations`` (quantities interleaved per calibration point).
+
+        Returns
+        -------
+        list
+            New blocks in the same nesting; the input is not modified.
+        """
+        augmented = []
+        for blocks, row in zip(task_blocks, np.atleast_2d(variance)):
+            start, new_blocks = 0, []
+            for block in blocks:
+                block = np.array(block, dtype=float)
+                size = block.shape[0]
+                new_blocks.append(block + np.diag(row[start:start + size]))
+                start += size
+            augmented.append(new_blocks)
+        return augmented
+
+    def space_filling_scores(self, candidates, reference_sample=None):
+        """Exploration score of candidate parameter sets: how far each one lies from the training runs.
+
+        The score is the intersite-projected distance of Crombecq et al. (2011) as implemented in :class:`~hydroBayesCal.surrogate.exploration.Exploration`, normalized to a sum of one like the exploitation score it is combined with. The distances are taken in the unit hypercube spanned by ``reference_sample``, so that calibration parameters with different units and ranges count alike.
+
+        Parameters
+        ----------
+        candidates : numpy.ndarray
+            Shape ``[n_candidates, n_params]``.
+        reference_sample : numpy.ndarray, optional
+            Sample that spans the parameter ranges, usually the prior sample. Default: the candidates themselves.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shape ``[n_candidates]``; higher means farther from every training run.
+        """
+        candidates = np.atleast_2d(np.asarray(candidates, dtype=float))
+        training_points = np.atleast_2d(np.asarray(self.SM.training_points, dtype=float))
+        reference = candidates if reference_sample is None else np.atleast_2d(np.asarray(reference_sample, dtype=float))
+        lower = reference.min(axis=0)
+        span = np.ptp(reference, axis=0)
+        span = np.where(span > 0, span, 1.0)
+
+        explore = Exploration(n_candidate=candidates.shape[0], old_tp=(training_points - lower) / span,
+                              exp_design=self.ExpDesign, mc_criterion='mc-intersite-proj')
+        _, scores = explore.get_mc_samples(all_candidates=(candidates - lower) / span)
+        scores = np.asarray(scores, dtype=float)
+        return scores if np.all(np.isfinite(scores)) else np.zeros(candidates.shape[0])
 
     @staticmethod
     def gaussian_overlap(mu1, cov1, mu2, cov2):
