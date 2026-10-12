@@ -57,6 +57,22 @@ def _output_normalization(outputs):
     return level, np.where(constant, 1.0, spread).astype(spread.dtype), np.where(constant, 0.0, spread).astype(spread.dtype), constant
 
 
+def _require_finite_outputs(model_evaluations):
+    """Refuse training outputs that contain NaN or infinite values, naming where they are.
+
+    A full-complexity run that failed, or a calibration point outside the model domain, leaves such a value. Passed on, it surfaces in the first Cholesky factorization of the training as ``NanError``, which names neither the run nor the output.
+    """
+    outputs = np.asarray(model_evaluations, dtype=float)
+    bad = ~np.isfinite(np.atleast_2d(outputs.T).T)
+    if bad.any():
+        runs, columns = np.flatnonzero(bad.any(axis=1)), np.flatnonzero(bad.any(axis=0))
+        raise ValueError(
+            f"The training outputs contain non-finite values (NaN or infinite) in run(s) {runs[:20].tolist()} and "
+            f"output column(s) {columns[:20].tolist()} (both counted from 0; columns interleave the calibration targets "
+            f"per calibration point). An emulator cannot be trained on them. A full-complexity run has probably failed, "
+            f"or a calibration point lies outside the model domain.")
+
+
 def _report_constant_outputs(columns, n_runs, n_quantities=None):
     """Warn once that some output columns are the same in all training runs.
 
@@ -262,6 +278,8 @@ class GPyTraining:
         Returns:
         ToDo: parallelize training
         """
+        _require_finite_outputs(self.model_evaluations)
+
         # Convert training points and prior parameter sets to tensor:
         train_x = self.convert_to_tensor(self.training_points)
 
@@ -336,14 +354,16 @@ class GPyTraining:
             gp.train()
             likelihood_.train()
 
-            if i > 1:
+            if i > 0:
+                # Every restart after the first one starts from new hyperparameters. The condition used to be i > 1, so that the second restart repeated the first one exactly.
                 self.init_model_params(gp)
 
             # Setup Optimizer
             if self.optimizer_ == 'adam':
                 optimizer = torch.optim.Adam(gp.parameters(), lr=self.lr, weight_decay=self.weight_decay)
             elif self.optimizer_ == 'lbfgs':
-                optimizer = torch.optim.lbfgs(gp.parameters(), lr=self.lr)
+                # With a line search: at a fixed step length, L-BFGS overshoots on the marginal likelihood of a Gaussian process.
+                optimizer = torch.optim.LBFGS(gp.parameters(), lr=self.lr, line_search_fn='strong_wolfe')
             else:
                 raise ValueError(f'There is no optimizer {self.optimizer_} available.')
 
@@ -395,8 +415,7 @@ class GPyTraining:
                 # t1 = time.time()
                 result = differential_evolution(negative_log_likelihood, bounds, maxiter=10)
 
-            # Optimize parameters:
-            for j in range(self.training_iter):
+            def closure():
                 # a. Zero gradients from previous iteration
                 optimizer.zero_grad()
                 # b. Output from model
@@ -404,7 +423,16 @@ class GPyTraining:
                 # c. Calculate loss and back propagation gradients
                 loss = -mll(output, train_y)
                 loss.backward()
-                optimizer.step()
+                return loss
+
+            # Optimize parameters:
+            for j in range(self.training_iter):
+                if self.optimizer_ == 'lbfgs':
+                    # L-BFGS evaluates loss and gradient itself, several times per step, and therefore takes them as a closure.
+                    loss = optimizer.step(closure)
+                else:
+                    loss = closure()
+                    optimizer.step()
                 scheduler.step()   # Change learning rate
                 if self.verbose:
                     print(f'Iter {j + 1}/{self.training_iter} - Loss: {loss.item()}',
@@ -415,6 +443,11 @@ class GPyTraining:
                 best_loss = loss
                 best_params = gp.state_dict()
 
+        if best_params is None:
+            raise RuntimeError(
+                f"The emulator could not be trained: the loss was not finite at the end of any of the "
+                f"{self.n_restarts} restart(s), so there are no hyperparameters to keep. Check the kernel and "
+                f"likelihood settings and the scale of the training data.")
         gp.load_state_dict(best_params)
 
         with torch.no_grad():
@@ -700,6 +733,7 @@ class MultiGPyTraining:
         the cross-quantity correlation at a location is modelled explicitly.
         """
         self.task_mode = "variables"
+        _require_finite_outputs(self.model_evaluations)
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
         # Number of locations
@@ -809,6 +843,7 @@ class MultiGPyTraining:
         can only return a diagonal per-location covariance.
         """
         self.task_mode = "locations"
+        _require_finite_outputs(self.model_evaluations)
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
 
@@ -871,6 +906,7 @@ class MultiGPyTraining:
         at all locations simultaneously.
         """
         self.task_mode = "all"
+        _require_finite_outputs(self.model_evaluations)
         X = torch.tensor(self.training_points, dtype=torch.float32)
         Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
 
