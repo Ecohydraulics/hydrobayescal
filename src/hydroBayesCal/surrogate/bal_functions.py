@@ -21,7 +21,7 @@ _WARNED_INDEFINITE_COVARIANCE = False
 def project_to_psd(matrix, relative_floor=1e-9, return_ratio=False):
     """Clip the negative eigenvalues of a covariance matrix that round-off has made indefinite.
 
-    A covariance computed as a difference of nearly equal terms, such as the posterior covariance of a Gaussian process next to a training point, carries an absolute error of the size of the terms. Where the result is orders of magnitude smaller than they are, it can come out with a negative eigenvalue, and a sampler then refuses it as a covariance. The matrix is symmetrized and its eigenvalues are clipped at ``relative_floor`` times the largest one. A matrix that is positive semidefinite already is returned unchanged.
+    A covariance computed as a difference of nearly equal terms carries the round-off error of those terms. The posterior covariance of a Gaussian process is such a difference, of the prior covariance and the part explained by the training data. Where the emulator is nearly certain, the result is orders of magnitude smaller than both, and in single precision its error can reach the size of the result. The matrix can then come out with a negative eigenvalue, and a sampler refuses it as a covariance. The matrix is symmetrized and its eigenvalues are clipped at ``relative_floor`` times the largest one, which yields a valid covariance but does not restore the digits lost to round-off. A matrix that is positive semidefinite already is returned unchanged.
 
     Parameters
     ----------
@@ -30,7 +30,7 @@ def project_to_psd(matrix, relative_floor=1e-9, return_ratio=False):
     relative_floor : float
         Smallest eigenvalue allowed, as a fraction of the largest eigenvalue of the same matrix.
     return_ratio : bool
-        Also return the most negative ratio of smallest to largest eigenvalue found, ``0.0`` if nothing was clipped. It measures how far the input was from a covariance: about ``-1e-2`` and smaller in magnitude is round-off of a single-precision result, a value near ``-1`` means the input was not a covariance at all.
+        Also return the most negative ratio found between the smallest eigenvalue of a matrix and its largest eigenvalue in magnitude, between ``-1.0`` and ``0.0``; ``0.0`` if nothing was clipped. It measures how far the input was from a covariance. It does not tell round-off from a faulty input: a covariance below the resolution of the arithmetic it was computed in can come out with any ratio down to ``-1.0``.
 
     Returns
     -------
@@ -52,7 +52,8 @@ def project_to_psd(matrix, relative_floor=1e-9, return_ratio=False):
     if not np.any(indefinite):
         return (symmetric, 0.0) if return_ratio else symmetric
 
-    ratio = float(np.min(np.where(indefinite, eigenvalues[..., 0] / np.where(largest > 0.0, largest, 1.0), 0.0)))
+    magnitude = np.maximum(np.abs(eigenvalues[..., 0]), np.abs(eigenvalues[..., -1]))
+    ratio = float(np.min(eigenvalues[..., 0][indefinite] / magnitude[indefinite]))
     clipped = np.maximum(eigenvalues, relative_floor * largest[..., None])
     rebuilt = (eigenvectors * clipped[..., None, :]) @ np.swapaxes(eigenvectors, -1, -2)
     rebuilt = 0.5 * (rebuilt + np.swapaxes(rebuilt, -1, -2))
@@ -831,12 +832,14 @@ class SequentialDesign:
         except ValueError:
             # The sampler refuses a covariance with a negative eigenvalue. An emulator can hand one over where its posterior variance is at the level of its round-off, and this point of the calibration is reached only after full-complexity simulations have been run, so the round-off is clipped instead of ending the run. A matrix with non-finite entries is not repaired and raises here.
             cov, ratio = project_to_psd(cov, return_ratio=True)
+            if ratio == 0.0:
+                raise  # nothing to clip: the sampler refused the covariance for another reason, e.g. its size
             global _WARNED_INDEFINITE_COVARIANCE
             if not _WARNED_INDEFINITE_COVARIANCE:
                 logger_warn.warning(
                     f"BAL: the emulator covariance of a candidate was not positive semidefinite (smallest eigenvalue "
-                    f"{ratio:.1e} times the largest). Its negative eigenvalues were clipped. Ratios of about -1e-2 and "
-                    f"smaller in magnitude are round-off; a ratio near -1 points to an error in the emulator. "
+                    f"{ratio:.1e} times the largest in magnitude). Its negative eigenvalues were clipped. An emulator "
+                    f"hands over such a covariance where its variance is at the resolution of its arithmetic. "
                     f"This message is shown once per process.")
                 _WARNED_INDEFINITE_COVARIANCE = True
             rv = stats.multivariate_normal(mean=y_mean, cov=cov, allow_singular=True)
