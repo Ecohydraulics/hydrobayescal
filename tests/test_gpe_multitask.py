@@ -276,7 +276,7 @@ class _Prediction:
 def test_task_blocks_are_covariances_even_where_round_off_made_them_indefinite():
     """A block whose covariance term exceeds its variances must not reach the BAL sampler.
 
-    Next to a training run the posterior variance is orders of magnitude below the prior variance, and the single-precision subtraction that yields it leaves an error of the size of the result. The block then has a negative eigenvalue, the sampler of the BAL utility refuses it, and the calibration stops in its active-learning loop.
+    Where the emulator is nearly certain, its posterior variance is orders of magnitude below its prior variance, and the single-precision subtraction that yields it leaves an error of the size of the result. The block then has a negative eigenvalue, the sampler of the BAL utility refuses it, and the calibration stops in its active-learning loop.
     """
     from scipy import stats
 
@@ -296,7 +296,7 @@ def test_task_blocks_are_covariances_even_where_round_off_made_them_indefinite()
 def test_multitask_cov_next_to_training_points_is_accepted_by_the_bal_sampler():
     """The case that ended an end-to-end run of the TELEMAC driver, with the driver's emulator settings.
 
-    Whether a trained emulator produces indefinite blocks depends on its hyperparameters; with this seed one in five candidates next to a training point was refused before the blocks were projected.
+    Whether a trained emulator produces indefinite blocks depends on its hyperparameters. With this seed, on the machine the test was written on, the correlation lengths at one calibration point come out at about ten times the parameter ranges, the posterior variance there is six orders of magnitude below the prior variance, and one in five of the candidates below was refused before the blocks were projected. A double-precision evaluation of the same emulator gives a valid covariance at every candidate.
     """
     from scipy import stats
 
@@ -339,3 +339,17 @@ def test_task_blocks_stay_covariances_when_converted_to_physical_units():
     assert np.linalg.eigvalsh(blocks[0, 0]).min() >= 0.0
     # The variances are the normalized ones times the squared scales. Clipping moves them by the size of the negative eigenvalue, which is 5 % of the largest one in this deliberately bad block.
     assert np.diag(blocks[0, 0]) == pytest.approx(np.diag(indefinite) * scale.astype(float) ** 2, rel=0.2)
+
+
+def test_clipping_of_an_indefinite_block_is_reported_once(monkeypatch):
+    """A block that had to be clipped tells that the emulator is at the resolution of its arithmetic; a silent repair would hide that."""
+    from hydroBayesCal.surrogate import gpe_gpytorch
+
+    monkeypatch.setattr(gpe_gpytorch, "_REPORTED_CLIPPED_COVARIANCE", False)
+    definite = np.array([[2.0e-6, 0.5e-6], [0.5e-6, 1.0e-6]])
+    MultiGPyTraining._posterior_task_blocks(_Prediction(definite, 1, 2), block_size=2)
+    assert not gpe_gpytorch._REPORTED_CLIPPED_COVARIANCE, "a valid covariance is not reported"
+
+    indefinite = np.array([[1.0e-6, 1.1e-6], [1.1e-6, 1.0e-6]])
+    MultiGPyTraining._posterior_task_blocks(_Prediction(indefinite, 1, 2), block_size=2)
+    assert gpe_gpytorch._REPORTED_CLIPPED_COVARIANCE

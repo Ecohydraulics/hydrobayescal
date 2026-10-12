@@ -1,6 +1,6 @@
 """Tests for the covariance that Bayesian active learning draws emulator outputs from.
 
-The BAL utility samples a multivariate normal distribution at every candidate parameter set. Its sampler refuses a covariance with a negative eigenvalue, and a covariance computed in single precision can have one where the posterior variance is orders of magnitude below the prior variance, i.e. close to a training run. The refusal is a ``ValueError`` in the active-learning loop, after the simulations of the initial design have been paid for, so both the emulator and the utility have to cope with it.
+The BAL utility samples a multivariate normal distribution at every candidate parameter set. Its sampler refuses a covariance with a negative eigenvalue, and a covariance computed in single precision can have one where the posterior variance is orders of magnitude below the prior variance, i.e. where the emulator is nearly certain. The refusal is a ``ValueError`` in the active-learning loop, after the simulations of the initial design have been paid for, so both the emulator and the utility have to cope with it.
 """
 import numpy as np
 import pytest
@@ -42,7 +42,7 @@ def test_projection_reports_how_far_the_matrix_was_from_a_covariance():
     assert ratio == 0.0
 
 
-def test_projection_of_a_matrix_without_any_positive_eigenvalue_is_zero_and_is_reported_as_no_covariance():
+def test_projection_of_a_matrix_without_any_positive_eigenvalue_is_zero_and_has_the_ratio_minus_one():
     negative = np.array([[-1.0e-7, 0.0], [0.0, -2.0e-7]])
 
     projected, ratio = project_to_psd(negative, return_ratio=True)

@@ -23,6 +23,9 @@ from scipy.optimize import dual_annealing, differential_evolution
 from hydroBayesCal.surrogate.bal_functions import project_to_psd
 from hydroBayesCal.utils.config_logging import logger, logger_warn
 
+#: Set once the clipping of an indefinite posterior covariance has been reported (MultiGPyTraining._posterior_task_blocks).
+_REPORTED_CLIPPED_COVARIANCE = False
+
 
 class MyExactGPyModel(gpytorch.models.ExactGP):
     """
@@ -952,8 +955,17 @@ class MultiGPyTraining:
             # In double precision: a scaling rounded to single precision is not exactly of the form D B D and can itself tip a nearly singular block over.
             scale = np.asarray(MultiGPyTraining._as_numpy(scale), dtype=float).reshape(n_blocks, block_size)
             blocks = blocks * scale[None, :, :, None] * scale[None, :, None, :]
-        # The blocks are evaluated in single precision as the difference between the prior covariance and the part explained by the training data. Next to a training point the result is orders of magnitude smaller than both, so its error is of the size of the result: the two triangles differ, and the covariance term can exceed the variances, which gives the block a negative eigenvalue. The sampler of the BAL utility refuses such a block, and the calibration would stop in its active-learning loop. The blocks are therefore symmetrized and the indefinite ones projected, as the last operation on them; a positive semidefinite block is returned as it is.
-        return project_to_psd(blocks)
+        # The blocks are evaluated in single precision as the difference between the prior covariance and the part explained by the training data. Where the emulator is nearly certain, the result is orders of magnitude smaller than both (six in the case that revealed this, an emulator with correlation lengths of ten times the parameter ranges, which is that certain at every candidate and not only next to a training run). The error of the difference then reaches the size of the result: the two triangles differ, and a block can come out with a negative eigenvalue. The sampler of the BAL utility refuses such a block, and the calibration would stop in its active-learning loop. The blocks are therefore symmetrized and the indefinite ones projected, as the last operation on them; a positive semidefinite block is returned as it is. The projection yields a valid covariance, it does not restore the lost digits; a double-precision evaluation of the model would.
+        blocks, ratio = project_to_psd(blocks, return_ratio=True)
+        global _REPORTED_CLIPPED_COVARIANCE
+        if ratio < 0.0 and not _REPORTED_CLIPPED_COVARIANCE:
+            logger_warn.warning(
+                f"The emulator covariance between the calibration targets was not positive semidefinite at some prediction "
+                f"points (smallest eigenvalue {ratio:.1e} times the largest in magnitude) and was clipped to a valid "
+                f"covariance. The emulator is nearly certain there, and its variance is at the resolution of single "
+                f"precision. The predicted means are not affected. This message is shown once per process.")
+            _REPORTED_CLIPPED_COVARIANCE = True
+        return blocks
 
     def predict_(self, input_sets, get_conf_int=False, multitask_cov=False):
         """
