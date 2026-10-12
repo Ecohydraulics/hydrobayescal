@@ -35,7 +35,7 @@ paths = {
 hydrodynamic_simulation = {
     'solver_name':           "Telemac2d",
     'n_processors':          16,
-    'results_filename_base': "results_hydrodynamics_Ering_MU",
+    'results_filename_base': "results_postBAL",
     'control_file':          "Ering_afterflush_hydrodynamics-hotstart.cas",
     'friction_file':         "Ering_friction_zones.tbl", #Telemac friction file (if needed)
     'fortran_file':          None
@@ -102,7 +102,7 @@ sampling = {
 
     # Experimental design
     'parameter_distribution':   "uniform",
-    'parameter_sampling_method': "random",
+    'parameter_sampling_method': "user",
     'tp_selection_criteria':    "dkl",
 
     # BAL specific0
@@ -111,7 +111,7 @@ sampling = {
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
-    'multitask_selection': 'SO_sequential',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
+    'multitask_selection': 'variables',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
     # Feed the GPE predictive standard deviation into the Bayesian inference rather
     # than treating the surrogate predictions as exact. On by default: the emulator's
     # uncertainty is genuine uncertainty, and the BAL utility already accounts for
@@ -130,7 +130,7 @@ extraction = {
     'calibration_quantities': ["WATER DEPTH","SCALAR VELOCITY"],
     'extraction_quantities': ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
     'time_index': 10,
-    'input_slf_file' : "results2m3_preBAL_1.slf",
+    'input_slf_file' : "results2m3_postBAL_1.slf",
 }
 
 # ============================================================================
@@ -139,8 +139,8 @@ extraction = {
 execution = {
     'complete_bal_mode':      False,
     'only_bal_mode':          False,
-    'delete_complex_outputs': True,
-    'validation':             True,
+    'delete_complex_outputs': False,
+    'validation':             False,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS

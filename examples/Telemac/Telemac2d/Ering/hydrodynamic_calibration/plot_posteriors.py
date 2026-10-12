@@ -147,20 +147,6 @@ def main():
         best_estimate_value=config.plotting['posterior_plotting_option'],
         post_loglikelihood_arrays=post_loglikelihood
     )
-    comparison_results = plotter.plot_posterior_model_comparison(
-        bal_dictionary_1="/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/auto-saved-results-HydroBayesCal/calibration-data/WATER DEPTH_SCALAR VELOCITY/BAL_dictionary.pkl",
-        bal_dictionary_2="/home/modelling/projects-Andres/hbc/hydrobayescal/examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/auto-saved-results-HydroBayesCal/calibration-data/WATER DEPTH_SCALAR VELOCITY_SOGPE_postBAL/BAL_dictionary.pkl",
-        model_names=("MO-GPE", "SO-GPE"),
-        parameter_names=config.plotting["parameter_names"],
-        parameter_units=config.plotting["parameter_units"],
-        param_values=config.calibration['param_values'],
-        plot_prior=True,
-        normalize_density=True,
-        n_bins=10,
-        ncols=2,
-        figsize_per_panel=(5.5, 4.0),
-        filename="posterior_comparison_MO_vs_SO.svg"
-    )
     # ---------------------------------------------------------------------
     # Per-parameter optimum over the BAL iterations, and whether the combination
     # of those per-parameter optima is a jointly plausible parameter set.

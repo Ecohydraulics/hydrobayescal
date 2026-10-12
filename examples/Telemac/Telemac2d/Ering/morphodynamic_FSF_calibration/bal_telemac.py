@@ -1,0 +1,1022 @@
+"""
+Ering case driver: copy of src/hydroBayesCal/drivers/bal_telemac.py with config_Ering.py as the
+default configuration. Keep in sync with the template.
+Code that trains a Gaussian Process Emulator (GPE) for any deterministic numerical model (i.e., hydrodynamic models) of Telemac
+Possible to couple with any other open source hydrodynamic software.
+Can use normal training (once) or sequential training (BAL)
+
+Author: Andres Heredia Hidalgo MSc
+"""
+import sys
+import os
+import time
+import argparse
+import importlib.util
+import bayesvalidrox as bvr
+
+
+# Import own scripts
+from hydroBayesCal.telemac.control_telemac import TelemacModel
+from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
+from hydroBayesCal.surrogate.gpe_skl import *
+from hydroBayesCal.surrogate.gpe_gpytorch import *
+from hydroBayesCal.function_pool import *
+from hydroBayesCal.surrogate.posterior_analysis import ITERATION_KEYS, record_iteration
+from hydroBayesCal.surrogate.target_agreement import finalize_target_agreement
+from hydroBayesCal.surrogate.initial_design import (
+    log_initial_design,
+    recommended_init_runs,
+    run_staged_initial_design,
+    validate_sampling_method,
+)
+
+
+
+def load_config(config_path):
+    """
+    Load configuration from Python file.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the Python configuration file
+
+    Returns
+    -------
+    module
+        Configuration module with all variables
+    """
+    spec = importlib.util.spec_from_file_location("config", config_path)
+    config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config)
+    return config
+
+def setup_experiment_design(
+        complex_model,
+        tp_selection_criteria='dkl',
+        parameter_distribution = 'uniform',
+        parameter_sampling_method = 'sobol',
+
+):
+    """
+    Sets up the experimental design for running the initial simulations of the hydrodynamic model. Samples with BayesValidRox: https://pages.iws.uni-stuttgart.de/inversemodeling/bayesvalidrox/
+
+    Parameters
+    ----------
+    complex_model : object
+        An instance representing the hydrodynamic model to be used in the experiment.
+    tp_selection_criteria : str, optional
+        The criteria for selecting new training points (TP) during the Bayesian Active Learning process.
+        Default is 'dkl' (relative entropy).
+    parameter_distribution: str, optional
+        The criteria for selecting the parameter distribution.
+        Default: 'uniform' (uniform distribution)
+    parameter_sampling: str, optional
+        The criteria for selecting the parameter sampling.
+        Default: 'sobol'
+        IMPORTANT:
+        User-provided initial collocation points are handled directly by
+        run_complex_model() and are NOT assigned to BayesValidRox.
+    Returns
+    -------
+    exp_design : object
+        An instance of the experiment design object configured with the specified model and selection criteria.
+
+    Notes
+    -----
+    The sampling method is validated and the number of initial runs is compared against
+    the number that the calibration's dimensionality calls for *before* the first
+    simulation starts, see
+    :func:`~hydroBayesCal.surrogate.initial_design.recommended_init_runs`. Both are
+    report-only: an undersized design is logged as a warning and then run as configured.
+    """
+    # Fail on an unusable sampling method here rather than several minutes into the run,
+    # inside chaospy, with the model object already built.
+    # ------------------------------------------------------------------
+    # User points are handled outside BayesValidRox.
+    #
+    # Therefore, if "user" was passed as the sampling method but actual
+    # user_collocation_points are available, use Sobol internally for
+    # BayesValidRox instead.
+    # ------------------------------------------------------------------
+    if (
+            parameter_sampling_method == 'user'
+            and complex_model.user_collocation_points is not None
+    ):
+        logger.info(
+            "User collocation points were supplied. "
+            "They will be handled directly by HydroBayesCal/TELEMAC."
+        )
+
+    parameter_sampling_method = validate_sampling_method(parameter_sampling_method)
+    log_initial_design(recommended_init_runs(
+        ndim=complex_model.ndim,
+        init_runs=complex_model.init_runs,
+        max_runs=complex_model.max_runs))
+
+    Inputs = bvr.Input()
+    # # One "Marginal" for each parameter.
+    for i in range(complex_model.ndim):
+        Inputs.add_marginals()  # Create marginal for parameter "i"
+        Inputs.marginals[i].name = complex_model.calibration_parameters[i]  # Parameter name
+        Inputs.marginals[i].dist_type = parameter_distribution  # Parameter distribution (see exp_design.py --> build_dist()
+        Inputs.marginals[i].parameters = complex_model.param_values[i]  # Inputs needed for distribution
+
+    # # Experimental design: ....................................................................
+    exp_design = bvr.ExpDesigns(Inputs)
+    exp_design.n_init_samples = complex_model.init_runs
+    # Sampling methods
+    # 1) random 2) latin_hypercube 3) sobol 4) halton 5) hammersley
+    # 6) chebyshev 7) grid 8) user
+    exp_design.sampling_method = parameter_sampling_method
+    exp_design.n_new_samples = 1
+    exp_design.n_max_samples = complex_model.max_runs
+    # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
+    exp_design.explore_method = 'random'
+    exp_design.util_func = tp_selection_criteria  # 'bme' 'dkl'
+    exp_design.exploit_method = 'bal'
+    # ------------------------------------------------------------------
+    # Generate an initial BayesValidRox design ONLY when no external
+    # collocation points were supplied.
+    # ------------------------------------------------------------------
+    if complex_model.user_collocation_points is None:
+        # generate_ed() returns None.
+        # The generated design is written into exp_design.x.
+        exp_design.generate_ed()
+
+    else:
+
+        logger.info(
+            "Skipping BayesValidRox initial-design generation because "
+            "user_collocation_points were supplied."
+        )
+
+    return exp_design
+
+def run_complex_model(complex_model,
+                      experiment_design,
+                      output_extraction_time="mean_last",
+                      n_last=80,
+                      adaptive_init_runs=True,
+                      init_runs_min=None,
+                      gaia_layer_average=None,
+                      ):
+    """
+    Executes the hydrodynamic model for a given experiment design and returns the collocation points,
+    model outputs.
+
+    Parameters
+    ----------
+    complex_model : obj
+        Instance representing the hydrodynamic model to be evaluated.
+    experiment_design : obj
+        Instance of the experiment design object that specifies the settings for the experimental runs.
+    output_extraction_time : str
+        Time mode for extracting the model outputs, one of "mean_last", "last" or
+        "index". Set from the optional ``extraction`` block of the configuration.
+    n_last : int
+        Number of final time steps averaged when ``output_extraction_time="mean_last"``.
+    adaptive_init_runs : bool
+        ``True`` (default) to grow the initial design in Sobol blocks up to ``init_runs``
+        and stop as soon as it is sufficient, see
+        :func:`~hydroBayesCal.surrogate.initial_design.run_staged_initial_design`.
+        ``False`` runs all ``init_runs`` at once.
+    init_runs_min : int, optional
+        Size of the first block of the staged design.
+    gaia_layer_average : optional
+        GAIA layer averaging configuration.
+
+    Returns
+    -------
+    collocation_points : array
+        Contains the collocation points (parameter combination sets) with shape [number of runs x number of calibration
+        parameters] used for model evaluations.
+    model_outputs : array
+        Contains the model outputs. The shape of the array depends on the number of quantities:
+        - For 1 quantity: [number of runs x number of locations]
+        - For 2 quantities: [number of runs x 2 * number of locations]
+          (Each pair of columns contains the two quantities for each location.)
+
+    """
+    collocation_points = None
+    model_outputs = None
+    # ==================================================================
+    # INITIAL MODEL RUNS
+    # ==================================================================
+    if not complex_model.only_bal_mode:
+        # --------------------------------------------------------------
+        # CASE 1:
+        # User supplied the collocation points.
+        #
+        # Bypass BayesValidRox initial sampling completely.
+        # --------------------------------------------------------------
+        if complex_model.user_collocation_points is not None:
+            collocation_points = np.atleast_2d(np.asarray(
+                    complex_model.user_collocation_points, dtype=float))
+            # ----------------------------------------------------------
+            # Validate dimensions
+            # ----------------------------------------------------------
+            if collocation_points.shape[1] != complex_model.ndim:
+                raise ValueError(
+                    "user_collocation_points has an invalid number of "
+                    "parameters. "
+                    f"Expected {complex_model.ndim}, "
+                    f"but got {collocation_points.shape[1]}."
+                )
+            n_user_points = collocation_points.shape[0]
+            # ----------------------------------------------------------
+            # Keep init_runs consistent with the actual user design.
+            # I recommend failing here rather than silently running a
+            # different number of simulations than configured.
+            # ----------------------------------------------------------
+            if n_user_points != complex_model.init_runs:
+                raise ValueError(
+                    "The number of user_collocation_points must match "
+                    "complex_model.init_runs. "
+                    f"init_runs={complex_model.init_runs}, "
+                    f"user points={n_user_points}.")
+            logger.info(
+                f"Running {n_user_points} user-provided collocation "
+                "points directly with the complex TELEMAC model.")
+            # ---------------------------------------------------------
+            # Run TELEMAC directly.
+            # ----------------------------------------------------------
+            complex_model.run_multiple_simulations(
+                collocation_points=collocation_points,
+                complete_bal_mode=complex_model.complete_bal_mode,
+                validation=complex_model.validation,
+                start_index=0,
+                output_extraction_time=output_extraction_time,
+                n=n_last,
+                gaia_layer_average=gaia_layer_average,)
+            # run_multiple_simulations() stores the resulting model
+            # evaluations in the complex-model object.
+            model_outputs = complex_model.model_evaluations
+        # --------------------------------------------------------------
+        # CASE 2:
+        # No user collocation points.
+        # Keep your original staged initial-design workflow unchanged.
+        # --------------------------------------------------------------
+        else:
+            collocation_points, model_outputs = (
+                run_staged_initial_design(
+                    complex_model=complex_model,
+                    experiment_design=experiment_design,
+                    adaptive=adaptive_init_runs,
+                    init_runs_min=init_runs_min,
+                    output_extraction_time=output_extraction_time,
+                    n=n_last,
+                    gaia_layer_average=gaia_layer_average,
+                )
+            )
+    # ==================================================================
+    # ONLY BAL MODE / RESTART
+    # ==================================================================
+    else:
+        try:
+            model_outputs = complex_model.output_processing(
+                output_data_path=os.path.join(
+                    complex_model.restart_data_folder,
+                    'initial-model-outputs.json'),
+                delete_slf_files=complex_model.delete_complex_outputs,
+                validation=complex_model.validation,
+                filter_outputs=True,
+                save_extraction_outputs=True,
+                run_range_filtering=(1,complex_model.init_runs))
+            collocation_points = (complex_model.restart_collocation_points)
+        except FileNotFoundError:
+            logger.info(
+                'Saved collocation points or model results as numpy '
+                'arrays not found. Please run initial runs first to '
+                'execute only Bayesian Active Learning.')
+    return collocation_points, model_outputs
+
+def run_bal_model(collocation_points,
+                  model_outputs,
+                  complex_model,
+                  experiment_design,
+                  eval_steps=1,  # By default
+                  prior_samples=10000,  # By default
+                  mc_samples_al=5000,  # By default
+                  mc_exploration=1000,  # By default
+                  gp_library="gpy",  # By default
+                  include_surrogate_error=True,
+                  bal_exploration_tradeoff="auto",
+                  output_extraction_time="mean_last",
+                  n_last=80,
+                  gaia_layer_average=None,
+                  posterior_sampling_method="rejection_sampling",
+                  ):
+    """
+    Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
+
+    Parameters
+    ----------
+    collocation_points : array
+        An array containing the collocation points used for model evaluations, with shape [number of runs x number of
+        calibration parameters].
+    model_outputs : array
+        Contains the outputs from the hydrodynamic model, with shape dependent on the number of quantities
+        and locations.
+    complex_model : obj
+        An instance representing the hydrodynamic model to be evaluated.
+    experiment_design : obj
+        Contains the experiment design object specifying the settings for the experimental runs.
+    eval_steps : int, optional
+        Every ow many iterations the surrogate model is evaluated and saved in surrogate model folder.
+        Default is 1. Every BAL iteration the surrogate model will be evaluated.
+    prior_samples : int, optional
+        The number of samples drawn from the prior distribution.
+        Default is 10,000.
+    mc_samples_al : int, optional
+        The number of Monte Carlo samples used for the Bayesian inference process.
+        Default is 5,000.
+    mc_exploration : int, optional
+        The number of samples used for exploring the parameter space during the Bayesian Active Learning process.
+        Default is 1,000.
+    gp_library : str, optional
+        The Gaussian Process library to be used for modeling. Options may include "gpy" or "skl".
+        Default is "gpy" for GPyTorch or "skl" for SciKitLearn.
+    include_surrogate_error : bool, optional
+        Whether the Bayesian inference accounts for the GPE's own predictive variance
+        by passing it as ``model_error``. Default ``True``. With ``False`` the
+        surrogate predictions are treated as exact and the posterior comes out
+        sharper than the emulator supports; pair that with a non-zero
+        ``calibration['gpe_error']`` so the uncertainty is represented somewhere.
+    bal_exploration_tradeoff : {'auto', True, False}
+        Whether the sequential design balances exploitation of the current posterior
+        against exploration of the parameter space. ``'auto'`` (default) turns
+        exploration on for the remainder of the calibration as soon as the posterior is
+        found to have more than one well-separated mode: pure exploitation refines
+        whichever mode it started in, which is exactly how a local maximum survives to
+        the end of a calibration. ``True`` and ``False`` force the behaviour.
+
+    Returns
+    -------
+    None
+        BAL_dictionary: Dictionary and .pkl file containing the data from Bayesian Active Learning
+        updated_collocation_points: array and .csv file containing all the collocation points (Initial + BAL-added)
+        model-outputs: Files .csv and .jason containing all model output obtained from the collocation points and required model variables.
+
+        *These files are saved in the user-defined results directory res_dir as auto-saved-results-HydroBayesCal
+
+    """
+
+    #Prior sampling
+    prior = experiment_design.generate_samples(prior_samples)
+    # Number of BAL (Bayesian Active Learning) iterations.
+    # only_bal_mode=True  + complete_bal_mode=False -> pure re-analysis of stored runs,
+    #                                                  no new simulations, so no iterations
+    # only_bal_mode=True  + complete_bal_mode=True  -> resume: rebuild the surrogate from the
+    #                                                  stored runs, then continue BAL
+    # only_bal_mode=False                           -> run the initial simulations, then BAL
+    if complex_model.only_bal_mode and not complex_model.complete_bal_mode:
+        n_iter = 0
+    else:
+        n_iter = experiment_design.n_max_samples - experiment_design.n_init_samples
+    # Number of evaluations:
+    if eval_steps == 1 or experiment_design.exploit_method == 'sobol':
+        n_evals = n_iter + 1
+    else:
+        n_evals = math.ceil(n_iter / eval_steps) + 1
+    new_tp = None
+    sm = None
+    multi_sm = None
+    bi_gpe = None
+    # "Before calibration" in the final quality check means the initial design, and
+    # model_outputs grows by one row per BAL iteration below, so the block has to be
+    # taken now. In only_bal_mode the stored outputs are already filtered to init_runs.
+    initial_model_outputs = (None if model_outputs is None
+                             else np.asarray(model_outputs)[:experiment_design.n_init_samples])
+    # Exploration/exploitation of the sequential design. 'auto' starts as pure
+    # exploitation, which is right while the posterior looks unimodal, and switches once
+    # the per-iteration diagnostic finds a second mode.
+    if bal_exploration_tradeoff == "auto":
+        do_tradeoff = False
+        logger.info("BAL point selection: exploitation only, switching to an "
+                    "exploration/exploitation trade-off if the posterior turns out to "
+                    "have more than one mode (sampling['bal_exploration_tradeoff'] = "
+                    "'auto').")
+    else:
+        do_tradeoff = bool(bal_exploration_tradeoff)
+        logger.info(f"BAL point selection: "
+                    f"{'exploration/exploitation trade-off' if do_tradeoff else 'exploitation only'} "
+                    f"(forced by sampling['bal_exploration_tradeoff']).")
+    # INITIALIZATION GPE AND RESULTS FOLDERS
+    # Creates folder for specific case ....................................................................
+    logger.info(f"<<< Will run ({n_iter + 1}) GP training iterations and ({n_evals}) GP evaluations. >>> ")
+    # Logged unconditionally so an archived logfile.log records which likelihood
+    # convention produced its numbers.
+    _gpe_error = getattr(complex_model, 'gpe_error', 0.0)
+    logger.info(f"Bayesian inference: include_surrogate_error={include_surrogate_error}, "
+                f"gpe_error={_gpe_error:.3f}, "
+                f"measurement_error={getattr(complex_model, 'measurement_error', 0.10):.3f}, "
+                f"model_structural_error="
+                f"{getattr(complex_model, 'model_structural_error', 0.0):.3f}.")
+    if include_surrogate_error and _gpe_error:
+        logger_warn.warning(
+            f"include_surrogate_error is on while gpe_error is {_gpe_error:.3f}: the "
+            f"surrogate error is counted twice, once as the actual GPE predictive "
+            f"variance and once as a flat fraction of every measured value. Set "
+            f"calibration['gpe_error'] = 0.0.")
+    elif not include_surrogate_error and not _gpe_error:
+        logger_warn.warning(
+            "include_surrogate_error is off and gpe_error is 0.0, so the emulator's "
+            "uncertainty is represented nowhere at all and the posterior will be "
+            "sharper than the surrogate supports. Either set "
+            "sampling['include_surrogate_error'] = True (the default) or give "
+            "calibration['gpe_error'] a non-zero value.")
+
+    # Auto-saved-results folder
+    gpe_results_folder = os.path.join(complex_model.asr_dir, 'surrogate-gpe')
+    if not os.path.exists(gpe_results_folder):
+        logger.info(f'Creating folder {gpe_results_folder}')
+        os.makedirs(gpe_results_folder, exist_ok=True)
+
+    #     # Create a folder for the exploration method: needed only if BAL is to be used
+    gpe_results_folder_bal = os.path.join(gpe_results_folder,
+                                          f'{experiment_design.exploit_method}_{experiment_design.util_func}')
+    if not os.path.exists(gpe_results_folder_bal):
+        logger.info(f'Creating folder {gpe_results_folder_bal}')
+        os.makedirs(gpe_results_folder_bal, exist_ok=True)
+    #
+    # Arrays to save results ---------------------------------------------------------------------------- #
+    bayesian_dict = {'N_tp': np.zeros(n_iter + 1), 'BME': np.zeros(n_iter + 1), 'ELPD': np.zeros(n_iter + 1),
+                     'RE': np.zeros(n_iter + 1), 'IE': np.zeros(n_iter + 1), 'post_size': np.zeros(n_iter + 1),
+                     'posterior': [None] * (n_iter + 1),
+                     f'{experiment_design.exploit_method}_{experiment_design.util_func}': np.zeros(n_iter),
+                     'util_func': np.empty(n_iter, dtype=object), 'prior': prior, 'observations': complex_model.observations,
+                     'errors': complex_model.measurement_errors,
+                     # Makes the stored dictionary self-describing: without these no
+                     # consumer can recover the parameter names or calibration ranges.
+                     'calibration_parameters': complex_model.calibration_parameters,
+                     'param_values': complex_model.param_values,
+                     # log_BME is the exact evidence; BME above is the lossy view and
+                     # may be 0.0 or inf at large problem sizes. The two settings
+                     # record which likelihood convention produced these numbers.
+                     'log_BME': np.zeros(n_iter + 1),
+                     'include_surrogate_error': include_surrogate_error,
+                     'gpe_error': getattr(complex_model, 'gpe_error', 0.0),
+                     # Which exploration setting produced these training points, so an
+                     # archived result file is readable without its configuration.
+                     'bal_exploration_tradeoff': bal_exploration_tradeoff,
+                     'exploration_tradeoff_active': np.zeros(n_iter, dtype=bool),
+                     'post_likelihood': [None] * (n_iter + 1),}
+    # Per-iteration posterior diagnostics (keep in sync with src/hydroBayesCal/drivers/bal_telemac.py,
+    # the canonical driver). Additive keys: existing consumers read by key.
+    for _key in ITERATION_KEYS:
+        bayesian_dict[_key] = [None] * (n_iter + 1)
+    # SURROGATE MODEL
+    # Train the GPE a maximum of "iteration_limit" times
+    for it in range(0, n_iter + 1):
+
+        # 1. Train surrogate
+        if gp_library == 'skl':
+            # 1.1. Set up the kernel
+            # Setting up initial length scales and length scales bounds for Radial Basis Function (RBF) kernel
+            # Length scale: Assumed to be the midpoint of the minimum and maximum range for each of the calibration parameters.
+            # Length scale bounds: Assumed to be the range for each calibration parameter.
+            if it == 0:
+                length_scales = []
+                length_scales_bounds = []
+
+                # Calculate length scales and bounds
+                for param_range in complex_model.parameter_ranges:
+                    # Ensure the calculated length scale is positive
+                    length_scale = max(sum(param_range) / len(param_range),
+                                       1e-5)  # Prevent negative or zero length scales
+                    length_scales.append(length_scale)
+
+                    # Ensure bounds are positive and finite
+                    lower_bound, upper_bound = max(param_range[0], 1e-5), max(param_range[1], 1e-5)
+                    length_scales_bounds.append((lower_bound, upper_bound))
+
+            kernel = 1 * RBF(length_scale=length_scales, length_scale_bounds=length_scales_bounds)
+
+            # 1.2. Setup a GPR: initialize the general SKL class
+            sm = SklTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
+                             noise=True,
+                             kernel=kernel,
+                             alpha=1e-6,
+                             n_restarts=10,
+                             parallelize=False)
+            # Everything downstream (training log lines, prediction, the sequential
+            # design) goes through surrogate_object, which the gpy branch below also
+            # sets. Without this, gp_library="skl" fails on the first log line.
+            surrogate_object = sm
+
+        elif gp_library == 'gpy':
+            # 1.1. Set up the kernel
+
+            # 1.2. Set up Likelihood
+            if complex_model.num_calibration_quantities == 1:
+                kernel = gpytorch.kernels.ScaleKernel(
+                    gpytorch.kernels.MaternKernel(
+                        nu=2.5,
+                        ard_num_dims=complex_model.ndim
+                    )
+                )
+
+                if complex_model.multitask_selection == "locations":
+                    multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=complex_model.nloc,
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
+                    )
+
+                    multi_sm_loc = MultiGPyTraining(
+                        collocation_points,
+                        model_outputs,
+                        kernel,
+                        training_iter=150,
+                        likelihood=multi_likelihood_loc,
+                        optimizer="adam",
+                        lr=0.01,
+                        number_quantities=complex_model.num_calibration_quantities,
+                    )
+
+                    surrogate_object = multi_sm_loc
+
+                else:
+                    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
+                    )
+
+                    likelihood.noise = 1e-5
+
+                    sm = GPyTraining(
+                        collocation_points=collocation_points,
+                        model_evaluations=model_outputs,
+                        likelihood=likelihood,
+                        kernel=kernel,
+                        training_iter=150,
+                        optimizer="adam",
+                        lr=0.07,
+                        verbose=False
+                    )
+
+                    surrogate_object = sm
+
+            else:
+                if complex_model.multitask_selection == "SO_sequential":
+
+                    surrogate_models = {}
+
+                    for quantity_idx, var in enumerate(
+                            complex_model.calibration_quantities):
+                        # Extract this quantity at all measurement locations.
+                        #
+                        # Original ordering:
+                        # [Q1_P1, Q2_P1, ..., Qn_P1,
+                        #  Q1_P2, Q2_P2, ..., Qn_P2, ...]
+                        quantity_outputs = model_outputs[
+                                           :,
+                                           quantity_idx::complex_model.num_calibration_quantities
+                                           ]
+
+                        kernel = gpytorch.kernels.ScaleKernel(
+                            gpytorch.kernels.MaternKernel(
+                                nu=2.5,
+                                ard_num_dims=complex_model.ndim
+                            )
+                        )
+
+                        likelihood = gpytorch.likelihoods.GaussianLikelihood(
+                            noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
+                        )
+
+                        likelihood.noise = 1e-5
+
+                        sm = GPyTraining(
+                            collocation_points=collocation_points,
+                            model_evaluations=quantity_outputs,
+                            likelihood=likelihood,
+                            kernel=kernel,
+                            training_iter=150,
+                            optimizer="adam",
+                            lr=0.07,
+                            verbose=False
+                        )
+
+                        surrogate_models[var] = sm
+
+                    # Container around the independent SO GPEs
+                    surrogate_object = SOSequentialGPyTraining(
+                        surrogate_models=surrogate_models,
+                        calibration_quantities=complex_model.calibration_quantities
+                    )
+
+                kernel = gpytorch.kernels.ScaleKernel(
+                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim))
+
+                if complex_model.multitask_selection == "variables":
+                    multi_likelihood_var = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=complex_model.num_calibration_quantities,
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)  # Allow smaller noise
+                    )
+                    multi_likelihood_var.noise = 1e-5
+                    multi_sm_var = MultiGPyTraining(collocation_points,
+                                                    model_outputs,
+                                                    kernel,
+                                                    training_iter=150,
+                                                    likelihood=multi_likelihood_var,
+                                                    optimizer="adam", lr=0.07,
+                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    )
+                    surrogate_object = multi_sm_var
+                if complex_model.multitask_selection == "locations":
+                    multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=complex_model.nloc,
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
+                    )
+
+                    multi_sm_loc = MultiGPyTraining(collocation_points,
+                                                model_outputs,
+                                                kernel,
+                                                training_iter=150,
+                                                likelihood=multi_likelihood_loc,
+                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
+                                                )
+                    surrogate_object = multi_sm_loc
+
+                if complex_model.multitask_selection == "all":
+                    multi_likelihood_all = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+                        num_tasks=model_outputs.shape[1],
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
+                    )
+                    multi_sm_all = MultiGPyTraining(collocation_points,
+                                                    model_outputs,
+                                                    kernel,
+                                                    training_iter=150,
+                                                    likelihood=multi_likelihood_all,
+                                                    optimizer="adam", lr=0.01,
+                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    )
+                    surrogate_object = multi_sm_all
+
+        # Trains the GPR
+        if it == n_iter:
+            if n_iter < 0:
+                logger.info(
+                    f'------------ Number of initial runs init_runs and n_tp_max are the same. Conditions: n_tp_max > init_runs.     -------------------')
+            else:
+                logger.info(f'------------ Training final surrogate model in {type(surrogate_object).__name__}   -------------------')
+        elif it > 0:
+            logger.info(f'------------ Training {type(surrogate_object).__name__} model with new training point: {new_tp}   -------------------')
+        elif it == 0:
+            logger.info(
+                f'Starting {type(surrogate_object).__name__} surrogate model training with the initial collocation points. Please check the .csv file if information required.')
+        if complex_model.num_calibration_quantities == 1:
+            if complex_model.multitask_selection == "locations":
+                logger.info(
+                    f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+                start_time_training = time.time()
+                surrogate_object.train_tasks_locations()
+                end_time_training = time.time()
+                logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
+            else:
+                logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+                start_time_training = time.time()
+                sm.train_()
+                end_time_training = time.time()
+                logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
+        else:
+            logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+            start_time_training = time.time()
+            if complex_model.multitask_selection == "variables":
+                surrogate_object.train_tasks_variables()
+            if complex_model.multitask_selection == "locations":
+                surrogate_object.train_tasks_locations()
+            if complex_model.multitask_selection == "all":
+                surrogate_object.train_tasks_all()
+            if complex_model.multitask_selection == "SO_sequential":
+                surrogate_object.train_()
+            end_time_training = time.time()
+            logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
+        # 2. Validate GPR
+        if it % eval_steps == 0:
+            if complex_model.num_calibration_quantities == 1:
+                if complex_model.multitask_selection == "locations":
+                    save_name = os.path.join(gpe_results_folder_bal,
+                                             f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
+                                             f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.multitask_selection}.pkl')
+                    surrogate_object.exp_design = experiment_design
+                    with open(save_name, "wb") as file:
+                        pickle.dump(surrogate_object, file)
+                else:
+                    # Construct the save_name path for single quantity
+                    save_name = os.path.join(gpe_results_folder_bal,
+                                             f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
+                                             f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}.pkl')
+                    sm.exp_design = experiment_design
+                    with open(save_name, "wb") as file:
+                        pickle.dump(sm, file)
+            else:
+                # Construct the save_name path for multiple quantities
+                save_name = os.path.join(gpe_results_folder_bal,
+                                         f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
+                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.multitask_selection}.pkl')
+                surrogate_object.exp_design = experiment_design
+                with open(save_name, "wb") as file:
+                    pickle.dump(surrogate_object, file)
+
+        # 3. Compute Bayesian scores in parameter space ----------------------------------------------------------
+        # Surrogate outputs for prior samples
+        if complex_model.num_calibration_quantities == 1:
+            multitask = False
+            if complex_model.multitask_selection == "locations":
+                start_time_prediction = time.time()
+                logger.info(
+                    f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
+                surrogate_output = surrogate_object.predict_(input_sets=prior, get_conf_int=True)
+                end_time_prediction = time.time()
+                logger.info(
+                    f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+                total_error = complex_model.variances
+                model_predictions = surrogate_output['output']
+                if it == 0 or it == n_iter:
+                    try:
+                        # Open the file and save the dictionary
+                        with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
+                                  'wb') as pickle_file:
+                            pickle.dump(surrogate_output, pickle_file)
+                        print(f"Surrogate output data for iteration {it} successfully saved..")
+                    except Exception as e:
+                        print(f"An error occurred while saving the dictionary: {e}")
+            else:
+                start_time_prediction = time.time()
+                logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
+                surrogate_output = surrogate_object.predict_(input_sets=prior,
+                                               get_conf_int=True)
+                end_time_prediction = time.time()
+                logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+                model_predictions = surrogate_output['output']
+                total_error = complex_model.variances
+                if it == 0 or it == n_iter:
+                    try:
+                        # Open the file and save the dictionary
+                        with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
+                                  'wb') as pickle_file:
+                            pickle.dump(surrogate_output, pickle_file)
+                        print(f"Surrogate output data for iteration {it} successfully saved.")
+                    except Exception as e:
+                        print(f"An error occurred while saving the dictionary: {e}")
+
+        else:
+            multitask = (
+                    complex_model.multitask_selection != "SO_sequential")
+            start_time_prediction = time.time()
+            logger.info(
+                f'------------ Executing surrogate model predictions for '
+                f'{prior_samples} samples in '
+                f'{type(surrogate_object).__name__}   -------------------'
+            )
+            surrogate_output = surrogate_object.predict_(
+                input_sets=prior,
+                get_conf_int=True
+            )
+            end_time_prediction = time.time()
+            logger.info(
+                f"Surrogate model predictions took "
+                f"{end_time_prediction - start_time_prediction:.2f} seconds."
+            )
+            total_error = complex_model.variances
+            model_predictions = surrogate_output['output']
+            if it == 0 or it == n_iter:
+                try:
+                    # Open the file and save the dictionary
+                    with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
+                              'wb') as pickle_file:
+                        pickle.dump(surrogate_output, pickle_file)
+                    print(f"Surrogate output data for iteration {it} successfully saved..")
+                except Exception as e:
+                    print(f"An error occurred while saving the dictionary: {e}")
+        logger.info(
+            f'------------ Executing Bayesian Inference of {prior_samples} prior samples for prior updating.-------------------')
+        start_time_inference = time.time()
+        # The surrogate predictive variance is part of the inference by default: the
+        # emulator's uncertainty is genuine uncertainty, and the BAL utility already
+        # accounts for it. Setting sampling['include_surrogate_error'] = False treats
+        # the surrogate predictions as exact, which yields a posterior sharper than
+        # the emulator supports and visually exaggerates a unique optimum.
+        bi_gpe = BayesianInference(model_predictions=model_predictions,
+                                   observations=complex_model.observations,
+                                   error=total_error,
+                                   model_error=(surrogate_output['std']
+                                                if include_surrogate_error else None),
+                                   sampling_method=posterior_sampling_method,
+                                   prior=prior,
+                                   ) #prior_log_pdf=prior_logpdf This was here
+        bi_gpe.estimate_bme()
+        end_time_inference = time.time()
+        logger.info(f"Bayesian inference took: {end_time_inference - start_time_inference:.2f} seconds.")
+        bayesian_dict['N_tp'][it] = collocation_points.shape[0]
+        bayesian_dict['BME'][it], bayesian_dict['RE'][it] = bi_gpe.BME, bi_gpe.RE
+        bayesian_dict['ELPD'][it], bayesian_dict['IE'][it] = bi_gpe.ELPD, bi_gpe.IE
+        bayesian_dict['log_BME'][it] = bi_gpe.log_BME
+        bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
+        bayesian_dict['posterior'][it] = bi_gpe.posterior
+        bayesian_dict['post_likelihood'][it] = bi_gpe.post_likelihood
+        # Report-only: where each calibration parameter's own optimum currently sits,
+        # how well the data constrain it, and whether those per-parameter optima form
+        # a jointly plausible parameter set. Never raises, never touches sampling.
+        iteration_summary = record_iteration(
+            bayesian_dict, it, bi_gpe.posterior, prior=prior,
+            parameter_names=complex_model.calibration_parameters,
+            prior_bounds=complex_model.param_values)
+        # Pure exploitation refines whichever posterior mode the design started in, so
+        # a second mode found now stays under-sampled to the end of the calibration and
+        # the reported maximum is a local one. Once exploration is on it stays on: a
+        # mode that appeared and then vanished from the count is exactly the situation
+        # in which the emulator is still deciding, not one in which it has decided.
+        if bal_exploration_tradeoff == "auto" and not do_tradeoff:
+            if iteration_summary.get("n_modes", 1) > 1:
+                do_tradeoff = True
+                logger.info(
+                    f"Iteration {it}: the posterior has "
+                    f"{iteration_summary['n_modes']} well-separated modes, so the "
+                    f"sequential design switches on exploration alongside exploitation "
+                    f"for the remaining iterations. Without it, the training points "
+                    f"would keep refining a single mode and the calibration would report "
+                    f"a local maximum with full confidence.")
+        try:
+            with open(os.path.join(complex_model.calibration_folder,
+                                'BAL_dictionary.pkl'), 'wb') as pickle_file:
+                pickle.dump(bayesian_dict, pickle_file)
+            print(f"BAL posterior data saved for iteration {it}.")
+        except Exception as e:
+            print(f"An error occurred while saving posterior data: {e}")
+        # 4. Sequential Design --------------------------------------------------------------------------------------
+        if it < n_iter:
+            logger.info(
+                f'Selecting {experiment_design.n_new_samples} additional TP using {experiment_design.exploit_method}')
+
+            # gaussian_assumption = True (Assumes Analytical Function Bayesian Active Learning )
+            # gaussian assumption = False (General Bayesian Active Learning)
+
+            SD = SequentialDesign(exp_design=experiment_design,
+                                  sm_object=surrogate_object,
+                                  obs=complex_model.observations,
+                                  errors=total_error,
+                                  do_tradeoff=do_tradeoff,
+                                  gaussian_assumption=False,
+                                  mc_samples=mc_samples_al,
+                                  mc_exploration=mc_exploration,
+                                  multitask=multitask)  # multiprocessing=parallelize
+
+            new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
+            logger.info(f"The new collocation point after rejection sampling is {new_tp} obtained with {util_fun}")
+            bayesian_dict['util_func'][it] = util_fun
+            bayesian_dict['exploration_tradeoff_active'][it] = do_tradeoff
+
+            try:
+                with open(os.path.join(complex_model.calibration_folder,
+                                    'BAL_dictionary.pkl'), 'wb') as pickle_file:
+                    pickle.dump(bayesian_dict, pickle_file)
+                print(f"BAL utility function saved for iteration {it}.")
+            except Exception as e:
+                print(f"An error occurred while saving utility data: {e}")
+            # Evaluate model in new TP
+
+            # A resume run (only_bal_mode=True, complete_bal_mode=True) must still simulate
+            # the new training points selected above; only pure re-analysis
+            # (complete_bal_mode=False) skips new simulations.
+            if complex_model.complete_bal_mode:
+                bal_iteration = it + 1
+                complex_model.run_multiple_simulations(collocation_points=collocation_points,
+                                                       bal_iteration=bal_iteration,
+                                                       bal_new_set_parameters=new_tp,
+                                                       complete_bal_mode=complex_model.complete_bal_mode,
+                                                       output_extraction_time=output_extraction_time,
+                                                       n=n_last,
+                                                       validation=complex_model.validation,
+                                                       gaia_layer_average=gaia_layer_average,)
+
+                model_outputs = complex_model.model_evaluations
+
+            # -------------------------------------------------------
+            # Update collocation points:
+            if not complex_model.only_bal_mode or complex_model.complete_bal_mode:
+                if experiment_design.exploit_method == 'sobol':
+                    collocation_points = new_tp
+                else:
+                    collocation_points = np.vstack((collocation_points, new_tp))
+                    logger.info(f'------------ Finished iteration {it + 1}/{n_iter} -------------------')
+
+    updated_collocation_points = collocation_points
+    # Report-only closing quality check, in observation rather than parameter space:
+    # modeled against measured calibration targets before calibration (the initial
+    # full-complexity design) and after it (the posterior predictive of the final
+    # surrogate), with the measurement uncertainty as error bars and the 1:1 line as the
+    # reference. It states whether a systematic over- or underestimation survived the
+    # calibration - the mismatch a calibration parameter such as roughness can still
+    # remove - or whether the residuals are scatter that it cannot. Never raises.
+    finalize_target_agreement(
+        complex_model=complex_model,
+        bayesian_dict=bayesian_dict,
+        initial_model_outputs=initial_model_outputs,
+        posterior_predictions=getattr(bi_gpe, 'posterior_output', None),
+    )
+    return bayesian_dict, updated_collocation_points
+def main():
+    parser = argparse.ArgumentParser(description="Run TELEMAC (2D/3D) model surrogate-assisted Bayesian calibration.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='config_Ering.py',
+        help='Path to Python configuration file (default: config_Ering.py)'
+    )
+    args = parser.parse_args()
+    config = load_config(args.config)
+    full_complexity_model = TelemacModel(
+            # Telemac parameters
+            friction_file=config.hydrodynamic_simulation['friction_file'],
+            tm_xd=config.hydrodynamic_simulation['solver_name'],
+            gaia_steering_file=config.morphodynamic_simulation['gaia_cas'],
+            gaia_results_filename_base = config.morphodynamic_simulation['gaia_results_filename_base'],
+            fortran_file = config.hydrodynamic_simulation['fortran_file'],
+            # General hydrosimulation parameters
+            results_filename_base=config.hydrodynamic_simulation['results_filename_base'],
+            control_file=config.hydrodynamic_simulation['control_file'],
+            model_dir=config.paths['model_dir'],
+            res_dir=config.paths['res_dir'],
+            calibration_pts_file_path=config.paths['calibration_pts_file_path'],
+            n_cpus=config.hydrodynamic_simulation['n_processors'],
+            init_runs=config.sampling['init_runs'],
+            calibration_parameters=config.calibration['parameters'],
+            param_values=config.calibration['param_values'],
+            extraction_quantities=config.calibration['extraction_quantities'],
+            calibration_quantities=config.calibration['calibration_quantities'],
+            dict_output_name=config.calibration['dict_output_name'],
+            gpe_error=config.calibration.get('gpe_error', 0.0),
+            measurement_error=config.calibration.get('measurement_error', 0.10),
+            model_structural_error=config.calibration.get('model_structural_error', 0.0),
+            user_param_values=(
+                    str(config.sampling['parameter_sampling_method'])
+                    .strip()
+                    .lower()
+                    == 'user'),
+            max_runs=config.sampling['max_runs'],
+            complete_bal_mode=config.execution['complete_bal_mode'],
+            only_bal_mode=config.execution['only_bal_mode'],
+            delete_complex_outputs=config.execution['delete_complex_outputs'],
+            validation=config.execution['validation'],
+            multitask_selection=config.sampling.get('multitask_selection', 'variables'),
+    )
+
+    # Setup and run the experiment
+    exp_design = setup_experiment_design(
+        complex_model=full_complexity_model,
+        tp_selection_criteria=config.sampling['tp_selection_criteria'],
+        parameter_distribution=config.sampling['parameter_distribution'],
+        parameter_sampling_method=config.sampling['parameter_sampling_method']
+    )
+    # pdb.set_trace()
+    extraction = getattr(config, 'extraction', {})
+    init_collocation_points, model_evaluations= run_complex_model(
+        complex_model=full_complexity_model,
+        experiment_design=exp_design,
+        output_extraction_time=extraction.get('output_extraction_time', "mean_last"),
+        n_last=extraction.get('n_last', extraction.get('n', 80)),
+        adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
+        init_runs_min=config.sampling.get('init_runs_min', None),
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None)
+    )
+    # Report-only physics check on the initial design, BEFORE the BAL loop - the last
+    # moment the answer is still cheap to act on. Anti-correlated depth vs. velocity
+    # residuals mean bottom roughness is the identifiable knob; correlated residuals
+    # (both over- or both under-predicted) mean it is not, and the posterior will pin
+    # against whichever prior bound it is given, however many BAL iterations follow.
+    # Changes no sampling and no parameter.
+    try:
+        log_roughness_identifiability(
+            diagnose_roughness_identifiability(
+                model_evaluations,
+                full_complexity_model.observations,
+                full_complexity_model.calibration_quantities,
+            )
+        )
+    except Exception as exception:  # report-only: never lose a finished design to it
+        logger_warn.warning("Roughness-identifiability check skipped: %s", exception)
+    if not (full_complexity_model.complete_bal_mode or full_complexity_model.only_bal_mode):
+        logger.info("Initial runs finished (only-init mode): skipping surrogate training and BAL.")
+        return
+    run_bal_model(
+        collocation_points=init_collocation_points,
+        model_outputs=model_evaluations,
+        complex_model=full_complexity_model,
+        experiment_design=exp_design,
+        eval_steps=config.sampling['eval_steps'],
+        prior_samples=config.sampling['prior_samples'],
+        mc_samples_al=config.sampling['mc_samples_al'],
+        mc_exploration=config.sampling['mc_exploration'],
+        gp_library=config.sampling['gp_library'],
+        include_surrogate_error=config.sampling.get('include_surrogate_error', True),
+        bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None),
+        posterior_sampling_method=config.sampling.get('posterior_sampling_method',
+                                                      'rejection_sampling'),
+    )
+
+if __name__ == "__main__":
+    main()
+

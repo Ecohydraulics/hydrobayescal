@@ -34,7 +34,7 @@ classification_tm_gaia_dict = {
     "TOTAL SEDIMENT DISCHARGE": "gaia",
     "SEDIMENT DIAMETER": "gaia",
     "CRITICAL SHEAR STRESS": "gaia",
-    "LAY1 SAND RAT": "gaia",
+    "SAND RAT1": "gaia",
 }
 # ============================================================
 # DEFAULT PHYSICAL CONSTANTS FOR WALL-LAW DIAGNOSTICS

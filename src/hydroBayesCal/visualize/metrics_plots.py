@@ -80,60 +80,256 @@ class MetricsPlots:
         # plt.tight_layout()
         # plt.show()
 
-    def location_metrics(self,
+    def location_metrics(
+            self,
             surrogate_metrics,
             coordinates_df,
     ):
         """
-        Export per-location metrics (for all training points and quantities) to a long-format CSV,
-        using user-provided coordinate DataFrame.
+        Export per-location validation metrics.
 
-        Parameters
-        ----------
-        surrogate_metrics : dict
-            Dictionary with 'metrics_per_location' entries.
-        coordinates_df : pd.DataFrame
-            DataFrame containing at least "X" and "Y" columns (one row per location).
-        output_csv_path : str
-            Path to save the CSV file.
+        Two files are generated:
+
+        1. metrics-locations-tp-raw.csv
+           Individual metrics from every validation set.
+
+        2. metrics-locations-tp-mean-std.csv
+           Mean and sample standard deviation across validation sets,
+           independently for each:
+               - SurrogateType
+               - Quantity
+               - TrainPoints
+               - Location
+               - Metric
         """
+
         save_folder = self.save_folder
 
         entries = surrogate_metrics.get("metrics_per_location", [])
-        if not entries:
-            print(" No metrics_per_location found.")
-            return
 
+        if not entries:
+            print("No metrics_per_location found.")
+            return
 
         coordinates_df = coordinates_df.reset_index(drop=True)
         n_locations = len(coordinates_df)
 
-        # Determine all metric keys (excluding non-metric fields)
-        sample = entries[0]
-        metric_keys = [k for k in sample if k not in {"Quantity", "TrainPoints"}]
+        # ---------------------------------------------------------
+        # Validation-set and surrogate information
+        # ---------------------------------------------------------
+        n_entries = len(entries)
 
+        surrogate_types = np.asarray(
+            surrogate_metrics.get(
+                "SurrogateType",
+                ["Unknown"] * n_entries
+            )
+        )
+
+        validation_sets = np.asarray(
+            surrogate_metrics.get(
+                "ValidationSet",
+                np.ones(n_entries, dtype=int)
+            )
+        )
+
+        if len(surrogate_types) != n_entries:
+            raise ValueError(
+                "Length mismatch: SurrogateType does not match "
+                "metrics_per_location."
+            )
+
+        if len(validation_sets) != n_entries:
+            raise ValueError(
+                "Length mismatch: ValidationSet does not match "
+                "metrics_per_location."
+            )
+
+        # ---------------------------------------------------------
+        # Determine metric keys
+        # ---------------------------------------------------------
+        sample = entries[0]
+
+        non_metric_keys = {
+            "Quantity",
+            "TrainPoints",
+            "SurrogateType",
+            "ValidationSet",
+        }
+
+        metric_keys = [
+            k for k in sample
+            if k not in non_metric_keys
+        ]
+
+        # ---------------------------------------------------------
+        # Build RAW dataframe
+        # One row = one validation set × one location
+        # ---------------------------------------------------------
         rows = []
-        for entry in entries:
+
+        for entry_idx, entry in enumerate(entries):
+
             quantity = entry["Quantity"]
             train_point = entry["TrainPoints"]
 
+            surrogate_type = surrogate_types[entry_idx]
+            validation_set = validation_sets[entry_idx]
+
             for loc_idx in range(n_locations):
+
                 row = {
+                    "SurrogateType": surrogate_type,
+                    "ValidationSet": validation_set,
                     "Quantity": quantity,
                     "TrainPoints": train_point,
-                    "LocationIndex": loc_idx,
+                    "LocationIndex": loc_idx + 1,
                     "X": coordinates_df.loc[loc_idx, "x"],
                     "Y": coordinates_df.loc[loc_idx, "y"],
                 }
+
                 for key in metric_keys:
                     value_list = entry.get(key, [])
-                    row[key] = value_list[loc_idx] if loc_idx < len(value_list) else None
+
+                    row[key] = (
+                        value_list[loc_idx]
+                        if loc_idx < len(value_list)
+                        else np.nan
+                    )
+
                 rows.append(row)
 
-        df = pd.DataFrame(rows)
-        file_path = os.path.join(save_folder, "metrics-locations-tp.csv")
-        df.to_csv(file_path, index=False)
-        print(f"✅ Exported metrics to CSV: {file_path} ({len(df)} rows)")
+        raw_df = pd.DataFrame(rows)
+
+        # ---------------------------------------------------------
+        # Save RAW results
+        # ---------------------------------------------------------
+        raw_path = os.path.join(
+            save_folder,
+            "metrics-locations-tp-raw.csv"
+        )
+
+        raw_df.to_csv(
+            raw_path,
+            index=False
+        )
+
+        print(
+            f"Raw per-location metrics saved to: {raw_path}"
+        )
+
+        # =========================================================
+        # MEAN + STD ACROSS VALIDATION SETS
+        # =========================================================
+
+        group_columns = [
+            "SurrogateType",
+            "Quantity",
+            "TrainPoints",
+            "LocationIndex",
+            "X",
+            "Y",
+        ]
+
+        # Only aggregate actual metrics
+        metric_columns = [
+            m for m in metric_keys
+            if m in raw_df.columns
+        ]
+
+        # ---------------------------------------------------------
+        # Mean
+        # ---------------------------------------------------------
+        mean_df = (
+            raw_df
+            .groupby(group_columns, as_index=False)[metric_columns]
+            .mean()
+        )
+
+        mean_df = mean_df.rename(
+            columns={
+                metric: f"{metric}_Mean"
+                for metric in metric_columns
+            }
+        )
+
+        # ---------------------------------------------------------
+        # Sample SD across validation sets
+        # pandas std() uses ddof=1 by default
+        # ---------------------------------------------------------
+        std_df = (
+            raw_df
+            .groupby(group_columns, as_index=False)[metric_columns]
+            .std()
+        )
+
+        std_df = std_df.rename(
+            columns={
+                metric: f"{metric}_Std"
+                for metric in metric_columns
+            }
+        )
+
+        # ---------------------------------------------------------
+        # Number of validation sets
+        # ---------------------------------------------------------
+        count_df = (
+            raw_df
+            .groupby(group_columns, as_index=False)
+            ["ValidationSet"]
+            .nunique()
+            .rename(
+                columns={
+                    "ValidationSet": "NValidationSets"
+                }
+            )
+        )
+
+        # ---------------------------------------------------------
+        # Combine mean + SD + number of validation sets
+        # ---------------------------------------------------------
+        summary_df = mean_df.merge(
+            std_df,
+            on=group_columns,
+            how="left"
+        )
+
+        summary_df = summary_df.merge(
+            count_df,
+            on=group_columns,
+            how="left"
+        )
+
+        # Match behavior of summarize_validation_metrics():
+        # if only one validation set exists, SD = 0
+        std_columns = [
+            c for c in summary_df.columns
+            if c.endswith("_Std")
+        ]
+
+        summary_df[std_columns] = (
+            summary_df[std_columns].fillna(0.0)
+        )
+
+        # ---------------------------------------------------------
+        # Save summary
+        # ---------------------------------------------------------
+        summary_path = os.path.join(
+            save_folder,
+            "metrics-locations-tp-mean-std.csv"
+        )
+
+        summary_df.to_csv(
+            summary_path,
+            index=False
+        )
+
+        print(
+            f"Mean ± SD per-location metrics saved to: "
+            f"{summary_path}"
+        )
+
+        return summary_df
 
     def location_metric_heatmap(
             self,

@@ -5,6 +5,7 @@ Authors: Andres Heredia, Sebastian Schwindt
 """
 from scipy import spatial
 import numpy as np
+import pandas as pd
 from hydroBayesCal.telemac import config_telemac
 from datetime import datetime
 # from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
@@ -1108,7 +1109,7 @@ class TelemacModel(HydroSimulations):
             user_param_values=False,
             output_extraction="interpolated",  # "nearest": nearest node; "interpolated": IDW interpolation
             k=3,
-            output_extraction_time="last",  # "last", "index", "mean_last"
+            output_extraction_time="last",  # "last", "index", "last_mean"
             time_index=0,
             n=5,
             compute_wall_law_diagnostics=False,
@@ -1128,16 +1129,26 @@ class TelemacModel(HydroSimulations):
         Example::
 
             gaia_layer_average = {
-                "LAY1 SAND RAT": {
+                "SAND RAT": {
                     "layers": [1, 2],
-                    "thicknesses": [0.08, 0.60]
+                    "thicknesses": [0.08, 0.60],
+                    "classes": [1, 2, 3, 4, 5]
                 }
             }
 
-        In this example, requesting ``LAY1 SAND RAT`` causes the extractor to look
-        for ``LAY1 SAND RAT1`` and ``LAY1 SAND RAT2`` in the GAIA SLF, calculate a
-        thickness-weighted average, and store only ``LAY1 SAND RAT`` in the output
-        dictionary/JSON.
+        The class-specific output names must be classified as ``"gaia"`` in
+        ``classification_tm_gaia_dict`` and requested through ``extraction_quantity``.
+        For example::
+
+            "SAND RAT1": "gaia"
+            "SAND RAT2": "gaia"
+
+        The ``gaia_layer_average`` entry uses the common base name ``SAND RAT`` only
+        to define how class-specific quantities are constructed internally. For a
+        requested quantity ``SAND RAT1``, the extractor looks for
+        ``LAY1 SAND RAT1`` and ``LAY2 SAND RAT1`` in the GAIA SLF, computes the
+        thickness-weighted average, and saves the result under the original requested
+        name ``SAND RAT1``.
         """
 
         # In the normal coupled workflow, input_file is the TELEMAC result file.
@@ -1218,26 +1229,32 @@ class TelemacModel(HydroSimulations):
         # ============================================================
         # GAIA LAYER-AVERAGED QUANTITIES
         # ============================================================
-        # If no explicit dictionary is passed, read it from the config.
-        # The configured average is activated ONLY when its base quantity is
-        # actually requested and classified as GAIA.
+        # ``gaia_layer_average`` defines a common base quantity and the bed
+        # layers/classes used to construct derived class-specific quantities.
         #
-        # Example:
-        #   base quantity = "LAY1 SAND RAT"
-        #   layers = [1, 2]
+        # Example configuration:
         #
-        # Internal SLF variables searched:
-        #   "LAY1 SAND RAT1"
-        #   "LAY1 SAND RAT2"
+        #   "SAND RAT": {
+        #       "layers": [1, 2],
+        #       "thicknesses": [0.08, 0.60],
+        #       "classes": [1, 2, 3, 4, 5]
+        #   }
+        #
+        # The user-facing requested/classified quantities are class specific:
+        #
+        #   "SAND RAT1": "gaia"
+        #   "SAND RAT2": "gaia"
+        #   ...
+        #
+        # For requested ``SAND RAT1`` the actual SLF variables are:
+        #
+        #   LAY1 SAND RAT1
+        #   LAY2 SAND RAT1
+        #
+        # and the weighted result is stored under the SAME requested name:
+        #
+        #   SAND RAT1
         # ============================================================
-        # Resolve the GAIA layer-average configuration.
-        #
-        # IMPORTANT: config_telemac is the package-level TELEMAC configuration
-        # module and is not necessarily the user-selected config_Ering.py.
-        # Therefore the preferred source is self.gaia_layer_average, which should
-        # be populated from morphodynamic_simulation when the model object is built.
-        # An explicitly passed gaia_layer_average argument still has highest
-        # priority.
         if gaia_layer_average is None:
             gaia_layer_average = getattr(
                 self,
@@ -1265,13 +1282,10 @@ class TelemacModel(HydroSimulations):
             f"{list(gaia_layer_average.keys())}"
         )
 
+        # Keyed by the exact user-facing quantity, e.g. ``SAND RAT1``.
         gaia_layer_average_specs = {}
 
         for base_quantity, spec in gaia_layer_average.items():
-
-            # Ignore configured layer averages that were not requested.
-            if base_quantity not in gaia_quantities:
-                continue
 
             if not isinstance(spec, dict):
                 raise ValueError(
@@ -1281,19 +1295,27 @@ class TelemacModel(HydroSimulations):
 
             layers = spec.get("layers")
             thicknesses = spec.get("thicknesses")
+            classes = spec.get("classes")
 
-            if layers is None or thicknesses is None:
+            if layers is None or thicknesses is None or classes is None:
                 raise ValueError(
                     f"gaia_layer_average['{base_quantity}'] must contain "
-                    "both 'layers' and 'thicknesses'."
+                    "'layers', 'thicknesses', and 'classes'."
                 )
 
             layers = [int(layer) for layer in layers]
+            classes = [int(sed_class) for sed_class in classes]
             thicknesses = np.asarray(thicknesses, dtype=float)
 
             if len(layers) == 0:
                 raise ValueError(
                     f"No layers were configured for GAIA layer average "
+                    f"'{base_quantity}'."
+                )
+
+            if len(classes) == 0:
+                raise ValueError(
+                    f"No sediment classes were configured for GAIA layer average "
                     f"'{base_quantity}'."
                 )
 
@@ -1308,27 +1330,54 @@ class TelemacModel(HydroSimulations):
                     f"All layer thicknesses for '{base_quantity}' must be > 0."
                 )
 
-            # IMPORTANT:
-            # The user-facing/calibration name stays unchanged, but the actual
-            # variables searched in the GAIA SLF receive the configured suffixes.
-            # Example: "LAY1 SAND RAT" + [1, 2] ->
-            #          "LAY1 SAND RAT1", "LAY1 SAND RAT2".
-            layer_variables = [
-                f"{base_quantity}{layer}"
-                for layer in layers
-            ]
+            if len(set(layers)) != len(layers):
+                raise ValueError(
+                    f"Duplicate bed layers were configured for '{base_quantity}': "
+                    f"{layers}."
+                )
 
-            gaia_layer_average_specs[base_quantity] = {
-                "layers": layers,
-                "thicknesses": thicknesses,
-                "variables": layer_variables
-            }
+            if len(set(classes)) != len(classes):
+                raise ValueError(
+                    f"Duplicate sediment classes were configured for "
+                    f"'{base_quantity}': {classes}."
+                )
 
-            logger.info(
-                f"GAIA layer average '{base_quantity}' activated: "
-                f"variables={layer_variables}, "
-                f"thicknesses={thicknesses.tolist()}"
-            )
+            # Build specs ONLY for quantities that are actually requested and
+            # classified as GAIA. This preserves the external/user-facing name.
+            #
+            # Example:
+            #   requested q = "SAND RAT1"
+            #   internal SLF vars = ["LAY1 SAND RAT1", "LAY2 SAND RAT1"]
+            #   output key = "SAND RAT1"
+            for sed_class in classes:
+                output_quantity = f"{base_quantity}{sed_class}"
+
+                if output_quantity not in gaia_quantities:
+                    continue
+
+                layer_variables = [
+                    f"LAY{layer} {base_quantity}{sed_class}"
+                    for layer in layers
+                ]
+
+                gaia_layer_average_specs[output_quantity] = {
+                    "base_quantity": base_quantity,
+                    "class": sed_class,
+                    "layers": layers,
+                    "thicknesses": thicknesses,
+                    "variables": layer_variables
+                }
+
+                logger.info(
+                    f"GAIA layer average '{output_quantity}' activated: "
+                    f"variables={layer_variables}, "
+                    f"thicknesses={thicknesses.tolist()}"
+                )
+
+        logger.info(
+            "Resolved class-specific GAIA layer-average outputs: "
+            f"{list(gaia_layer_average_specs.keys())}"
+        )
 
         # ============================================================
         # INTERNAL TELEMAC HELPERS
@@ -1466,6 +1515,7 @@ class TelemacModel(HydroSimulations):
             slf = ppSELAFIN(slf_files[model_source])
             slf.readHeader()
             slf.readTimes()
+            model_times = np.asarray(slf.getTimes(), dtype=float)
 
             variables = [' '.join(v.split()) for v in slf.getVarNames()]
             var_index = {v: i for i, v in enumerate(variables)}
@@ -1491,13 +1541,16 @@ class TelemacModel(HydroSimulations):
                     continue
 
                 # GAIA derived layer-average quantity.
+                # A requested quantity such as ``SAND RAT1`` is not expected to
+                # exist literally in the SLF. Instead, validate the internally
+                # constructed layer variables, e.g. ``LAY1 SAND RAT1`` and
+                # ``LAY2 SAND RAT1``.
                 if (
                         model_source == "gaia"
                         and q in gaia_layer_average_specs
                 ):
-                    required_layer_variables = (
-                        gaia_layer_average_specs[q]["variables"]
-                    )
+                    average_spec = gaia_layer_average_specs[q]
+                    required_layer_variables = average_spec["variables"]
 
                     missing_layer_variables = [
                         variable_name
@@ -1508,8 +1561,8 @@ class TelemacModel(HydroSimulations):
                     if missing_layer_variables:
                         raise ValueError(
                             f"Cannot compute GAIA layer average '{q}'. "
-                            f"The following required layer variables are missing: "
-                            f"{missing_layer_variables}. "
+                            f"The following required layer/class variables are "
+                            f"missing: {missing_layer_variables}. "
                             f"Expected variables: {required_layer_variables}. "
                             f"Available variables are: {variables}"
                         )
@@ -1520,26 +1573,26 @@ class TelemacModel(HydroSimulations):
                 # Normal variable: must exist literally in the SLF.
                 if q not in var_index:
 
-                    # Give a targeted diagnostic if the SLF contains suffixed
-                    # variants (e.g. LAY1 SAND RAT1, LAY1 SAND RAT2) but the
-                    # averaging configuration was not resolved.
+                    # Give a targeted diagnostic when a GAIA base quantity
+                    # such as "SAND RAT" was requested but its layer-average
+                    # configuration was not activated/resolved.
                     if model_source == "gaia":
-                        suffixed_matches = [
+                        related_matches = [
                             variable_name
                             for variable_name in variables
-                            if variable_name.startswith(q)
-                               and variable_name != q
+                            if q in variable_name
                         ]
 
-                        if suffixed_matches:
+                        if related_matches:
                             raise ValueError(
                                 f"GAIA quantity '{q}' is not stored directly in the "
-                                f"SLF, but suffixed variables were found: "
-                                f"{suffixed_matches}. The quantity was not activated "
-                                f"in gaia_layer_average. Resolved layer-average keys: "
-                                f"{list(gaia_layer_average_specs.keys())}. Ensure "
-                                f"self.gaia_layer_average is populated from "
-                                f"morphodynamic_simulation['gaia_layer_average']."
+                                f"SLF, but related variables were found: "
+                                f"{related_matches}. If '{q}' is a derived layer "
+                                f"average, ensure it is present in "
+                                f"morphodynamic_simulation['gaia_layer_average'] and that "
+                                f"the exact output name is classified as 'gaia'. "
+                                f"Resolved layer-average outputs: "
+                                f"{list(gaia_layer_average_specs.keys())}."
                             )
 
                     missing_quantities.append(q)
@@ -1607,7 +1660,8 @@ class TelemacModel(HydroSimulations):
                 "tree": tree,
                 "x2d": x2d,
                 "y2d": y2d,
-                "quantities": quantities
+                "quantities": quantities,
+                "times": model_times
             }
 
         # ============================================================
@@ -1632,6 +1686,16 @@ class TelemacModel(HydroSimulations):
             yu = calibration_pts_df.iloc[key_index, 2]
             zu = calibration_pts_df.iloc[key_index, 3]
 
+            # Optional CSV time (in seconds, relative to the SLF time origin).
+            # Missing values retain the original extraction behavior.
+            requested_time = (
+                calibration_pts_df.iloc[key_index]["time"]
+                if "time" in calibration_pts_df.columns else np.nan
+            )
+            has_requested_time = pd.notna(requested_time) and str(requested_time).strip() != ""
+            if has_requested_time:
+                requested_time = float(requested_time)
+
             differentiated_values = {}
             wall_law_diagnostic_values = {}
 
@@ -1650,6 +1714,45 @@ class TelemacModel(HydroSimulations):
                 x2d = data["x2d"]
                 y2d = data["y2d"]
                 quantities = data["quantities"]
+
+                # Resolve time independently for TELEMAC and GAIA.
+                point_mode = output_extraction_time
+                point_time_index = time_index
+                if has_requested_time:
+                    model_times = data["times"]
+                    matches = np.flatnonzero(np.isclose(
+                        model_times, requested_time, rtol=0.0, atol=1e-5
+                    ))
+                    if not len(matches):
+                        raise ValueError(
+                            f"Point {key}: time {requested_time} s not found in "
+                            f"{model_source.upper()} SLF output times. "
+                            f"Available range: {model_times[0]} to {model_times[-1]} s."
+                        )
+                    point_time_index = int(matches[0])
+                    if output_extraction_time == "last_mean":
+                        if n < 1 or point_time_index + 1 < n:
+                            raise ValueError(
+                                f"Point {key}: cannot average {n} steps ending at "
+                                f"time index {point_time_index}."
+                            )
+                    else:
+                        point_mode = "index"
+
+                def select_point_time(all_times_outputs):
+                    if has_requested_time and output_extraction_time == "last_mean":
+                        # Values are arranged as [time, variable].
+                        return np.mean(
+                            np.asarray(all_times_outputs)[
+                            point_time_index - n + 1:point_time_index + 1
+                            ], axis=0
+                        )
+                    return self._apply_time_mode(
+                        all_times_outputs=all_times_outputs,
+                        output_extraction_time=point_mode,
+                        time_index=point_time_index,
+                        n=n
+                    )
 
                 if not quantities:
                     continue
@@ -1687,8 +1790,8 @@ class TelemacModel(HydroSimulations):
                             target_xy=(xu, yu),
                             key=key,
                             slf_2d_data=slf_2d_data,
-                            output_extraction_time=output_extraction_time,
-                            time_index=time_index,
+                            output_extraction_time=point_mode,
+                            time_index=point_time_index,
                             n=n,
                             kappa=kappa,
                             nikuradse_log_factor=nikuradse_log_factor,
@@ -1707,8 +1810,8 @@ class TelemacModel(HydroSimulations):
                             NPLAN=NPLAN,
                             NVAR=data["NVAR"],
                             target_xy=(xu, yu),
-                            output_extraction_time=output_extraction_time,
-                            time_index=time_index,
+                            output_extraction_time=point_mode,
+                            time_index=point_time_index,
                             n=n
                         )
                     )
@@ -1741,12 +1844,7 @@ class TelemacModel(HydroSimulations):
                         slf.readVariablesAtNode(node_idx)
                         all_times_outputs = slf.getVarValuesAtNode()
 
-                        results_z = self._apply_time_mode(
-                            all_times_outputs=all_times_outputs,
-                            output_extraction_time=output_extraction_time,
-                            time_index=time_index,
-                            n=n
-                        )
+                        results_z = select_point_time(all_times_outputs)
 
                         z_profile[p_i] = results_z[z_index]
 
@@ -1773,12 +1871,7 @@ class TelemacModel(HydroSimulations):
                     slf.readVariablesAtNode(node_idx)
                     all_times_outputs = slf.getVarValuesAtNode()
 
-                    vals = self._apply_time_mode(
-                        all_times_outputs=all_times_outputs,
-                        output_extraction_time=output_extraction_time,
-                        time_index=time_index,
-                        n=n
-                    )
+                    vals = select_point_time(all_times_outputs)
 
                     results_all[j, :] = vals
 
@@ -1835,7 +1928,8 @@ class TelemacModel(HydroSimulations):
                             / np.sum(layer_thicknesses)
                         )
 
-                        # Store ONLY the base/calibration quantity name.
+                        # IMPORTANT: preserve the exact requested/classified
+                        # user-facing name, e.g. ``SAND RAT1``.
                         differentiated_values[q] = weighted_average
 
                         logger.info(
@@ -2026,7 +2120,6 @@ class TelemacModel(HydroSimulations):
                 + "\nREASON:\n"
                 + str(error)
             )
-
     @staticmethod
     def tbl_creator(
             zone_identifier,
