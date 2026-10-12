@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
+from hydroBayesCal.surrogate import bal_functions
 from hydroBayesCal.surrogate.bal_functions import SequentialDesign, project_to_psd
 
 #: Eigenvalues 2.1e-6 and -1.0e-7: the off-diagonal term exceeds the variances, as round-off produces it.
@@ -41,6 +42,15 @@ def test_projection_reports_how_far_the_matrix_was_from_a_covariance():
     assert ratio == 0.0
 
 
+def test_projection_of_a_matrix_without_any_positive_eigenvalue_is_zero_and_is_reported_as_no_covariance():
+    negative = np.array([[-1.0e-7, 0.0], [0.0, -2.0e-7]])
+
+    projected, ratio = project_to_psd(negative, return_ratio=True)
+
+    assert np.array_equal(projected, np.zeros((2, 2)))
+    assert ratio == -1.0, "the ratio is taken against the largest eigenvalue in magnitude, so it stays within [-1, 0]"
+
+
 def test_projection_handles_a_stack_of_blocks_and_changes_only_the_indefinite_ones():
     stack = np.stack([DEFINITE, INDEFINITE, DEFINITE])[None]  # [n_samples=1, n_locations=3, 2, 2]
 
@@ -52,8 +62,9 @@ def test_projection_handles_a_stack_of_blocks_and_changes_only_the_indefinite_on
     assert np.linalg.eigvalsh(projected[0, 1]).min() >= 0.0
 
 
-def test_the_bal_utility_survives_a_covariance_that_is_indefinite_by_round_off():
+def test_the_bal_utility_survives_a_covariance_that_is_indefinite_by_round_off(monkeypatch):
     """Whatever emulator supplies the covariance, round-off in it must not end a calibration in its BAL loop."""
+    monkeypatch.setattr(bal_functions, "_WARNED_INDEFINITE_COVARIANCE", False)
     design = type("Stub", (), {"mc_exploration": 400})()  # all that bayesian_active_learning reads from self
     y_mean = np.array([1.0, 2.0, 1.5, 2.5])
     blocks = [INDEFINITE, DEFINITE]  # one quantity x quantity block per location
@@ -63,6 +74,7 @@ def test_the_bal_utility_survives_a_covariance_that_is_indefinite_by_round_off()
         error=np.full(4, 1.0e-4), utility_function="dkl")
 
     assert isinstance(float(score), float)
+    assert bal_functions._WARNED_INDEFINITE_COVARIANCE, "the clipping is reported"
 
 
 def test_the_bal_utility_still_refuses_a_covariance_that_is_not_one_at_all():
@@ -74,3 +86,17 @@ def test_the_bal_utility_still_refuses_a_covariance_that_is_not_one_at_all():
         SequentialDesign.bayesian_active_learning(
             design, y_mean=np.array([1.0, 2.0]), y_std=[broken], observations=np.array([[1.0, 2.0]]),
             error=np.full(2, 1.0e-4), utility_function="dkl")
+
+
+
+def test_the_bal_utility_does_not_blame_round_off_for_another_error(monkeypatch):
+    """A covariance of the wrong size is refused by the sampler as well; that error must come through as it is."""
+    monkeypatch.setattr(bal_functions, "_WARNED_INDEFINITE_COVARIANCE", False)
+    design = type("Stub", (), {"mc_exploration": 50})()
+
+    with pytest.raises(ValueError, match="mismatch"):
+        SequentialDesign.bayesian_active_learning(
+            design, y_mean=np.array([1.0, 2.0, 1.5, 2.5]), y_std=[DEFINITE, DEFINITE, DEFINITE],
+            observations=np.array([[1.0, 2.0, 1.5, 2.5]]), error=np.full(4, 1.0e-4), utility_function="dkl")
+
+    assert not bal_functions._WARNED_INDEFINITE_COVARIANCE

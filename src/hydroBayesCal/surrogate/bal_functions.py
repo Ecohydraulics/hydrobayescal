@@ -30,7 +30,7 @@ def project_to_psd(matrix, relative_floor=1e-9, return_ratio=False):
     relative_floor : float
         Smallest eigenvalue allowed, as a fraction of the largest eigenvalue of the same matrix.
     return_ratio : bool
-        Also return the most negative ratio of smallest to largest eigenvalue found, ``0.0`` if nothing was clipped. It measures how far the input was from a covariance: about ``-1e-2`` and smaller in magnitude is round-off of a single-precision result, a value near ``-1`` means the input was not a covariance at all.
+        Also return the most negative ratio found between the smallest eigenvalue of a matrix and its largest eigenvalue in magnitude, between ``-1.0`` and ``0.0``; ``0.0`` if nothing was clipped. It measures how far the input was from a covariance: about ``-1e-2`` and smaller in magnitude is round-off of a single-precision result, a value near ``-1`` means the input was not a covariance at all.
 
     Returns
     -------
@@ -52,7 +52,8 @@ def project_to_psd(matrix, relative_floor=1e-9, return_ratio=False):
     if not np.any(indefinite):
         return (symmetric, 0.0) if return_ratio else symmetric
 
-    ratio = float(np.min(np.where(indefinite, eigenvalues[..., 0] / np.where(largest > 0.0, largest, 1.0), 0.0)))
+    magnitude = np.maximum(np.abs(eigenvalues[..., 0]), np.abs(eigenvalues[..., -1]))
+    ratio = float(np.min(eigenvalues[..., 0][indefinite] / magnitude[indefinite]))
     clipped = np.maximum(eigenvalues, relative_floor * largest[..., None])
     rebuilt = (eigenvectors * clipped[..., None, :]) @ np.swapaxes(eigenvectors, -1, -2)
     rebuilt = 0.5 * (rebuilt + np.swapaxes(rebuilt, -1, -2))
@@ -831,6 +832,8 @@ class SequentialDesign:
         except ValueError:
             # The sampler refuses a covariance with a negative eigenvalue. An emulator can hand one over where its posterior variance is at the level of its round-off, and this point of the calibration is reached only after full-complexity simulations have been run, so the round-off is clipped instead of ending the run. A matrix with non-finite entries is not repaired and raises here.
             cov, ratio = project_to_psd(cov, return_ratio=True)
+            if ratio == 0.0:
+                raise  # nothing to clip: the sampler refused the covariance for another reason, e.g. its size
             global _WARNED_INDEFINITE_COVARIANCE
             if not _WARNED_INDEFINITE_COVARIANCE:
                 logger_warn.warning(
