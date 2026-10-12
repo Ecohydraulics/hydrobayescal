@@ -55,6 +55,9 @@ Gaussian Process Emulators
    :members:
    :show-inheritance:
 
+.. automodule:: hydroBayesCal.surrogate.validation_metrics
+   :members:
+
 Bayesian inference and sequential design
 ++++++++++++++++++++++++++++++++++++++++
 

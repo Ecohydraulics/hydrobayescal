@@ -8,7 +8,6 @@ Author: Andres Heredia (2024)
 import numpy as np
 import sys
 import scipy
-import sklearn
 import copy
 from joblib import Parallel, delayed
 import torch
@@ -21,6 +20,8 @@ from gpytorch.kernels import MultitaskKernel, RBFKernel, LinearKernel, ScaleKern
 from scipy.optimize import dual_annealing, differential_evolution
 
 from hydroBayesCal.surrogate.bal_functions import project_to_psd
+# The validation criteria live in validation_metrics.py, one implementation for both emulator libraries. They stay importable from this module, where scripts written for earlier versions look for them.
+from hydroBayesCal.surrogate.validation_metrics import save_valid_criteria, validation_error  # noqa: F401
 from hydroBayesCal.utils.config_logging import logger, logger_warn
 
 #: Set once the clipping of an indefinite posterior covariance has been reported (MultiGPyTraining._posterior_task_blocks).
@@ -515,161 +516,6 @@ class GPyTraining:
             output_dic['lower_ci'] = lower_ci
 
         return output_dic
-
-
-def validation_error(true_y, sim_y, output_names, n_per_type):
-    """Estimate validation criteria for a surrogate model per output location.
-
-    Results for each output type are stored under separate keys in a dictionary.
-
-    Parameters
-    ----------
-    true_y : numpy.ndarray
-        Simulator outputs for the validation samples, shape
-        ``[mc_valid, n_obs]``.
-    sim_y : numpy.ndarray or dict
-        Surrogate/emulator outputs for the validation samples, shape
-        ``[mc_valid, n_obs]``. If a dict, it holds ``output`` and ``std`` keys.
-    output_names : array-like of str
-        Name of each output type, shape ``[n_types]``.
-    n_per_type : int
-        Number of observations per output type.
-
-    Returns
-    -------
-    tuple
-        Validation criteria for each output location and output type.
-
-    Notes
-    -----
-    .. todo:: As in BayesValidRox, optionally estimate the surrogate predictions
-       here by passing a surrogate object.
-    .. todo:: Move into the GPR class and return a dictionary keyed by output
-       type.
-    """
-    criteria_dict = {
-        'rmse': dict(),
-         'mse': dict(),
-         'nse': dict(),
-         'r2': dict(),
-         'mean_error': dict(),
-         'std_error': dict()
-    }
-
-    if isinstance(sim_y, dict):
-        sm_out = sim_y['output']
-        sm_std = sim_y['std']
-        upper_ci = sim_y['upper_ci']
-        lower_ci = sim_y['lower_ci']
-
-        criteria_dict['norm_error'] = dict()
-        criteria_dict['P95'] = dict()
-    else:
-        sm_out = sim_y
-
-    # RMSE for each output location: not a dictionary (yet). [n_obs, ]
-    rmse = sklearn.metrics.mean_squared_error(
-        y_true=true_y,
-        y_pred=sm_out,
-        multioutput='raw_values',
-        squared=False
-    )
-
-    c = 0
-    for i, key in enumerate(output_names):
-        # RMSE
-        criteria_dict['rmse'][key] = sklearn.metrics.mean_squared_error(
-            y_true=true_y[:, c:c + n_per_type],
-            y_pred=sm_out[:, c:c + n_per_type],
-            multioutput='raw_values',
-            squared=False
-        )
-        # NSE
-        criteria_dict['nse'][key] = sklearn.metrics.r2_score(
-            y_true=true_y[:, c:c+n_per_type],
-            y_pred=sm_out[:, c:c+n_per_type],
-            multioutput='raw_values'
-        )
-
-        # NSE
-        criteria_dict['nse'][key] = sklearn.metrics.r2_score(
-            y_true=true_y[:, c:c + n_per_type],
-            y_pred=sm_out[:, c:c + n_per_type],
-            multioutput='raw_values'
-        )
-        criteria_dict['mse'][key] = sklearn.metrics.mean_squared_error(
-            y_true=true_y[:, c:c + n_per_type],
-            y_pred=sm_out[:, c:c + n_per_type],
-            multioutput='raw_values',
-            squared=True
-        )
-
-        # Mean errors
-        criteria_dict['mean_error'][key] = np.abs(
-            np.mean(true_y[:, c:c + n_per_type], axis=0) - np.mean(sm_out[:, c:c + n_per_type], axis=0)) / np.mean(
-            true_y[:, c:c + n_per_type], axis=0)
-
-        criteria_dict['std_error'][key] = np.abs(
-            np.std(true_y[:, c:c + n_per_type], axis=0) - np.std(sm_out[:, c:c + n_per_type], axis=0)) / np.std(
-            true_y[:, c:c + n_per_type], axis=0)
-
-        # Norm error
-        if isinstance(sim_y, dict):
-            # Normalized error
-            ind_val = np.divide(np.subtract(sm_out[:, c:c + n_per_type], true_y[:, c:c + n_per_type]),
-                                sm_std[:, c:c + n_per_type])
-            criteria_dict['norm_error'][key] = np.mean(ind_val ** 2, axis=0)
-
-            # P95
-            p95 = np.where((true_y[:, c:c + n_per_type] <= upper_ci[:, c:c + n_per_type]) & (
-                        true_y[:, c:c + n_per_type] >= lower_ci[:, c:c + n_per_type]), 1, 0)
-            criteria_dict['P95'][key] = np.mean(p95, axis=0)
-
-        criteria_dict['r2'][key] = np.zeros(n_per_type)
-        for j in range(n_per_type):
-            criteria_dict['r2'][key][j] = np.corrcoef(true_y[:, j+c], sm_out[:, j+c])[0, 1]
-
-        c = c + n_per_type
-
-    return rmse, criteria_dict
-
-
-def save_valid_criteria(new_dict, old_dict, n_tp):
-    """Append the current iteration's validation criteria to a results dict.
-
-    Stores the validation criteria for the current iteration (``n_tp``) in an
-    existing dictionary, so the results for all iterations live in one file.
-    Each validation criterion has a key per output type, holding a vector with
-    one value per output location.
-
-    Parameters
-    ----------
-    new_dict : dict
-        Validation criteria for the current iteration.
-    old_dict : dict
-        Validation criteria for all previous iterations, including an ``N_tp``
-        key that tracks the iteration number.
-    n_tp : int
-        Number of training points for the current BAL iteration.
-
-    Returns
-    -------
-    dict
-        The updated dictionary including the current iteration.
-    """
-
-    if len(old_dict) == 0:
-        old_dict = dict(new_dict)
-        old_dict['N_tp'] = [n_tp]
-    else:
-        for key in old_dict:
-            if key == 'N_tp':
-                old_dict[key].append(n_tp)
-            else:
-                for out_type in old_dict[key]:
-                    old_dict[key][out_type] = np.vstack((old_dict[key][out_type], new_dict[key][out_type]))
-
-    return old_dict
 
 
 class MultiGPyTraining:
