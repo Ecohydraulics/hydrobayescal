@@ -150,6 +150,31 @@ def _standardize(samples, reference=None):
     return (samples - center) / scale, center, scale
 
 
+def effective_sample_size(samples):
+    """Number of independent draws that a posterior sample is worth.
+
+    Rejection sampling keeps a prior sample at most once, so its rows are distinct and every row counts. Weighted resampling (``posterior_sampling_method='bayesian_weighting'``) draws with replacement: it returns as many rows as the prior has, but a row that occurs ``c`` times is one sample with weight ``c``. The effective size after Kish is ``(sum c)**2 / sum(c**2)``. It equals the number of rows when all are distinct and 1 when all rows are the same.
+
+    Everything that depends on how much a posterior sample can resolve (the neighbor count of the joint density, the guards against small samples) has to use this number. The number of rows of a resampled posterior only repeats the size of the prior sample.
+
+    Parameters
+    ----------
+    samples : array_like
+        Shape ``[n_samples, n_parameters]`` or ``[n_samples]``.
+
+    Returns
+    -------
+    float
+    """
+    samples = np.asarray(samples, dtype=float)
+    if samples.ndim == 1:
+        samples = samples.reshape(-1, 1)
+    if samples.shape[0] == 0:
+        return 0.0
+    counts = np.unique(samples, axis=0, return_counts=True)[1].astype(float)
+    return float(counts.sum() ** 2 / np.sum(counts ** 2))
+
+
 def _hdi(samples, credible_mass=0.95):
     """Shortest interval containing ``credible_mass`` of the samples.
 
@@ -206,7 +231,8 @@ def marginal_bin_count(column, samples_per_bin=25, min_bins=8):
         Number of bins.
     """
     column = np.asarray(column, dtype=float)
-    n = column.size
+    # The number of samples the column is worth, which is its length for distinct values (see effective_sample_size). A resampled posterior has as many rows as the prior sample; by that number the rule asks for hundreds of bins that a few hundred repeated values cannot fill, and the histogram breaks up into spurious modes.
+    n = max(int(round(effective_sample_size(column))), 1)
     sturges = int(np.ceil(np.log2(max(n, 2)) + 1))
     span = float(np.ptp(column))
     iqr = float(np.subtract(*np.percentile(column, [75, 25])))
@@ -318,12 +344,16 @@ class _DensityEstimator:
     per-parameter marginal peaks is in general not one of the posterior samples, and
     the whole point of the equifinality diagnostic is to score exactly that
     off-sample point.
+
+    Rows that occur more than once, as weighted resampling produces them, are one point with a weight: the neighbors are searched among the distinct rows, and the density is the number of rows inside the neighbor ball over its volume. Counted as separate neighbors, the copies of a row that occurs more often than ``k_neighbors`` are all at distance zero, which left such a row without any neighbor distance to estimate a density from.
     """
 
     def __init__(self, posterior, method="auto", k_neighbors=None):
         self.samples = _as_2d_array(posterior)
         self.n_samples, self.ndim = self.samples.shape
         self._z, self._center, self._scale = _standardize(self.samples)
+        self._distinct, self._counts = np.unique(self._z, axis=0, return_counts=True)
+        self.n_distinct = int(self._distinct.shape[0])
 
         if method in ("auto", "knn"):
             self.method = "knn"
@@ -339,28 +369,23 @@ class _DensityEstimator:
             # neighbour query cheap enough to run inside the BAL loop: beyond a few
             # dozen neighbours the density rank barely moves, while the query cost
             # keeps growing with the accepted sample size.
-            k_neighbors = int(np.clip(round(np.sqrt(max(self.n_samples, 1))), 5, 50))
-        self.k_neighbors = int(np.clip(k_neighbors, 1, max(self.n_samples - 1, 1)))
-        self._tree = cKDTree(self._z)
+            k_neighbors = int(np.clip(round(np.sqrt(max(self.n_distinct, 1))), 5, 50))
+        self.k_neighbors = int(np.clip(k_neighbors, 1, max(self.n_distinct - 1, 1)))
+        self._tree = cKDTree(self._distinct)
 
     def log_density(self, points):
         """Log density at ``points`` (``[n_points, ndim]``), up to an additive constant."""
         points = np.atleast_2d(np.asarray(points, dtype=float))
         z = (points - self._center) / self._scale
 
-        # Nearest-neighbour density ~ 1 / d_k**ndim. Query one extra neighbour and
-        # drop a zero distance, so evaluating at a sample point does not return the
-        # point itself and an infinite density.
-        k = min(self.k_neighbors + 1, self.n_samples)
-        distances, _ = self._tree.query(z, k=k)
-        distances = np.atleast_2d(distances)
-        log_d = np.empty(distances.shape[0])
-        for row_index, row in enumerate(distances):
-            row = row[np.isfinite(row)]
-            non_self = row[row > 0]
-            d_k = non_self[-1] if non_self.size else np.finfo(float).tiny
-            log_d[row_index] = -self.ndim * np.log(max(d_k, np.finfo(float).tiny))
-        return log_d
+        # Nearest-neighbour density ~ (rows inside the ball) / d_k**ndim. The ball reaches to the k-th distinct neighbour; one extra neighbour is queried because at a sample point the nearest one is the point itself, at distance zero. For distinct rows the count is k + 1 everywhere, a constant, and the estimate ranks points exactly as 1 / d_k**ndim does.
+        k = min(self.k_neighbors + 1, self.n_distinct)
+        distances, neighbours = self._tree.query(z, k=k)
+        distances = np.asarray(distances, dtype=float).reshape(z.shape[0], -1)
+        neighbours = np.asarray(neighbours).reshape(z.shape[0], -1)
+        radius = np.maximum(distances[:, -1], np.finfo(float).tiny)
+        rows_inside = self._counts[neighbours].sum(axis=1)
+        return np.log(rows_inside) - self.ndim * np.log(radius)
 
     def percentile_of(self, point, sample_log_density=None):
         """Percentile rank (0-100) of the density at ``point`` among the samples."""
@@ -499,6 +524,7 @@ def marginal_optima(
     """
     posterior = _as_2d_array(posterior)
     n_post, ndim = posterior.shape
+    n_effective = effective_sample_size(posterior)
     names = _parameter_names(parameter_names, ndim)
     bounds = _resolve_prior_bounds(prior_bounds, prior, posterior)
 
@@ -557,15 +583,26 @@ def marginal_optima(
     unidentified = [names[i] for i in range(ndim) if "non_identifiable" in flags[i]]
     multimodal = [names[i] for i in range(ndim) if "multimodal_marginal" in flags[i]]
 
-    if n_post < min_post_size:
+    if n_effective < min_post_size:
         verdict = "low_posterior_sample"
-        message = (
-            f"Only {n_post} accepted posterior samples (below {min_post_size}). The "
-            f"marginal peaks are reported but are not a reliable density estimate.")
-        recommendation = (
-            "Increase prior_samples, or widen the observation variances, so that "
-            "rejection sampling accepts more samples before reading any optimum off "
-            "this posterior.")
+        if n_effective < n_post - 0.5:
+            # A resampled posterior: its rows repeat, and their number says nothing about the information in them.
+            message = (
+                f"The {n_post} posterior rows repeat a smaller number of parameter sets and are worth "
+                f"{n_effective:.0f} independent samples (below {min_post_size}). The marginal peaks are "
+                f"reported but are not a reliable density estimate.")
+            recommendation = (
+                "Increase prior_samples, or widen the observation variances, so that the posterior rests on "
+                "more prior samples before reading any optimum off it. Resampling with "
+                "posterior_sampling_method='bayesian_weighting' returns more rows, not more information.")
+        else:
+            message = (
+                f"Only {n_post} accepted posterior samples (below {min_post_size}). The "
+                f"marginal peaks are reported but are not a reliable density estimate.")
+            recommendation = (
+                "Increase prior_samples, or widen the observation variances, so that "
+                "rejection sampling accepts more samples before reading any optimum off "
+                "this posterior.")
     elif not unidentified and not pinned:
         verdict = "well_identified"
         message = (
@@ -616,6 +653,7 @@ def marginal_optima(
         "flags": flags,
         "prior_bounds": bounds,
         "post_size": int(n_post),
+        "effective_post_size": float(n_effective),
         "verdict": verdict,
         "message": message,
         "recommendation": recommendation,
@@ -1184,9 +1222,12 @@ def detect_posterior_modes(
         "recommendation": "",
     }
 
-    if n_post < min_samples:
+    n_effective = effective_sample_size(posterior)
+    if n_effective < min_samples:
+        size = (f"Only {n_post} accepted posterior samples" if n_effective >= n_post - 0.5 else
+                f"The {n_post} posterior rows are worth {n_effective:.0f} independent samples")
         unimodal["message"] = (
-            f"Only {n_post} accepted posterior samples (below {min_samples}); mode "
+            f"{size} (below {min_samples}); mode "
             f"detection was skipped and the posterior is treated as unimodal.")
         unimodal["recommendation"] = (
             "Increase prior_samples so that rejection sampling accepts more samples "
@@ -1211,7 +1252,7 @@ def detect_posterior_modes(
             mask = np.ones(ndim, dtype=bool)
     z_fit = z[:, mask]
 
-    max_modes = int(np.clip(max_modes, 1, max(1, n_post // 10)))
+    max_modes = int(np.clip(max_modes, 1, max(1, int(n_effective) // 10)))
 
     models, bic = [], []
     for k in range(1, max_modes + 1):

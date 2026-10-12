@@ -642,3 +642,123 @@ def test_the_decision_reaches_the_candidate_report(tmp_path):
     assert "selected" in header
     column = header.index("selected")
     assert sum(row[column] == "calibrated" for row in rows[1:]) == 1
+
+
+# ---------------------------------------------------------------------------
+# posterior samples with repeated rows (posterior_sampling_method='bayesian_weighting')
+# ---------------------------------------------------------------------------
+def _resampled_posterior(sigma, n_prior=25000, seed=0):
+    """A unimodal, well-identified posterior at (0.6, 0.4), drawn from a uniform prior in the two ways the package offers.
+
+    Returns the prior, the weighted resample of it (rows repeat) and the rejection sample (rows are distinct).
+    """
+    rng = np.random.default_rng(seed)
+    prior = rng.uniform(size=(n_prior, 2))
+    log_weight = -0.5 * (((prior - np.array([0.6, 0.4])) / sigma) ** 2).sum(axis=1)
+    weight = np.exp(log_weight - log_weight.max())
+    resampled = prior[rng.choice(n_prior, size=n_prior, replace=True, p=weight / weight.sum())]
+    accepted = prior[rng.uniform(size=n_prior) < weight]
+    return prior, resampled, accepted
+
+
+def test_effective_sample_size_of_distinct_and_of_repeated_rows():
+    from hydroBayesCal.surrogate.posterior_analysis import effective_sample_size
+
+    distinct = np.arange(12.0).reshape(6, 2)
+    assert effective_sample_size(distinct) == pytest.approx(6.0)
+    repeated = distinct[[0, 0, 0, 1]]  # one row three times, one row once
+    assert effective_sample_size(repeated) == pytest.approx(4.0 ** 2 / (3.0 ** 2 + 1.0 ** 2))
+    assert effective_sample_size(np.repeat(distinct[:1], 500, axis=0)) == pytest.approx(1.0)
+
+
+def test_the_joint_density_of_a_resampled_posterior_is_not_capped_by_its_repeated_rows():
+    """A row that occurs more often than there are neighbors has only itself as neighbors.
+
+    All its neighbor distances were zero then, and its density was set to a cap that most rows shared: about 20,000 of 25,000 here. The joint optimum was a tie-break among them, and any point off the sample ranked near the bottom.
+    """
+    _, resampled, _ = _resampled_posterior(sigma=0.05)
+
+    result = joint_optimum(resampled, method="knn")
+
+    log_density = np.asarray(result["log_density"])
+    assert np.all(np.isfinite(log_density))
+    at_the_maximum = np.unique(resampled[log_density >= log_density.max() - 1e-9], axis=0)
+    assert len(at_the_maximum) == 1, "one parameter set is the densest, not a tie of thousands"
+    assert np.linalg.norm(np.asarray(result["vector"]) - np.array([0.6, 0.4])) < 0.03
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_marginal_peaks_of_a_resampled_unimodal_posterior_are_not_called_inconsistent(seed):
+    """The equifinality check compares the density at the marginal peaks with the densities at the samples.
+
+    With the capped densities, the vector of marginal peaks of this unimodal posterior ranked at the 2nd to 5th percentile, and the verdict was "inconsistent" for every seed.
+    """
+    prior, resampled, _ = _resampled_posterior(sigma=0.012, seed=seed)
+
+    peaks = marginal_optima(resampled, prior=prior)["peak"]
+    joint = joint_optimum(resampled, method="knn", prior=prior)["vector"]
+    verdict = equifinality_diagnostic(resampled, peaks, joint_optimum_vector=joint)
+
+    assert verdict["verdict"] in ("consistent", "acceptable")
+    assert verdict["density_percentile"] > 10.0
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_the_marginals_of_a_resampled_unimodal_posterior_have_one_mode(seed):
+    """The histogram of a marginal can resolve what its samples are worth, not what their rows count.
+
+    Binned by the number of rows, the marginals of this posterior (25,000 rows that repeat about 170 parameter sets) broke up into 8 to 14 modes each.
+    """
+    prior, resampled, _ = _resampled_posterior(sigma=0.012, seed=seed)
+
+    marginals = marginal_optima(resampled, prior=prior)
+
+    assert max(marginals["n_marginal_modes"]) <= 2
+    assert np.allclose(marginals["peak"], [0.6, 0.4], atol=0.03)
+
+
+def test_distinct_samples_are_ranked_as_before():
+    """For a rejection sample nothing changes: the density differs from the earlier estimate by a constant only."""
+    from scipy.spatial import cKDTree
+
+    from hydroBayesCal.surrogate.posterior_analysis import _DensityEstimator
+
+    _, _, accepted = _resampled_posterior(sigma=0.1)
+    estimator = _DensityEstimator(accepted)
+    off_sample = np.array([[0.55, 0.45], [0.2, 0.9]])
+
+    z = (accepted - accepted.mean(axis=0)) / accepted.std(axis=0)
+    tree, k = cKDTree(z), estimator.k_neighbors + 1
+
+    def earlier(points):
+        distances, _ = tree.query((points - accepted.mean(axis=0)) / accepted.std(axis=0), k=k)
+        return np.array([-2.0 * np.log(row[row > 0][-1]) for row in distances])
+
+    assert len(np.unique(accepted, axis=0)) == len(accepted)
+    difference = np.concatenate([estimator.log_density(accepted) - earlier(accepted),
+                                 estimator.log_density(off_sample) - earlier(off_sample)])
+    assert np.ptp(difference) < 1e-9
+
+
+def test_the_sample_size_guards_count_what_a_resampled_posterior_is_worth():
+    """25,000 rows that repeat about a hundred parameter sets are not 25,000 samples.
+
+    The guards compared the number of rows with their thresholds and let such a posterior pass as if it were large.
+    """
+    from hydroBayesCal.surrogate.posterior_analysis import effective_sample_size
+
+    prior, resampled, accepted = _resampled_posterior(sigma=0.012)
+    effective = effective_sample_size(resampled)
+    assert len(resampled) == 25000 and effective < 100
+
+    marginals = marginal_optima(resampled, prior=prior)
+    assert marginals["verdict"] == "low_posterior_sample"
+    assert marginals["post_size"] == 25000
+    assert marginals["effective_post_size"] == pytest.approx(effective)
+    assert "independent" in marginals["message"]
+
+    modes = detect_posterior_modes(resampled, prior=prior)
+    assert modes["n_modes"] == 1 and "skipped" in modes["message"]
+
+    # a rejection sample keeps its count
+    assert marginal_optima(accepted, prior=prior)["effective_post_size"] == pytest.approx(len(accepted))
