@@ -199,6 +199,27 @@ def test_the_analytic_utility_of_a_multitask_emulator_receives_standard_deviatio
     assert new_point.shape == (1, 2)
 
 
+@pytest.mark.parametrize("utility", ["dkl", "ie"])
+def test_the_analytic_utility_leaves_out_an_output_without_emulator_uncertainty(utility):
+    """An output that is the same in every training run comes back with a standard deviation of exactly zero. The closed form inverted the diagonal of the variances, which raised ``LinAlgError: Singular matrix``. Such an output cannot be updated by its observation, so the utility is the one of the remaining outputs."""
+    sequential_design, _, _ = _design(gaussian_assumption=True)
+    y_mean, y_std = np.array([0.9, 0.2, 0.0]), np.array([0.1, 0.05, 0.0])
+    observations, variances = OBSERVATIONS.reshape(-1), VARIANCES
+
+    with_constant = sequential_design.analytical_bal(y_mean, y_std, observations, variances, utility_function=utility)
+    without = sequential_design.analytical_bal(y_mean[:2], y_std[:2], observations[:2], variances[:2],
+                                               utility_function=utility)
+
+    assert np.isfinite(with_constant)
+    assert with_constant == without
+
+
+def test_the_analytic_utility_of_outputs_without_any_emulator_uncertainty_is_zero():
+    sequential_design, _, _ = _design(gaussian_assumption=True)
+
+    assert sequential_design.analytical_bal(np.zeros(3), np.zeros(3), OBSERVATIONS.reshape(-1), VARIANCES) == 0.0
+
+
 def test_an_exploitation_method_that_contains_bal_is_evaluated_as_bal():
     class _Named(_Design):
         exploit_method = "BAL_global"
