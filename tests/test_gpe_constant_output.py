@@ -63,7 +63,7 @@ def test_multitask_emulators_predict_a_constant_output_without_uncertainty(mode,
     prediction = emulator.predict_(input_sets=PRIOR, get_conf_int=True, multitask_cov=True)
 
     assert np.all(np.isfinite(prediction["output"])) and np.all(np.isfinite(prediction["std"]))
-    assert np.all(prediction["output"][:, 2] == np.float32(constant)), "the training value, which this emulator holds in single precision"
+    assert np.all(prediction["output"][:, 2] == constant), "the value of every training run, exactly"
     assert np.all(prediction["std"][:, 2] == 0.0)
     assert np.all(prediction["std"][:, [0, 1, 3]] > 0.0)
     # The covariance between the targets has a zero row and column for the constant target and is still a covariance.

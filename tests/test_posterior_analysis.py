@@ -817,8 +817,12 @@ def test_refinement_moves_on_a_single_precision_emulator():
     assert np.all(np.abs(result["local_optima"] - surrogate.truth) < 5e-3 * surrogate.span)
 
 
-def test_refinement_on_a_trained_single_precision_emulator():
-    """The same with a trained gpytorch emulator instead of a stand-in."""
+@pytest.mark.parametrize("precision", ["single", "double"])
+def test_refinement_on_a_trained_emulator(precision):
+    """The same with a trained gpytorch emulator instead of a stand-in, in the precision of earlier releases and in the present one.
+
+    The starts lie around the optimum, like the posterior samples the refinement is seeded with. The likelihood includes the variance of the emulator here, which flattens it where the emulator is uncertain: from a start far outside the posterior, a search can end in a corner of the calibration ranges that has no training run.
+    """
     torch = pytest.importorskip("torch")
     gpytorch = pytest.importorskip("gpytorch")
     from hydroBayesCal.surrogate.gpe_gpytorch import GPyTraining
@@ -831,11 +835,11 @@ def test_refinement_on_a_trained_single_precision_emulator():
     likelihood.noise = 1e-5
     emulator = GPyTraining(collocation_points=x, model_evaluations=model(x), likelihood=likelihood,
                            kernel=gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=2)),
-                           training_iter=150, optimizer="adam", lr=0.07, verbose=False)
+                           training_iter=150, optimizer="adam", lr=0.07, verbose=False, precision=precision)
     torch.manual_seed(0)
     emulator.train_()
     truth = np.array([0.6, 0.4])
-    starts = np.array([[0.3, 0.7], [0.8, 0.3], [0.5, 0.5], [0.7, 0.6]])
+    starts = truth + np.array([[0.08, -0.06], [-0.07, 0.05], [0.05, 0.08], [-0.04, -0.07]])
 
     result = refine_joint_optimum(starts, emulator, model(truth[None, :]), np.full(3, 0.02 ** 2), seeds=starts,
                                   prior_bounds=BOUNDS_UNIT, n_starts=4)
