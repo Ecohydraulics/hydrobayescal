@@ -395,9 +395,10 @@ class BayesianInference:
         ``MC_size * mean(L) / max(L)`` samples. That ratio is small exactly when the
         calibration went well - a peaked likelihood - so a well-constrained problem
         can end up with a posterior too small to estimate a density from. Raising
-        ``MC_size`` to compensate is expensive: the surrogate is evaluated at every
-        prior sample, and the covariance it builds grows with the square of that
-        count.
+        ``MC_size`` compensates at the cost of one surrogate evaluation and one
+        likelihood per prior sample. (Up to release 1.10.1 the emulators built a
+        covariance between all prior samples, which grew with the square of their
+        number; they predict in pieces now.)
 
         This instead uses every likelihood already computed. The normalised weights
         ``w_i = L_i / sum(L)`` define the posterior over the prior samples exactly,

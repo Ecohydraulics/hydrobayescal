@@ -24,6 +24,37 @@ from hydroBayesCal.surrogate.bal_functions import project_to_psd
 from hydroBayesCal.surrogate.validation_metrics import save_valid_criteria, validation_error  # noqa: F401
 from hydroBayesCal.utils.config_logging import logger, logger_warn
 
+#: Floating-point types the emulators can compute in. Double precision is the default: single precision, the only one up to release 1.10.1, resolves about seven digits, which is not enough to factorize the covariance matrix of some 30 training runs of a smooth model response, nor to resolve the posterior variance of an emulator that is nearly certain.
+PRECISIONS = {"double": torch.float64, "single": torch.float32}
+
+
+def _precision_dtype(precision):
+    """torch type of an emulator precision, ``"double"`` or ``"single"``."""
+    try:
+        return PRECISIONS[str(precision).lower()]
+    except KeyError:
+        raise ValueError(f"Unknown precision '{precision}'. Use 'double' (the default) or 'single'.") from None
+
+
+def _model_dtype(model):
+    """Floating-point type a model computes in, read from its parameters.
+
+    Prediction follows the model, not a setting: an emulator pickled by a release up to 1.10.1 holds single-precision models and has no precision attribute, and it has to predict as it did.
+    """
+    for parameter in model.parameters():
+        return parameter.dtype
+    return torch.get_default_dtype()
+
+
+#: Largest size, in entries, of the square matrices a prediction builds between its prediction points: (points per piece x tasks) squared. gpytorch evaluates the joint distribution of all points it is given, with their covariance, while the emulators use the mean, the variance and the covariance between the targets at each point only. Predicting in pieces returns the same numbers and makes the memory independent of the number of prior samples. In one piece, 25,000 prior samples needed 15 GB in single precision and twice that in double precision.
+PREDICTION_BUDGET = 4.0e6
+
+
+def _prediction_chunk(n_tasks=1):
+    """Number of prediction points evaluated in one piece, see ``PREDICTION_BUDGET``."""
+    return max(1, int(np.sqrt(PREDICTION_BUDGET) // max(int(n_tasks), 1)))
+
+
 #: Set once the clipping of an indefinite posterior covariance has been reported (MultiGPyTraining._posterior_task_blocks).
 _REPORTED_CLIPPED_COVARIANCE = False
 
@@ -172,6 +203,8 @@ class GPyTraining:
     parallelize : bool, optional
         ``True`` to parallelise surrogate training, ``False`` to train
         sequentially.
+    precision : {"double", "single"}, optional
+        Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` reproduces the arithmetic of releases up to 1.10.1.
 
     Notes
     -----
@@ -197,7 +230,8 @@ class GPyTraining:
             weight_decay=0,
             gradient_free_start=False,
             verbose=True,
-            parallelize=False
+            parallelize=False,
+            precision="double"
     ):
 
         # Basic attributed
@@ -208,6 +242,9 @@ class GPyTraining:
         self.n_params = collocation_points.shape[1]
 
         self.gp_list = []
+
+        _precision_dtype(precision)  # refuse an unknown value here, not in the first training
+        self.precision = str(precision).lower()
 
         # Input for GPR library in GPyTorch:
         self.kernel = kernel
@@ -248,17 +285,21 @@ class GPyTraining:
         else:
             self.likelihood = np.full(self.n_obs, likelihood)
 
-    @staticmethod
-    def convert_to_tensor(array):
+    @property
+    def dtype(self):
+        """torch type this emulator trains in. An object of a release up to 1.10.1 has no precision setting and stays in single precision."""
+        return _precision_dtype(getattr(self, "precision", "single"))
+
+    def convert_to_tensor(self, array, dtype=None):
         """
         Function to transform np.array to a tensor
         Args:
             array: <np.array> that you want to change to a tensor
+            dtype: torch type of the tensor; by default the precision of this emulator
 
         Returns: <tensor> data in np.array transformed to tensor format
         """
-        transformed = torch.tensor(array).float()
-        return transformed
+        return torch.tensor(np.asarray(array), dtype=self.dtype if dtype is None else dtype)
 
     def normalize_tp(self, train_y):
         """
@@ -348,8 +389,10 @@ class GPyTraining:
             kernel_ = copy.deepcopy(kernel)
             likelihood_ = copy.deepcopy(likelihood)
 
-            # Initialize instance of GPyTorch GPR:
+            # Initialize instance of GPyTorch GPR. Kernel and likelihood arrive in torch's default type, single precision, and are brought to the precision of this emulator together with the model.
             gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_)
+            gp.to(self.dtype)
+            likelihood_.to(self.dtype)
 
             # Start training
             gp.train()
@@ -474,7 +517,7 @@ class GPyTraining:
         :return:
         """
 
-        prior_x = self.convert_to_tensor(input_sets)
+        inputs_by_type = {}  # the inputs in the precision of the model that evaluates them
 
         surrogate_prediction = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
         surrogate_std = np.zeros((input_sets.shape[0], len(self.gp_list)))  # GPE mean, for each obs
@@ -491,10 +534,20 @@ class GPyTraining:
             gp.eval()
             likelihood_.eval()
 
+            model_type = _model_dtype(gp)
+            if model_type not in inputs_by_type:
+                inputs_by_type[model_type] = self.convert_to_tensor(input_sets, dtype=model_type)
+            prior_x = inputs_by_type[model_type]
+
             with torch.no_grad():
-                f_pred = likelihood_(gp(prior_x))
-                prediction = f_pred.mean.numpy()
-                std = f_pred.stddev.numpy()
+                # In pieces: the joint distribution of all prediction points carries their covariance, a matrix of the square of their number, of which only the diagonal is used. See PREDICTION_BUDGET.
+                n_points, piece = prior_x.shape[0], _prediction_chunk()
+                prediction = np.empty(n_points, dtype=np.dtype(str(model_type).replace("torch.", "")))
+                std = np.empty_like(prediction)
+                for start in range(0, n_points, piece):
+                    f_pred = likelihood_(gp(prior_x[start:start + piece]))
+                    prediction[start:start + piece] = f_pred.mean.numpy()
+                    std[start:start + piece] = f_pred.stddev.numpy()
                 if self.y_norm:  # Back-transform
                     # normalized results
                     prediction = self.gp_list[i]['y_norm'][1] * prediction + self.gp_list[i]['y_norm'][0]
@@ -536,13 +589,18 @@ class MultiGPyTraining:
             n_restarts=1,
             parallelize=False,
             number_quantities=2,
-            noise_constraint=GreaterThan(1e-6)
+            noise_constraint=GreaterThan(1e-6),
+            precision="double"
     ):
         """
         Parameters
         ----------
         See original class docstring for parameter details.
+        precision : {"double", "single"}, optional
+            Floating-point precision of the emulator, see :class:`GPyTraining`. Default ``"double"``.
         """
+        _precision_dtype(precision)  # refuse an unknown value here, not in the first training
+        self.precision = str(precision).lower()
         # Basic attributes
         self.training_points = collocation_points
         self.model_evaluations = model_evaluations
@@ -571,6 +629,11 @@ class MultiGPyTraining:
         self.noise_values = []  # To track noise values
         self.multitask_cov = [] # To store multitask covariance matrices (Kronecker product of task kernel and input kernel)
 
+    @property
+    def dtype(self):
+        """torch type this emulator trains in. An object of a release up to 1.10.1 has no precision setting and stays in single precision."""
+        return _precision_dtype(getattr(self, "precision", "single"))
+
     def train_tasks_variables(self):#Training variables at each location separately
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
@@ -580,8 +643,9 @@ class MultiGPyTraining:
         """
         self.task_mode = "variables"
         _require_finite_outputs(self.model_evaluations)
-        X = torch.tensor(self.training_points, dtype=torch.float32)
-        Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
+        dtype = self.dtype
+        X = torch.tensor(self.training_points, dtype=dtype)
+        Y = torch.tensor(self.model_evaluations, dtype=dtype)
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities
 
@@ -601,7 +665,7 @@ class MultiGPyTraining:
             self.normalization_params.append((y_mean, y_std))
 
             # Convert normalized Y_loc to torch
-            Y_loc_norm = torch.tensor(Y_loc_norm, dtype=torch.float32)
+            Y_loc_norm = torch.tensor(Y_loc_norm, dtype=dtype)
 
             # Initialize multitask GP model. The likelihood and the kernel are
             # deep-copied per location: sharing one instance across the loop lets
@@ -610,6 +674,9 @@ class MultiGPyTraining:
             likelihood = copy.deepcopy(self.likelihood)
             kernel = copy.deepcopy(self.kernel)
             model = MultitaskGPModel(X, Y_loc_norm, likelihood, kernel, self.number_quantities)
+            # Kernel and likelihood arrive in torch's default type, single precision.
+            model.to(dtype)
+            likelihood.to(dtype)
 
             # Set model and likelihood to training mode
             model.train()
@@ -690,8 +757,9 @@ class MultiGPyTraining:
         """
         self.task_mode = "locations"
         _require_finite_outputs(self.model_evaluations)
-        X = torch.tensor(self.training_points, dtype=torch.float32)
-        Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
+        dtype = self.dtype
+        X = torch.tensor(self.training_points, dtype=dtype)
+        Y = torch.tensor(self.model_evaluations, dtype=dtype)
 
         if self.n_obs % self.number_quantities:
             raise ValueError(
@@ -708,7 +776,7 @@ class MultiGPyTraining:
             Y_output_var = Y[:, q::self.number_quantities]
             # A location where this quantity is the same in every run is trained on zeros and returned without emulator uncertainty, see _output_normalization.
             y_mean, divisor, y_std, constant = _output_normalization(Y_output_var)
-            Y_output_var_norm = ((Y_output_var - y_mean) / divisor).to(torch.float32)
+            Y_output_var_norm = ((Y_output_var - y_mean) / divisor).to(dtype)
             constant_columns.extend(q + self.number_quantities * np.flatnonzero(self._as_numpy(constant)))
             self.normalization_params.append((f'output_{q + 1}', y_mean, y_std))
 
@@ -718,6 +786,8 @@ class MultiGPyTraining:
             kernel = copy.deepcopy(self.kernel)
             model = MultitaskGPModel(X, Y_output_var_norm, likelihood, kernel,
                                      number_tasks=num_locations)  # num_tasks = num_locations
+            model.to(dtype)
+            likelihood.to(dtype)
 
             # Set model and likelihood to training mode
             model.train()
@@ -753,8 +823,9 @@ class MultiGPyTraining:
         """
         self.task_mode = "all"
         _require_finite_outputs(self.model_evaluations)
-        X = torch.tensor(self.training_points, dtype=torch.float32)
-        Y = torch.tensor(self.model_evaluations, dtype=torch.float32)
+        dtype = self.dtype
+        X = torch.tensor(self.training_points, dtype=dtype)
+        Y = torch.tensor(self.model_evaluations, dtype=dtype)
 
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities  # Total number of locations
@@ -772,6 +843,8 @@ class MultiGPyTraining:
         likelihood = copy.deepcopy(self.likelihood)
         kernel = copy.deepcopy(self.kernel)
         model = MultitaskGPModel(X, Y_norm, likelihood, kernel, number_tasks=self.n_obs)
+        model.to(dtype)
+        likelihood.to(dtype)
 
         # Set model and likelihood to training mode
         model.train()
@@ -909,15 +982,16 @@ class MultiGPyTraining:
             # In double precision: a scaling rounded to single precision is not exactly of the form D B D and can itself tip a nearly singular block over.
             scale = np.asarray(MultiGPyTraining._as_numpy(scale), dtype=float).reshape(n_blocks, block_size)
             blocks = blocks * scale[None, :, :, None] * scale[None, :, None, :]
-        # The blocks are evaluated in single precision as the difference between the prior covariance and the part explained by the training data. Where the emulator is nearly certain, the result is orders of magnitude smaller than both (six in the case that revealed this, an emulator with correlation lengths of ten times the parameter ranges, which is that certain at every candidate and not only next to a training run). The error of the difference then reaches the size of the result: the two triangles differ, and a block can come out with a negative eigenvalue. The sampler of the BAL utility refuses such a block, and the calibration would stop in its active-learning loop. The blocks are therefore symmetrized and the indefinite ones projected, as the last operation on them; a positive semidefinite block is returned as it is. The projection yields a valid covariance, it does not restore the lost digits; a double-precision evaluation of the model would.
+        # The blocks are the difference between the prior covariance and the part explained by the training data. Where the emulator is nearly certain, the result is orders of magnitude smaller than both (six in the case that revealed this, an emulator with correlation lengths of ten times the parameter ranges, which is that certain at every candidate and not only next to a training run). In single precision the error of the difference then reaches the size of the result: the two triangles differ, and a block can come out with a negative eigenvalue. The sampler of the BAL utility refuses such a block, and the calibration would stop in its active-learning loop. Double precision, the default, resolves the difference with digits to spare. The safeguard stays for the emulators that compute in single precision, i.e. those pickled by releases up to 1.10.1 and those built with precision="single": the blocks are symmetrized and the indefinite ones projected, as the last operation on them; a positive semidefinite block is returned as it is. The projection yields a valid covariance, it does not restore the lost digits.
         blocks, ratio = project_to_psd(blocks, return_ratio=True)
         global _REPORTED_CLIPPED_COVARIANCE
         if ratio < 0.0 and not _REPORTED_CLIPPED_COVARIANCE:
             logger_warn.warning(
                 f"The emulator covariance between the calibration targets was not positive semidefinite at some prediction "
                 f"points (smallest eigenvalue {ratio:.1e} times the largest in magnitude) and was clipped to a valid "
-                f"covariance. The emulator is nearly certain there, and its variance is at the resolution of single "
-                f"precision. The predicted means are not affected. This message is shown once per process.")
+                f"covariance. The emulator is nearly certain there, and its variance is at the resolution of its "
+                f"arithmetic ({'single' if predictions.mean.dtype == torch.float32 else 'double'} precision). The "
+                f"predicted means are not affected. This message is shown once per process.")
             _REPORTED_CLIPPED_COVARIANCE = True
         return blocks
 
@@ -952,7 +1026,32 @@ class MultiGPyTraining:
         ----
         The returned task covariance is the posterior predictive covariance between the calibration quantities at the prediction point, the same distribution the returned ``std`` is the marginal of. With ``task_mode="locations"`` the tasks are the locations, so the cross-quantity covariance is not part of the model at all and a diagonal covariance built from the marginal standard deviations is returned instead.
         """
-        input_sets = torch.tensor(input_sets, dtype=torch.float32)
+        input_sets = np.atleast_2d(np.asarray(input_sets))
+        n_samples = input_sets.shape[0]
+        n_locations = self.n_obs // self.number_quantities
+        mode = self._resolve_task_mode(n_locations)
+        n_tasks = {"variables": self.number_quantities, "locations": n_locations}.get(mode, self.n_obs)
+
+        # In pieces: gpytorch returns the joint distribution of all prediction points, whose covariance has the square of (points x tasks) entries, while only the blocks of each point are used. See PREDICTION_BUDGET.
+        piece = _prediction_chunk(n_tasks)
+        if n_samples <= piece:
+            return self._predict_chunk(input_sets, get_conf_int=get_conf_int, multitask_cov=multitask_cov, mode=mode)
+
+        # The task layout is resolved once, above: for an emulator of an early release it is inferred with a warning, which must not be repeated for every piece.
+        parts = [self._predict_chunk(input_sets[start:start + piece], get_conf_int=get_conf_int,
+                                     multitask_cov=multitask_cov, mode=mode)
+                 for start in range(0, n_samples, piece)]
+        output_dic = {key: np.vstack([part[key] for part in parts])
+                      for key in parts[0] if key != 'multitask_cov'}
+        if multitask_cov:
+            output_dic['multitask_cov'] = [blocks for part in parts for blocks in part['multitask_cov']]
+        return output_dic
+
+    def _predict_chunk(self, input_sets, get_conf_int=False, multitask_cov=False, mode=None):
+        """Prediction at one piece of the input sets, see :meth:`predict_`, which has the same arguments and return value. ``mode`` is the task layout if it has been resolved already."""
+        # In the precision of the trained models, which is single for an emulator stored by a release up to 1.10.1.
+        dtype = _model_dtype(self.gp_list[0]['gp']) if self.gp_list else self.dtype
+        input_sets = torch.tensor(np.asarray(input_sets), dtype=dtype)
         n_samples = input_sets.shape[0]
         n_obs = self.n_obs
         n_quantities = self.number_quantities
@@ -971,7 +1070,8 @@ class MultiGPyTraining:
         if multitask_cov:
             multitask_cov_list = [[None] * n_locations for _ in range(n_samples)]
 
-        mode = self._resolve_task_mode(n_locations)
+        if mode is None:
+            mode = self._resolve_task_mode(n_locations)
         if mode == "all":
             model_info = self.gp_list[0]
             gp = model_info['gp']
@@ -1022,9 +1122,9 @@ class MultiGPyTraining:
 
                     # Make sure the normalisation constants are tensors as well
                     if isinstance(y_std, np.ndarray):
-                        y_std = torch.tensor(y_std, dtype=torch.float32)
+                        y_std = torch.tensor(y_std, dtype=dtype)
                     if isinstance(y_mean, np.ndarray):
-                        y_mean = torch.tensor(y_mean, dtype=torch.float32)
+                        y_mean = torch.tensor(y_mean, dtype=dtype)
 
                     # Back-transform normalized predictions
                     mean = y_std * mean + y_mean
@@ -1244,7 +1344,7 @@ class SOSequentialGPyTraining:
 
     @classmethod
     def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
-                           training_iter=150, lr=0.07, verbose=False):
+                           training_iter=150, lr=0.07, verbose=False, precision="double"):
         """Build the container from the training data of a calibration.
 
         One single-output GPE is set up per calibration target, with the kernel, likelihood and optimizer settings the drivers use for a calibration on one target, so a target is emulated the same way whether it is calibrated alone or together with others. The models are not trained yet, call :meth:`train_`.
@@ -1263,6 +1363,8 @@ class SOSequentialGPyTraining:
             Learning rate of the optimizer.
         verbose : bool
             Passed on to :class:`GPyTraining`.
+        precision : {"double", "single"}
+            Floating-point precision of the emulators, passed on to :class:`GPyTraining`.
 
         Returns
         -------
@@ -1293,7 +1395,7 @@ class SOSequentialGPyTraining:
                 likelihood=likelihood, kernel=kernel,
                 training_iter=training_iter,
                 optimizer="adam", lr=lr,
-                verbose=verbose)
+                verbose=verbose, precision=precision)
         return cls(surrogate_models=surrogate_models, calibration_quantities=calibration_quantities)
 
     def __getitem__(self, key):

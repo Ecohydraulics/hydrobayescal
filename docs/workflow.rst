@@ -510,6 +510,8 @@ With the initial model setup and the measurement points, the Bayesian model opti
          * - ``"SO_sequential"``
            - Independent single-output emulators for all calibration targets, each set up as for a calibration on that target alone. No correlation is modeled. It serves as the reference a multitask emulator has to improve on.
 
+      The gpytorch emulators compute in double precision. Single precision, which releases up to 1.10.1 used, resolves about seven digits, and a Gaussian process needs more in two places. Its training factorizes the covariance matrix of the training runs, whose condition number grows with the number of runs and with the smoothness of the model response; with the emulator settings of the drivers and a smooth analytic response, the training failed with ``NotPSDError`` in 6 of 20 attempts at 40 training runs and in all 20 at 80. Its posterior variance is a small difference of large terms, which is lost in round-off where the emulator is nearly certain. An emulator pickled by an earlier release keeps predicting in single precision, and ``precision="single"`` in the constructor of an emulator class reproduces the earlier arithmetic. The predictions over the prior sample are evaluated in pieces, so that time and memory grow in proportion to ``prior_samples``: in a test with six outputs, 100,000 prior samples took a few seconds and kept the process at about one gigabyte.
+
       An unknown value is rejected when the model is constructed, before any simulation. ``sampling['bal_n_jobs']`` (default ``-1``, all cores) sets the number of processes that score the candidate parameter sets of the Bayesian active learning; ``1`` scores them in the calling process.
 
     *  **Surrogate model predictions**  using the trained metamodel to predict the model outputs at  Monte Carlo collocation points according to the user-defined prior samples (taken from a uniform distribution).
@@ -649,7 +651,7 @@ getting the wrong answer:
 3. **Multi-start local refinement** (``--refine``, needs ``--surrogate``). The emulator's
    joint posterior is maximised over the continuous calibration ranges with a bounded
    quasi-Newton method, started from the highest-density samples **and from one
-   representative of every detected mode**. The likelihood is the one of the calibration: it includes the variance of the emulator unless the calibration was run with ``include_surrogate_error = False``, a setting that is read from ``BAL_dictionary.pkl``. The search runs in the unit hypercube of the calibration ranges and takes the slope of the likelihood over a step of 1e-3 of each range, which the single-precision emulators can resolve.
+   representative of every detected mode**. The likelihood is the one of the calibration: it includes the variance of the emulator unless the calibration was run with ``include_surrogate_error = False``, a setting that is read from ``BAL_dictionary.pkl``. The search runs in the unit hypercube of the calibration ranges and takes the slope of the likelihood over a step of 1e-3 of each range, which also an emulator pickled in single precision by an earlier release can resolve.
 
 Stage 3 is what makes the reported optimum both precise and global:
 

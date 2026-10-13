@@ -887,7 +887,9 @@ def refine_joint_optimum(posterior, surrogate, observations, error, seeds=None,
 
     Notes
     -----
-    The search runs in the unit hypercube of the calibration ranges, and the slope of the likelihood is taken by central differences with a step of ``REFINEMENT_STEP`` (1e-3) of every range. Both are owed to the emulators: they compute in single precision, which resolves a parameter and a likelihood to about seven digits. The default step of the optimizer, 1e-8 in the units of the parameter, is below that resolution, so that the difference of two likelihoods was zero or round-off and the search did not leave its starting points.
+    The search runs in the unit hypercube of the calibration ranges, and the slope of the likelihood is taken by central differences with a step of ``REFINEMENT_STEP`` (1e-3) of every range. This makes the search independent of the units of the parameters and keeps it within what any emulator resolves. An emulator in single precision, as releases up to 1.10.1 trained and pickled them, resolves a parameter and a likelihood to about seven digits. The default step of the optimizer, 1e-8 in the units of the parameter, is below that resolution, so that the difference of two likelihoods was zero or round-off and the search did not leave its starting points.
+
+    With the variance of the emulator in the likelihood, the likelihood is flatter where the emulator is uncertain, and it can have a local maximum there, for example in a corner of the calibration ranges without a training run. A search that starts far outside the posterior can end in such a place. The starts used here are posterior samples and mode representatives, and the highest of the optima found is the one reported.
     """
     from scipy.optimize import minimize
 
