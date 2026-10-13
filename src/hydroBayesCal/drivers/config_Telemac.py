@@ -142,9 +142,9 @@ sampling = {
     #   'rejection_sampling' (default)  keeps a prior sample with probability
     #       likelihood/max(likelihood). The samples are distinct, but their NUMBER
     #       falls as the likelihood sharpens - so a well-constrained calibration can
-    #       end with a posterior too small to estimate a density from, and raising
-    #       prior_samples to compensate is expensive (the surrogate is evaluated at
-    #       every one, and its covariance grows with the square of that count).
+    #       end with a posterior too small to estimate a density from. Raising
+    #       prior_samples compensates at the cost of one surrogate evaluation and one
+    #       likelihood per sample; time and memory grow in proportion to their number.
     #   'bayesian_weighting'            resamples the prior with replacement in
     #       proportion to the likelihood weights, returning a full-size posterior
     #       from the same likelihoods at no extra model cost. The samples repeat, so
