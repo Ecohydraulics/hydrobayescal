@@ -150,6 +150,31 @@ def _standardize(samples, reference=None):
     return (samples - center) / scale, center, scale
 
 
+def effective_sample_size(samples):
+    """Number of independent draws that a posterior sample is worth.
+
+    Rejection sampling keeps a prior sample at most once, so its rows are distinct and every row counts. Weighted resampling (``posterior_sampling_method='bayesian_weighting'``) draws with replacement: it returns as many rows as the prior has, but a row that occurs ``c`` times is one sample with weight ``c``. The effective size after Kish is ``(sum c)**2 / sum(c**2)``. It equals the number of rows when all are distinct and 1 when all rows are the same.
+
+    Everything that depends on how much a posterior sample can resolve (the neighbor count of the joint density, the guards against small samples) has to use this number. The number of rows of a resampled posterior only repeats the size of the prior sample.
+
+    Parameters
+    ----------
+    samples : array_like
+        Shape ``[n_samples, n_parameters]`` or ``[n_samples]``.
+
+    Returns
+    -------
+    float
+    """
+    samples = np.asarray(samples, dtype=float)
+    if samples.ndim == 1:
+        samples = samples.reshape(-1, 1)
+    if samples.shape[0] == 0:
+        return 0.0
+    counts = np.unique(samples, axis=0, return_counts=True)[1].astype(float)
+    return float(counts.sum() ** 2 / np.sum(counts ** 2))
+
+
 def _hdi(samples, credible_mass=0.95):
     """Shortest interval containing ``credible_mass`` of the samples.
 
@@ -206,7 +231,8 @@ def marginal_bin_count(column, samples_per_bin=25, min_bins=8):
         Number of bins.
     """
     column = np.asarray(column, dtype=float)
-    n = column.size
+    # The number of samples the column is worth, which is its length for distinct values (see effective_sample_size). A resampled posterior has as many rows as the prior sample; by that number the rule asks for hundreds of bins that a few hundred repeated values cannot fill, and the histogram breaks up into spurious modes.
+    n = max(int(round(effective_sample_size(column))), 1)
     sturges = int(np.ceil(np.log2(max(n, 2)) + 1))
     span = float(np.ptp(column))
     iqr = float(np.subtract(*np.percentile(column, [75, 25])))
@@ -318,12 +344,16 @@ class _DensityEstimator:
     per-parameter marginal peaks is in general not one of the posterior samples, and
     the whole point of the equifinality diagnostic is to score exactly that
     off-sample point.
+
+    Rows that occur more than once, as weighted resampling produces them, are one point with a weight: the neighbors are searched among the distinct rows, and the density is the number of rows inside the neighbor ball over its volume. Counted as separate neighbors, the copies of a row that occurs more often than ``k_neighbors`` are all at distance zero, which left such a row without any neighbor distance to estimate a density from.
     """
 
     def __init__(self, posterior, method="auto", k_neighbors=None):
         self.samples = _as_2d_array(posterior)
         self.n_samples, self.ndim = self.samples.shape
         self._z, self._center, self._scale = _standardize(self.samples)
+        self._distinct, self._counts = np.unique(self._z, axis=0, return_counts=True)
+        self.n_distinct = int(self._distinct.shape[0])
 
         if method in ("auto", "knn"):
             self.method = "knn"
@@ -339,28 +369,23 @@ class _DensityEstimator:
             # neighbour query cheap enough to run inside the BAL loop: beyond a few
             # dozen neighbours the density rank barely moves, while the query cost
             # keeps growing with the accepted sample size.
-            k_neighbors = int(np.clip(round(np.sqrt(max(self.n_samples, 1))), 5, 50))
-        self.k_neighbors = int(np.clip(k_neighbors, 1, max(self.n_samples - 1, 1)))
-        self._tree = cKDTree(self._z)
+            k_neighbors = int(np.clip(round(np.sqrt(max(self.n_distinct, 1))), 5, 50))
+        self.k_neighbors = int(np.clip(k_neighbors, 1, max(self.n_distinct - 1, 1)))
+        self._tree = cKDTree(self._distinct)
 
     def log_density(self, points):
         """Log density at ``points`` (``[n_points, ndim]``), up to an additive constant."""
         points = np.atleast_2d(np.asarray(points, dtype=float))
         z = (points - self._center) / self._scale
 
-        # Nearest-neighbour density ~ 1 / d_k**ndim. Query one extra neighbour and
-        # drop a zero distance, so evaluating at a sample point does not return the
-        # point itself and an infinite density.
-        k = min(self.k_neighbors + 1, self.n_samples)
-        distances, _ = self._tree.query(z, k=k)
-        distances = np.atleast_2d(distances)
-        log_d = np.empty(distances.shape[0])
-        for row_index, row in enumerate(distances):
-            row = row[np.isfinite(row)]
-            non_self = row[row > 0]
-            d_k = non_self[-1] if non_self.size else np.finfo(float).tiny
-            log_d[row_index] = -self.ndim * np.log(max(d_k, np.finfo(float).tiny))
-        return log_d
+        # Nearest-neighbour density ~ (rows inside the ball) / d_k**ndim. The ball reaches to the k-th distinct neighbour; one extra neighbour is queried because at a sample point the nearest one is the point itself, at distance zero. For distinct rows the count is k + 1 everywhere, a constant, and the estimate ranks points exactly as 1 / d_k**ndim does.
+        k = min(self.k_neighbors + 1, self.n_distinct)
+        distances, neighbours = self._tree.query(z, k=k)
+        distances = np.asarray(distances, dtype=float).reshape(z.shape[0], -1)
+        neighbours = np.asarray(neighbours).reshape(z.shape[0], -1)
+        radius = np.maximum(distances[:, -1], np.finfo(float).tiny)
+        rows_inside = self._counts[neighbours].sum(axis=1)
+        return np.log(rows_inside) - self.ndim * np.log(radius)
 
     def percentile_of(self, point, sample_log_density=None):
         """Percentile rank (0-100) of the density at ``point`` among the samples."""
@@ -499,6 +524,7 @@ def marginal_optima(
     """
     posterior = _as_2d_array(posterior)
     n_post, ndim = posterior.shape
+    n_effective = effective_sample_size(posterior)
     names = _parameter_names(parameter_names, ndim)
     bounds = _resolve_prior_bounds(prior_bounds, prior, posterior)
 
@@ -557,15 +583,26 @@ def marginal_optima(
     unidentified = [names[i] for i in range(ndim) if "non_identifiable" in flags[i]]
     multimodal = [names[i] for i in range(ndim) if "multimodal_marginal" in flags[i]]
 
-    if n_post < min_post_size:
+    if n_effective < min_post_size:
         verdict = "low_posterior_sample"
-        message = (
-            f"Only {n_post} accepted posterior samples (below {min_post_size}). The "
-            f"marginal peaks are reported but are not a reliable density estimate.")
-        recommendation = (
-            "Increase prior_samples, or widen the observation variances, so that "
-            "rejection sampling accepts more samples before reading any optimum off "
-            "this posterior.")
+        if n_effective < n_post - 0.5:
+            # A resampled posterior: its rows repeat, and their number says nothing about the information in them.
+            message = (
+                f"The {n_post} posterior rows repeat a smaller number of parameter sets and are worth "
+                f"{n_effective:.0f} independent samples (below {min_post_size}). The marginal peaks are "
+                f"reported but are not a reliable density estimate.")
+            recommendation = (
+                "Increase prior_samples, or widen the observation variances, so that the posterior rests on "
+                "more prior samples before reading any optimum off it. Resampling with "
+                "posterior_sampling_method='bayesian_weighting' returns more rows, not more information.")
+        else:
+            message = (
+                f"Only {n_post} accepted posterior samples (below {min_post_size}). The "
+                f"marginal peaks are reported but are not a reliable density estimate.")
+            recommendation = (
+                "Increase prior_samples, or widen the observation variances, so that "
+                "rejection sampling accepts more samples before reading any optimum off "
+                "this posterior.")
     elif not unidentified and not pinned:
         verdict = "well_identified"
         message = (
@@ -616,6 +653,7 @@ def marginal_optima(
         "flags": flags,
         "prior_bounds": bounds,
         "post_size": int(n_post),
+        "effective_post_size": float(n_effective),
         "verdict": verdict,
         "message": message,
         "recommendation": recommendation,
@@ -640,6 +678,7 @@ def joint_optimum(
         prior=None,
         modes=None,
         n_starts=8,
+        include_surrogate_error=True,
 ):
     """Parameter vector of highest *joint* posterior density.
 
@@ -709,7 +748,8 @@ def joint_optimum(
             raise ValueError(
                 "method='likelihood' needs surrogate, observations and error. Use "
                 "method='auto' to score the posterior sample without a surrogate.")
-        log_density = _surrogate_log_likelihood(surrogate, posterior, observations, error)
+        log_density = _surrogate_log_likelihood(surrogate, posterior, observations, error,
+                                                include_surrogate_error=include_surrogate_error)
         method_used = "likelihood"
         message = ("Joint optimum from the maximum surrogate likelihood over the "
                    "posterior samples.")
@@ -729,7 +769,8 @@ def joint_optimum(
             else:
                 top_idx = np.argsort(log_density)[::-1][:n_top]
                 top_ll = _surrogate_log_likelihood(
-                    surrogate, posterior[top_idx], observations, error)
+                    surrogate, posterior[top_idx], observations, error,
+                    include_surrogate_error=include_surrogate_error)
                 best = int(top_idx[int(np.argmax(top_ll))])
                 order = np.argsort(log_density)[::-1][:n_top]
                 result = {
@@ -743,7 +784,8 @@ def joint_optimum(
                                 f"candidates re-ranked by surrogate likelihood."),
                 }
                 return _maybe_refine(result, posterior, refine, surrogate, observations,
-                                     error, prior_bounds, prior, modes, n_starts)
+                                     error, prior_bounds, prior, modes, n_starts,
+                                     include_surrogate_error)
 
     order = np.argsort(log_density)[::-1]
     best = int(order[0])
@@ -757,11 +799,11 @@ def joint_optimum(
         "message": message,
     }
     return _maybe_refine(result, posterior, refine, surrogate, observations, error,
-                         prior_bounds, prior, modes, n_starts)
+                         prior_bounds, prior, modes, n_starts, include_surrogate_error)
 
 
 def _maybe_refine(result, posterior, refine, surrogate, observations, error,
-                  prior_bounds, prior, modes, n_starts):
+                  prior_bounds, prior, modes, n_starts, include_surrogate_error=True):
     """Attach the refined optimum to a ``joint_optimum`` result, if asked for."""
     if not refine:
         return result
@@ -778,7 +820,7 @@ def _maybe_refine(result, posterior, refine, surrogate, observations, error,
     refinement = refine_joint_optimum(
         posterior=posterior, surrogate=surrogate, observations=observations, error=error,
         seeds=result["top_vectors"], modes=modes, prior_bounds=prior_bounds, prior=prior,
-        n_starts=n_starts)
+        n_starts=n_starts, include_surrogate_error=include_surrogate_error)
     result.update(refinement)
     result["vector"] = refinement["refined_vector"]
     result["method_used"] = f"{result['method_used']}+refined"
@@ -786,9 +828,13 @@ def _maybe_refine(result, posterior, refine, surrogate, observations, error,
     return result
 
 
+#: Finite-difference step of the refinement, as a fraction of the calibration range of every parameter.
+REFINEMENT_STEP = 1.0e-3
+
+
 def refine_joint_optimum(posterior, surrogate, observations, error, seeds=None,
                          modes=None, prior_bounds=None, prior=None, n_starts=8,
-                         tolerance=0.05):
+                         tolerance=0.05, include_surrogate_error=True):
     """Maximise the surrogate posterior density locally, from several starting points.
 
     The joint optimum read off the accepted sample is the best of finitely many prior
@@ -829,6 +875,8 @@ def refine_joint_optimum(posterior, surrogate, observations, error, seeds=None,
     tolerance : float
         Two optima count as the same when they differ by less than this fraction of the
         calibration range in every parameter.
+    include_surrogate_error : bool
+        Add the variance of the emulator to the observation variance, as the calibration does by default. Pass the setting the calibration was run with (``BAL_dictionary.pkl`` stores it), so that the refined optimum maximizes the likelihood of that calibration.
 
     Returns
     -------
@@ -836,6 +884,12 @@ def refine_joint_optimum(posterior, surrogate, observations, error, seeds=None,
         ``refined_vector``, ``refined``, ``local_optima``, ``local_log_likelihood``,
         ``global_agreement`` (fraction of starts that reached the best optimum),
         ``n_starts`` and ``message``.
+
+    Notes
+    -----
+    The search runs in the unit hypercube of the calibration ranges, and the slope of the likelihood is taken by central differences with a step of ``REFINEMENT_STEP`` (1e-3) of every range. This makes the search independent of the units of the parameters and keeps it within what any emulator resolves. An emulator in single precision, as releases up to 1.10.1 trained and pickled them, resolves a parameter and a likelihood to about seven digits. The default step of the optimizer, 1e-8 in the units of the parameter, is below that resolution, so that the difference of two likelihoods was zero or round-off and the search did not leave its starting points.
+
+    With the variance of the emulator in the likelihood, the likelihood is flatter where the emulator is uncertain, and it can have a local maximum there, for example in a corner of the calibration ranges without a training run. A search that starts far outside the posterior can end in such a place. The starts used here are posterior samples and mode representatives, and the highest of the optima found is the one reported.
     """
     from scipy.optimize import minimize
 
@@ -861,17 +915,24 @@ def refine_joint_optimum(posterior, surrogate, observations, error, seeds=None,
     limit = max(int(n_starts), n_mode_starts, 1)
     starts = np.atleast_2d(np.asarray(starts, dtype=float))[:limit]
 
-    def negative_log_likelihood(vector):
-        clipped = np.clip(np.asarray(vector, dtype=float), lower, upper)
+    # A parameter whose range has no width stays where it is.
+    unit_bounds = [(0.0, 1.0) if high > low else (0.0, 0.0) for low, high in zip(lower, upper)]
+
+    def to_parameters(unit_vector):
+        return np.clip(lower + np.asarray(unit_vector, dtype=float) * span, lower, upper)
+
+    def negative_log_likelihood(unit_vector):
         return -float(_surrogate_log_likelihood(
-            surrogate, clipped.reshape(1, -1), observations, error)[0])
+            surrogate, to_parameters(unit_vector).reshape(1, -1), observations, error,
+            include_surrogate_error=include_surrogate_error)[0])
 
     optima, values = [], []
     for start in starts:
         try:
-            outcome = minimize(negative_log_likelihood, np.clip(start, lower, upper),
-                               method="L-BFGS-B", bounds=list(zip(lower, upper)))
-            vector = np.clip(np.asarray(outcome.x, dtype=float), lower, upper)
+            outcome = minimize(negative_log_likelihood, (np.clip(start, lower, upper) - lower) / span,
+                               method="L-BFGS-B", jac="3-point", bounds=unit_bounds,
+                               options={"finite_diff_rel_step": REFINEMENT_STEP})
+            vector = to_parameters(outcome.x)
             optima.append(vector)
             values.append(-float(outcome.fun))
         except Exception as exception:  # a failed start must not lose the others
@@ -913,22 +974,27 @@ def refine_joint_optimum(posterior, surrogate, observations, error, seeds=None,
     }
 
 
-def _surrogate_log_likelihood(surrogate, parameter_sets, observations, error):
+def _surrogate_log_likelihood(surrogate, parameter_sets, observations, error,
+                              include_surrogate_error=True):
     """Joint log-likelihood of surrogate predictions at ``parameter_sets``.
 
     Reuses :class:`~hydroBayesCal.surrogate.bal_functions.BayesianInference` so the
     likelihood is exactly the one the calibration itself used. Imported lazily to
     keep this module importable without the surrogate stack.
+
+    The calibration adds the variance of the emulator to the observation variance unless it was run with ``include_surrogate_error=False``, so the same is done here by default. Leaving it out, as this function did, gives a different likelihood, whose maximum can lie where the emulator is uncertain. A surrogate that returns no ``std`` is taken as exact.
     """
     from hydroBayesCal.surrogate.bal_functions import BayesianInference
 
-    predictions = surrogate.predict_(input_sets=np.atleast_2d(parameter_sets))["output"]
+    prediction = surrogate.predict_(input_sets=np.atleast_2d(parameter_sets))
+    model_error = prediction.get("std") if include_surrogate_error else None
     inference = BayesianInference(
-        model_predictions=predictions,
+        model_predictions=prediction["output"],
         observations=np.atleast_2d(observations),
         error=np.asarray(error, dtype=float).ravel(),
+        model_error=None if model_error is None else np.atleast_2d(np.asarray(model_error, dtype=float)),
     )
-    inference.calculate_likelihood_manual()
+    inference.calculate_prior_likelihood()
     return np.asarray(inference.log_likelihood, dtype=float).ravel()
 
 
@@ -1184,9 +1250,12 @@ def detect_posterior_modes(
         "recommendation": "",
     }
 
-    if n_post < min_samples:
+    n_effective = effective_sample_size(posterior)
+    if n_effective < min_samples:
+        size = (f"Only {n_post} accepted posterior samples" if n_effective >= n_post - 0.5 else
+                f"The {n_post} posterior rows are worth {n_effective:.0f} independent samples")
         unimodal["message"] = (
-            f"Only {n_post} accepted posterior samples (below {min_samples}); mode "
+            f"{size} (below {min_samples}); mode "
             f"detection was skipped and the posterior is treated as unimodal.")
         unimodal["recommendation"] = (
             "Increase prior_samples so that rejection sampling accepts more samples "
@@ -1211,7 +1280,7 @@ def detect_posterior_modes(
             mask = np.ones(ndim, dtype=bool)
     z_fit = z[:, mask]
 
-    max_modes = int(np.clip(max_modes, 1, max(1, n_post // 10)))
+    max_modes = int(np.clip(max_modes, 1, max(1, int(n_effective) // 10)))
 
     models, bic = [], []
     for k in range(1, max_modes + 1):
@@ -1442,6 +1511,7 @@ def analyze_posterior(
         include=("marginal_peak", "joint_map", "posterior_mean", "modes"),
         max_modes=5,
         refine=False,
+        include_surrogate_error=None,
         **kwargs
 ):
     """Run the full posterior analysis and return every part of it.
@@ -1459,6 +1529,8 @@ def analyze_posterior(
         Refine the joint optimum by multi-start local maximisation of the surrogate
         posterior, see :func:`refine_joint_optimum`. Needs ``surrogate``,
         ``observations`` and ``error``.
+    include_surrogate_error : bool, optional
+        Whether the likelihood of the surrogate includes the variance of the emulator. By default the setting the calibration was run with, as stored in ``bayesian_dict``, and ``True`` (the default of the drivers) where nothing is stored.
 
     Returns
     -------
@@ -1466,6 +1538,9 @@ def analyze_posterior(
         ``iteration``, ``posterior``, ``marginal``, ``joint``, ``equifinality``,
         ``modes``, ``candidates`` and ``decision``.
     """
+    if include_surrogate_error is None:
+        stored = None if bayesian_dict is None else bayesian_dict.get("include_surrogate_error")
+        include_surrogate_error = True if stored is None else bool(stored)
     if bayesian_dict is not None:
         posterior, iteration = select_posterior_iteration(bayesian_dict, iteration)
         if prior is None:
@@ -1489,7 +1564,7 @@ def analyze_posterior(
         posterior, method=joint_method, surrogate=surrogate,
         observations=observations, error=error, refine=refine,
         prior_bounds=marginal["prior_bounds"], modes=modes,
-        n_top=max(8, modes["n_modes"]))
+        n_top=max(8, modes["n_modes"]), include_surrogate_error=include_surrogate_error)
 
     equifinality = equifinality_diagnostic(
         posterior, marginal["peak"], joint_optimum_vector=joint["vector"],

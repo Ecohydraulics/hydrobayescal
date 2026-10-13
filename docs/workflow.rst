@@ -74,6 +74,8 @@ Sobol has one further property the workflow depends on: it is **extensible**. Th
 length :math:`n`, so the design can be grown without discarding a single simulation that
 has already been run. Latin hypercube and random designs have no such guarantee.
 
+In a staged initial design (``adaptive_init_runs``, see below), a ``random`` or ``latin_hypercube`` design is therefore grown by a fresh block of the same rule. The nodes of ``chebyshev`` and ``grid`` depend on the size of the design, so a second set of nodes neither continues nor complements the first; their later blocks are drawn as a Latin hypercube, with a warning in the log. ``initial-design.json`` records the rule every block was drawn with.
+
 The full list of accepted methods is ``random``, ``latin_hypercube``, ``sobol``,
 ``halton``, ``hammersley``, ``chebyshev``, ``grid`` and ``user``. Invalid values are
 rejected before the first simulation starts rather than several minutes into the run.
@@ -508,6 +510,8 @@ With the initial model setup and the measurement points, the Bayesian model opti
          * - ``"SO_sequential"``
            - Independent single-output emulators for all calibration targets, each set up as for a calibration on that target alone. No correlation is modeled. It serves as the reference a multitask emulator has to improve on.
 
+      The gpytorch emulators compute in double precision. Single precision, which releases up to 1.10.1 used, resolves about seven digits, and a Gaussian process needs more in two places. Its training factorizes the covariance matrix of the training runs, whose condition number grows with the number of runs and with the smoothness of the model response; with the emulator settings of the drivers and a smooth analytic response, the training failed with ``NotPSDError`` in 6 of 20 attempts at 40 training runs and in all 20 at 80. Its posterior variance is a small difference of large terms, which is lost in round-off where the emulator is nearly certain. An emulator pickled by an earlier release keeps predicting in single precision, and ``precision="single"`` in the constructor of an emulator class reproduces the earlier arithmetic. The predictions over the prior sample are evaluated in pieces, so that time and memory grow in proportion to ``prior_samples``: in a test with six outputs, 100,000 prior samples took a few seconds and kept the process at about one gigabyte.
+
       An unknown value is rejected when the model is constructed, before any simulation. ``sampling['bal_n_jobs']`` (default ``-1``, all cores) sets the number of processes that score the candidate parameter sets of the Bayesian active learning; ``1`` scores them in the calling process.
 
     *  **Surrogate model predictions**  using the trained metamodel to predict the model outputs at  Monte Carlo collocation points according to the user-defined prior samples (taken from a uniform distribution).
@@ -545,6 +549,12 @@ parameter space for the remaining iterations. The switch is logged, and recorded
 iteration in ``BAL_dictionary.pkl`` so an archived result shows which points were chosen
 under which regime. Setting the key to ``True`` or ``False`` forces one behaviour for the
 whole calibration.
+
+Exploration is scored by the distance of a candidate parameter set from the parameter sets that have been simulated, measured in the unit hypercube of the calibration ranges so that parameters with different units count alike. The exploration score and the utility, each normalized to a sum of one over the candidates, enter the ranking with equal weight. A candidate whose utility cannot be computed is ranked last. If the utility says nothing at all, because it failed or is zero for every candidate, the next point is the one farthest from the simulated ones, and the iteration is recorded as ``global_mc``.
+
+.. note::
+
+    Up to release 1.10.1 the exploration score was zero in all drivers. The switch was logged and recorded, but the points were selected by exploitation alone. An archived ``BAL_dictionary.pkl`` of such a version with ``exploration_tradeoff_active = True`` therefore holds points that were chosen without exploration.
 
 .. warning::
 
@@ -641,7 +651,7 @@ getting the wrong answer:
 3. **Multi-start local refinement** (``--refine``, needs ``--surrogate``). The emulator's
    joint posterior is maximised over the continuous calibration ranges with a bounded
    quasi-Newton method, started from the highest-density samples **and from one
-   representative of every detected mode**.
+   representative of every detected mode**. The likelihood is the one of the calibration: it includes the variance of the emulator unless the calibration was run with ``include_surrogate_error = False``, a setting that is read from ``BAL_dictionary.pkl``. The search runs in the unit hypercube of the calibration ranges and takes the slope of the likelihood over a step of 1e-3 of each range, which also an emulator pickled in single precision by an earlier release can resolve.
 
 Stage 3 is what makes the reported optimum both precise and global:
 
@@ -806,6 +816,8 @@ file:
        **not** supplied by ``include_surrogate_error``, which only ever accounts for
        the surrogate's approximation of the solver, never for the solver's own error.
        Set it if you can defend a value.
+
+A measured value of zero has no relative error, so it needs a non-zero ``<target>_ERROR``; an observation without variance is refused before the first simulation. A calibration target that comes out the same in every run at a calibration point, such as the water depth at a point that stays dry, does not stop the emulator: the emulator returns that value there without emulator uncertainty, and the log names the point once. Such a point carries no information on the calibration parameters and is better removed from the calibration-points file.
 
 .. warning::
 

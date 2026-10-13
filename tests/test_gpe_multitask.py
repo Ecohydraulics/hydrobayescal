@@ -332,8 +332,9 @@ def test_multitask_cov_next_to_training_points_is_accepted_by_the_bal_sampler():
     likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(
         num_tasks=2, noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
     likelihood.noise = 1e-5
+    # In single precision: the precision of every emulator up to release 1.10.1, of the emulators those releases pickled, and the one this safeguard exists for. In double precision this emulator needs no clipping, see test_gpe_precision.py.
     sm = MultiGPyTraining(x, y, kernel, training_iter=150, likelihood=likelihood,
-                          optimizer="adam", lr=0.07, number_quantities=2)
+                          optimizer="adam", lr=0.07, number_quantities=2, precision="single")
     sm.train_tasks_variables()
 
     candidates = np.clip(np.repeat(x, 10, axis=0) + rng.normal(scale=0.01, size=(90, 2)), 0.0, 1.0)
