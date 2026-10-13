@@ -36,6 +36,11 @@ def _precision_dtype(precision):
         raise ValueError(f"Unknown precision '{precision}'. Use 'double' (the default) or 'single'.") from None
 
 
+def _emulator_dtype(emulator):
+    """torch type this emulator trains in. An object of a release up to 1.10.1 has no precision setting and stays in single precision."""
+    return _precision_dtype(getattr(emulator, "precision", "single"))
+
+
 def _model_dtype(model):
     """Floating-point type a model computes in, read from its parameters.
 
@@ -285,10 +290,7 @@ class GPyTraining:
         else:
             self.likelihood = np.full(self.n_obs, likelihood)
 
-    @property
-    def dtype(self):
-        """torch type this emulator trains in. An object of a release up to 1.10.1 has no precision setting and stays in single precision."""
-        return _precision_dtype(getattr(self, "precision", "single"))
+    dtype = property(_emulator_dtype)
 
     def convert_to_tensor(self, array, dtype=None):
         """
@@ -629,10 +631,7 @@ class MultiGPyTraining:
         self.noise_values = []  # To track noise values
         self.multitask_cov = [] # To store multitask covariance matrices (Kronecker product of task kernel and input kernel)
 
-    @property
-    def dtype(self):
-        """torch type this emulator trains in. An object of a release up to 1.10.1 has no precision setting and stays in single precision."""
-        return _precision_dtype(getattr(self, "precision", "single"))
+    dtype = property(_emulator_dtype)
 
     def train_tasks_variables(self):#Training variables at each location separately
         """
