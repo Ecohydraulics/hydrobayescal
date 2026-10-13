@@ -918,10 +918,18 @@ class SequentialDesign:
         Returns:
             float: analytical BAL criteria for the given input distribution
         """
-        n_obs = observations.shape[0]
-
         if observations.ndim == 2:
             observations = observations.reshape(-1)
+
+        # An output without emulator uncertainty (e.g., a calibration point that is dry in every training run) has a prior that no observation can change. It adds nothing to the utility and its variance has no inverse, so it is left out of the closed form.
+        uncertain = np.asarray(y_std, dtype=float) > 0.0
+        if not uncertain.any():
+            return 0.0
+        if not uncertain.all():
+            y_mean, y_std = np.asarray(y_mean)[uncertain], np.asarray(y_std)[uncertain]
+            observations, error = observations[uncertain], np.asarray(error)[uncertain]
+
+        n_obs = observations.shape[0]
 
         # Prior
         prior_cov = np.diag(y_std ** 2)
