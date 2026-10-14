@@ -4,6 +4,12 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The `chebyshev` rule ran the requested number of runs per calibration parameter.** chaospy builds the Chebyshev and the nested rules as a tensor product of `n` nodes per parameter, so `init_runs = 16` over two parameters gave 256 parameter sets and 30 runs over three parameters gave 27,000. Over five or more parameters the design did not fit into memory. `grid` was reduced to about `init_runs` by bayesvalidrox 2.2, but rounded up to the next complete grid (25 runs for 20 requested over two parameters). All four rules (`chebyshev`, `grid`, `nested_chebyshev`, `nested_grid`) now return exactly `init_runs` parameter sets: the smallest tensor product that holds them is built, and `init_runs` of its nodes are kept by greedy maximin (`initial_design.tensor_rule_samples`). A complete tensor product keeps all its nodes, and the log names its size when the design is incomplete. The drivers call `initial_design.generate_initial_design` in place of `ExpDesigns.generate_ed`.
+- **`drivers/telemac_extract.py` did not pass `gaia_layer_average` on**, so a layer-averaged sand fraction could not be extracted outside a calibration. It is read from `extraction['gaia_layer_average']` or, as in a calibration configuration, `morphodynamic_simulation['gaia_layer_average']`. `extraction['input_gaia_slf_file']` names the GAIA result file, without which TELEMAC and GAIA quantities could not be extracted together, and `hydrodynamic_simulation['solver_name']` is passed on. The script also passed `n_processors`, which the model ignores, instead of `n_cpus`.
+
 ## [1.11.0] - 2026-10-13
 
 Two changes to the Gaussian process emulators, double precision and a prediction in pieces, and the corrections of ten findings of a code review of `surrogate/`. Each finding was reproduced with the released code before it was changed, and each has a test that fails without the correction. Five of them can be reached with the shipped drivers; they come first among the corrections. A second, independent review of all changes since 1.10.1 found one more defect, in an option the drivers do not use; its correction is part of the entry on `SequentialDesign`.
