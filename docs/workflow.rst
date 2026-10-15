@@ -74,6 +74,8 @@ Sobol has one further property the workflow depends on: it is **extensible**. Th
 length :math:`n`, so the design can be grown without discarding a single simulation that
 has already been run. Latin hypercube and random designs have no such guarantee.
 
+``chebyshev`` and ``grid`` place their nodes as a tensor product, that is, every combination of a set of nodes per calibration parameter. A complete design therefore has :math:`k^d` runs for :math:`k` nodes per parameter and :math:`d` parameters. HydroBayesCal builds the smallest such product that holds ``init_runs`` points and keeps ``init_runs`` of its nodes, chosen to spread over the parameter space; the log names the size of the complete design. Set ``init_runs`` to that size (for example 16 for a 4 x 4 grid over two parameters) to run the complete grid. Beyond two or three calibration parameters, a tensor product is a poor design for a Gaussian process emulator, and ``sobol`` is the better choice.
+
 In a staged initial design (``adaptive_init_runs``, see below), a ``random`` or ``latin_hypercube`` design is therefore grown by a fresh block of the same rule. The nodes of ``chebyshev`` and ``grid`` depend on the size of the design, so a second set of nodes neither continues nor complements the first; their later blocks are drawn as a Latin hypercube, with a warning in the log. ``initial-design.json`` records the rule every block was drawn with.
 
 The full list of accepted methods is ``random``, ``latin_hypercube``, ``sobol``,
@@ -352,8 +354,8 @@ This class contains the general attributes that a hydrodynamic simulation requir
   * **"latin_hypercube"** - Latin Hypercube Sampling (LHS).
   * **"halton"** - Halton sequence sampling.
   * **"hammersley"** - Hammersley sequence sampling.
-  * **"chebyshev"** - Chebyshev nodes.
-  * **"grid"** - Grid-based sampling.
+  * **"chebyshev"** - Chebyshev nodes, as a tensor product (see :ref:`initial-design`).
+  * **"grid"** - Grid-based sampling, as a tensor product (see :ref:`initial-design`).
   * **"user"** - User-defined sampling.
 
     If "user" is selected, a ``.csv`` file containing user-defined collocation points must be provided
