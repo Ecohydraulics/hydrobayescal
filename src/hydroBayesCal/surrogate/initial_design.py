@@ -51,6 +51,8 @@ __all__ = [
     "recommended_init_runs",
     "initial_design_ladder",
     "validate_sampling_method",
+    "tensor_rule_samples",
+    "generate_initial_design",
     "sobol_block",
     "loo_predictivity",
     "initial_design_sufficiency",
@@ -124,6 +126,12 @@ DEFAULT_THRESHOLDS = {
 #: A sharp posterior in a wide prior is accepted rarely, and the resolution criterion
 #: has to measure the design rather than the size of the prior sample.
 PRIOR_SAMPLE_CAP = 60000
+
+#: Rules that chaospy builds as a tensor product: asked for ``n`` points, they return ``n`` nodes per calibration parameter, that is ``n ** ndim`` points (256 for 16 runs over two parameters, 27,000 for 30 runs over three). The nested forms have ``2 ** n - 1`` nodes per parameter.
+TENSOR_RULES = ("chebyshev", "nested_chebyshev", "grid", "nested_grid")
+
+#: Largest tensor product :func:`tensor_rule_samples` builds to select a design from. With two nodes per parameter it is reached at 18 calibration parameters, where a grid is no longer a sensible design anyway.
+TENSOR_NODE_CAP = 2 ** 18
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +335,110 @@ def validate_sampling_method(name):
     return canonical
 
 
+def _nodes_per_parameter(order, method):
+    """Number of nodes per calibration parameter of a tensor rule of the given order."""
+    return 2 ** order - 1 if method.startswith("nested_") else order
+
+
+def _maximin_subset(points, n_points):
+    """Indices of ``n_points`` rows of ``points`` (unit hypercube) chosen by greedy maximin.
+
+    Starts at the node closest to the center of the hypercube and adds, one at a time, the node farthest from all nodes chosen so far. Deterministic, so a restart reproduces the design.
+    """
+    chosen = [int(np.argmin(np.sum((points - 0.5) ** 2, axis=1)))]
+    distance = np.sum((points - points[chosen[0]]) ** 2, axis=1)
+    for _ in range(n_points - 1):
+        distance[chosen] = -1.0
+        chosen.append(int(np.argmax(distance)))
+        distance = np.minimum(distance, np.sum((points - points[chosen[-1]]) ** 2, axis=1))
+    return np.sort(np.asarray(chosen))
+
+
+def _prior_distribution(exp_design):
+    """Joint chaospy distribution of the calibration parameters of a ``bayesvalidrox`` design."""
+    if getattr(exp_design, "raw_data", None) is None and hasattr(exp_design, "init_param_space"):
+        exp_design.init_param_space()
+    distribution = getattr(exp_design, "j_dist", None)
+    if distribution is None or not hasattr(distribution, "inv"):
+        raise ValueError("The experimental design carries no joint parameter distribution (j_dist) to place grid or Chebyshev nodes in.")
+    return distribution
+
+
+def tensor_rule_samples(exp_design, n_samples, sampling_method="chebyshev"):
+    """Exactly ``n_samples`` parameter sets on the nodes of a grid or Chebyshev rule.
+
+    chaospy builds these rules as a tensor product of ``n_samples`` nodes per calibration parameter, so ``bayesvalidrox`` returned ``n_samples ** ndim`` parameter sets instead of the requested ``n_samples`` (``grid`` is reduced to about ``n_samples`` by ``bayesvalidrox`` 2.2, ``chebyshev`` and the nested rules are not). Here the tensor product is built with the fewest nodes per parameter that give at least ``n_samples`` points, in the unit hypercube, and ``n_samples`` of them are selected by greedy maximin, so that the design keeps the node positions of the rule and spreads over the whole parameter space. When ``n_samples`` is a full tensor product (16 runs of a 4 x 4 grid over two parameters), all nodes are used. The selected nodes are mapped to the parameter space through the inverse of the prior distribution, as chaospy does for every rule.
+
+    Parameters
+    ----------
+    exp_design : object
+        ``bayesvalidrox`` ``ExpDesigns`` instance; its joint distribution ``j_dist`` maps the unit hypercube to the parameter space.
+    n_samples : int
+        Number of parameter sets.
+    sampling_method : str
+        One of :data:`TENSOR_RULES`.
+
+    Returns
+    -------
+    array
+        ``[n_samples, ndim]`` parameter sets.
+
+    Raises
+    ------
+    ValueError
+        If the rule is not a tensor rule, or if the tensor product would exceed :data:`TENSOR_NODE_CAP` points.
+    """
+    import chaospy
+
+    n_samples = int(n_samples)
+    method = validate_sampling_method(sampling_method)
+    if method not in TENSOR_RULES:
+        raise ValueError(f"'{method}' is not a tensor rule; valid are {', '.join(TENSOR_RULES)}.")
+    if n_samples < 1:
+        raise ValueError(f"A design needs at least one parameter set, got {n_samples}.")
+    distribution = _prior_distribution(exp_design)
+    ndim = len(distribution)
+
+    order = 1
+    while _nodes_per_parameter(order, method) ** ndim < n_samples:
+        order += 1
+    n_nodes = _nodes_per_parameter(order, method) ** ndim
+    if n_nodes > TENSOR_NODE_CAP:
+        raise ValueError(
+            f"A '{method}' design of {n_samples} runs over {ndim} calibration parameters is selected from a tensor product of "
+            f"{n_nodes} nodes, more than the {TENSOR_NODE_CAP} this function builds. Use 'sobol' for this many parameters.")
+
+    unit = np.atleast_2d(chaospy.generate_samples(order, domain=ndim, rule=method)).reshape(ndim, -1).T
+    if unit.shape[0] > n_samples:
+        per_parameter = _nodes_per_parameter(order, method)
+        logger_warn.warning(
+            f"A complete '{method}' design over {ndim} calibration parameters with {per_parameter} nodes per parameter has "
+            f"{unit.shape[0]} points; {n_samples} of them are used, selected to spread over the parameter space. Set init_runs "
+            f"to {unit.shape[0]} for the complete design.")
+        unit = unit[_maximin_subset(unit, n_samples)]
+    samples = np.asarray(distribution.inv(unit.T), dtype=float)
+    return np.atleast_2d(samples.reshape(ndim, -1).T)
+
+
+def generate_initial_design(exp_design):
+    """Generate the initial design of a ``bayesvalidrox`` ``ExpDesigns`` into ``exp_design.x``.
+
+    The drivers call this in place of ``exp_design.generate_ed()``. For a grid or Chebyshev rule it draws exactly ``exp_design.n_init_samples`` parameter sets with :func:`tensor_rule_samples`, where ``generate_ed`` would build the full tensor product (at 40 runs over five parameters, 10^8 parameter sets, more memory than the workstation has). Every other rule, and a design supplied by the user, goes to ``generate_ed`` unchanged.
+
+    Parameters
+    ----------
+    exp_design : object
+        ``bayesvalidrox`` ``ExpDesigns`` instance with ``sampling_method`` and ``n_init_samples`` set.
+    """
+    method = str(getattr(exp_design, "sampling_method", "")).strip().lower()
+    if (method in TENSOR_RULES and getattr(exp_design, "x", None) is None
+            and not getattr(exp_design, "input_data_given", False)):
+        exp_design.x = tensor_rule_samples(exp_design, exp_design.n_init_samples, method)
+        exp_design.n_init_samples = exp_design.x.shape[0]
+        return
+    exp_design.generate_ed()
+
+
 def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol",
                 tolerance=1e-8, return_rule=False):
     """Rows ``n_from`` to ``n_to`` of the design, continuing the existing sequence.
@@ -342,7 +454,7 @@ def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol"
     back to a Latin hypercube block, because a silently reordered design would attach
     every stored model output to the wrong parameter set.
 
-    The remaining rules (``grid``, ``chebyshev`` and their nested forms) place their nodes according to the size of the design, so a second set of nodes neither continues nor complements the first. Their later blocks are drawn as a Latin hypercube as well, with a warning.
+    The remaining rules (``grid``, ``chebyshev`` and their nested forms) place their nodes according to the size of the design, so a second set of nodes neither continues nor complements the first. Their first block comes from :func:`tensor_rule_samples`, which returns exactly ``n_to`` parameter sets, and their later blocks are drawn as a Latin hypercube, with a warning.
 
     Parameters
     ----------
@@ -378,6 +490,8 @@ def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol"
         return (block, rule) if return_rule else block
 
     if n_from == 0:
+        if method in TENSOR_RULES:
+            return result(tensor_rule_samples(exp_design, n_to, method), method)
         return result(exp_design.generate_samples(n_to, method), method)
 
     if extensible:

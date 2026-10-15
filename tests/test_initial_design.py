@@ -13,12 +13,15 @@ import numpy as np
 import pytest
 
 from hydroBayesCal.surrogate.initial_design import (
+    TENSOR_RULES,
+    generate_initial_design,
     initial_design_ladder,
     initial_design_sufficiency,
     loo_predictivity,
     recommended_init_runs,
     run_staged_initial_design,
     sobol_block,
+    tensor_rule_samples,
     validate_sampling_method,
 )
 
@@ -51,6 +54,16 @@ class _ExpDesign:
                                    for low, high in self.ranges])
         return chaospy.generate_samples(int(n_samples), domain=distribution,
                                         rule=method).T
+
+    @property
+    def j_dist(self):
+        import chaospy
+
+        return chaospy.J(*[chaospy.Uniform(low, high) for low, high in self.ranges])
+
+    def generate_ed(self):
+        self.x = self.generate_samples(self.n_init_samples, self.sampling_method)
+        self.n_init_samples = self.x.shape[0]
 
 
 class _StubModel:
@@ -417,3 +430,66 @@ def test_the_record_names_the_rule_every_block_was_drawn_with(tmp_path, rule):
         record = json.load(handle)
     assert record["sampling_method"] == rule
     assert [stage["sampling_method"] for stage in record["stages"]] == [rule] * len(record["stages"])
+
+
+# ---------------------------------------------------------------------------
+# grid and Chebyshev rules
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("rule", TENSOR_RULES)
+@pytest.mark.parametrize("n_runs", [8, 27, 30])
+def test_a_tensor_rule_returns_the_requested_number_of_runs(monkeypatch, rule, n_runs):
+    """chaospy returned n ** ndim parameter sets for n requested ones: 27,000 instead of 30 over three parameters."""
+    _warnings_of(monkeypatch)
+    points = tensor_rule_samples(_ExpDesign(RANGES), n_runs, rule)
+
+    assert points.shape == (n_runs, 3)
+    assert np.unique(points.round(12), axis=0).shape[0] == n_runs
+    assert np.all((points > 0.0) & (points < 1.0))
+
+
+def test_a_complete_tensor_product_keeps_every_node_of_the_rule(monkeypatch):
+    messages = _warnings_of(monkeypatch)
+    design = _ExpDesign(RANGES)
+
+    points = tensor_rule_samples(design, 27, "chebyshev")
+    nodes = design.generate_samples(3, "chebyshev")
+
+    assert np.allclose(np.sort(points, axis=0), np.sort(nodes, axis=0))
+    assert not messages
+
+
+def test_an_incomplete_tensor_product_stays_on_the_nodes_and_says_how_to_complete_it(monkeypatch):
+    messages = _warnings_of(monkeypatch)
+    design = _ExpDesign(RANGES)
+
+    points = tensor_rule_samples(design, 30, "chebyshev")
+    nodes = design.generate_samples(4, "chebyshev")
+
+    assert all(np.any(np.all(np.isclose(nodes, point), axis=1)) for point in points)
+    assert len(messages) == 1 and "64" in messages[0]
+    assert np.allclose(points, tensor_rule_samples(design, 30, "chebyshev"))
+
+
+def test_a_tensor_product_that_cannot_be_built_is_refused():
+    with pytest.raises(ValueError, match="sobol"):
+        tensor_rule_samples(_ExpDesign([[0.0, 1.0]] * 20), 40, "grid")
+
+
+@pytest.mark.parametrize("rule", ["chebyshev", "sobol"])
+def test_the_initial_design_has_the_configured_size(monkeypatch, rule):
+    _warnings_of(monkeypatch)
+    design = _ExpDesign(RANGES, sampling_method=rule)
+    design.n_init_samples = 20
+
+    generate_initial_design(design)
+
+    assert design.x.shape == (20, 3)
+    assert design.n_init_samples == 20
+
+
+def test_the_first_block_of_a_staged_chebyshev_design_has_the_size_of_the_block(monkeypatch):
+    _warnings_of(monkeypatch)
+    block, used = sobol_block(_ExpDesign(RANGES), 0, 16, sampling_method="chebyshev", return_rule=True)
+
+    assert block.shape == (16, 3)
+    assert used == "chebyshev"
