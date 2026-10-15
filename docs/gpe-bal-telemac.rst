@@ -148,8 +148,8 @@ Parameters
    * **"latin_hypercube"** - Latin Hypercube Sampling (LHS).
    * **"halton"** - Halton sequence sampling.
    * **"hammersley"** - Hammersley sequence sampling.
-   * **"chebyshev"** - Chebyshev nodes.
-   * **"grid"** - Grid-based sampling.
+   * **"chebyshev"** - Chebyshev nodes, as a tensor product (see :ref:`initial-design`).
+   * **"grid"** - Grid-based sampling, as a tensor product (see :ref:`initial-design`).
    * **"user"** - User-defined sampling. (Requires a user-defined .csv file with the sampling points.)
 
 Returns

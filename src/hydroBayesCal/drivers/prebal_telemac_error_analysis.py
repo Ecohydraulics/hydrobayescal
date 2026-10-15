@@ -19,6 +19,7 @@ from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialD
 from hydroBayesCal.surrogate.gpe_skl import *
 from hydroBayesCal.surrogate.gpe_gpytorch import *
 from hydroBayesCal.function_pool import *
+from hydroBayesCal.surrogate.initial_design import generate_initial_design
 
 
 
@@ -92,7 +93,8 @@ def setup_experiment_design(
     exp_design.explore_method = 'random'
     exp_design.util_func = tp_selection_criteria  # 'bme' 'dkl'
     exp_design.exploit_method = 'bal'
-    samples = exp_design.generate_ed()
+    # Not exp_design.generate_ed(): for a grid or Chebyshev rule it would build n ** ndim parameter sets.
+    generate_initial_design(exp_design)
     return exp_design
 
 
