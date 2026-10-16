@@ -142,14 +142,17 @@ sampling = {
     #   'rejection_sampling' (default)  keeps a prior sample with probability
     #       likelihood/max(likelihood). The samples are distinct, but their NUMBER
     #       falls as the likelihood sharpens - so a well-constrained calibration can
-    #       end with a posterior too small to estimate a density from, and raising
-    #       prior_samples to compensate is expensive (the surrogate is evaluated at
-    #       every one, and its covariance grows with the square of that count).
+    #       end with a posterior too small to estimate a density from. Raising
+    #       prior_samples compensates at the cost of one surrogate evaluation and one
+    #       likelihood per sample; time and memory grow in proportion to their number.
     #   'bayesian_weighting'            resamples the prior with replacement in
     #       proportion to the likelihood weights, returning a full-size posterior
     #       from the same likelihoods at no extra model cost. The samples repeat, so
     #       read the effective sample size it logs alongside the count.
-    # Switch to 'bayesian_weighting' if a run reports the low_posterior_sample verdict.
+    # Switch to 'bayesian_weighting' if a run reports the low_posterior_sample verdict:
+    # the weights use the likelihoods of all prior samples, which is worth more than the
+    # few samples that rejection sampling keeps. The verdict judges the effective sample
+    # size, not the number of rows, so it can persist; then only more prior_samples help.
     'posterior_sampling_method': 'rejection_sampling',
 }
 

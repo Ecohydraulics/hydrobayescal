@@ -313,3 +313,41 @@ def test_a_new_validation_attempt_does_not_reuse_the_files_of_the_previous_one(t
     assert _names(first)[0] == "collocation-points-validation_1.csv"
     assert _names(second)[0] == "collocation-points-validation_2.csv"
     assert not set(first) & set(second)
+
+
+# --------------------------------------------------------------------------- #
+# standalone extraction driver
+# --------------------------------------------------------------------------- #
+def test_the_standalone_extraction_derives_layer_averages_next_to_telemac_quantities(tmp_path, monkeypatch):
+    """``drivers/telemac_extract.py`` did not pass ``gaia_layer_average`` on and could not name the GAIA result file."""
+    from hydroBayesCal.drivers import telemac_extract
+
+    model_dir = tmp_path / "simulation"
+    model_dir.mkdir()
+    _write_selafin(model_dir / "telemac_1.slf", {"WATER DEPTH": 1.5, "SCALAR VELOCITY": 0.7})
+    _write_selafin(model_dir / "gaia_1.slf", dict(SAND_RATIOS, **{"CUMUL BED EVOL": -0.10}))
+    pd.DataFrame({"Point": ["P1", "P2"], "X": [2.0, 7.0], "Y": [3.0, 6.0],
+                  "WATER DEPTH_DATA": [1.4, 1.6], "WATER DEPTH_ERROR": [0.05, 0.05],
+                  "FINE SEDIMENT FRACTION_DATA": [0.4, 0.5], "FINE SEDIMENT FRACTION_ERROR": [0.05, 0.05],
+                  }).to_csv(tmp_path / "points.csv", index=False)
+    config = tmp_path / "config_extraction.py"
+    config.write_text(
+        f"paths = {{'model_dir': {str(model_dir)!r}, 'res_dir': {str(tmp_path)!r}, "
+        f"'calibration_pts_file_path': {str(tmp_path / 'points.csv')!r}}}\n"
+        "calibration = {'dict_output_name': 'extraction-data'}\n"
+        f"morphodynamic_simulation = {{'gaia_layer_average': {FINE_FRACTION!r}}}\n"
+        "extraction = {'calibration_quantities': ['WATER DEPTH', 'FINE SEDIMENT FRACTION'],\n"
+        "              'extraction_quantities': ['WATER DEPTH', 'FINE SEDIMENT FRACTION', 'CUMUL BED EVOL'],\n"
+        "              'input_slf_file': 'telemac_1.slf', 'input_gaia_slf_file': 'gaia_1.slf',\n"
+        "              'output_extraction_time': 'last', 'time_index': 0, 'n': 1}\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["telemac_extract.py", "--config", str(config)])
+
+    telemac_extract.main()
+
+    detailed = next(tmp_path.rglob("extraction-data-detailed.json"))
+    output = json.loads(detailed.read_text())
+    for point in ("P1", "P2"):
+        assert output[point][0]["WATER DEPTH"] == pytest.approx(1.5, rel=1e-5)
+        assert output[point][0]["FINE SEDIMENT FRACTION"] == pytest.approx(0.316 / 0.68, rel=1e-5)
+        assert output[point][0]["CUMUL BED EVOL"] == pytest.approx(-0.10, rel=1e-5)

@@ -24,6 +24,7 @@ from hydroBayesCal.function_pool import *
 from hydroBayesCal.surrogate.posterior_analysis import ITERATION_KEYS, record_iteration
 from hydroBayesCal.surrogate.target_agreement import finalize_target_agreement
 from hydroBayesCal.surrogate.initial_design import (
+    generate_initial_design,
     log_initial_design,
     recommended_init_runs,
     run_staged_initial_design,
@@ -135,17 +136,23 @@ def setup_experiment_design(
     exp_design.explore_method = 'random'
     exp_design.util_func = tp_selection_criteria  # 'bme' 'dkl'
     exp_design.exploit_method = 'bal'
+
+
+    exp_design.n_new_samples = 1
+    exp_design.n_max_samples = complex_model.max_runs
+    # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
+    exp_design.explore_method = 'random'
+    exp_design.util_func = tp_selection_criteria  # 'bme' 'dkl'
+    exp_design.exploit_method = 'bal'
+
     # ------------------------------------------------------------------
     # Generate an initial BayesValidRox design ONLY when no external
     # collocation points were supplied.
     # ------------------------------------------------------------------
     if complex_model.user_collocation_points is None:
-        # generate_ed() returns None.
-        # The generated design is written into exp_design.x.
-        exp_design.generate_ed()
+        generate_initial_design(exp_design)
 
     else:
-
         logger.info(
             "Skipping BayesValidRox initial-design generation because "
             "user_collocation_points were supplied."
