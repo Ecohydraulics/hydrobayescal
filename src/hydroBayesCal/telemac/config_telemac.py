@@ -35,7 +35,7 @@ classification_tm_gaia_dict = {
     "TOTAL SEDIMENT DISCHARGE": "gaia",
     "SEDIMENT DIAMETER": "gaia",
     "CRITICAL SHEAR STRESS": "gaia",
-    "SAND RAT1": "gaia",
+    "LAY SAND RAT": "gaia",
 }
 
 

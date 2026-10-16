@@ -45,14 +45,8 @@ morphodynamic_simulation = {
     'gaia_cas':                   "Ering_hydromorphodynamics_gaia.cas",
     'gaia_results_filename_base': "results_hydromorphodynamics_gaia",
 
-    'gaia_layer_average': {
-        "SAND RAT": {
-            "layers": [1, 2],
-            "thicknesses": [0.08, 0.60],
-            "classes":[1]
-        }
+    'gaia_layer_average': {"LAY SAND RAT": {"sand_classes": [1], "layers": [1, 2], "thicknesses": [0.08, 0.60]}}
     }
-}
 
 # ============================================================================
 # CALIBRATION PARAMETERS - TELEMAC FRICTION ZONES + GAIA SHIELDS PARAMETERS
@@ -66,17 +60,17 @@ calibration = {
                    "gaiaCLASSES SHIELDS PARAMETERS 3",
                    ], 
 
-    'param_values': [[0.03, 0.070],  # critical shields parameter class 1
-                     [0.03, 0.070],
+    'param_values': [[0.02, 0.080],  # critical shields parameter class 1
+                     [0.02, 0.080],
                      #[0.03, 0.070],
-                     [0.03, 0.070]],
+                     [0.02, 0.080]],
     # Quantities to extract from simulation - USE STANDARD NAMES
-    'extraction_quantities': ["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL","SAND RAT1"],
+    'extraction_quantities': ["WATER DEPTH","SCALAR VELOCITY","CUMUL BED EVOL","LAY SAND RAT"],
 
     # Quantities used for BAL calibration - must match columns in measurements.csv
      #'calibration_quantities': ["SAND RAT1","CUMUL BED EVOL"],
      #'calibration_quantities': ["CUMUL BED EVOL"],
-     'calibration_quantities': ["SAND RAT1"],
+     'calibration_quantities': ["LAY SAND RAT"],
 
     # Three relative error terms, each a fraction of every measured value, added to
     # the observation variance alongside the absolute <target>_ERROR column:
@@ -91,9 +85,9 @@ calibration = {
     #                           conditions). Independent of the emulator and NOT
     #                           supplied by include_surrogate_error. Set it only if
     #                           you can defend a value.
-    'measurement_error':      0.1,
+    'measurement_error':      0.05,
     'gpe_error':              0.02,
-    'model_structural_error': 0.2,
+    'model_structural_error': 0.0,
 
     'dict_output_name': "extraction-data",
 }
@@ -164,7 +158,7 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0,1,2],
-    'iterations_to_plot': [3],
+    'iterations_to_plot': [0],
     # -------------------------
     # posterior plotting options
     # -------------------------

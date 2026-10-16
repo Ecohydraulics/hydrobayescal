@@ -147,35 +147,35 @@ def main():
         best_estimate_value=config.plotting['posterior_plotting_option'],
         post_loglikelihood_arrays=post_loglikelihood
     )
-    comparison_results = plotter.plot_posterior_model_comparison(
-        bal_dictionary_1=os.path.join(config.paths["res_dir"], "auto-saved-results-HydroBayesCal", "calibration-data", "WATER DEPTH_SCALAR VELOCITY", "BAL_dictionary.pkl"),
-        bal_dictionary_2=os.path.join(config.paths["res_dir"], "auto-saved-results-HydroBayesCal", "calibration-data", "WATER DEPTH_SCALAR VELOCITY_SOGPE_postBAL", "BAL_dictionary.pkl"),
-        model_names=("MO-GPE", "SO-GPE"),
-        parameter_names=config.plotting["parameter_names"],
-        parameter_units=config.plotting["parameter_units"],
-        param_values=config.calibration['param_values'],
-        plot_prior=True,
-        normalize_density=True,
-        n_bins=10,
-        ncols=2,
-        figsize_per_panel=(5.5, 4.0),
-        filename="posterior_comparison_MO_vs_SO.svg"
-    )
-    # ---------------------------------------------------------------------
-    # Per-parameter optimum over the BAL iterations, and whether the combination
-    # of those per-parameter optima is a jointly plausible parameter set.
-    # Both work on result files written before these diagnostics existed.
-    # ---------------------------------------------------------------------
-    plotter.plot_parameter_optimum_convergence(
-        bayesian_dict=bayesian_data,
-        parameter_names=config.calibration["parameters"],
-        param_values=full_complexity_model.param_values,
-    )
-    plotter.plot_marginal_vs_joint(
-        bayesian_dict=bayesian_data,
-        parameter_names=config.calibration["parameters"],
-        param_values=full_complexity_model.param_values,
-    )
+    # comparison_results = plotter.plot_posterior_model_comparison(
+    #     bal_dictionary_1=os.path.join(config.paths["res_dir"], "auto-saved-results-HydroBayesCal", "calibration-data", "WATER DEPTH_SCALAR VELOCITY", "BAL_dictionary.pkl"),
+    #     bal_dictionary_2=os.path.join(config.paths["res_dir"], "auto-saved-results-HydroBayesCal", "calibration-data", "WATER DEPTH_SCALAR VELOCITY_SOGPE_postBAL", "BAL_dictionary.pkl"),
+    #     model_names=("MO-GPE", "SO-GPE"),
+    #     parameter_names=config.plotting["parameter_names"],
+    #     parameter_units=config.plotting["parameter_units"],
+    #     param_values=config.calibration['param_values'],
+    #     plot_prior=True,
+    #     normalize_density=True,
+    #     n_bins=10,
+    #     ncols=2,
+    #     figsize_per_panel=(5.5, 4.0),
+    #     filename="posterior_comparison_MO_vs_SO.svg"
+    # )
+    # # ---------------------------------------------------------------------
+    # # Per-parameter optimum over the BAL iterations, and whether the combination
+    # # of those per-parameter optima is a jointly plausible parameter set.
+    # # Both work on result files written before these diagnostics existed.
+    # # ---------------------------------------------------------------------
+    # plotter.plot_parameter_optimum_convergence(
+    #     bayesian_dict=bayesian_data,
+    #     parameter_names=config.calibration["parameters"],
+    #     param_values=full_complexity_model.param_values,
+    # )
+    # plotter.plot_marginal_vs_joint(
+    #     bayesian_dict=bayesian_data,
+    #     parameter_names=config.calibration["parameters"],
+    #     param_values=full_complexity_model.param_values,
+    # )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """
-Ering hydrodynamic case driver: copy of src/hydroBayesCal/drivers/bal_telemac.py with config_Telemac.py as the default configuration. Keep in sync with the template (python env-scripts/sync-example-drivers.py).
+Ering case driver: copy of src/hydroBayesCal/drivers/bal_telemac.py with config_Ering.py as the
+default configuration. Keep in sync with the template.
 Code that trains a Gaussian Process Emulator (GPE) for any deterministic numerical model (i.e., hydrodynamic models) of Telemac
 Possible to couple with any other open source hydrodynamic software.
 Can use normal training (once) or sequential training (BAL)
@@ -73,7 +74,9 @@ def setup_experiment_design(
     parameter_sampling: str, optional
         The criteria for selecting the parameter sampling.
         Default: 'sobol'
-
+        IMPORTANT:
+        User-provided initial collocation points are handled directly by
+        run_complex_model() and are NOT assigned to BayesValidRox.
     Returns
     -------
     exp_design : object
@@ -89,6 +92,22 @@ def setup_experiment_design(
     """
     # Fail on an unusable sampling method here rather than several minutes into the run,
     # inside chaospy, with the model object already built.
+    # ------------------------------------------------------------------
+    # User points are handled outside BayesValidRox.
+    #
+    # Therefore, if "user" was passed as the sampling method but actual
+    # user_collocation_points are available, use Sobol internally for
+    # BayesValidRox instead.
+    # ------------------------------------------------------------------
+    if (
+            parameter_sampling_method == 'user'
+            and complex_model.user_collocation_points is not None
+    ):
+        logger.info(
+            "User collocation points were supplied. "
+            "They will be handled directly by HydroBayesCal/TELEMAC."
+        )
+
     parameter_sampling_method = validate_sampling_method(parameter_sampling_method)
     log_initial_design(recommended_init_runs(
         ndim=complex_model.ndim,
@@ -111,20 +130,28 @@ def setup_experiment_design(
     # 6) chebyshev 7) grid 8) user
     exp_design.sampling_method = parameter_sampling_method
     exp_design.n_new_samples = 1
-    # Only assign user points when there are any: bayesvalidrox switches the design to
-    # 'user' as soon as exp_design.x is set, so assigning None would be one library
-    # change away from silently discarding the configured sampling method.
-    if complex_model.user_collocation_points is not None:
-        exp_design.x = complex_model.user_collocation_points
     exp_design.n_max_samples = complex_model.max_runs
     # 1)'Voronoi' 2)'random' 3)'latin_hypercube' 4)'LOOCV' 5)'dual annealing'
     exp_design.explore_method = 'random'
     exp_design.util_func = tp_selection_criteria  # 'bme' 'dkl'
     exp_design.exploit_method = 'bal'
-    # generate_ed() returns None; it writes the design into exp_design.x.
-    exp_design.generate_ed()
-    return exp_design
+    # ------------------------------------------------------------------
+    # Generate an initial BayesValidRox design ONLY when no external
+    # collocation points were supplied.
+    # ------------------------------------------------------------------
+    if complex_model.user_collocation_points is None:
+        # generate_ed() returns None.
+        # The generated design is written into exp_design.x.
+        exp_design.generate_ed()
 
+    else:
+
+        logger.info(
+            "Skipping BayesValidRox initial-design generation because "
+            "user_collocation_points were supplied."
+        )
+
+    return exp_design
 
 def run_complex_model(complex_model,
                       experiment_design,
@@ -132,6 +159,7 @@ def run_complex_model(complex_model,
                       n_last=80,
                       adaptive_init_runs=True,
                       init_runs_min=None,
+                      gaia_layer_average=None,
                       ):
     """
     Executes the hydrodynamic model for a given experiment design and returns the collocation points,
@@ -155,6 +183,8 @@ def run_complex_model(complex_model,
         ``False`` runs all ``init_runs`` at once.
     init_runs_min : int, optional
         Size of the first block of the staged design.
+    gaia_layer_average : optional
+        GAIA layer averaging configuration.
 
     Returns
     -------
@@ -170,30 +200,96 @@ def run_complex_model(complex_model,
     """
     collocation_points = None
     model_outputs = None
+    # ==================================================================
+    # INITIAL MODEL RUNS
+    # ==================================================================
     if not complex_model.only_bal_mode:
-        collocation_points, model_outputs = run_staged_initial_design(
-            complex_model=complex_model,
-            experiment_design=experiment_design,
-            adaptive=adaptive_init_runs,
-            init_runs_min=init_runs_min,
-            output_extraction_time=output_extraction_time,
-            n=n_last)
+        # --------------------------------------------------------------
+        # CASE 1:
+        # User supplied the collocation points.
+        #
+        # Bypass BayesValidRox initial sampling completely.
+        # --------------------------------------------------------------
+        if complex_model.user_collocation_points is not None:
+            collocation_points = np.atleast_2d(np.asarray(
+                    complex_model.user_collocation_points, dtype=float))
+            # ----------------------------------------------------------
+            # Validate dimensions
+            # ----------------------------------------------------------
+            if collocation_points.shape[1] != complex_model.ndim:
+                raise ValueError(
+                    "user_collocation_points has an invalid number of "
+                    "parameters. "
+                    f"Expected {complex_model.ndim}, "
+                    f"but got {collocation_points.shape[1]}."
+                )
+            n_user_points = collocation_points.shape[0]
+            # ----------------------------------------------------------
+            # Keep init_runs consistent with the actual user design.
+            # I recommend failing here rather than silently running a
+            # different number of simulations than configured.
+            # ----------------------------------------------------------
+            if n_user_points != complex_model.init_runs:
+                raise ValueError(
+                    "The number of user_collocation_points must match "
+                    "complex_model.init_runs. "
+                    f"init_runs={complex_model.init_runs}, "
+                    f"user points={n_user_points}.")
+            logger.info(
+                f"Running {n_user_points} user-provided collocation "
+                "points directly with the complex TELEMAC model.")
+            # ---------------------------------------------------------
+            # Run TELEMAC directly.
+            # ----------------------------------------------------------
+            complex_model.run_multiple_simulations(
+                collocation_points=collocation_points,
+                complete_bal_mode=complex_model.complete_bal_mode,
+                validation=complex_model.validation,
+                start_index=0,
+                output_extraction_time=output_extraction_time,
+                n=n_last,
+                gaia_layer_average=gaia_layer_average,)
+            # run_multiple_simulations() stores the resulting model
+            # evaluations in the complex-model object.
+            model_outputs = complex_model.model_evaluations
+        # --------------------------------------------------------------
+        # CASE 2:
+        # No user collocation points.
+        # Keep your original staged initial-design workflow unchanged.
+        # --------------------------------------------------------------
+        else:
+            collocation_points, model_outputs = (
+                run_staged_initial_design(
+                    complex_model=complex_model,
+                    experiment_design=experiment_design,
+                    adaptive=adaptive_init_runs,
+                    init_runs_min=init_runs_min,
+                    output_extraction_time=output_extraction_time,
+                    n=n_last,
+                    gaia_layer_average=gaia_layer_average,
+                )
+            )
+    # ==================================================================
+    # ONLY BAL MODE / RESTART
+    # ==================================================================
     else:
         try:
-            model_outputs = complex_model.output_processing(output_data_path=os.path.join(complex_model.restart_data_folder,
-                                                                                          f'initial-model-outputs.json'),
-                                                            delete_slf_files=complex_model.delete_complex_outputs,
-                                                            validation=complex_model.validation,
-                                                            filter_outputs=True,
-                                                            save_extraction_outputs=True,
-                                                            run_range_filtering=(1, complex_model.init_runs))
-            collocation_points = complex_model.restart_collocation_points
-
+            model_outputs = complex_model.output_processing(
+                output_data_path=os.path.join(
+                    complex_model.restart_data_folder,
+                    'initial-model-outputs.json'),
+                delete_slf_files=complex_model.delete_complex_outputs,
+                validation=complex_model.validation,
+                filter_outputs=True,
+                save_extraction_outputs=True,
+                run_range_filtering=(1,complex_model.init_runs))
+            collocation_points = (complex_model.restart_collocation_points)
         except FileNotFoundError:
-            logger.info('Saved collocation points or model results as numpy arrays not found. '
-                        'Please run initial runs first to execute only Bayesian Active Learning.')
-
-    return collocation_points, model_outputs#, observations, errors, nloc
+            logger.info(
+                'Saved collocation points or model results as numpy '
+                'arrays not found. Please run initial runs first to '
+                'execute only Bayesian Active Learning.')
+    return collocation_points, model_outputs
 
 def run_bal_model(collocation_points,
                   model_outputs,
@@ -208,8 +304,8 @@ def run_bal_model(collocation_points,
                   bal_exploration_tradeoff="auto",
                   output_extraction_time="mean_last",
                   n_last=80,
+                  gaia_layer_average=None,
                   posterior_sampling_method="rejection_sampling",
-                  bal_n_jobs=-1,
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -254,14 +350,6 @@ def run_bal_model(collocation_points,
         found to have more than one well-separated mode: pure exploitation refines
         whichever mode it started in, which is exactly how a local maximum survives to
         the end of a calibration. ``True`` and ``False`` force the behaviour.
-    output_extraction_time : str
-        Time mode for extracting the outputs of the runs selected by BAL, one of "mean_last", "last" or "index". It has to be the mode the initial design was extracted with, otherwise the surrogate is trained on two differently defined quantities; ``main()`` passes both from the ``extraction`` block of the configuration.
-    n_last : int
-        Number of final time steps averaged when ``output_extraction_time="mean_last"``.
-    posterior_sampling_method : str
-        ``"rejection_sampling"`` (default) or ``"bayesian_weighting"``, see :class:`~hydroBayesCal.surrogate.bal_functions.BayesianInference`.
-    bal_n_jobs : int
-        Number of worker processes that score the BAL candidates, passed to ``joblib``. ``-1`` (default) uses all cores, ``1`` scores them in the calling process.
 
     Returns
     -------
@@ -359,9 +447,6 @@ def run_bal_model(collocation_points,
                      f'{experiment_design.exploit_method}_{experiment_design.util_func}': np.zeros(n_iter),
                      'util_func': np.empty(n_iter, dtype=object), 'prior': prior, 'observations': complex_model.observations,
                      'errors': complex_model.measurement_errors,
-                     # Log-likelihood, and log prior density where the inference computes it, of the posterior samples of every iteration. With them the posterior sample of highest density, the joint maximum, can be read from an archived result file. Additive keys, read with .get by the plots.
-                     'post_loglikelihood': [None] * (n_iter + 1),
-                     'post_logpdf': [None] * (n_iter + 1),
                      # Makes the stored dictionary self-describing: without these no
                      # consumer can recover the parameter names or calibration ranges.
                      'calibration_parameters': complex_model.calibration_parameters,
@@ -375,7 +460,8 @@ def run_bal_model(collocation_points,
                      # Which exploration setting produced these training points, so an
                      # archived result file is readable without its configuration.
                      'bal_exploration_tradeoff': bal_exploration_tradeoff,
-                     'exploration_tradeoff_active': np.zeros(n_iter, dtype=bool)}
+                     'exploration_tradeoff_active': np.zeros(n_iter, dtype=bool),
+                     'post_likelihood': [None] * (n_iter + 1),}
     # Per-iteration posterior diagnostics (keep in sync with src/hydroBayesCal/drivers/bal_telemac.py,
     # the canonical driver). Additive keys: existing consumers read by key.
     for _key in ITERATION_KEYS:
@@ -425,42 +511,103 @@ def run_bal_model(collocation_points,
             # 1.2. Set up Likelihood
             if complex_model.num_calibration_quantities == 1:
                 kernel = gpytorch.kernels.ScaleKernel(
-                                    gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
-                                        )
+                    gpytorch.kernels.MaternKernel(
+                        nu=2.5,
+                        ard_num_dims=complex_model.ndim
+                    )
+                )
+
                 if complex_model.multitask_selection == "locations":
-                    # One calibration target with the locations as tasks: a single multitask GPE that learns the correlation between the calibration points, instead of one independent GPE per point.
                     multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
                         num_tasks=complex_model.nloc,
                         noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
                     )
-                    surrogate_object = MultiGPyTraining(collocation_points,
-                                                        model_outputs,
-                                                        kernel,
-                                                        training_iter=150,
-                                                        likelihood=multi_likelihood_loc,
-                                                        optimizer="adam", lr=0.01,
-                                                        number_quantities=complex_model.num_calibration_quantities,
-                                                        )
+
+                    multi_sm_loc = MultiGPyTraining(
+                        collocation_points,
+                        model_outputs,
+                        kernel,
+                        training_iter=150,
+                        likelihood=multi_likelihood_loc,
+                        optimizer="adam",
+                        lr=0.01,
+                        number_quantities=complex_model.num_calibration_quantities,
+                    )
+
+                    surrogate_object = multi_sm_loc
+
                 else:
                     likelihood = gpytorch.likelihoods.GaussianLikelihood(
-                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
-                    # Modify default kernel/likelihood values:
-                    likelihood.noise = 1e-5  # Initialize the noise with a very small value.
-                    # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
-                    sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
-                                     likelihood=likelihood, kernel=kernel,
-                                     training_iter=150,
-                                     optimizer="adam", lr=0.07,
-                                     verbose=False)
+                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
+                    )
+
+                    likelihood.noise = 1e-5
+
+                    sm = GPyTraining(
+                        collocation_points=collocation_points,
+                        model_evaluations=model_outputs,
+                        likelihood=likelihood,
+                        kernel=kernel,
+                        training_iter=150,
+                        optimizer="adam",
+                        lr=0.07,
+                        verbose=False
+                    )
+
                     surrogate_object = sm
+
             else:
+                if complex_model.multitask_selection == "SO_sequential":
+
+                    surrogate_models = {}
+
+                    for quantity_idx, var in enumerate(
+                            complex_model.calibration_quantities):
+                        # Extract this quantity at all measurement locations.
+                        #
+                        # Original ordering:
+                        # [Q1_P1, Q2_P1, ..., Qn_P1,
+                        #  Q1_P2, Q2_P2, ..., Qn_P2, ...]
+                        quantity_outputs = model_outputs[
+                                           :,
+                                           quantity_idx::complex_model.num_calibration_quantities
+                                           ]
+
+                        kernel = gpytorch.kernels.ScaleKernel(
+                            gpytorch.kernels.MaternKernel(
+                                nu=2.5,
+                                ard_num_dims=complex_model.ndim
+                            )
+                        )
+
+                        likelihood = gpytorch.likelihoods.GaussianLikelihood(
+                            noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
+                        )
+
+                        likelihood.noise = 1e-5
+
+                        sm = GPyTraining(
+                            collocation_points=collocation_points,
+                            model_evaluations=quantity_outputs,
+                            likelihood=likelihood,
+                            kernel=kernel,
+                            training_iter=150,
+                            optimizer="adam",
+                            lr=0.07,
+                            verbose=False
+                        )
+
+                        surrogate_models[var] = sm
+
+                    # Container around the independent SO GPEs
+                    surrogate_object = SOSequentialGPyTraining(
+                        surrogate_models=surrogate_models,
+                        calibration_quantities=complex_model.calibration_quantities
+                    )
+
                 kernel = gpytorch.kernels.ScaleKernel(
                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim))
 
-                if complex_model.multitask_selection == "SO_sequential":
-                    # Independent single-output GPEs, one per calibration target, each set up as for a calibration on that target alone. No correlation between the targets is modeled.
-                    surrogate_object = SOSequentialGPyTraining.from_training_data(
-                        collocation_points, model_outputs, complex_model.calibration_quantities)
                 if complex_model.multitask_selection == "variables":
                     multi_likelihood_var = gpytorch.likelihoods.MultitaskGaussianLikelihood(
                         num_tasks=complex_model.num_calibration_quantities,
@@ -477,7 +624,6 @@ def run_bal_model(collocation_points,
                                                     )
                     surrogate_object = multi_sm_var
                 if complex_model.multitask_selection == "locations":
-
                     multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
                         num_tasks=complex_model.nloc,
                         noise_constraint=gpytorch.constraints.GreaterThan(1e-3)  # Allow smaller noise
@@ -519,16 +665,20 @@ def run_bal_model(collocation_points,
         elif it == 0:
             logger.info(
                 f'Starting {type(surrogate_object).__name__} surrogate model training with the initial collocation points. Please check the .csv file if information required.')
-
         if complex_model.num_calibration_quantities == 1:
-            logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
-            start_time_training = time.time()
-            if isinstance(surrogate_object, MultiGPyTraining):
+            if complex_model.multitask_selection == "locations":
+                logger.info(
+                    f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+                start_time_training = time.time()
                 surrogate_object.train_tasks_locations()
+                end_time_training = time.time()
+                logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
             else:
-                surrogate_object.train_()
-            end_time_training = time.time()
-            logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
+                logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
+                start_time_training = time.time()
+                sm.train_()
+                end_time_training = time.time()
+                logger.info(f"Surrogate model training took {end_time_training - start_time_training:.2f} seconds.")
         else:
             logger.info(f'Training {type(surrogate_object).__name__} surrogate model with {complex_model.calibration_quantities}')
             start_time_training = time.time()
@@ -545,15 +695,21 @@ def run_bal_model(collocation_points,
         # 2. Validate GPR
         if it % eval_steps == 0:
             if complex_model.num_calibration_quantities == 1:
-                # Construct the save_name path for single quantity. The multitask GPE over the locations carries its task layout in the name, like the surrogates of several quantities do.
-                task_layout = (f'_{complex_model.multitask_selection}'
-                               if isinstance(surrogate_object, MultiGPyTraining) else '')
-                save_name = os.path.join(gpe_results_folder_bal,
-                                         f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
-                                         f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}{task_layout}.pkl')
-                surrogate_object.exp_design = experiment_design
-                with open(save_name, "wb") as file:
-                    pickle.dump(surrogate_object, file)
+                if complex_model.multitask_selection == "locations":
+                    save_name = os.path.join(gpe_results_folder_bal,
+                                             f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
+                                             f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}_{complex_model.multitask_selection}.pkl')
+                    surrogate_object.exp_design = experiment_design
+                    with open(save_name, "wb") as file:
+                        pickle.dump(surrogate_object, file)
+                else:
+                    # Construct the save_name path for single quantity
+                    save_name = os.path.join(gpe_results_folder_bal,
+                                             f'gpr_{gp_library}_TP{collocation_points.shape[0]:02d}_'
+                                             f'{experiment_design.exploit_method}_quantities_{complex_model.calibration_quantities}.pkl')
+                    sm.exp_design = experiment_design
+                    with open(save_name, "wb") as file:
+                        pickle.dump(sm, file)
             else:
                 # Construct the save_name path for multiple quantities
                 save_name = os.path.join(gpe_results_folder_bal,
@@ -567,32 +723,62 @@ def run_bal_model(collocation_points,
         # Surrogate outputs for prior samples
         if complex_model.num_calibration_quantities == 1:
             multitask = False
-            start_time_prediction = time.time()
-            logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
-            surrogate_output = surrogate_object.predict_(input_sets=prior,
-                                           get_conf_int=True)
-            end_time_prediction = time.time()
-            logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
-            model_predictions = surrogate_output['output']
-            total_error = complex_model.variances
-            if it == 0 or it == n_iter:
-                try:
-                    # Open the file and save the dictionary
-                    with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
-                              'wb') as pickle_file:
-                        pickle.dump(surrogate_output, pickle_file)
-                    print(f"Surrogate output data for iteration {it} successfully saved.")
-                except Exception as e:
-                    print(f"An error occurred while saving the dictionary: {e}")
+            if complex_model.multitask_selection == "locations":
+                start_time_prediction = time.time()
+                logger.info(
+                    f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
+                surrogate_output = surrogate_object.predict_(input_sets=prior, get_conf_int=True)
+                end_time_prediction = time.time()
+                logger.info(
+                    f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+                total_error = complex_model.variances
+                model_predictions = surrogate_output['output']
+                if it == 0 or it == n_iter:
+                    try:
+                        # Open the file and save the dictionary
+                        with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
+                                  'wb') as pickle_file:
+                            pickle.dump(surrogate_output, pickle_file)
+                        print(f"Surrogate output data for iteration {it} successfully saved..")
+                    except Exception as e:
+                        print(f"An error occurred while saving the dictionary: {e}")
+            else:
+                start_time_prediction = time.time()
+                logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
+                surrogate_output = surrogate_object.predict_(input_sets=prior,
+                                               get_conf_int=True)
+                end_time_prediction = time.time()
+                logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+                model_predictions = surrogate_output['output']
+                total_error = complex_model.variances
+                if it == 0 or it == n_iter:
+                    try:
+                        # Open the file and save the dictionary
+                        with open(os.path.join(complex_model.asr_dir, f'surrogate_output_iter_{it}.pkl'),
+                                  'wb') as pickle_file:
+                            pickle.dump(surrogate_output, pickle_file)
+                        print(f"Surrogate output data for iteration {it} successfully saved.")
+                    except Exception as e:
+                        print(f"An error occurred while saving the dictionary: {e}")
 
         else:
-            # The independent GPEs of SO_sequential have no covariance between the calibration targets, so BAL samples them with their standard deviations.
-            multitask = complex_model.multitask_selection != "SO_sequential"
+            multitask = (
+                    complex_model.multitask_selection != "SO_sequential")
             start_time_prediction = time.time()
-            logger.info(f'------------ Executing surrogate model predictions for {prior_samples} samples in {type(surrogate_object).__name__}   -------------------')
-            surrogate_output = surrogate_object.predict_(input_sets=prior,get_conf_int=True)
+            logger.info(
+                f'------------ Executing surrogate model predictions for '
+                f'{prior_samples} samples in '
+                f'{type(surrogate_object).__name__}   -------------------'
+            )
+            surrogate_output = surrogate_object.predict_(
+                input_sets=prior,
+                get_conf_int=True
+            )
             end_time_prediction = time.time()
-            logger.info(f"Surrogate model predictions took {end_time_prediction - start_time_prediction:.2f} seconds.")
+            logger.info(
+                f"Surrogate model predictions took "
+                f"{end_time_prediction - start_time_prediction:.2f} seconds."
+            )
             total_error = complex_model.variances
             model_predictions = surrogate_output['output']
             if it == 0 or it == n_iter:
@@ -629,8 +815,7 @@ def run_bal_model(collocation_points,
         bayesian_dict['log_BME'][it] = bi_gpe.log_BME
         bayesian_dict['post_size'][it] = bi_gpe.posterior_output.shape[0]
         bayesian_dict['posterior'][it] = bi_gpe.posterior
-        bayesian_dict['post_loglikelihood'][it] = getattr(bi_gpe, 'post_loglikelihood', None)
-        bayesian_dict['post_logpdf'][it] = getattr(bi_gpe, 'post_logpdf', None)
+        bayesian_dict['post_likelihood'][it] = bi_gpe.post_likelihood
         # Report-only: where each calibration parameter's own optimum currently sits,
         # how well the data constrain it, and whether those per-parameter optima form
         # a jointly plausible parameter set. Never raises, never touches sampling.
@@ -676,7 +861,6 @@ def run_bal_model(collocation_points,
                                   gaussian_assumption=False,
                                   mc_samples=mc_samples_al,
                                   mc_exploration=mc_exploration,
-                                  n_jobs=bal_n_jobs,
                                   multitask=multitask)  # multiprocessing=parallelize
 
             new_tp, util_fun = SD.run_sequential_design(prior_samples=prior)
@@ -702,10 +886,10 @@ def run_bal_model(collocation_points,
                                                        bal_iteration=bal_iteration,
                                                        bal_new_set_parameters=new_tp,
                                                        complete_bal_mode=complex_model.complete_bal_mode,
-                                                       # The window of the initial design. A literal here trained the surrogate on initial runs averaged over the configured window and on BAL runs averaged over another one.
                                                        output_extraction_time=output_extraction_time,
                                                        n=n_last,
-                                                       validation=complex_model.validation)
+                                                       validation=complex_model.validation,
+                                                       gaia_layer_average=gaia_layer_average,)
 
                 model_outputs = complex_model.model_evaluations
 
@@ -733,15 +917,13 @@ def run_bal_model(collocation_points,
         posterior_predictions=getattr(bi_gpe, 'posterior_output', None),
     )
     return bayesian_dict, updated_collocation_points
-
-
 def main():
     parser = argparse.ArgumentParser(description="Run TELEMAC (2D/3D) model surrogate-assisted Bayesian calibration.")
     parser.add_argument(
         '--config',
         type=str,
-        default='config_Telemac.py',
-        help='Path to Python configuration file (default: config_Telemac.py)'
+        default='config_Ering.py',
+        help='Path to Python configuration file (default: config_Ering.py)'
     )
     args = parser.parse_args()
     config = load_config(args.config)
@@ -768,16 +950,17 @@ def main():
             gpe_error=config.calibration.get('gpe_error', 0.0),
             measurement_error=config.calibration.get('measurement_error', 0.10),
             model_structural_error=config.calibration.get('model_structural_error', 0.0),
-            # A design supplied by the user is selected by execution['user_param_values'] or, to the same effect, by 'user' as the sampling method. Both read the parameter sets from restart_data/user-collocation-points.csv.
-            user_param_values=(bool(config.execution.get('user_param_values', False))
-                               or str(config.sampling['parameter_sampling_method']).strip().lower() == 'user'),
+            user_param_values=(
+                    str(config.sampling['parameter_sampling_method'])
+                    .strip()
+                    .lower()
+                    == 'user'),
             max_runs=config.sampling['max_runs'],
             complete_bal_mode=config.execution['complete_bal_mode'],
             only_bal_mode=config.execution['only_bal_mode'],
             delete_complex_outputs=config.execution['delete_complex_outputs'],
             validation=config.execution['validation'],
             multitask_selection=config.sampling.get('multitask_selection', 'variables'),
-            gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None),
     )
 
     # Setup and run the experiment
@@ -788,17 +971,15 @@ def main():
         parameter_sampling_method=config.sampling['parameter_sampling_method']
     )
     # pdb.set_trace()
-    # The extraction block is optional, so that configuration files written before it existed keep running.
     extraction = getattr(config, 'extraction', {})
-    output_extraction_time = extraction.get('output_extraction_time', "mean_last")
-    n_last = extraction.get('n_last', extraction.get('n', 80))
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,
         experiment_design=exp_design,
-        output_extraction_time=output_extraction_time,
-        n_last=n_last,
+        output_extraction_time=extraction.get('output_extraction_time', "mean_last"),
+        n_last=extraction.get('n_last', extraction.get('n', 80)),
         adaptive_init_runs=config.sampling.get('adaptive_init_runs', True),
         init_runs_min=config.sampling.get('init_runs_min', None),
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None)
     )
     # Report-only physics check on the initial design, BEFORE the BAL loop - the last
     # moment the answer is still cheap to act on. Anti-correlated depth vs. velocity
@@ -831,11 +1012,9 @@ def main():
         gp_library=config.sampling['gp_library'],
         include_surrogate_error=config.sampling.get('include_surrogate_error', True),
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
-        output_extraction_time=output_extraction_time,
-        n_last=n_last,
+        gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None),
         posterior_sampling_method=config.sampling.get('posterior_sampling_method',
                                                       'rejection_sampling'),
-        bal_n_jobs=config.sampling.get('bal_n_jobs', -1),
     )
 
 if __name__ == "__main__":
