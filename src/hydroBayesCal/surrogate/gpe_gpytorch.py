@@ -137,6 +137,29 @@ def _report_constant_outputs(columns, n_runs, n_quantities=None):
         f"the water depth at a point that stays dry, carries no information for the calibration; consider removing it "
         f"from the calibration points. This message is shown once per process.")
 
+def _input_normalization(inputs):
+    """
+    Compute column-wise min-max normalization parameters.
+    """
+    inputs = np.asarray(inputs, dtype=float)
+
+    x_min = np.min(inputs, axis=0)
+    x_max = np.max(inputs, axis=0)
+    x_range = x_max - x_min
+
+    # Avoid division by zero for constant parameters
+    x_range = np.where(x_range == 0.0, 1.0, x_range)
+
+    return x_min, x_range
+
+
+def _normalize_inputs(inputs, x_min, x_range):
+    """
+    Normalize each input parameter independently to [0, 1].
+    """
+    inputs = np.asarray(inputs, dtype=float)
+
+    return (inputs - x_min) / x_range
 
 class MyExactGPyModel(gpytorch.models.ExactGP):
     """
@@ -227,7 +250,7 @@ class GPyTraining:
             training_iter,
             likelihood,
             y_normalization=True,
-            tp_normalization=False,
+            tp_normalization=True,
             optimizer="adam",
             lr=0.5,
             loss='exact',
@@ -269,6 +292,9 @@ class GPyTraining:
         # Options for GPR library:
         self.tp_norm = tp_normalization
         self.y_norm = y_normalization
+        # Parameters used to normalize GP inputs
+        self.x_min = None
+        self.x_range = None
 
         self._id_vectors(likelihood, kernel)
 
@@ -325,7 +351,22 @@ class GPyTraining:
         _require_finite_outputs(self.model_evaluations)
 
         # Convert training points and prior parameter sets to tensor:
-        train_x = self.convert_to_tensor(self.training_points)
+        # Normalize GP inputs parameter-by-parameter, if requested
+        if self.tp_norm:
+            self.x_min, self.x_range = _input_normalization(
+                self.training_points
+            )
+
+            train_x_np = _normalize_inputs(
+                self.training_points,
+                self.x_min,
+                self.x_range
+            )
+        else:
+            train_x_np = np.asarray(self.training_points)
+
+        # Convert training inputs to tensor
+        train_x = self.convert_to_tensor(train_x_np)
 
         if self.y_norm:
             constant = np.ptp(np.asarray(self.model_evaluations), axis=0) == 0
@@ -511,13 +552,23 @@ class GPyTraining:
         return return_out_dic
 
     def predict_(self, input_sets, get_conf_int=False):
-        """
-        TO DO: DESCRIPTION TO BE COMPLETED
 
-        :param input_sets:
-        :param get_conf_int:
-        :return:
-        """
+        input_sets = np.atleast_2d(np.asarray(input_sets, dtype=float))
+
+        if self.tp_norm:
+            if self.x_min is None or self.x_range is None:
+                raise RuntimeError(
+                    "Input-normalization parameters are unavailable. "
+                    "Train the emulator before prediction."
+                )
+
+            prediction_inputs = _normalize_inputs(
+                input_sets,
+                self.x_min,
+                self.x_range
+            )
+        else:
+            prediction_inputs = input_sets
 
         inputs_by_type = {}  # the inputs in the precision of the model that evaluates them
 
@@ -538,7 +589,10 @@ class GPyTraining:
 
             model_type = _model_dtype(gp)
             if model_type not in inputs_by_type:
-                inputs_by_type[model_type] = self.convert_to_tensor(input_sets, dtype=model_type)
+                inputs_by_type[model_type] = self.convert_to_tensor(
+                    prediction_inputs,
+                    dtype=model_type
+                )
             prior_x = inputs_by_type[model_type]
 
             with torch.no_grad():
@@ -592,6 +646,7 @@ class MultiGPyTraining:
             parallelize=False,
             number_quantities=2,
             noise_constraint=GreaterThan(1e-6),
+            tp_normalization=True,
             precision="double"
     ):
         """
@@ -624,6 +679,9 @@ class MultiGPyTraining:
         self.training_iter = training_iter
         self.n_restarts = n_restarts
         self.lr = lr
+        self.tp_norm = tp_normalization
+        self.x_min = None
+        self.x_range = None
         self.parallel = parallelize
         self.noise_constraint = noise_constraint
         self.losses = []  # To store loss values for tracking convergence
@@ -632,6 +690,42 @@ class MultiGPyTraining:
         self.multitask_cov = [] # To store multitask covariance matrices (Kronecker product of task kernel and input kernel)
 
     dtype = property(_emulator_dtype)
+
+    def _prepare_training_inputs(self):
+        """
+        Prepare training inputs for the multitask GP.
+
+        When tp_normalization=True, each input parameter is independently
+        normalized to [0, 1].
+        """
+        X = np.asarray(self.training_points, dtype=float)
+
+        if self.tp_norm:
+            self.x_min, self.x_range = _input_normalization(X)
+            X = _normalize_inputs(X, self.x_min, self.x_range)
+
+        return torch.tensor(X, dtype=self.dtype)
+
+    def _prepare_prediction_inputs(self, input_sets, dtype):
+        """
+        Apply the same normalization used for GP training.
+        """
+        X = np.atleast_2d(np.asarray(input_sets, dtype=float))
+
+        if self.tp_norm:
+            if self.x_min is None or self.x_range is None:
+                raise RuntimeError(
+                    "Input-normalization parameters are unavailable. "
+                    "Train the emulator before prediction."
+                )
+
+            X = _normalize_inputs(
+                X,
+                self.x_min,
+                self.x_range
+            )
+
+        return torch.tensor(X, dtype=dtype)
 
     def train_tasks_variables(self):#Training variables at each location separately
         """
@@ -643,7 +737,7 @@ class MultiGPyTraining:
         self.task_mode = "variables"
         _require_finite_outputs(self.model_evaluations)
         dtype = self.dtype
-        X = torch.tensor(self.training_points, dtype=dtype)
+        X = self._prepare_training_inputs()
         Y = torch.tensor(self.model_evaluations, dtype=dtype)
         # Number of locations
         num_locations = Y.shape[1] // self.number_quantities
@@ -757,7 +851,7 @@ class MultiGPyTraining:
         self.task_mode = "locations"
         _require_finite_outputs(self.model_evaluations)
         dtype = self.dtype
-        X = torch.tensor(self.training_points, dtype=dtype)
+        X = self._prepare_training_inputs()
         Y = torch.tensor(self.model_evaluations, dtype=dtype)
 
         if self.n_obs % self.number_quantities:
@@ -823,7 +917,7 @@ class MultiGPyTraining:
         self.task_mode = "all"
         _require_finite_outputs(self.model_evaluations)
         dtype = self.dtype
-        X = torch.tensor(self.training_points, dtype=dtype)
+        X = self._prepare_training_inputs()
         Y = torch.tensor(self.model_evaluations, dtype=dtype)
 
         # Number of locations
@@ -1049,8 +1143,16 @@ class MultiGPyTraining:
     def _predict_chunk(self, input_sets, get_conf_int=False, multitask_cov=False, mode=None):
         """Prediction at one piece of the input sets, see :meth:`predict_`, which has the same arguments and return value. ``mode`` is the task layout if it has been resolved already."""
         # In the precision of the trained models, which is single for an emulator stored by a release up to 1.10.1.
-        dtype = _model_dtype(self.gp_list[0]['gp']) if self.gp_list else self.dtype
-        input_sets = torch.tensor(np.asarray(input_sets), dtype=dtype)
+        dtype = (
+            _model_dtype(self.gp_list[0]['gp'])
+            if self.gp_list
+            else self.dtype
+        )
+
+        input_sets = self._prepare_prediction_inputs(
+            input_sets,
+            dtype=dtype
+        )
         n_samples = input_sets.shape[0]
         n_obs = self.n_obs
         n_quantities = self.number_quantities
@@ -1343,7 +1445,7 @@ class SOSequentialGPyTraining:
 
     @classmethod
     def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
-                           training_iter=150, lr=0.07, verbose=False, precision="double"):
+                           training_iter=150, lr=0.07, verbose=False, tp_normalization=True,precision="double"):
         """Build the container from the training data of a calibration.
 
         One single-output GPE is set up per calibration target, with the kernel, likelihood and optimizer settings the drivers use for a calibration on one target, so a target is emulated the same way whether it is calibrated alone or together with others. The models are not trained yet, call :meth:`train_`.
@@ -1394,7 +1496,7 @@ class SOSequentialGPyTraining:
                 likelihood=likelihood, kernel=kernel,
                 training_iter=training_iter,
                 optimizer="adam", lr=lr,
-                verbose=verbose, precision=precision)
+                verbose=verbose, tp_normalization=tp_normalization,precision=precision)
         return cls(surrogate_models=surrogate_models, calibration_quantities=calibration_quantities)
 
     def __getitem__(self, key):

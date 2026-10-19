@@ -909,7 +909,7 @@ def update_gaia_class_line(line, index, new_value):
         raise IndexError("Index out of range")
 
     # Update the value at the specified index
-    values_list[index] = f"{new_value:.3f}"  # Format with 3 decimals if you want
+    values_list[index] = f"{new_value:.5f}"  # Format with 3 decimals if you want
 
     # Reconstruct the line
     updated_line = f"{key.strip()} {separator} {';'.join(values_list)}"

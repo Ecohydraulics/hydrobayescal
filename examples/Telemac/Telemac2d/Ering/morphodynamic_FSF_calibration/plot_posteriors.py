@@ -139,7 +139,7 @@ def main():
         prior=prior,
         param_values=config.calibration['param_values'],
         iterations_to_plot=config.plotting["iterations_to_plot"],
-        bins=20,
+        bins=40,
         density=True,
         plot_prior=True,
         parameter_units=config.plotting["parameter_units"],
