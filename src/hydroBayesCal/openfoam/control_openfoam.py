@@ -79,6 +79,39 @@ def _set_patch_entry(path: str, patch: str, key: str, new_value: str) -> bool:
     return replaced
 
 
+def _find_ks_patch(case_template_dir):
+    """Find the bed patch in ``0/nut`` that the ``ks`` parameter writes to.
+
+    An atmNutkWallFunction patch is used first, otherwise nutkRoughWallFunction.
+    If there are several, the one named bottom/base/bed is used.
+
+    Returns
+    -------
+    (str, str) or (None, None)
+        The patch name and its wall function type.
+    """
+    nut_path = os.path.join(case_template_dir, "0", "nut")
+    if not os.path.isfile(nut_path):
+        return None, None
+
+    with open(nut_path, "r") as f:
+        content = f.read()
+
+    for bc_type in (ATM_ROUGH_WALL, KS_ROUGH_WALL):
+        patches = re.findall(rf"(\w+)\s*\{{\s*[^{{}}]*?type\s+{bc_type}\s*;", content, re.DOTALL)
+        if len(patches) == 1:
+            return patches[0], bc_type
+        if len(patches) > 1:
+            beds = [p for p in patches if p.lower() in ("bottom", "base", "bed")]
+            if len(beds) == 1:
+                return beds[0], bc_type
+            raise ValueError(
+                f"Several {bc_type} patches in {nut_path} ({', '.join(patches)}) and no single "
+                "bed patch (bottom/base/bed) among them: cannot tell which one 'ks' belongs to."
+            )
+    return None, None
+
+
 class OpenFOAMController:
     def __init__(self, case_dir: str):
         self.case_dir = os.path.normpath(case_dir)
@@ -800,7 +833,7 @@ class OpenFOAMModel(HydroSimulations):
         self._check_k_in_controldict()
 
         # Find the bed patch for ks in 0/nut
-        self.ks_patch, self.ks_bc_type = self._detect_ks_patch()
+        self.ks_patch, self.ks_bc_type = _find_ks_patch(self.case_template_dir)
         if self.ks_patch:
             how = (f"z0 = ks/30 written to {', '.join(ATM_Z0_FIELDS)}" if self.ks_bc_type == ATM_ROUGH_WALL
                    else "Ks written to nut")
@@ -895,36 +928,8 @@ class OpenFOAMModel(HydroSimulations):
             logger.info("controlDict check passed: 'k' field appears to be available for VTK output.")
 
     def _detect_ks_patch(self):
-        """Find the bed patch in ``0/nut`` that the ``ks`` parameter writes to.
-
-        An atmNutkWallFunction patch is used first, otherwise nutkRoughWallFunction.
-        If there are several, the one named bottom/base/bed is used.
-
-        Returns
-        -------
-        (str, str) or (None, None)
-            The patch name and its wall function type.
-        """
-        nut_path = os.path.join(self.case_template_dir, "0", "nut")
-        if not os.path.isfile(nut_path):
-            return None, None
-
-        with open(nut_path, "r") as f:
-            content = f.read()
-
-        for bc_type in (ATM_ROUGH_WALL, KS_ROUGH_WALL):
-            patches = re.findall(rf"(\w+)\s*\{{\s*[^{{}}]*?type\s+{bc_type}\s*;", content, re.DOTALL)
-            if len(patches) == 1:
-                return patches[0], bc_type
-            if len(patches) > 1:
-                beds = [p for p in patches if p.lower() in ("bottom", "base", "bed")]
-                if len(beds) == 1:
-                    return beds[0], bc_type
-                raise ValueError(
-                    f"Several {bc_type} patches in {nut_path} ({', '.join(patches)}) and no single "
-                    "bed patch (bottom/base/bed) among them: cannot tell which one 'ks' belongs to."
-                )
-        return None, None
+        """Name of the bed patch in ``0/nut`` that ``ks`` is written to, or None."""
+        return _find_ks_patch(self.case_template_dir)[0]
 
     def _load_control_points(self):
         """Read the XYZ coordinates of the calibration points (observations and
@@ -1116,6 +1121,7 @@ class OpenFOAMModel(HydroSimulations):
 
                     # Save after every run (only new rows, the csv is appended)
                     self._save_all_results(current_cp, all_detailed_results[n_detailed_saved:])
+                    self._save_initial_model_outputs()
                     n_detailed_saved = len(all_detailed_results)
                     self._save_model_results_calibration_csv()
 
@@ -1155,6 +1161,7 @@ class OpenFOAMModel(HydroSimulations):
             else:
                 all_cp = design
             self._save_all_results(all_cp, all_detailed_results[n_detailed_saved:])
+            self._save_initial_model_outputs()
             self._save_model_results_calibration_csv()
 
     def _save_model_results_calibration_csv(self):
@@ -1197,11 +1204,6 @@ class OpenFOAMModel(HydroSimulations):
                 q: float(results[q][pt_idx]) if results is not None else float("nan")
                 for q in quantities
             })
-
-    def _save_all_results(self, collocation_points, detailed_results=None):
-        """Base-class bookkeeping, then initial-model-outputs.json in the TELEMAC layout."""
-        super()._save_all_results(collocation_points, detailed_results)
-        self._save_initial_model_outputs()
 
     def _save_initial_model_outputs(self):
         """Write initial-model-outputs.json as in the TELEMAC binding:
