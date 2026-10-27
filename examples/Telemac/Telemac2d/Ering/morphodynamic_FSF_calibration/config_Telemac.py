@@ -61,9 +61,9 @@ calibration = {
                    #"gaiaCLASSES SEDIMENT DIAMETERS 2",
                    ], 
 
-    'param_values': [[0.035, 0.065],  # critical shields parameter class 1
+    'param_values': [[0.02, 0.060],  # critical shields parameter class 1
     		     #[0.03, 0.070],
-    		     [0.0005, 0.0015]],
+    		     [0.0006, 0.002]],
                      #[0.03, 0.070],
                      #[0.0003, 0.002],
                      #[0.002, 0.008]],
@@ -91,6 +91,8 @@ calibration = {
     'measurement_error':      0.05,
     'gpe_error':              0.02,
     'model_structural_error': 0.10,
+    'calibration_case': "Crit_0.02-0.06,Diam_0.0006, 0.002",
+
 
     'dict_output_name': "extraction-data",
 }
@@ -161,7 +163,7 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0,1],
-    'iterations_to_plot': [40],
+    'iterations_to_plot': [28],
     # -------------------------
     # posterior plotting options
     # -------------------------

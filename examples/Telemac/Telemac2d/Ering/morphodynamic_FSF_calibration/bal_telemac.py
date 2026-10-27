@@ -950,6 +950,7 @@ def main():
             gpe_error=config.calibration.get('gpe_error', 0.0),
             measurement_error=config.calibration.get('measurement_error', 0.10),
             model_structural_error=config.calibration.get('model_structural_error', 0.0),
+            calibration_case=config.calibration['calibration_case'],
             user_param_values=(
                     str(config.sampling['parameter_sampling_method'])
                     .strip()

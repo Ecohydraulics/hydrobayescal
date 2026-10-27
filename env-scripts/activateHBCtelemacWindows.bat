@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 
 REM ============================================================
 REM USER SETTINGS
@@ -9,66 +9,57 @@ set "CONDA_ENV=HBCenv"
 set "TELEMAC_DIR=C:\openTELEMAC\9.1.0"
 set "HBC_DIR=C:\hydrobayescal"
 
-REM ============================================================
-REM Clear TELEMAC Python variables before activating Conda
-REM ============================================================
-
-set PYTHONHOME=
-set PYTHONPATH=
 
 REM ============================================================
-REM Activate Conda environment
+REM ACTIVATE TELEMAC
 REM ============================================================
 
-call "%CONDA_DIR%\Scripts\activate.bat" "%CONDA_ENV%"
-
-if errorlevel 1 (
-    echo.
-    echo ERROR: Could not activate Conda environment:
-    echo   %CONDA_ENV%
-    pause
+if not exist "%TELEMAC_DIR%\env_openTELEMAC.bat" (
+    echo TELEMAC activation failed.
     exit /b 1
 )
 
-echo.
-echo Conda environment activated successfully:
-echo   %CONDA_DEFAULT_ENV%
+call "%TELEMAC_DIR%\env_openTELEMAC.bat" >nul 2>&1
 
-REM ============================================================
-REM Activate TELEMAC
-REM ============================================================
-
-call "%TELEMAC_DIR%\env_openTELEMAC.bat"
-
-if errorlevel 1 (
-    echo.
-    echo ERROR: TELEMAC activation failed.
-    pause
+if not defined HOMETEL (
+    echo TELEMAC activation failed.
     exit /b 1
 )
 
-if defined HOMETEL (
-    echo.
-    echo TELEMAC activated successfully:
-    echo   HOMETEL = %HOMETEL%
-) else (
-    echo.
-    echo WARNING: TELEMAC batch file ran, but HOMETEL was not set.
+echo TELEMAC activated.
+
+
+REM ============================================================
+REM REMOVE TELEMAC PYTHON OVERRIDES
+REM ============================================================
+
+set "PYTHONHOME="
+set "PYTHONPATH="
+
+
+REM ============================================================
+REM ACTIVATE CONDA HBCenv
+REM ============================================================
+
+if not exist "%CONDA_DIR%\condabin\conda.bat" (
+    echo HBCenv activation failed.
+    exit /b 1
 )
 
+call "%CONDA_DIR%\condabin\conda.bat" activate "%CONDA_ENV%" >nul 2>&1
+
+if not "%CONDA_DEFAULT_ENV%"=="%CONDA_ENV%" (
+    echo HBCenv activation failed.
+    exit /b 1
+)
+
+echo HBCenv activated.
+
+
 REM ============================================================
-REM Go to HydroBayesCal folder
+REM GO TO HYDROBAYESCAL DIRECTORY
 REM ============================================================
 
-cd /d "%HBC_DIR%"
-
-REM ============================================================
-REM Final checks
-REM ============================================================
-
-echo.
-echo ============================================
-echo Environment setup complete
-echo ============================================
-
-echo.
+if exist "%HBC_DIR%" (
+    cd /d "%HBC_DIR%"
+)
