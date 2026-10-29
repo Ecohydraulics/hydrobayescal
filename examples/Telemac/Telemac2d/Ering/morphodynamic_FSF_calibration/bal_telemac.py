@@ -963,7 +963,7 @@ def main():
             validation=config.execution['validation'],
             multitask_selection=config.sampling.get('multitask_selection', 'variables'),
     )
-
+    setup_file_logging(full_complexity_model.asr_dir)
     # Setup and run the experiment
     exp_design = setup_experiment_design(
         complex_model=full_complexity_model,
@@ -971,7 +971,6 @@ def main():
         parameter_distribution=config.sampling['parameter_distribution'],
         parameter_sampling_method=config.sampling['parameter_sampling_method']
     )
-    # pdb.set_trace()
     extraction = getattr(config, 'extraction', {})
     init_collocation_points, model_evaluations= run_complex_model(
         complex_model=full_complexity_model,

@@ -35,7 +35,8 @@ classification_tm_gaia_dict = {
     "TOTAL SEDIMENT DISCHARGE": "gaia",
     "SEDIMENT DIAMETER": "gaia",
     "CRITICAL SHEAR STRESS": "gaia",
-    "LAY SAND RAT": "gaia",
+    "SAND RAT1": "gaia",
+    "SAND RAT2": "gaia",
 }
 
 
@@ -67,70 +68,85 @@ def gaia_sand_ratio_variable(layer, sand_class):
 
 
 def resolve_gaia_layer_average(gaia_layer_average, requested=None):
-    """Check a ``gaia_layer_average`` configuration and name the GAIA variables it reads.
-
-    A layer-averaged sand ratio is a derived calibration target: the ratio of one or several sand classes, averaged over several bed layers with the layer thicknesses as weights. A sediment sample taken over a known depth below the bed surface, for instance the fine sediment fraction of a freeze core, is compared with it. For every target the configuration gives::
-
-        gaia_layer_average = {
-            "FINE SEDIMENT FRACTION": {      # name of the target, also used in the calibration points file
-                "sand_classes": [1],         # ratios of these classes are summed in every layer
-                "layers": [1, 2],            # bed layers that are averaged
-                "thicknesses": [0.08, 0.60], # weight of every layer, in meters
-            }
-        }
-
-    Parameters
-    ----------
-    gaia_layer_average : dict or None
-        Configuration as above, from ``morphodynamic_simulation['gaia_layer_average']``.
-    requested : iterable of str, optional
-        Only resolve the targets named here. Default: all targets of the configuration.
-
-    Returns
-    -------
-    dict
-        Per target ``sand_classes``, ``layers``, ``thicknesses`` (array) and ``variables``, a list with one entry per layer holding the variable names of the classes in that layer.
-
-    Raises
-    ------
-    ValueError
-        If an entry is incomplete or inconsistent. An entry without ``sand_classes`` is rejected rather than guessed, because the variable name carries two numbers and reading the class for the layer yields a quantity that looks plausible and is wrong.
     """
+    Resolve GAIA sand-ratio targets averaged over selected bed layers.
+
+    Each target identifies exactly one sediment class:
+        SAND RAT1 -> class 1
+        SAND RAT2 -> class 2
+
+    The configuration supplies only layers and thicknesses.
+    """
+    import re
+
     resolved = {}
+
     for target, spec in (gaia_layer_average or {}).items():
+
         if requested is not None and target not in requested:
             continue
+
+        match = re.fullmatch(r"SAND RAT([1-9][0-9]*)", target)
+        if match is None:
+            raise ValueError(
+                f"Invalid GAIA layer-average target '{target}'. "
+                "Expected SAND RAT1, SAND RAT2, etc."
+            )
+
+        sand_class = int(match.group(1))
+
         if not isinstance(spec, dict):
-            raise ValueError(f"gaia_layer_average['{target}'] must be a dictionary.")
-
-        layers, thicknesses, sand_classes = spec.get("layers"), spec.get("thicknesses"), spec.get("sand_classes")
-        if sand_classes is None:
             raise ValueError(
-                f"gaia_layer_average['{target}'] has no 'sand_classes'. GAIA names the ratio of a sand class in a bed layer "
-                f"LAY<layer> SAND RAT<class>: the number after LAY is the layer, the trailing number is the sand class. "
-                f"State both, e.g. {{'sand_classes': [1], 'layers': [1, 2], 'thicknesses': [0.08, 0.60]}} for sand class 1 "
-                f"averaged over the layers 1 and 2. Appending the layer number to '{target}' selects sand classes, not layers.")
-        if layers is None or thicknesses is None:
-            raise ValueError(f"gaia_layer_average['{target}'] must contain 'layers' and 'thicknesses'.")
+                f"gaia_layer_average['{target}'] must be a dictionary."
+            )
 
-        sand_classes = [int(c) for c in np.atleast_1d(sand_classes)]
-        layers = [int(layer) for layer in np.atleast_1d(layers)]
-        thicknesses = np.atleast_1d(np.asarray(thicknesses, dtype=float))
-        if not sand_classes or not layers:
-            raise ValueError(f"gaia_layer_average['{target}'] needs at least one sand class and one layer.")
-        if len(layers) != len(thicknesses):
+        if "sand_classes" in spec:
             raise ValueError(
-                f"gaia_layer_average['{target}'] has {len(layers)} layers but {len(thicknesses)} thicknesses.")
-        if np.any(thicknesses <= 0.0) or not np.all(np.isfinite(thicknesses)):
-            raise ValueError(f"All layer thicknesses of gaia_layer_average['{target}'] must be finite and > 0.")
+                f"Remove 'sand_classes' from {target}. "
+                "The class is determined from the target name."
+            )
+
+        if "layers" not in spec or "thicknesses" not in spec:
+            raise ValueError(
+                f"{target} requires 'layers' and 'thicknesses'."
+            )
+
+        layers = [int(layer) for layer in np.atleast_1d(spec["layers"])]
+
+        thicknesses = np.atleast_1d(
+            np.asarray(spec["thicknesses"], dtype=float)
+        )
+
+        if not layers or len(layers) != len(thicknesses):
+            raise ValueError(
+                f"{target}: number of layers and thicknesses must match."
+            )
+
+        if len(set(layers)) != len(layers):
+            raise ValueError(f"{target}: duplicate layers.")
+
+        if any(layer < 1 or layer > 99 for layer in layers):
+            raise ValueError(f"{target}: invalid GAIA layer number.")
+
+        if not 1 <= sand_class <= 99:
+            raise ValueError(f"{target}: invalid sand class.")
+
+        if not np.all(np.isfinite(thicknesses)) or np.any(thicknesses <= 0):
+            raise ValueError(
+                f"{target}: thicknesses must be finite and positive."
+            )
 
         resolved[target] = {
-            "sand_classes": sand_classes,
             "layers": layers,
             "thicknesses": thicknesses,
-            "variables": [[gaia_sand_ratio_variable(layer, c) for c in sand_classes] for layer in layers],
+            "variables": [
+                gaia_sand_ratio_variable(layer, sand_class)
+                for layer in layers
+            ],
         }
+
     return resolved
+
 # ============================================================
 # DEFAULT PHYSICAL CONSTANTS FOR WALL-LAW DIAGNOSTICS
 # ============================================================

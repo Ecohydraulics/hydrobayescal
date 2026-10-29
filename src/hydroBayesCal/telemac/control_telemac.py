@@ -1409,8 +1409,11 @@ class TelemacModel(HydroSimulations):
             gaia_layer_average, requested=calibration_extraction_quantity)
         for target, spec in gaia_layer_average_specs.items():
             logger.info(
-                f"GAIA layer average '{target}': sand classes {spec['sand_classes']} in layers {spec['layers']}, "
-                f"variables {spec['variables']}, thicknesses {spec['thicknesses'].tolist()}")
+                f"GAIA target '{target}': "
+                f"layers={spec['layers']}, "
+                f"variables={spec['variables']}, "
+                f"thicknesses={spec['thicknesses'].tolist()}"
+            )
 
         # ============================================================
         # CLASSIFY REQUESTED QUANTITIES
@@ -1603,11 +1606,7 @@ class TelemacModel(HydroSimulations):
                         model_source == "gaia"
                         and q in gaia_layer_average_specs
                 ):
-                    required_layer_variables = [
-                        variable_name
-                        for layer_variables in gaia_layer_average_specs[q]["variables"]
-                        for variable_name in layer_variables
-                    ]
+                    required_layer_variables = gaia_layer_average_specs[q]["variables"]
                     missing_layer_variables = [
                         variable_name
                         for variable_name in required_layer_variables
@@ -1965,31 +1964,36 @@ class TelemacModel(HydroSimulations):
                     ):
 
                         average_spec = gaia_layer_average_specs[q]
+
                         layer_variables = average_spec["variables"]
                         layer_thicknesses = average_spec["thicknesses"]
 
-                        # Ratio of the selected sand classes in each layer: the ratios of the classes add up within a layer.
+                        # Each quantity corresponds to a single sand class.
+                        # Example:
+                        # SAND RAT1 -> LAY1 SAND RAT1, LAY2 SAND RAT1
+                        # SAND RAT2 -> LAY1 SAND RAT2, LAY2 SAND RAT2
+
                         layer_values = np.asarray(
                             [
-                                sum(float(results[var_index[variable_name]])
-                                    for variable_name in class_variables)
-                                for class_variables in layer_variables
+                                float(results[var_index[variable_name]])
+                                for variable_name in layer_variables
                             ],
                             dtype=float
                         )
 
+                        # Thickness-weighted average across selected GAIA layers.
                         weighted_average = float(
                             np.sum(layer_values * layer_thicknesses)
                             / np.sum(layer_thicknesses)
                         )
 
-                        # Store ONLY the name of the derived quantity.
+                        # Store the result under the requested calibration target.
                         differentiated_values[q] = weighted_average
 
                         logger.info(
                             f"[GAIA] Point {key} - {q}: "
                             f"variables={layer_variables}, "
-                            f"ratio per layer={layer_values.tolist()}, "
+                            f"ratio_per_layer={layer_values.tolist()}, "
                             f"thicknesses={layer_thicknesses.tolist()}, "
                             f"weighted_average={weighted_average}"
                         )
