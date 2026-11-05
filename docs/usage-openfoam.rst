@@ -106,9 +106,7 @@ dictionary entries that ``OpenFOAMController`` writes into the case:
   subdictionary of ``constant/turbulenceProperties``. The supported names are
   ``Cmu``, ``C1``, ``C2``, ``C3``, ``sigmak`` and ``sigmaEps``, listed in
   ``hydroBayesCal.openfoam.control_openfoam.KEPSILON_COEFFS``.
-* **Wall roughness** ``ks`` applied as a boundary condition on the
-  ``nutkRoughWallFunction`` patch in ``0/nut``. The patch is auto-detected from
-  the case template.
+* **Bed roughness** ``ks`` (equivalent sand roughness, in m) applied to the bed patch of ``0/nut``, which is auto-detected from the case template. With an atmospheric rough wall function (``atmNutkWallFunction`` in the ESI line, ``nutkAtmRoughWallFunction`` in the Foundation line) the binding writes the roughness length of fully rough flow, :math:`z_0 = k_s / 30`, into the ``z0`` entry of the patch in ``nut`` and, for ESI, also in ``epsilon`` and ``omega`` where their wall functions carry one; the keyword of the template (``constant`` or ``uniform``) is kept. These wall functions also work where the first cell is smaller than the roughness. With ``nutkRoughWallFunction`` the binding writes ``Ks``, which requires the first cell to be larger than ``Ks``. An atmospheric wall function is preferred when the template has both; of several rough patches, the one named ``bottom``, ``base`` or ``bed`` is taken. The time directories of a hot start are updated as well.
 * Other **boundary-condition values** or **dictionary entries**, updated via
   ``update_boundary_condition`` / ``update_dictionary_entry`` by code driving
   ``OpenFOAMController`` directly.
@@ -130,7 +128,7 @@ is constructed, before a simulation starts.
 
 ``calibration_quantities`` uses the standard field names. The OpenFOAM binding
 extracts ``"U_x"``, ``"U_y"``, ``"U_z"``, ``"U_MAG"`` (velocity components and
-magnitude), ``"TKE"`` (turbulent kinetic energy ``k``), the isotropic
+magnitude), ``"TKE"`` (the total turbulent kinetic energy: the ``k`` of the turbulence model plus, if ``fieldAverage`` writes ``UPrime2Mean``, the resolved part :math:`\tfrac{1}{2}\,\mathrm{tr}\,\overline{u_i' u_j'}` of a URANS run, as a measured TKE contains both), ``"TKE_MODELED"`` and ``"TKE_RESOLVED"`` (the two parts; the resolved one is ``NaN`` without ``UPrime2Mean``), the isotropic
 fluctuation components ``"u_fluct"``, ``"v_fluct"``, ``"w_fluct"`` and ``"ALPHA_WATER"`` (the ``interFoam`` water volume fraction at the point). These are
 listed in ``OpenFOAMModel.EXTRACTABLE_QUANTITIES``, and any other name raises a
 ``ValueError`` when the model is constructed, before a simulation starts. ``ALPHA_WATER`` is sampled at the nearest water-phase point, so it lies above the water-surface threshold by construction. It indicates how close a calibration point is to the free surface and is rarely a meaningful calibration target on its own.
@@ -197,7 +195,7 @@ performs Bayesian Active Learning. Equivalently, in a script:
 
 Results are written to the same ``auto-saved-results-HydroBayesCal`` layout as
 for TELEMAC (see :doc:`gpe-bal-telemac`), so post-processing is identical across
-solvers.
+solvers. ``initial-model-outputs.json`` holds the outputs per calibration point and run in the layout of the TELEMAC binding, ``{point: [{quantity: value} per run]}``, with every extracted quantity, so that any of them can become the calibration target of a restart with ``only_bal_mode``. Result folders of releases up to 1.11, whose file holds the flat matrix of the calibration targets, are read as well.
 
 To sample fields from OpenFOAM VTK output at arbitrary (x, y, z) points
 outside the calibration workflow, use :func:`hydroBayesCal.extract_results`
