@@ -146,3 +146,19 @@ def test_the_standalone_extraction_takes_the_same_steps(tmp_path):
 
     with pytest.raises(ValueError, match="nearest output time"):
         extract_results(str(path), "WATER DEPTH", x=[2.0], y=[3.0], point_time=55.0)
+
+
+@pytest.mark.parametrize("times", [[50.0, None], [None, None]], ids=["point-time", "global"])
+def test_mean_last_over_no_step_is_refused(tmp_path, times):
+    """An empty window gave NaN at a point with a time, and the mean over the whole run without one."""
+    with pytest.raises(ValueError, match="n_last"):
+        _extract(tmp_path, times, output_extraction_time="mean_last", n=0, point_time_column="Sample time")
+
+
+def test_the_standalone_extraction_refuses_mean_last_over_no_step(tmp_path):
+    from hydroBayesCal.extract import extract_results
+
+    path = tmp_path / "telemac_1.slf"
+    _write_selafin(path)
+    with pytest.raises(ValueError, match="n_last"):
+        extract_results(str(path), "WATER DEPTH", x=[2.0], y=[3.0], time="mean_last", n_last=0, point_time=50.0)

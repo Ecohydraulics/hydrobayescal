@@ -1360,6 +1360,10 @@ class TelemacModel(HydroSimulations):
         - The TELEMAC and the GAIA result file are each opened only when a quantity of that module is requested, so a calibration on GAIA quantities alone does not read the TELEMAC file.
         """
 
+        if output_extraction_time == "mean_last" and int(n) < 1:
+            raise ValueError(
+                f"output_extraction_time 'mean_last' averages n = {n} output steps; extraction['n_last'] has to be at least 1.")
+
         # In the normal coupled workflow, input_file is the TELEMAC result file.
         # For a GAIA-only standalone extraction, this attribute is harmless because
         # the TELEMAC source will not be opened unless TELEMAC quantities are asked.
