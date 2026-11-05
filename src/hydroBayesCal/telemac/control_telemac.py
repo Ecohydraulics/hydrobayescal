@@ -14,6 +14,20 @@ from hydroBayesCal.hysim import HydroSimulations
 from hydroBayesCal.function_pool import *  # provides os, subprocess, logging
 
 
+def find_telemac_launcher(name, windows=None):
+    """Path of a TELEMAC launcher (``telemac2d.py``, ``telemac3d.py``) on ``PATH``, or ``None``.
+
+    On Windows, :func:`shutil.which` accepts only the extensions listed in ``PATHEXT``, which has no ``.PY`` unless the Python installer added it, so a launcher that the activation script put on ``PATH`` would not be found. There the folders of ``PATH`` are searched for the file itself as well. ``windows`` defaults to ``os.name == "nt"``.
+    """
+    path = shutil.which(name)
+    if path is None and (os.name == "nt" if windows is None else windows):
+        for folder in os.environ.get("PATH", "").split(os.pathsep):
+            candidate = os.path.join(folder.strip().strip('"'), name)
+            if folder.strip() and os.path.isfile(candidate):
+                return candidate
+    return path
+
+
 class TelemacModel(HydroSimulations):
     def __init__(
             self,
@@ -522,7 +536,7 @@ class TelemacModel(HydroSimulations):
         # Find TELEMAC launcher
         # ---------------------------------------------------------
 
-        launcher_path = shutil.which(tm_launcher)
+        launcher_path = find_telemac_launcher(tm_launcher)
 
         if launcher_path is None:
             raise FileNotFoundError(
@@ -1345,6 +1359,10 @@ class TelemacModel(HydroSimulations):
           (``NPLAN >= 2``).
         - The TELEMAC and the GAIA result file are each opened only when a quantity of that module is requested, so a calibration on GAIA quantities alone does not read the TELEMAC file.
         """
+
+        if output_extraction_time == "mean_last" and int(n) < 1:
+            raise ValueError(
+                f"output_extraction_time 'mean_last' averages n = {n} output steps; extraction['n_last'] has to be at least 1.")
 
         # In the normal coupled workflow, input_file is the TELEMAC result file.
         # For a GAIA-only standalone extraction, this attribute is harmless because

@@ -9,7 +9,7 @@ progress).
 It is developed and tested
 on **Debian/Ubuntu Linux**, which we recommend: Linux gives the flexibility to
 configure the environment and TELEMAC together, and a command-line interface
-well suited to batch simulations. TELEMAC calibrations can also be run on Windows: the TELEMAC launcher is called without a shell (with the active Python interpreter for a ``.py`` launcher), and ``env-scripts/activateHBCtelemacWindows.bat`` is a template that loads TELEMAC and the conda environment of HydroBayesCal in one Command Prompt; set the paths in its ``USER SETTINGS`` block first. The test suite does not run on Windows.
+well suited to batch simulations. TELEMAC calibrations can also be run on Windows: the TELEMAC launcher is called without a shell (with the active Python interpreter for a ``.py`` launcher, which is found on ``PATH`` also when ``PATHEXT`` lists no ``.PY``), and ``env-scripts/activateHBCtelemacWindows.bat`` is a template that loads TELEMAC and the conda environment of HydroBayesCal in one Command Prompt; set the paths in its ``USER SETTINGS`` block first. The test suite does not run on Windows.
 
 This page covers (1) the Python environment and the package itself, and
 (2) the numerical-model bindings.

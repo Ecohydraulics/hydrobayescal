@@ -48,3 +48,15 @@ def test_a_missing_launcher_or_steering_file_is_named(tmp_path, monkeypatch):
         _model(tmp_path).run_single_simulation(control_file="run.cas")
     with pytest.raises(FileNotFoundError, match="other.cas"):
         _model(tmp_path).run_single_simulation(control_file="other.cas")
+
+
+def test_on_windows_a_python_launcher_is_found_without_pathext(tmp_path, monkeypatch):
+    """shutil.which matches on Windows only the extensions in PATHEXT, which has no .PY by default."""
+    from hydroBayesCal.telemac.control_telemac import find_telemac_launcher
+
+    (tmp_path / "telemac2d.py").write_text("")  # not executable: shutil.which skips it, as on Windows without .PY
+    monkeypatch.setenv("PATH", f"{tmp_path / 'empty'}{os.pathsep}{tmp_path}")
+
+    assert find_telemac_launcher("telemac2d.py", windows=False) is None
+    assert os.path.samefile(find_telemac_launcher("telemac2d.py", windows=True), tmp_path / "telemac2d.py")
+    assert find_telemac_launcher("telemac3d.py", windows=True) is None

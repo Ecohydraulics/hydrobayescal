@@ -265,7 +265,7 @@ def run_bal_model(collocation_points,
     bal_n_jobs : int
         Number of worker processes that score the BAL candidates, passed to ``joblib``. ``-1`` (default) uses all cores, ``1`` scores them in the calling process.
     tp_normalization : bool
-        Scale the calibration parameters to [0, 1] before the emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration.
+        Scale the calibration parameters to [0, 1] before the gpytorch emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration. Not passed to the scikit-learn emulator (``gp_library='skl'``), whose RBF length scales and bounds are set from the physical parameter ranges.
 
     Returns
     -------
@@ -417,7 +417,7 @@ def run_bal_model(collocation_points,
                              kernel=kernel,
                              alpha=1e-6,
                              n_restarts=10,
-                             parallelize=False, tp_normalization=tp_normalization)
+                             parallelize=False)
             # Everything downstream (training log lines, prediction, the sequential
             # design) goes through surrogate_object, which the gpy branch below also
             # sets. Without this, gp_library="skl" fails on the first log line.

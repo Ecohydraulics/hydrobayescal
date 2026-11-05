@@ -93,6 +93,8 @@ class MetricsPlots:
         1. metrics-locations-tp-raw.csv
            Individual metrics from every validation set.
 
+        Each entry of ``surrogate_metrics["metrics_per_location"]`` names its surrogate type (``"SurrogateType"``) and, optionally, its validation set (``"ValidationSet"``, default 1). ``validate_simulation.py`` evaluates one validation set, so the standard deviations it gets are 0.
+
         2. metrics-locations-tp-mean-std.csv
            Mean and sample standard deviation across validation sets,
            independently for each:
@@ -114,40 +116,16 @@ class MetricsPlots:
         coordinates_df = coordinates_df.reset_index(drop=True)
         n_locations = len(coordinates_df)
 
-        # ---------------------------------------------------------
-        # Validation-set and surrogate information
-        # ---------------------------------------------------------
-        n_entries = len(entries)
+        # Surrogate type and validation set of each entry. validate_simulation.py writes the type into every entry, while the top-level SurrogateType list holds one value per analyzed surrogate and is longer when only some of them are evaluated per location.
+        def _entry_label(entry, key, default):
+            value = entry.get(key, default)
+            if isinstance(value, (list, tuple, np.ndarray)):
+                value = value[0] if len(value) else default
+            return value
 
-        surrogate_types = np.asarray(
-            surrogate_metrics.get(
-                "SurrogateType",
-                ["Unknown"] * n_entries
-            )
-        )
+        surrogate_types = [_entry_label(entry, "SurrogateType", "Unknown") for entry in entries]
+        validation_sets = [_entry_label(entry, "ValidationSet", 1) for entry in entries]
 
-        validation_sets = np.asarray(
-            surrogate_metrics.get(
-                "ValidationSet",
-                np.ones(n_entries, dtype=int)
-            )
-        )
-
-        if len(surrogate_types) != n_entries:
-            raise ValueError(
-                "Length mismatch: SurrogateType does not match "
-                "metrics_per_location."
-            )
-
-        if len(validation_sets) != n_entries:
-            raise ValueError(
-                "Length mismatch: ValidationSet does not match "
-                "metrics_per_location."
-            )
-
-        # ---------------------------------------------------------
-        # Determine metric keys
-        # ---------------------------------------------------------
         sample = entries[0]
 
         non_metric_keys = {
@@ -155,6 +133,7 @@ class MetricsPlots:
             "TrainPoints",
             "SurrogateType",
             "ValidationSet",
+            "LocationIdx",
         }
 
         metric_keys = [

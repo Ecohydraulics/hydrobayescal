@@ -47,6 +47,7 @@ def _stub(tmp_path, calibration_quantities, nloc=2):
         "_point_ids": OpenFOAMModel._point_ids,
         "_per_point_outputs": OpenFOAMModel._per_point_outputs,
         "_load_per_point_outputs": OpenFOAMModel._load_per_point_outputs,
+        "_stored_parameter_sets": OpenFOAMModel._stored_parameter_sets,
     })()
 
 

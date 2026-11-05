@@ -217,7 +217,7 @@ def run_bal_model(collocation_points,
     bal_n_jobs : int
         Number of processes for scoring the BAL candidates (joblib). -1 (default) uses all cores.
     tp_normalization : bool
-        Scale the calibration parameters to [0, 1] before the emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration.
+        Scale the calibration parameters to [0, 1] before the gpytorch emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration. Not passed to the scikit-learn emulator (``gp_library='skl'``), whose RBF length scales and bounds are set from the physical parameter ranges.
 
     Returns
     -------
@@ -294,10 +294,7 @@ def run_bal_model(collocation_points,
     # Log-likelihood and log prior density of the posterior samples (same as bal_telemac.py)
     bayesian_dict['post_loglikelihood'] = [None] * (n_iter + 1)
     bayesian_dict['post_logpdf'] = [None] * (n_iter + 1)
-    # Exploration/exploitation: 'auto' starts with exploitation only and switches on
-    # exploration if the posterior gets more than one mode (same as bal_telemac.py).
-    # do_tradeoff has to be set here: the first BAL iteration reads it, and without
-    # it the run fails with a NameError after the whole initial design was simulated.
+    # Exploration/exploitation: 'auto' starts with exploitation only and switches on exploration if the posterior gets more than one mode (same as bal_telemac.py). do_tradeoff has to be set here: the first BAL iteration reads it, and without it the run fails with a NameError after the whole initial design was simulated.
     if bal_exploration_tradeoff == "auto":
         do_tradeoff = False
         logger.info("BAL point selection: exploitation only, exploration is added if the "
@@ -332,7 +329,7 @@ def run_bal_model(collocation_points,
 
             # 1.2. Setup a GPR: initialize the general SKL class
             sm = SklTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
-                             noise=True, kernel=kernel, alpha=1e-6, n_restarts=10, parallelize=False, tp_normalization=tp_normalization)
+                             noise=True, kernel=kernel, alpha=1e-6, n_restarts=10, parallelize=False)
             # used for prediction and sequential design below
             surrogate_object = sm
 

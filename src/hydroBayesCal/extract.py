@@ -135,6 +135,8 @@ def extract_results(
 
     if time not in ("last", "index", "mean_last"):
         raise ValueError("time must be 'last', 'index', or 'mean_last'.")
+    if time == "mean_last" and int(n_last) < 1:
+        raise ValueError(f"time 'mean_last' averages n_last = {n_last} output steps; n_last has to be at least 1.")
 
     if point_time is not None:
         point_time = np.broadcast_to(
