@@ -22,6 +22,21 @@ def _latex_safe(text):
     return str(text).replace('\\', ' ').replace('_', r'\_').replace('%', r'\%')
 
 
+def _format_number(value, position=None):
+    """Tick and annotation label of a parameter value.
+
+    A value that two decimals represent is written in decimal notation (``0.05``, ``12.5``), any other one in scientific notation with one decimal (``4.5x10^-4`` as ``$4.5\\times10^{-4}$``), so that parameters of very different magnitude share one label style. ``position`` is the argument matplotlib's ``FuncFormatter`` passes; it is not used.
+    """
+    value = float(value)
+    if np.isclose(value, 0.0, rtol=0.0, atol=1e-15):
+        return '0'
+    if np.isclose(value, round(value, 2), rtol=0.0, atol=1e-10):
+        return f'{value:.2f}'.rstrip('0').rstrip('.')
+    exponent = int(np.floor(np.log10(abs(value))))
+    coefficient = value / (10 ** exponent)
+    return rf'${coefficient:.1f}\times10^{{{exponent}}}$'
+
+
 class PosteriorPlots:
     @staticmethod
     def _iteration_series(bayesian_dict, parameter_names, param_values=None):
@@ -1050,53 +1065,6 @@ class PosteriorPlots:
                             patch.get_height()
                             / max_density
                         )
-                # ----------------------------------------------------------
-                # Numeric format for x-axis ticks and optimum values
-                # ----------------------------------------------------------
-                # Each value is formatted independently.
-                #
-                # If scientific notation is needed, normalize each value so
-                # there is exactly ONE digit before the decimal point and
-                # ONE decimal place:
-                #
-                #   30000   -> 3.0 � 10^4
-                #   0.003   -> 3.0 � 10^-3
-                #   0.00045 -> 4.5 � 10^-4
-                #
-                # Values representable with at most two decimal places remain
-                # in ordinary decimal notation.
-
-                def format_number(value, position=None):
-
-                    value = float(value)
-
-                    if np.isclose(value, 0.0, rtol=0.0, atol=1e-15):
-                        return '0'
-
-                    # Ordinary decimal notation when two decimals are enough.
-                    if np.isclose(
-                            value,
-                            round(value, 2),
-                            rtol=0.0,
-                            atol=1e-10
-                    ):
-                        return f'{value:.2f}'.rstrip('0').rstrip('.')
-
-                    # Independent normalized scientific notation.
-                    exponent = int(
-                        np.floor(
-                            np.log10(
-                                abs(value)
-                            )
-                        )
-                    )
-
-                    coefficient = value / (10 ** exponent)
-
-                    return (
-                        rf'${coefficient:.1f}'
-                        rf'\times10^{{{exponent}}}$'
-                    )
 
                 # ----------------------------------------------------------
                 # Calculate selected best estimate
@@ -1220,7 +1188,7 @@ class PosteriorPlots:
                 ax.text(
                     value,
                     1.05,
-                    format_number(value),
+                    _format_number(value),
                     color='black',
                     fontsize=20,
                     rotation=90,
@@ -1289,7 +1257,7 @@ class PosteriorPlots:
                 ax.set_xticks(x_tick_values)
 
                 ax.xaxis.set_major_formatter(
-                    plt.FuncFormatter(format_number)
+                    plt.FuncFormatter(_format_number)
                 )
 
                 ax.set_xlim(
