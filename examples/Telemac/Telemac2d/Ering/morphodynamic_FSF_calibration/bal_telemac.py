@@ -211,6 +211,7 @@ def run_bal_model(collocation_points,
                   n_last=80,
                   posterior_sampling_method="rejection_sampling",
                   bal_n_jobs=-1,
+                  tp_normalization=False,
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -263,6 +264,8 @@ def run_bal_model(collocation_points,
         ``"rejection_sampling"`` (default) or ``"bayesian_weighting"``, see :class:`~hydroBayesCal.surrogate.bal_functions.BayesianInference`.
     bal_n_jobs : int
         Number of worker processes that score the BAL candidates, passed to ``joblib``. ``-1`` (default) uses all cores, ``1`` scores them in the calling process.
+    tp_normalization : bool
+        Scale the calibration parameters to [0, 1] before the emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration.
 
     Returns
     -------
@@ -414,7 +417,7 @@ def run_bal_model(collocation_points,
                              kernel=kernel,
                              alpha=1e-6,
                              n_restarts=10,
-                             parallelize=False)
+                             parallelize=False, tp_normalization=tp_normalization)
             # Everything downstream (training log lines, prediction, the sequential
             # design) goes through surrogate_object, which the gpy branch below also
             # sets. Without this, gp_library="skl" fails on the first log line.
@@ -440,7 +443,7 @@ def run_bal_model(collocation_points,
                                                         training_iter=150,
                                                         likelihood=multi_likelihood_loc,
                                                         optimizer="adam", lr=0.01,
-                                                        number_quantities=complex_model.num_calibration_quantities,
+                                                        number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
                                                         )
                 else:
                     likelihood = gpytorch.likelihoods.GaussianLikelihood(
@@ -452,7 +455,7 @@ def run_bal_model(collocation_points,
                                      likelihood=likelihood, kernel=kernel,
                                      training_iter=150,
                                      optimizer="adam", lr=0.07,
-                                     verbose=False)
+                                     verbose=False, tp_normalization=tp_normalization)
                     surrogate_object = sm
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
@@ -461,7 +464,7 @@ def run_bal_model(collocation_points,
                 if complex_model.multitask_selection == "SO_sequential":
                     # Independent single-output GPEs, one per calibration target, each set up as for a calibration on that target alone. No correlation between the targets is modeled.
                     surrogate_object = SOSequentialGPyTraining.from_training_data(
-                        collocation_points, model_outputs, complex_model.calibration_quantities)
+                        collocation_points, model_outputs, complex_model.calibration_quantities, tp_normalization=tp_normalization)
                 if complex_model.multitask_selection == "variables":
                     multi_likelihood_var = gpytorch.likelihoods.MultitaskGaussianLikelihood(
                         num_tasks=complex_model.num_calibration_quantities,
@@ -474,7 +477,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_var,
                                                     optimizer="adam", lr=0.07,
-                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
                                                     )
                     surrogate_object = multi_sm_var
                 if complex_model.multitask_selection == "locations":
@@ -489,7 +492,7 @@ def run_bal_model(collocation_points,
                                                 kernel,
                                                 training_iter=150,
                                                 likelihood=multi_likelihood_loc,
-                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
+                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
                                                 )
                     surrogate_object = multi_sm_loc
 
@@ -504,7 +507,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_all,
                                                     optimizer="adam", lr=0.01,
-                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
                                                     )
                     surrogate_object = multi_sm_all
 
@@ -839,6 +842,7 @@ def main():
         posterior_sampling_method=config.sampling.get('posterior_sampling_method',
                                                       'rejection_sampling'),
         bal_n_jobs=config.sampling.get('bal_n_jobs', -1),
+        tp_normalization=config.sampling.get('tp_normalization', False),
     )
 
 if __name__ == "__main__":

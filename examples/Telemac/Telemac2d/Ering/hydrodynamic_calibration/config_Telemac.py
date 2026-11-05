@@ -112,6 +112,7 @@ sampling = {
     'mc_exploration': 1000,
     'gp_library':    "gpy",
     'multitask_selection': 'variables',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
+    'tp_normalization': True,  # calibration parameters scaled to [0, 1] for the emulator
     # Feed the GPE predictive standard deviation into the Bayesian inference rather
     # than treating the surrogate predictions as exact. On by default: the emulator's
     # uncertainty is genuine uncertainty, and the BAL utility already accounts for

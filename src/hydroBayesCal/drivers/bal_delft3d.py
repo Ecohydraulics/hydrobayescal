@@ -179,6 +179,7 @@ def run_bal_model(collocation_points,
                   include_surrogate_error=True,
                   bal_exploration_tradeoff="auto",
                   bal_n_jobs=-1,
+                  tp_normalization=False,
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -220,6 +221,8 @@ def run_bal_model(collocation_points,
         Whether the sequential design balances exploitation of the current posterior against exploration of the parameter space. ``'auto'`` (default) turns exploration on once the posterior has more than one well-separated mode.
     bal_n_jobs : int
         Number of worker processes that score the BAL candidates, passed to ``joblib``. ``-1`` (default) uses all cores, ``1`` scores them in the calling process.
+    tp_normalization : bool
+        Scale the calibration parameters to [0, 1] before the emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration.
 
     Returns
     -------
@@ -349,7 +352,7 @@ def run_bal_model(collocation_points,
 
             # 1.2. Setup a GPR: initialize the general SKL class
             sm = SklTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
-                             noise=True, kernel=kernel, alpha=1e-6, n_restarts=10, parallelize=False)
+                             noise=True, kernel=kernel, alpha=1e-6, n_restarts=10, parallelize=False, tp_normalization=tp_normalization)
             # Everything downstream (training log lines, prediction, the sequential
             # design) goes through surrogate_object, which the gpy branch below also
             # sets. Without this, gp_library="skl" fails on the first log line.
@@ -369,7 +372,7 @@ def run_bal_model(collocation_points,
                 # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
                 sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                                  likelihood=likelihood, kernel=kernel, training_iter=100,
-                                 optimizer="adam", verbose=False)
+                                 optimizer="adam", verbose=False, tp_normalization=tp_normalization)
                 if complex_model.multitask_selection == "locations":
                     # One calibration target with the locations as tasks: a single multitask GPE that learns the correlation between the calibration points (kept in sync with bal_telemac.py, the canonical driver).
                     multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
@@ -381,7 +384,7 @@ def run_bal_model(collocation_points,
                             gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)),
                         training_iter=150, likelihood=multi_likelihood_loc,
                         optimizer="adam", lr=0.01,
-                        number_quantities=complex_model.num_calibration_quantities)
+                        number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization)
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
                                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
@@ -389,7 +392,7 @@ def run_bal_model(collocation_points,
                 if complex_model.multitask_selection == "SO_sequential":
                     # Independent single-output GPEs, one per calibration target, without correlation between the targets (kept in sync with bal_telemac.py, the canonical driver).
                     so_sm = SOSequentialGPyTraining.from_training_data(
-                        collocation_points, model_outputs, complex_model.calibration_quantities)
+                        collocation_points, model_outputs, complex_model.calibration_quantities, tp_normalization=tp_normalization)
                 if complex_model.multitask_selection == "variables":
                     # Derive n_tasks_per_loc directly from data shape to avoid config mismatch
                     n_tasks_per_loc = model_outputs.shape[1] // complex_model.nloc
@@ -404,7 +407,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_var,
                                                     optimizer="adam", lr=0.01,
-                                                    number_quantities=n_tasks_per_loc,
+                                                    number_quantities=n_tasks_per_loc, tp_normalization=tp_normalization
                                                     )
                 if complex_model.multitask_selection == "locations":
                     multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
@@ -417,7 +420,7 @@ def run_bal_model(collocation_points,
                                                 kernel,
                                                 training_iter=150,
                                                 likelihood=multi_likelihood_loc,
-                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities,
+                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
                                                 )
                 if complex_model.multitask_selection == "all":
                     multi_likelihood_all = gpytorch.likelihoods.MultitaskGaussianLikelihood(
@@ -430,7 +433,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_all,
                                                     optimizer="adam", lr=0.01,
-                                                    number_quantities=complex_model.num_calibration_quantities,
+                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
                                                     )
 
         # Trains the GPR
@@ -754,6 +757,7 @@ def main():
         include_surrogate_error=config.sampling.get('include_surrogate_error', True),
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
         bal_n_jobs=config.sampling.get('bal_n_jobs', -1),
+        tp_normalization=config.sampling.get('tp_normalization', False),
     )
 
 

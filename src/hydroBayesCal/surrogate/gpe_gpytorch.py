@@ -223,8 +223,7 @@ class GPyTraining:
     n_restarts : int, optional
         Number of optimisation restarts.
     tp_normalization : bool, optional
-        ``True`` to normalise training-point parameter values before training
-        (default ``False``).
+        ``True`` scales every calibration parameter to [0, 1] over the range of the training points before training, and the prediction inputs with the same scale. The kernel length scales then start from comparable values for parameters of very different magnitude (a roughness of 0.01 m next to a discharge of 500 m3/s). Default ``False``, the emulator of releases up to 1.11; ``sampling['tp_normalization']`` in the configuration.
     y_normalization : bool, optional
         ``True`` to normalise model outputs before training (predictions are
         de-normalised afterwards).
@@ -250,7 +249,7 @@ class GPyTraining:
             training_iter,
             likelihood,
             y_normalization=True,
-            tp_normalization=True,
+            tp_normalization=False,
             optimizer="adam",
             lr=0.5,
             loss='exact',
@@ -552,10 +551,24 @@ class GPyTraining:
         return return_out_dic
 
     def predict_(self, input_sets, get_conf_int=False):
+        """Predict the outputs at parameter sets.
 
+        Parameters
+        ----------
+        input_sets : numpy.ndarray
+            Parameter sets, shape ``[n_samples, n_p]``, in the units of the calibration parameters. With ``tp_normalization`` they are scaled like the training points.
+        get_conf_int : bool, optional
+            Also return the bounds of the 95 % interval.
+
+        Returns
+        -------
+        dict
+            ``output`` (mean) and ``std``, shape ``[n_samples, n_obs]``, and ``upper_ci`` and ``lower_ci`` if requested.
+        """
         input_sets = np.atleast_2d(np.asarray(input_sets, dtype=float))
 
-        if self.tp_norm:
+        # An emulator pickled before 1.12 has no x_min and was trained on the parameters as they are, also if its tp_norm (then without effect) is set.
+        if getattr(self, "tp_norm", False) and hasattr(self, "x_min"):
             if self.x_min is None or self.x_range is None:
                 raise RuntimeError(
                     "Input-normalization parameters are unavailable. "
@@ -646,7 +659,7 @@ class MultiGPyTraining:
             parallelize=False,
             number_quantities=2,
             noise_constraint=GreaterThan(1e-6),
-            tp_normalization=True,
+            tp_normalization=False,
             precision="double"
     ):
         """
@@ -655,6 +668,8 @@ class MultiGPyTraining:
         See original class docstring for parameter details.
         precision : {"double", "single"}, optional
             Floating-point precision of the emulator, see :class:`GPyTraining`. Default ``"double"``.
+        tp_normalization : bool, optional
+            Scale the calibration parameters to [0, 1] before training, see :class:`GPyTraining`. Default ``False``.
         """
         _precision_dtype(precision)  # refuse an unknown value here, not in the first training
         self.precision = str(precision).lower()
@@ -712,7 +727,8 @@ class MultiGPyTraining:
         """
         X = np.atleast_2d(np.asarray(input_sets, dtype=float))
 
-        if self.tp_norm:
+        # An emulator pickled before 1.12 has no x_min and was trained on the parameters as they are, also if its tp_norm (then without effect) is set.
+        if getattr(self, "tp_norm", False) and hasattr(self, "x_min"):
             if self.x_min is None or self.x_range is None:
                 raise RuntimeError(
                     "Input-normalization parameters are unavailable. "
@@ -1445,7 +1461,7 @@ class SOSequentialGPyTraining:
 
     @classmethod
     def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
-                           training_iter=150, lr=0.07, verbose=False, tp_normalization=True,precision="double"):
+                           training_iter=150, lr=0.07, verbose=False, tp_normalization=False, precision="double"):
         """Build the container from the training data of a calibration.
 
         One single-output GPE is set up per calibration target, with the kernel, likelihood and optimizer settings the drivers use for a calibration on one target, so a target is emulated the same way whether it is calibrated alone or together with others. The models are not trained yet, call :meth:`train_`.
@@ -1466,6 +1482,8 @@ class SOSequentialGPyTraining:
             Passed on to :class:`GPyTraining`.
         precision : {"double", "single"}
             Floating-point precision of the emulators, passed on to :class:`GPyTraining`.
+        tp_normalization : bool
+            Scale the calibration parameters to [0, 1] before training, passed on to :class:`GPyTraining`. Default ``False``.
 
         Returns
         -------
@@ -1496,7 +1514,7 @@ class SOSequentialGPyTraining:
                 likelihood=likelihood, kernel=kernel,
                 training_iter=training_iter,
                 optimizer="adam", lr=lr,
-                verbose=verbose, tp_normalization=tp_normalization,precision=precision)
+                verbose=verbose, tp_normalization=tp_normalization, precision=precision)
         return cls(surrogate_models=surrogate_models, calibration_quantities=calibration_quantities)
 
     def __getitem__(self, key):
