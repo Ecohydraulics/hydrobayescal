@@ -151,9 +151,7 @@ sampling = {
     'mc_samples_al':  2000,
     'mc_exploration': 1000,
     'gp_library':     "gpy",
-    # Scale every calibration parameter to [0, 1] before the emulator is trained.
-    # Worth trying when the parameters differ by orders of magnitude (a roughness
-    # in m next to a discharge in m3/s). Off by default (the emulator of 1.11).
+    # Scale every calibration parameter to [0, 1] before a gpytorch emulator (gp_library "gpy") is trained. Worth trying when the parameters differ by orders of magnitude (a roughness in m next to a discharge in m3/s). Off by default (the emulator of 1.11). The scikit-learn emulator ("skl") is not affected.
     'tp_normalization': False,
 
     # Feed the GPE predictive standard deviation into the Bayesian inference rather

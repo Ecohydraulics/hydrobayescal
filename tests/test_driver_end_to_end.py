@@ -66,6 +66,7 @@ class _AnalyticModel(HydroSimulations):
             calibration_quantities=list(quantities), extraction_quantities=list(quantities),
             complete_bal_mode=True, only_bal_mode=False, delete_complex_outputs=False,
             multitask_selection=multitask_selection)
+        self.parameter_ranges = self.param_values  # as OpenFOAM and Delft3D set it, read by the scikit-learn branch
         self.calls = []
 
     def run_multiple_simulations(self, collocation_points=None, bal_new_set_parameters=None,
@@ -89,10 +90,11 @@ def _driver(name):
     return module
 
 
-def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=False, **bal_options):
+def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=False, gp_library="gpy",
+               driver=None, **bal_options):
     """Initial design and one BAL iteration through the functions of one driver."""
     matplotlib.pyplot.rcParams.update({"text.usetex": False})
-    driver = _driver(driver_name)
+    driver = driver or _driver(driver_name)
     model = _AnalyticModel(folder, quantities, multitask_selection, dry_point)
     design = driver.setup_experiment_design(
         complex_model=model, tp_selection_criteria="dkl",
@@ -104,7 +106,7 @@ def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=F
     driver.run_bal_model(
         collocation_points=points, model_outputs=outputs, complex_model=model,
         experiment_design=design, eval_steps=1, prior_samples=300, mc_samples_al=30,
-        mc_exploration=60, gp_library="gpy", bal_n_jobs=1, **extraction, **bal_options)
+        mc_exploration=60, gp_library=gp_library, bal_n_jobs=1, **extraction, **bal_options)
 
     with open(pathlib.Path(model.calibration_folder) / "BAL_dictionary.pkl", "rb") as handle:
         return model, pickle.load(handle)
@@ -178,3 +180,21 @@ def test_a_calibration_runs_through_with_the_exploration_trade_off(tmp_path):
     assert model.model_evaluations.shape[0] == MAX_RUNS
     assert np.all(bal["exploration_tradeoff_active"])
     assert np.all(np.isfinite(bal["log_BME"]))
+
+
+@pytest.mark.parametrize("driver_name", ["bal_telemac", "bal_openfoam", "bal_delft3d"])
+def test_the_scikit_learn_emulator_ignores_the_input_scaling_of_the_gpytorch_ones(tmp_path, driver_name):
+    """SklTraining scales by z-scores, which the RBF length scales and bounds from the physical parameter ranges do not fit."""
+    driver = _driver(driver_name)
+    built, skl_training = [], driver.SklTraining
+
+    def _recorded(*args, **kwargs):
+        emulator = skl_training(*args, **kwargs)
+        built.append(emulator.tp_norm)
+        return emulator
+
+    driver.SklTraining = _recorded
+    _calibrate(driver_name, tmp_path, ("WATER DEPTH",), "variables", gp_library="skl", driver=driver,
+               tp_normalization=True)
+
+    assert built and not any(built)
