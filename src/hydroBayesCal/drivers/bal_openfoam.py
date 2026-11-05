@@ -294,10 +294,7 @@ def run_bal_model(collocation_points,
     # Log-likelihood and log prior density of the posterior samples (same as bal_telemac.py)
     bayesian_dict['post_loglikelihood'] = [None] * (n_iter + 1)
     bayesian_dict['post_logpdf'] = [None] * (n_iter + 1)
-    # Exploration/exploitation: 'auto' starts with exploitation only and switches on
-    # exploration if the posterior gets more than one mode (same as bal_telemac.py).
-    # do_tradeoff has to be set here: the first BAL iteration reads it, and without
-    # it the run fails with a NameError after the whole initial design was simulated.
+    # Exploration/exploitation: 'auto' starts with exploitation only and switches on exploration if the posterior gets more than one mode (same as bal_telemac.py). do_tradeoff has to be set here: the first BAL iteration reads it, and without it the run fails with a NameError after the whole initial design was simulated.
     if bal_exploration_tradeoff == "auto":
         do_tradeoff = False
         logger.info("BAL point selection: exploitation only, exploration is added if the "

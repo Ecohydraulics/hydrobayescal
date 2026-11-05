@@ -97,10 +97,7 @@ calibration = {
     'gpe_error':              0.0,
     'model_structural_error': 0.0,
 
-    # Optional name of this calibration case. The results go to
-    # <res_dir>/auto-saved-results-HydroBayesCal_<calibration_case>, so that
-    # several calibrations of one model keep their results and restart data apart.
-    # None (default): <res_dir>/auto-saved-results-HydroBayesCal.
+    # Optional name of this calibration case. The results go to <res_dir>/auto-saved-results-HydroBayesCal_<calibration_case>, so that several calibrations of one model keep their results and restart data apart. None (default): <res_dir>/auto-saved-results-HydroBayesCal.
     'calibration_case': None,
     'dict_output_name': "extraction-data",
 }

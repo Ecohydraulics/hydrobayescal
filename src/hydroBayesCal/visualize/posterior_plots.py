@@ -676,10 +676,7 @@ class PosteriorPlots:
         # ------------------------------------------------------------------
         # Validate histogram configuration
         # ------------------------------------------------------------------
-        # Histogram ranges are defined separately for every calibration
-        # parameter inside the plotting loop. This allows parameters with
-        # very different prior ranges and orders of magnitude to be plotted
-        # without forcing them onto one global numerical scale.
+        # Histogram ranges are defined separately for every calibration parameter inside the plotting loop. This allows parameters with very different prior ranges and orders of magnitude to be plotted without forcing them onto one global numerical scale.
         if (
                 not isinstance(
                     bins,
@@ -947,9 +944,7 @@ class PosteriorPlots:
                 # ----------------------------------------------------------
                 # Parameter-specific histogram range and bin edges
                 # ----------------------------------------------------------
-                # Each parameter is histogrammed over its own calibration
-                # range. Therefore a parameter spanning 1e-4--1e-3 and one
-                # spanning 0.02--0.08 both use the full plotting resolution.
+                # Each parameter is histogrammed over its own calibration range. Therefore a parameter spanning 1e-4--1e-3 and one spanning 0.02--0.08 both use the full plotting resolution.
                 param_min = float(x_limits[col][0])
                 param_max = float(x_limits[col][1])
 

@@ -11,8 +11,7 @@ import pyvista as pv
 from scipy import spatial
 
 
-#: k-epsilon coefficients that can be calibrated: config name (lowercase) -> name in
-#: kEpsilonCoeffs. The coefficient must already be in the template's kEpsilonCoeffs.
+#: k-epsilon coefficients that can be calibrated: config name (lowercase) -> name in kEpsilonCoeffs. The coefficient must already be in the template's kEpsilonCoeffs.
 KEPSILON_COEFFS = {
     "cmu": "Cmu",
     "c1": "C1",
@@ -22,13 +21,7 @@ KEPSILON_COEFFS = {
     "sigmaeps": "sigmaEps",
 }
 
-#: Bed wall functions for ks (in order of preference). The atmospheric rough wall
-#: functions use the roughness length z0 and also work if the first cell is smaller
-#: than the roughness; nutkRoughWallFunction uses Ks and needs the first cell to be
-#: larger than Ks. atmNutkWallFunction is the ESI name (z0 is a Function1, written
-#: "z0 constant <v>;", with atmEpsilon/atmOmega counterparts that carry z0 as well),
-#: nutkAtmRoughWallFunction the Foundation name (z0 is a field, "z0 uniform <v>;",
-#: in nut only).
+#: Bed wall functions for ks (in order of preference). The atmospheric rough wall functions use the roughness length z0 and also work if the first cell is smaller than the roughness; nutkRoughWallFunction uses Ks and needs the first cell to be larger than Ks. atmNutkWallFunction is the ESI name (z0 is a Function1, written "z0 constant <v>;", with atmEpsilon/atmOmega counterparts that carry z0 as well), nutkAtmRoughWallFunction the Foundation name (z0 is a field, "z0 uniform <v>;", in nut only).
 ATM_ROUGH_WALL = "atmNutkWallFunction"
 FOUNDATION_ATM_ROUGH_WALL = "nutkAtmRoughWallFunction"
 Z0_ROUGH_WALLS = (ATM_ROUGH_WALL, FOUNDATION_ATM_ROUGH_WALL)
@@ -156,8 +149,7 @@ class OpenFOAMController:
 
         return os.path.join(self.case_dir, rp)
 
-    # Turbulence dictionary of the case: constant/momentumTransport (Foundation 8+)
-    # or constant/turbulenceProperties (ESI, also the default).
+    # Turbulence dictionary of the case: constant/momentumTransport (Foundation 8+) or constant/turbulenceProperties (ESI, also the default).
     def _turbulence_dictionary(self) -> str:
         for candidate in ("constant/momentumTransport",
                           "constant/turbulenceProperties"):
@@ -279,8 +271,7 @@ class OpenFOAMController:
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            # Skip the rest of a multi-line 'value nonuniform' list (already
-            # replaced by 'value uniform 0;'), until ';' or ');'
+            # Skip the rest of a multi-line 'value nonuniform' list (already replaced by 'value uniform 0;'), until ';' or ');'
             if skip_multiline_value:
                 if stripped in (";", ");"):
                     skip_multiline_value = False
@@ -425,9 +416,7 @@ class OpenFOAMController:
         with open(path, "w") as f:
             f.writelines(new_lines)
 
-    # Writes the roughness length z0 into the z0 entry of `patch` for every atm wall
-    # function field (nut, epsilon, omega) in 0/ and in every other time directory
-    # (a hot-start case reads its boundary conditions from {startTime}/, not 0/).
+    # Writes the roughness length z0 into the z0 entry of `patch` for every atm wall function field (nut, epsilon, omega) in 0/ and in every other time directory (a hot-start case reads its boundary conditions from {startTime}/, not 0/).
     def update_roughness_length(self, patch: str, z0: float, ks: Optional[float] = None) -> None:
         label = f"z0={z0:.6g}" + (f" (ks={ks:.6g})" if ks is not None else "")
         time_dirs = ["0"] + [
@@ -442,8 +431,7 @@ class OpenFOAMController:
                 if _set_patch_entry(path, patch, "z0", f"constant {z0:.6g}", keep_form=True):
                     print(f"Updating {label} on patch '{patch}' in {tdir}/{field}")
                 elif field == "nut" and tdir == "0":
-                    # nut must carry the z0 entry; anything else means the case
-                    # template is not set up the way the binding expects.
+                    # nut must carry the z0 entry; anything else means the case template is not set up the way the binding expects.
                     raise ValueError(f"No 'z0' entry on patch '{patch}' in 0/nut")
 
     # Dispatches all calibration parameter updates: k-epsilon coefficients go to
@@ -457,8 +445,7 @@ class OpenFOAMController:
 
             if patch in KEPSILON_COEFFS.values():
                 value = float(param["value"])
-                # Use the given turbulence dictionary if it exists, otherwise the one
-                # of the case (turbulenceProperties or momentumTransport)
+                # Use the given turbulence dictionary if it exists, otherwise the one of the case (turbulenceProperties or momentumTransport)
                 turb_file = param.get("file") or self._turbulence_dictionary()
                 if not os.path.isfile(self._case_path(turb_file)):
                     turb_file = self._turbulence_dictionary()
@@ -485,8 +472,7 @@ class OpenFOAMController:
                     bc_type=param["bc_type"],
                     value=value,
                 )
-                # Also update Ks in the other time directories: a hot start reads the
-                # boundary conditions from {startTime}/nut, not 0/nut
+                # Also update Ks in the other time directories: a hot start reads the boundary conditions from {startTime}/nut, not 0/nut
                 for entry in sorted(os.listdir(self.case_dir)):
                     if entry == "0":
                         continue
@@ -741,11 +727,7 @@ class OpenFOAMModel(HydroSimulations):
     your existing OpenFOAMController for the actual OpenFOAM operations.
     """
 
-    #: Quantities returned by _extract_at_control_points (valid calibration and
-    #: extraction quantities). U_magnitude is the old name of U_MAG, ALPHA_WATER is
-    #: the interFoam water volume fraction at the point. TKE is the total turbulent
-    #: kinetic energy, TKE_MODELED the k of the turbulence model and TKE_RESOLVED
-    #: 0.5 tr(UPrime2Mean) of a URANS run (NaN without fieldAverage).
+    #: Quantities returned by _extract_at_control_points (valid calibration and extraction quantities). U_magnitude is the old name of U_MAG, ALPHA_WATER is the interFoam water volume fraction at the point. TKE is the total turbulent kinetic energy, TKE_MODELED the k of the turbulence model and TKE_RESOLVED 0.5 tr(UPrime2Mean) of a URANS run (NaN without fieldAverage).
     EXTRACTABLE_QUANTITIES = (
         "U_x", "U_y", "U_z",
         "U_MAG", "U_magnitude",
