@@ -32,6 +32,7 @@ DRIVERS = [
     DRIVERS_DIR / "bal_telemac_multiflow.py",
     REPO / "examples" / "Telemac" / "Hydromorphodynamic" / "Ering" / "bal_telemac.py",
     REPO / "examples" / "Telemac" / "Telemac2d" / "Ering" / "hydrodynamic_calibration" / "bal_telemac.py",
+    REPO / "examples" / "Telemac" / "Telemac2d" / "Ering" / "morphodynamic_FSF_calibration" / "bal_telemac.py",
     REPO / "examples" / "Telemac" / "Telemac3d" / "cylinderFlume" / "bal_telemac.py",
 ]
 

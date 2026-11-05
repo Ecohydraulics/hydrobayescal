@@ -779,6 +779,7 @@ def main():
             validation=config.execution['validation'],
             multitask_selection=config.sampling.get('multitask_selection', 'variables'),
             gaia_layer_average=config.morphodynamic_simulation.get('gaia_layer_average', None),
+            point_time_column=getattr(config, 'extraction', {}).get('point_time_column', None),
     )
 
     # Setup and run the experiment

@@ -19,6 +19,7 @@ TEMPLATE_CONFIG = "config_Telemac.py"
 EXAMPLE_DRIVERS = {
     "examples/Telemac/Hydromorphodynamic/Ering/bal_telemac.py": ("Ering", "config_Ering.py"),
     "examples/Telemac/Telemac2d/Ering/hydrodynamic_calibration/bal_telemac.py": ("Ering hydrodynamic", "config_Telemac.py"),
+    "examples/Telemac/Telemac2d/Ering/morphodynamic_FSF_calibration/bal_telemac.py": ("Ering fine sediment fraction", "config_Telemac.py"),
     "examples/Telemac/Telemac3d/cylinderFlume/bal_telemac.py": ("Cylinder flume", "config.py"),
 }
 
