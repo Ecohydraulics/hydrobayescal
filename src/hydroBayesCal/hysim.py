@@ -850,10 +850,10 @@ class HydroSimulations(ABC):
             logger.info(f"Saved detailed results npy to {npy_path}")
 
             # The same rows go into one table in restart_data that does not depend on the calibration targets. calibration_folder is named after them, so a restart on other targets starts in an empty folder; this table is what lets it reuse the runs already simulated (_load_stored_outputs). It is merged on its own rather than copied from the per-target table, which after such a restart holds only the runs made since.
-            _, restart_rows = HydroSimulations._merge_detailed_rows(
+            restart_fields, restart_rows = HydroSimulations._merge_detailed_rows(
                 os.path.join(self.restart_data_folder, DETAILED_OUTPUTS_FILE),
                 detailed_results)
-            point_outputs = self._per_point_outputs(restart_rows)
+            point_outputs = self._per_point_outputs(restart_rows, restart_fields)
         else:
             point_outputs = None
 
@@ -882,17 +882,18 @@ class HydroSimulations(ABC):
         df = getattr(self, "calibration_pts_df", None)
         return [] if df is None else [str(k) for k in df.iloc[:, 0]]
 
-    def _per_point_outputs(self, rows):
+    def _per_point_outputs(self, rows, fieldnames=None):
         """The detailed results table as ``{point_id: [{quantity: value} per run]}``.
 
-        Rows of one run are matched to the calibration points by their order, as in :meth:`_rebuild_model_evaluations_from_detailed`. The quantities are all columns but the run index, the coordinates and the calibration parameters. Returns ``None`` (and the caller writes the flat layout) if there are no calibration points or a run has another number of rows.
+        Rows of one run are matched to the calibration points by their order, as in :meth:`_rebuild_model_evaluations_from_detailed`. The quantities are all columns of ``fieldnames`` (the header of the merged table; default the keys of the first row) but the run index, the coordinates and the calibration parameters. A run without a quantity, such as a run stored by an earlier release, has NaN there. Returns ``None`` (and the caller writes the flat layout) if there are no calibration points or a run has another number of rows.
         """
         point_ids = self._point_ids()
         if not point_ids or not rows:
             return None
-        run_key = "run_idx" if "run_idx" in rows[0] else next(iter(rows[0]))
+        columns = list(fieldnames) if fieldnames else list(rows[0])
+        run_key = "run_idx" if "run_idx" in columns else columns[0]
         skip = {run_key, "x", "y", "z", *self.calibration_parameters}
-        quantities = [c for c in rows[0] if c not in skip]
+        quantities = [c for c in columns if c not in skip]
         by_run = {}
         for row in rows:
             by_run.setdefault(int(HydroSimulations._as_float(row[run_key])), []).append(row)
@@ -910,7 +911,7 @@ class HydroSimulations(ABC):
     def _load_per_point_outputs(self, data, output_data_path, run_range_filtering=None):
         """``model_evaluations`` for the configured calibration targets from ``initial-model-outputs.json`` in the per-point layout.
 
-        The collocation points of the stored runs come from ``restart_data/initial-collocation-points.csv``, which :meth:`_save_all_results` rewrites with every run.
+        Every stored run is used, as from the flat file of releases up to 1.11: a restart on fewer runs would give the next BAL run the index of a stored run, whose rows and case folder it would then replace. ``run_range_filtering`` only decides whether a warning names the difference. The parameter sets of the stored runs come from ``restart_data/detailed-model-outputs.csv``, the table the JSON is written from, and from ``restart_data/initial-collocation-points.csv`` if that table is missing; the CSV holds only the runs of the last session.
         """
         point_ids = self._point_ids()
         missing = [p for p in point_ids if p not in data]
@@ -919,26 +920,47 @@ class HydroSimulations(ABC):
                 f"{output_data_path} has no outputs for the calibration points {missing or point_ids}. The calibration "
                 "points file has to be the one the runs were extracted with.")
         n_stored = min(len(data[p]) for p in point_ids)
-        lo, hi = (1, n_stored) if run_range_filtering is None else (int(run_range_filtering[0]), min(int(run_range_filtering[1]), n_stored))
+        if run_range_filtering is not None and int(run_range_filtering[1]) < n_stored:
+            logger_warn.warning(
+                f"{output_data_path} holds {n_stored} runs and all of them train the surrogate, although "
+                f"sampling['init_runs'] = {int(run_range_filtering[1])}. Set init_runs = {n_stored} to remove this warning.")
         try:
             evaluations = np.array([[float(data[p][r][q]) for p in point_ids for q in self.calibration_quantities]
-                                    for r in range(lo - 1, hi)])
+                                    for r in range(n_stored)])
         except KeyError as error:
             raise ValueError(
                 f"The calibration target {error} is not stored in {output_data_path}. A target can be chosen after the "
                 "runs only if it was extracted with them.") from None
 
-        collocation_path = os.path.join(self.restart_data_folder, "initial-collocation-points.csv")
-        collocation = np.loadtxt(collocation_path, delimiter=",", skiprows=1, ndmin=2)
-        if collocation.shape[0] < hi:
+        collocation, collocation_path = self._stored_parameter_sets()
+        if collocation.shape[0] < n_stored:
             raise ValueError(
                 f"{collocation_path} holds {collocation.shape[0]} parameter sets, but {output_data_path} holds {n_stored} runs.")
-        self.restart_collocation_points = collocation[lo - 1:hi]
+        self.restart_collocation_points = collocation[:n_stored]
         self.model_evaluations = evaluations
         logger.info(
             f"Loaded {evaluations.shape[0]} of {n_stored} stored run(s) for {list(self.calibration_quantities)} from "
             f"{os.path.basename(output_data_path)}.")
         return self.model_evaluations
+
+    def _stored_parameter_sets(self):
+        """Parameter sets of the stored runs in the order of their run index, and the file they were read from.
+
+        From ``restart_data/detailed-model-outputs.csv`` when it holds the calibration parameters, else from ``restart_data/initial-collocation-points.csv``.
+        """
+        path = os.path.join(self.restart_data_folder, self.RESELECTION_DETAILED_FILE)
+        if os.path.isfile(path):
+            with open(path, newline="") as f:
+                rows = list(csv.DictReader(f))
+            if rows and all(p in rows[0] for p in self.calibration_parameters):
+                run_key = "run_idx" if "run_idx" in rows[0] else next(iter(rows[0]))
+                first_rows = {}
+                for row in rows:
+                    first_rows.setdefault(int(HydroSimulations._as_float(row[run_key])), row)
+                return np.array([[HydroSimulations._as_float(first_rows[r][p]) for p in self.calibration_parameters]
+                                 for r in sorted(first_rows)], ndmin=2), path
+        path = os.path.join(self.restart_data_folder, "initial-collocation-points.csv")
+        return np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2), path
 
     @staticmethod
     def _as_float(value):
@@ -1075,7 +1097,7 @@ class HydroSimulations(ABC):
         Shared by the bindings that keep their results through
         :meth:`_save_all_results`; their ``output_processing`` delegates here.
 
-        Per-point path (results of 1.12 on): ``initial-model-outputs.json`` holds every quantity per calibration point, see :meth:`_save_all_results`; the configured targets are taken from it directly and the parameter sets from ``restart_data/initial-collocation-points.csv``. ``run_range_filtering`` applies.
+        Per-point path (results of 1.12 on): ``initial-model-outputs.json`` holds every quantity per calibration point, see :meth:`_save_all_results`; the configured targets are taken from it directly, for every stored run, see :meth:`_load_per_point_outputs`.
 
         Fast path (flat file of releases up to 1.11): ``initial-model-outputs.json`` was written with the ``calibration_quantities`` that are configured now, so its ``model_evaluations`` matrix is returned as stored.
 
@@ -1086,7 +1108,7 @@ class HydroSimulations(ABC):
         output_data_path : str, optional
             Path to ``initial-model-outputs.json``.
         run_range_filtering : tuple of int, optional
-            ``(lo, hi)``, 1-indexed and inclusive. Trims a rebuilt matrix to those runs. It is not applied on the fast path, which returns every stored run as it always has; the number of runs found and used is logged for both paths, so the difference does not go unnoticed.
+            ``(lo, hi)``, 1-indexed and inclusive. Trims a rebuilt matrix to those runs. It is not applied on the per-point and the fast path, which return every stored run as the fast path always has; the number of runs found and used is logged for all paths, so the difference does not go unnoticed.
 
         Returns
         -------

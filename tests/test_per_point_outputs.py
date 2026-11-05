@@ -16,7 +16,7 @@ def _stub(tmp_path, calibration_quantities):
     calibration.mkdir(parents=True, exist_ok=True)
     restart.mkdir(parents=True, exist_ok=True)
     methods = ("_point_ids", "_per_point_outputs", "_load_per_point_outputs", "_load_stored_outputs",
-               "_rebuild_model_evaluations_from_detailed")
+               "_rebuild_model_evaluations_from_detailed", "_stored_parameter_sets")
     return type("Stub", (), {
         "calibration_folder": str(calibration),
         "restart_data_folder": str(restart),
@@ -75,15 +75,45 @@ def test_any_stored_quantity_can_become_the_calibration_target(tmp_path):
     assert restart.restart_collocation_points.ravel().tolist() == pytest.approx([0.07, 0.08, 0.09])
 
 
-def test_a_run_range_trims_outputs_and_parameters_alike(tmp_path):
+def test_every_stored_run_is_used_whatever_the_run_range(tmp_path, caplog):
+    """As from the flat file of 1.11: a restart that trained on fewer runs would give the next BAL run the index of a stored one, which then replaces it."""
     stub = _stub(tmp_path, ["U_x"])
     _save_runs(stub, [0.07, 0.08, 0.09])
 
-    outputs = stub._load_stored_outputs(f"{stub.restart_data_folder}/initial-model-outputs.json",
-                                        run_range_filtering=(2, 3))
+    with caplog.at_level("WARNING"):
+        outputs = stub._load_stored_outputs(f"{stub.restart_data_folder}/initial-model-outputs.json",
+                                            run_range_filtering=(1, 2))
 
-    assert outputs[:, 0].tolist() == [_value(1, 0, "U_x"), _value(2, 0, "U_x")]
-    assert stub.restart_collocation_points.ravel().tolist() == pytest.approx([0.08, 0.09])
+    assert outputs[:, 0].tolist() == [_value(r, 0, "U_x") for r in range(3)]
+    assert stub.restart_collocation_points.ravel().tolist() == pytest.approx([0.07, 0.08, 0.09])
+    assert "init_runs" in caplog.text
+
+
+def test_the_parameter_sets_come_from_the_table_the_outputs_come_from(tmp_path):
+    """initial-collocation-points.csv holds the runs of the last session only, the restart table those of all sessions."""
+    stub = _stub(tmp_path, ["U_x"])
+    _save_runs(stub, [0.07, 0.08, 0.09])
+    with open(f"{stub.restart_data_folder}/initial-collocation-points.csv", "w") as handle:
+        handle.write("Cmu\n0.07\n0.08\n")
+
+    stub._load_stored_outputs(f"{stub.restart_data_folder}/initial-model-outputs.json")
+
+    assert stub.restart_collocation_points.ravel().tolist() == pytest.approx([0.07, 0.08, 0.09])
+
+
+def test_a_quantity_new_to_a_stored_table_is_kept(tmp_path):
+    """A results folder of 1.11 has no TKE_RESOLVED column; the runs made since do."""
+    stub = _stub(tmp_path, ["U_x"])
+    with open(f"{stub.restart_data_folder}/{HydroSimulations.RESELECTION_DETAILED_FILE}", "w") as handle:
+        handle.write("run_idx,Cmu,x,y,z,U_x\n0,0.07,0.0,0.0,0.0,1.0\n0,0.07,1.0,0.0,0.0,2.0\n")
+    stub.model_evaluations = np.array([[1.0, 2.0], [3.0, 4.0]])
+    rows = [{"run_idx": 1, "Cmu": 0.08, "x": float(p), "y": 0.0, "z": 0.0, "U_x": 3.0 + p, "TKE_RESOLVED": 0.5 + p}
+            for p in range(2)]
+    HydroSimulations._save_all_results(stub, np.array([[0.07], [0.08]]), rows)
+
+    with open(f"{stub.restart_data_folder}/initial-model-outputs.json") as handle:
+        stored = json.load(handle)
+    assert np.isnan(stored["P2"][0]["TKE_RESOLVED"]) and stored["P2"][1]["TKE_RESOLVED"] == 1.5
 
 
 def test_a_quantity_that_was_not_extracted_is_named(tmp_path):
