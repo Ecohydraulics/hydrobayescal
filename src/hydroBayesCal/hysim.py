@@ -22,6 +22,32 @@ DETAILED_OUTPUTS_FILE = "detailed-model-outputs.csv"
 #: Values of ``multitask_selection``, i.e. of ``sampling['multitask_selection']`` in a configuration.
 MULTITASK_SELECTIONS = ("variables", "locations", "all", "SO_sequential")
 
+#: Name of the results folder in ``res_dir`` when no ``calibration_case`` is given.
+RESULTS_FOLDER = "auto-saved-results-HydroBayesCal"
+
+
+def results_folder_name(calibration_case=None):
+    """Name of the results folder in ``res_dir`` for one calibration case.
+
+    Without a case the folder is ``auto-saved-results-HydroBayesCal``, the name of every release before 1.12.0, so earlier results stay restartable with ``only_bal_mode``. A case name is appended, ``auto-saved-results-HydroBayesCal_<case>``, so that several calibrations of one model (other parameters, other targets) keep their results, surrogates and restart data apart.
+
+    Parameters
+    ----------
+    calibration_case : str, optional
+        ``calibration['calibration_case']`` of the configuration.
+
+    Raises
+    ------
+    ValueError
+        If the name contains a path separator, which would put the results outside ``res_dir``.
+    """
+    if calibration_case is None or not str(calibration_case).strip():
+        return RESULTS_FOLDER
+    case = str(calibration_case).strip()
+    if any(sep in case for sep in ("/", "\\", os.sep)) or case in (".", ".."):
+        raise ValueError(f"calibration_case {case!r} must be a folder name, not a path.")
+    return f"{RESULTS_FOLDER}_{case}"
+
 
 class HydroSimulations(ABC):
     def __init__(
@@ -48,7 +74,7 @@ class HydroSimulations(ABC):
             gpe_error=0.0,
             measurement_error=0.10,
             model_structural_error=0.0,
-            calibration_case="case1",
+            calibration_case=None,
             *args,
             **kwargs,
     ):
@@ -133,6 +159,8 @@ class HydroSimulations(ABC):
             True              | True, with init_runs > max_runs | Surrogate construction + Bayesian Active Learning
         validation : bool, optional (Default: False)
             If True, creates output files (inputs and outputs) corresponding to validation process.
+        calibration_case : str, optional (Default: None)
+            Name of the calibration case, appended to the results folder, see :func:`results_folder_name`. Without it the results go to ``<res_dir>/auto-saved-results-HydroBayesCal``.
         gpe_error : float, optional (Default: 0.0)
             Flat stand-in for the emulator's own uncertainty, as a fraction of each
             measured value. It defaults to 0.0 because the drivers now run with
@@ -267,7 +295,7 @@ class HydroSimulations(ABC):
         self.only_bal_mode = only_bal_mode
         self.delete_complex_outputs=delete_complex_outputs
         self.validation=validation
-        self.calibration_case= calibration_case
+        self.calibration_case = calibration_case
         # Checked here because the drivers branch on this value only when they build the surrogate, after the initial design has been simulated. An unknown value used to match none of those branches.
         if multitask_selection not in MULTITASK_SELECTIONS:
             raise ValueError(
@@ -303,9 +331,7 @@ class HydroSimulations(ABC):
                 gpe_error=self.gpe_error, measurement_error=self.measurement_error,
                 model_structural_error=self.model_structural_error)
 
-        self.asr_dir = os.path.join(
-            res_dir,
-            f"auto-saved-results-HydroBayesCal_{self.calibration_case}")
+        self.asr_dir = os.path.join(res_dir, results_folder_name(calibration_case))
         self.calibration_folder = os.path.join(self.asr_dir,"calibration-data","_".join(self.calibration_quantities))
         self.restart_data_folder = os.path.join(self.asr_dir,"restart_data")
         if not os.path.exists(self.asr_dir):

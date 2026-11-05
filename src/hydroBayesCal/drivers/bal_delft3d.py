@@ -717,6 +717,7 @@ def main():
             delete_complex_outputs=config.execution['delete_complex_outputs'],
             validation=config.execution['validation'],
             multitask_selection=config.sampling.get('multitask_selection', 'variables'),
+            calibration_case=config.calibration.get('calibration_case', None),
             n_avg_timesteps=config.simulation.get('n_avg_timesteps', 1)
         )
 

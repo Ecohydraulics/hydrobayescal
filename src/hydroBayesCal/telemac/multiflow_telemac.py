@@ -46,6 +46,7 @@ import os
 import numpy as np
 
 from hydroBayesCal.function_pool import *  # noqa: F401,F403 - provides logging/logger
+from hydroBayesCal.hysim import results_folder_name
 from hydroBayesCal.telemac.control_telemac import TelemacModel
 
 try:
@@ -96,7 +97,8 @@ class MultiflowTelemacModel:
         flow's calibration-points CSV). Optional: ``dict_output_name``.
     res_dir : str
         Root results directory. The combined artifacts (surrogate, BAL
-        dictionary) land in ``<res_dir>/auto-saved-results-HydroBayesCal``;
+        dictionary) land in ``<res_dir>/auto-saved-results-HydroBayesCal``, or in
+        ``<res_dir>/auto-saved-results-HydroBayesCal_<calibration_case>`` if a case is given;
         every flow gets its own stock results tree in ``<res_dir>/flow-<name>``.
     **shared
         Every further keyword accepted by
@@ -182,7 +184,7 @@ class MultiflowTelemacModel:
         self.model_evaluations = None
 
         # ---- combined artifact tree (mirrors the hysim conventions) ---------
-        self.asr_dir = os.path.join(res_dir, "auto-saved-results-HydroBayesCal")
+        self.asr_dir = os.path.join(res_dir, results_folder_name(shared.get("calibration_case")))
         self.calibration_folder = os.path.join(
             self.asr_dir, "calibration-data", "_".join(self.calibration_quantities))
         self.restart_data_folder = os.path.join(self.asr_dir, "restart_data")

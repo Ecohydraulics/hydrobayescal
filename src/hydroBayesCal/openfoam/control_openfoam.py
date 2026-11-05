@@ -800,6 +800,8 @@ class OpenFOAMModel(HydroSimulations):
             gpe_error=gpe_error,
             measurement_error=measurement_error,
             model_structural_error=model_structural_error,
+            # further base-class parameters, e.g. calibration_case
+            **kwargs,
         )
 
         # OpenFOAM-specific attributes
