@@ -161,6 +161,33 @@ def _normalize_inputs(inputs, x_min, x_range):
 
     return (inputs - x_min) / x_range
 
+#: Lower bound of the noise of the multitask likelihoods built by :func:`multitask_likelihood`, on the normalized outputs.
+LIKELIHOOD_NOISE_FLOOR = 1e-6
+#: Initial global and per-task noise of those likelihoods.
+LIKELIHOOD_INITIAL_NOISE = 1e-5
+
+
+def multitask_likelihood(num_tasks):
+    """The multitask Gaussian likelihood the drivers train a :class:`MultiGPyTraining` with.
+
+    The outputs of a deterministic model carry no noise, so both noise terms of the likelihood, the global one and the one per task, start at :data:`LIKELIHOOD_INITIAL_NOISE` with :data:`LIKELIHOOD_NOISE_FLOOR` as lower bound. With gpytorch's initial values (about 0.7 on the normalized outputs, global and per task), and a bound of 1e-3 for the ``locations`` and ``all`` layouts, 150 Adam iterations left the noise far above what the outputs carry: on an analytic test model with three calibration parameters, two targets and three points (30 training runs) the validation error was 1.5 to 2.5 times larger, for all three layouts. Found by Federica Scolari for the OpenFOAM driver.
+
+    Parameters
+    ----------
+    num_tasks : int
+        Number of tasks: calibration targets (``variables``), calibration points (``locations``) or both (``all``).
+
+    Returns
+    -------
+    gpytorch.likelihoods.MultitaskGaussianLikelihood
+    """
+    likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(
+        num_tasks=int(num_tasks), noise_constraint=GreaterThan(LIKELIHOOD_NOISE_FLOOR))
+    likelihood.noise = LIKELIHOOD_INITIAL_NOISE
+    likelihood.task_noises = torch.full((int(num_tasks),), LIKELIHOOD_INITIAL_NOISE)
+    return likelihood
+
+
 class MyExactGPyModel(gpytorch.models.ExactGP):
     """
     Instance of GPyTorch's "ExactGP" library, with custom likelihood, kernel, training points.

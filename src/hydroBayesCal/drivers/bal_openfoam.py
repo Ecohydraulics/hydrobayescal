@@ -351,11 +351,7 @@ def run_bal_model(collocation_points,
                                  optimizer="adam", verbose=False, tp_normalization=tp_normalization)
                 if complex_model.multitask_selection == "locations":
                     # One quantity, locations as tasks (as in bal_telemac.py)
-                    multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
-                        num_tasks=complex_model.nloc,
-                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6))
-                    multi_likelihood_loc.noise = 1e-5
-                    multi_likelihood_loc.task_noises = torch.full((complex_model.nloc,), 1e-5)
+                    multi_likelihood_loc = multitask_likelihood(complex_model.nloc)
                     multi_sm_loc = MultiGPyTraining(
                         collocation_points, model_outputs,
                         gpytorch.kernels.ScaleKernel(
@@ -374,14 +370,7 @@ def run_bal_model(collocation_points,
                 if complex_model.multitask_selection == "variables":
                     # Derive n_tasks_per_loc directly from data shape to avoid config mismatch
                     n_tasks_per_loc = model_outputs.shape[1] // complex_model.nloc
-                    # Small initial noise as in bal_telemac.py (gpytorch default ~0.7 is
-                    # not reduced enough in 150 iterations)
-                    multi_likelihood_var = gpytorch.likelihoods.MultitaskGaussianLikelihood(
-                        num_tasks=n_tasks_per_loc,
-                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
-                    )
-                    multi_likelihood_var.noise = 1e-5
-                    multi_likelihood_var.task_noises = torch.full((n_tasks_per_loc,), 1e-5)
+                    multi_likelihood_var = multitask_likelihood(n_tasks_per_loc)
                     multi_sm_var = MultiGPyTraining(collocation_points,
                                                     model_outputs,
                                                     kernel,
@@ -391,12 +380,7 @@ def run_bal_model(collocation_points,
                                                     number_quantities=n_tasks_per_loc, tp_normalization=tp_normalization
                                                     )
                 if complex_model.multitask_selection == "locations":
-                    multi_likelihood_loc = gpytorch.likelihoods.MultitaskGaussianLikelihood(
-                        num_tasks=complex_model.nloc,
-                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
-                    )
-                    multi_likelihood_loc.noise = 1e-5
-                    multi_likelihood_loc.task_noises = torch.full((complex_model.nloc,), 1e-5)
+                    multi_likelihood_loc = multitask_likelihood(complex_model.nloc)
 
                     multi_sm_loc = MultiGPyTraining(collocation_points,
                                                 model_outputs,
@@ -406,12 +390,7 @@ def run_bal_model(collocation_points,
                                                 optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
                                                 )
                 if complex_model.multitask_selection == "all":
-                    multi_likelihood_all = gpytorch.likelihoods.MultitaskGaussianLikelihood(
-                        num_tasks=model_outputs.shape[1],
-                        noise_constraint=gpytorch.constraints.GreaterThan(1e-6)
-                    )
-                    multi_likelihood_all.noise = 1e-5
-                    multi_likelihood_all.task_noises = torch.full((model_outputs.shape[1],), 1e-5)
+                    multi_likelihood_all = multitask_likelihood(model_outputs.shape[1])
                     multi_sm_all = MultiGPyTraining(collocation_points,
                                                     model_outputs,
                                                     kernel,
