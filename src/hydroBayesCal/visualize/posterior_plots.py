@@ -22,19 +22,21 @@ def _latex_safe(text):
     return str(text).replace('\\', ' ').replace('_', r'\_').replace('%', r'\%')
 
 
-def _format_number(value, position=None):
-    """Tick and annotation label of a parameter value.
+def _format_number(value, position=None, significant=3):
+    """Tick and annotation label of a parameter value, rounded to ``significant`` digits.
 
-    A value that two decimals represent is written in decimal notation (``0.05``, ``12.5``), any other one in scientific notation with one decimal (``4.5x10^-4`` as ``$4.5\\times10^{-4}$``), so that parameters of very different magnitude share one label style. ``position`` is the argument matplotlib's ``FuncFormatter`` passes; it is not used.
+    Values between 1e-3 and 1e4 in magnitude are written in decimal notation without trailing zeros (``0.0315``, ``512.3``), all others in scientific notation (``4.5x10^-4`` as ``$4.5\\times10^{-4}$``), so that parameters of very different magnitude share one label style without losing digits. ``position`` is the argument matplotlib's ``FuncFormatter`` passes; it is not used.
     """
     value = float(value)
     if np.isclose(value, 0.0, rtol=0.0, atol=1e-15):
         return '0'
-    if np.isclose(value, round(value, 2), rtol=0.0, atol=1e-10):
-        return f'{value:.2f}'.rstrip('0').rstrip('.')
+    value = float(f'{value:.{significant}g}')
     exponent = int(np.floor(np.log10(abs(value))))
-    coefficient = value / (10 ** exponent)
-    return rf'${coefficient:.1f}\times10^{{{exponent}}}$'
+    if -3 <= exponent < 4:
+        label = f'{value:.{max(significant - 1 - exponent, 0)}f}'
+        return label.rstrip('0').rstrip('.') if '.' in label else label
+    coefficient = f'{value / 10 ** exponent:.{significant - 1}f}'.rstrip('0').rstrip('.')
+    return rf'${coefficient}\times10^{{{exponent}}}$'
 
 
 class PosteriorPlots:
@@ -1188,7 +1190,7 @@ class PosteriorPlots:
                 ax.text(
                     value,
                     1.05,
-                    _format_number(value),
+                    _format_number(value, significant=4),
                     color='black',
                     fontsize=20,
                     rotation=90,
