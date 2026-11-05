@@ -164,6 +164,13 @@ extraction = {
     # steps (steady state), "last" takes the final one, "index" a fixed index.
     'output_extraction_time': "mean_last",
     'n_last':                 80,
+    # Optional: name of a column of the calibration points file that gives an
+    # extraction time per point, in seconds on the time axis of the result files
+    # (for samples taken at different times). At a point with a time, "mean_last"
+    # averages the n_last output steps that end at that time, "last" and "index"
+    # take the step written at that time; an empty cell uses the mode above.
+    # None (default): every point is extracted with output_extraction_time.
+    'point_time_column':      None,
 }
 
 # ============================================================================

@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 from scipy import spatial
 
+from hydroBayesCal.telemac.config_telemac import point_time_index
 from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
 
 #: File endings treated as TELEMAC SELAFIN files.
@@ -53,6 +54,7 @@ def extract_results(
         n_last=5,
         method="idw",
         k=3,
+        point_time=None,
 ):
     """
     Extract simulation results at one or more points from a TELEMAC SELAFIN
@@ -98,6 +100,8 @@ def extract_results(
         ``"interpolated"`` is accepted as an alias of ``"idw"``.
     k : int, optional
         Number of nearest nodes for IDW interpolation. Default: 3.
+    point_time : float or array-like, optional
+        Extraction time of every point in seconds on the time axis of the SELAFIN file, one value for all points or one per point; ``nan`` leaves a point to ``time``. At a point with a time, ``"mean_last"`` averages the ``n_last`` output steps that end at that time, and ``"last"`` and ``"index"`` take the step written at that time, as in the calibration workflow (``extraction['point_time_column']``). A time at which the file holds no output raises ``ValueError``. TELEMAC files only. Default ``None``.
 
     Returns
     -------
@@ -132,9 +136,16 @@ def extract_results(
     if time not in ("last", "index", "mean_last"):
         raise ValueError("time must be 'last', 'index', or 'mean_last'.")
 
+    if point_time is not None:
+        point_time = np.broadcast_to(
+            np.atleast_1d(np.asarray(point_time, dtype=float)), x_pts.shape
+        ).copy()
+
     ext = os.path.splitext(result_file)[1].lower()
 
     if os.path.isdir(result_file) or ext in VTK_EXTENSIONS:
+        if point_time is not None:
+            raise ValueError("point_time is available for TELEMAC SELAFIN files only.")
         return _extract_openfoam(
             result_file, variables, x_pts, y_pts, z_pts,
             time, time_index, n_last, method, k
@@ -143,7 +154,7 @@ def extract_results(
     if ext in SELAFIN_EXTENSIONS:
         return _extract_telemac(
             result_file, variables, x_pts, y_pts, z_pts,
-            time, time_index, n_last, method, k
+            time, time_index, n_last, method, k, point_time
         )
 
     raise ValueError(
@@ -153,10 +164,17 @@ def extract_results(
     )
 
 
-def _reduce_time(all_times_values, time, time_index, n_last):
-    """Reduce a (n_times, ...) array to one time step according to the mode."""
+def _reduce_time(all_times_values, time, time_index, n_last, end_index=None):
+    """Reduce a (n_times, ...) array to one time step according to the mode.
+
+    ``end_index`` is the output step of a point with its own time: ``"mean_last"`` then averages the ``n_last`` steps that end there, the other modes take that step.
+    """
     all_times_values = np.asarray(all_times_values, dtype=float)
 
+    if end_index is not None:
+        if time != "mean_last":
+            return all_times_values[end_index]
+        return np.mean(all_times_values[end_index - n_last + 1:end_index + 1], axis=0)
     if time == "last":
         return all_times_values[-1]
     if time == "index":
@@ -237,7 +255,7 @@ def _evaluate_variables(resolved_variables, values):
 
 
 def _extract_telemac(result_file, variables, x_pts, y_pts, z_pts,
-                     time, time_index, n_last, method, k):
+                     time, time_index, n_last, method, k, point_time=None):
     if not os.path.isfile(result_file):
         raise FileNotFoundError(f"SELAFIN file not found: {result_file}")
 
@@ -268,8 +286,18 @@ def _extract_telemac(result_file, variables, x_pts, y_pts, z_pts,
 
     records = []
 
+    model_times = np.asarray(slf.getTimes(), dtype=float)
+
     for i in range(x_pts.size):
         target_xy = (x_pts[i], y_pts[i])
+
+        end_index = None
+        if point_time is not None and np.isfinite(point_time[i]):
+            end_index = point_time_index(model_times, point_time[i], f"Point {i}")
+            if time == "mean_last" and end_index + 1 < n_last:
+                raise ValueError(
+                    f"Point {i}: time 'mean_last' averages n_last = {n_last} output steps, but only "
+                    f"{end_index + 1} were written up to t = {point_time[i]} s.")
 
         _, idx = tree.query(target_xy, k=k_use)
         idx_base = np.atleast_1d(idx)
@@ -283,7 +311,7 @@ def _extract_telemac(result_file, variables, x_pts, y_pts, z_pts,
             for j, base in enumerate(idx_base):
                 slf.readVariablesAtNode(int(base + p * n2d))
                 node_values[p, j, :] = _reduce_time(
-                    slf.getVarValuesAtNode(), time, time_index, n_last
+                    slf.getVarValuesAtNode(), time, time_index, n_last, end_index
                 )
 
         # IDW across the k nodes on every plane: shape (nplan, n_var).

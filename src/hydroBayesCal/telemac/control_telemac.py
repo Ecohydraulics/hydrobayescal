@@ -5,7 +5,6 @@ Authors: Andres Heredia, Sebastian Schwindt
 """
 from scipy import spatial
 import numpy as np
-import pandas as pd
 from hydroBayesCal.telemac import config_telemac
 from datetime import datetime
 # from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
@@ -28,6 +27,7 @@ class TelemacModel(HydroSimulations):
             python_shebang="#!/usr/bin/env python3",
             *args,
             gaia_layer_average=None,
+            point_time_column=None,
             **kwargs
     ):
         """
@@ -48,6 +48,8 @@ class TelemacModel(HydroSimulations):
             Shebang line for Python scripts (default is "#!/usr/bin/env python3").
         gaia_layer_average : dict, optional
             Sand ratios averaged over several GAIA bed layers, as derived extraction quantities and possible calibration targets. Keyword-only. See :func:`~hydroBayesCal.telemac.config_telemac.resolve_gaia_layer_average` for the format. It is checked here, so an incomplete entry stops the calibration before the first simulation.
+        point_time_column : str, optional
+            Column of the calibration points file that holds an extraction time per point, in seconds on the time axis of the result files. Keyword-only, default ``None`` (every point is extracted with ``output_extraction_time``). See :func:`~hydroBayesCal.telemac.config_telemac.point_times`. The column is checked here, so a value that is not a time stops the calibration before the first simulation.
         *args : tuple
             Additional positional arguments.
         **kwargs : dict
@@ -97,6 +99,9 @@ class TelemacModel(HydroSimulations):
             gaia_layer_average,
             requested=list(self.extraction_quantities or []) + list(self.calibration_quantities or []))
         self.gaia_layer_average = gaia_layer_average or None
+        self.point_time_column = point_time_column or None
+        if self.point_time_column is not None and getattr(self, "calibration_pts_df", None) is not None:
+            config_telemac.point_times(self.calibration_pts_df, self.point_time_column)
         self.fortran_file = fortran_file
         self.results_filename_base = results_filename_base
         self.python_shebang = python_shebang
@@ -1226,11 +1231,12 @@ class TelemacModel(HydroSimulations):
             user_param_values=False,
             output_extraction="interpolated",  # "nearest": nearest node; "interpolated": IDW interpolation
             k=3,
-            output_extraction_time="last",  # "last", "index", "last_mean"
+            output_extraction_time="last",  # "last", "index", "mean_last"
             time_index=0,
             n=5,
             compute_wall_law_diagnostics=False,
-            gaia_layer_average=None
+            gaia_layer_average=None,
+            point_time_column=None
     ):
         """
         Extract model results at specified calibration or validation points from
@@ -1320,6 +1326,8 @@ class TelemacModel(HydroSimulations):
 
         gaia_layer_average : dict, optional
             Sand ratios averaged over several GAIA bed layers, see :func:`~hydroBayesCal.telemac.config_telemac.resolve_gaia_layer_average`. Default is the configuration the model was constructed with. A quantity named there is not read from the GAIA result file under its own name: the ratios of its ``sand_classes`` are summed in each of its ``layers`` and averaged with the ``thicknesses`` as weights, and the result is stored under the name of the quantity.
+        point_time_column : str, optional
+            Column of ``calibration_pts_df`` with an extraction time per point, in seconds on the time axis of the result files. Default is the column the model was constructed with, ``None`` if there is none. At a point with a time, ``"mean_last"`` averages the ``n`` output steps that end at that time, and ``"last"`` and ``"index"`` take the step written at that time. A point without a value is extracted with ``output_extraction_time``. See :func:`~hydroBayesCal.telemac.config_telemac.point_times`.
 
         Returns
         -------
@@ -1405,6 +1413,10 @@ class TelemacModel(HydroSimulations):
         # An explicitly passed configuration has priority over the one the model was constructed with. A quantity named in it is derived from the GAIA result file, whatever its name, so it is classified as GAIA here and not through classification_tm_gaia_dict.
         if gaia_layer_average is None:
             gaia_layer_average = getattr(self, "gaia_layer_average", None)
+        if point_time_column is None:
+            point_time_column = getattr(self, "point_time_column", None)
+        requested_times = (config_telemac.point_times(calibration_pts_df, point_time_column)
+                           if point_time_column else None)
         gaia_layer_average_specs = config_telemac.resolve_gaia_layer_average(
             gaia_layer_average, requested=calibration_extraction_quantity)
         for target, spec in gaia_layer_average_specs.items():
@@ -1738,15 +1750,9 @@ class TelemacModel(HydroSimulations):
             yu = calibration_pts_df.iloc[key_index, 2]
             zu = calibration_pts_df.iloc[key_index, 3]
 
-            # Optional CSV time (in seconds, relative to the SLF time origin).
-            # Missing values retain the original extraction behavior.
-            requested_time = (
-                calibration_pts_df.iloc[key_index]["time"]
-                if "time" in calibration_pts_df.columns else np.nan
-            )
-            has_requested_time = pd.notna(requested_time) and str(requested_time).strip() != ""
-            if has_requested_time:
-                requested_time = float(requested_time)
+            # Extraction time of this point, if the calibration points file gives one (point_time_column).
+            requested_time = requested_times[key_index] if requested_times is not None else np.nan
+            has_requested_time = bool(np.isfinite(requested_time))
 
             differentiated_values = {}
             wall_law_diagnostic_values = {}
@@ -1767,38 +1773,23 @@ class TelemacModel(HydroSimulations):
                 y2d = data["y2d"]
                 quantities = data["quantities"]
 
-                # Resolve time independently for TELEMAC and GAIA.
+                # Time mode of this point, resolved on the time axis of each result file: TELEMAC and GAIA may write at different steps. A point time turns "mean_last" into the mean of the n steps ending at that time, and "last" or "index" into the step at that time. All helpers below receive the resolved mode.
                 point_mode = output_extraction_time
                 point_time_index = time_index
                 if has_requested_time:
-                    model_times = data["times"]
-                    matches = np.flatnonzero(np.isclose(
-                        model_times, requested_time, rtol=0.0, atol=1e-5
-                    ))
-                    if not len(matches):
-                        raise ValueError(
-                            f"Point {key}: time {requested_time} s not found in "
-                            f"{model_source.upper()} SLF output times. "
-                            f"Available range: {model_times[0]} to {model_times[-1]} s."
-                        )
-                    point_time_index = int(matches[0])
-                    if output_extraction_time == "last_mean":
-                        if n < 1 or point_time_index + 1 < n:
+                    point_time_index = config_telemac.point_time_index(
+                        data["times"], requested_time, f"Point {key}, {model_source.upper()} result file")
+                    if output_extraction_time == "mean_last":
+                        if point_time_index + 1 < n:
                             raise ValueError(
-                                f"Point {key}: cannot average {n} steps ending at "
-                                f"time index {point_time_index}."
-                            )
+                                f"Point {key}: output_extraction_time 'mean_last' averages n = {n} output steps, but only "
+                                f"{point_time_index + 1} were written up to t = {requested_time} s in the "
+                                f"{model_source.upper()} result file. Reduce n_last or write outputs more often.")
+                        point_mode = config_telemac.MEAN_WINDOW
                     else:
                         point_mode = "index"
 
                 def select_point_time(all_times_outputs):
-                    if has_requested_time and output_extraction_time == "last_mean":
-                        # Values are arranged as [time, variable].
-                        return np.mean(
-                            np.asarray(all_times_outputs)[
-                            point_time_index - n + 1:point_time_index + 1
-                            ], axis=0
-                        )
                     return self._apply_time_mode(
                         all_times_outputs=all_times_outputs,
                         output_extraction_time=point_mode,
@@ -2242,6 +2233,10 @@ class TelemacModel(HydroSimulations):
 
         elif output_extraction_time == "mean_last":
             return np.mean(all_times_outputs[-n:], axis=0)
+
+        elif output_extraction_time == config_telemac.MEAN_WINDOW:
+            # The n steps that end at time_index (a calibration point with its own time).
+            return np.mean(all_times_outputs[time_index - n + 1:time_index + 1], axis=0)
 
         else:
             raise ValueError(
