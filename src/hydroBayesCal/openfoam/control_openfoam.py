@@ -22,10 +22,16 @@ KEPSILON_COEFFS = {
     "sigmaeps": "sigmaEps",
 }
 
-#: Bed wall functions for ks (in order of preference). atmNutkWallFunction uses z0 and
-#: also works if the first cell is smaller than the roughness; nutkRoughWallFunction
-#: uses Ks and needs the first cell to be larger than Ks.
+#: Bed wall functions for ks (in order of preference). The atmospheric rough wall
+#: functions use the roughness length z0 and also work if the first cell is smaller
+#: than the roughness; nutkRoughWallFunction uses Ks and needs the first cell to be
+#: larger than Ks. atmNutkWallFunction is the ESI name (z0 is a Function1, written
+#: "z0 constant <v>;", with atmEpsilon/atmOmega counterparts that carry z0 as well),
+#: nutkAtmRoughWallFunction the Foundation name (z0 is a field, "z0 uniform <v>;",
+#: in nut only).
 ATM_ROUGH_WALL = "atmNutkWallFunction"
+FOUNDATION_ATM_ROUGH_WALL = "nutkAtmRoughWallFunction"
+Z0_ROUGH_WALLS = (ATM_ROUGH_WALL, FOUNDATION_ATM_ROUGH_WALL)
 KS_ROUGH_WALL = "nutkRoughWallFunction"
 
 #: Fully rough flow: roughness length z0 = ks / 30 (Nikuradse).
@@ -44,9 +50,14 @@ def _is_number(name: str) -> bool:
         return False
 
 
-def _set_patch_entry(path: str, patch: str, key: str, new_value: str) -> bool:
+def _set_patch_entry(path: str, patch: str, key: str, new_value: str, keep_form: bool = False) -> bool:
     """Replace the line ``key ...;`` of ``patch`` in boundaryField (line based, also
     works for full fields in time directories). Returns True if a line was replaced.
+
+    With ``keep_form``, a value written as ``uniform <v>`` or ``constant <v>`` keeps
+    its keyword and only the number is replaced: the ESI line reads ``z0`` as a
+    Function1 (``constant``), the Foundation line as a field (``uniform``), and the
+    template knows which one its solver expects.
     """
     with open(path, "r") as f:
         lines = f.readlines()
@@ -68,7 +79,14 @@ def _set_patch_entry(path: str, patch: str, key: str, new_value: str) -> bool:
         depth += line.count("{") - line.count("}")
         m = key_re.match(line)
         if m:
-            lines[i] = f"{m.group(1)}{key:<16}{new_value};\n"
+            value = new_value
+            if keep_form:
+                old_parts = line[m.end(1) + len(key):].split()
+                old_form = old_parts[0] if old_parts else ""
+                new_parts = new_value.split()
+                if old_form in ("uniform", "constant") and len(new_parts) == 2 and new_parts[0] in ("uniform", "constant"):
+                    value = f"{old_form} {new_parts[1]}"
+            lines[i] = f"{m.group(1)}{key:<16}{value};\n"
             replaced = True
         if depth <= 0 and "}" in line:
             break
@@ -82,8 +100,9 @@ def _set_patch_entry(path: str, patch: str, key: str, new_value: str) -> bool:
 def _find_ks_patch(case_template_dir):
     """Find the bed patch in ``0/nut`` that the ``ks`` parameter writes to.
 
-    An atmNutkWallFunction patch is used first, otherwise nutkRoughWallFunction.
-    If there are several, the one named bottom/base/bed is used.
+    A patch with an atmospheric rough wall function (atmNutkWallFunction in the ESI
+    line, nutkAtmRoughWallFunction in the Foundation line) is used first, otherwise
+    nutkRoughWallFunction. If there are several, the one named bottom/base/bed is used.
 
     Returns
     -------
@@ -97,7 +116,7 @@ def _find_ks_patch(case_template_dir):
     with open(nut_path, "r") as f:
         content = f.read()
 
-    for bc_type in (ATM_ROUGH_WALL, KS_ROUGH_WALL):
+    for bc_type in (*Z0_ROUGH_WALLS, KS_ROUGH_WALL):
         patches = re.findall(rf"(\w+)\s*\{{\s*[^{{}}]*?type\s+{bc_type}\s*;", content, re.DOTALL)
         if len(patches) == 1:
             return patches[0], bc_type
@@ -420,7 +439,7 @@ class OpenFOAMController:
                 path = os.path.join(self.case_dir, tdir, field)
                 if not os.path.isfile(path):
                     continue
-                if _set_patch_entry(path, patch, "z0", f"constant {z0:.6g}"):
+                if _set_patch_entry(path, patch, "z0", f"constant {z0:.6g}", keep_form=True):
                     print(f"Updating {label} on patch '{patch}' in {tdir}/{field}")
                 elif field == "nut" and tdir == "0":
                     # nut must carry the z0 entry; anything else means the case
@@ -454,7 +473,7 @@ class OpenFOAMController:
 
             if patch == "ks":
                 value = float(param["value"])
-                if param["bc_type"] == ATM_ROUGH_WALL:
+                if param["bc_type"] in Z0_ROUGH_WALLS:
                     # z0 bed: write z0 = ks/30 to nut, epsilon and omega
                     self.update_roughness_length(param["patch"], value * KS_TO_Z0, ks=value)
                     continue
@@ -843,12 +862,12 @@ class OpenFOAMModel(HydroSimulations):
         # Find the bed patch for ks in 0/nut
         self.ks_patch, self.ks_bc_type = _find_ks_patch(self.case_template_dir)
         if self.ks_patch:
-            how = (f"z0 = ks/30 written to {', '.join(ATM_Z0_FIELDS)}" if self.ks_bc_type == ATM_ROUGH_WALL
+            how = (f"z0 = ks/30 written to {', '.join(ATM_Z0_FIELDS)}" if self.ks_bc_type in Z0_ROUGH_WALLS
                    else "Ks written to nut")
             logger.info(f"Auto-detected ks roughness patch: '{self.ks_patch}' ({self.ks_bc_type}; {how})")
         else:
             logger.warning(
-                f"Could not auto-detect a {ATM_ROUGH_WALL} or {KS_ROUGH_WALL} bed patch in the case "
+                f"Could not auto-detect a {', '.join(Z0_ROUGH_WALLS)} or {KS_ROUGH_WALL} bed patch in the case "
                 "template's 0/nut; a 'ks' calibration parameter will fail if used."
             )
 
