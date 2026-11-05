@@ -14,7 +14,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from hydroBayesCal.utils.config_logging import logger, logger_error, logger_warn
+from hydroBayesCal.utils.config_logging import logger, logger_error, logger_warn, setup_file_logging
 
 #: Name of the detailed results table in ``restart_data``: every extracted quantity for every run x calibration point, whichever calibration targets were active when the run was simulated.
 DETAILED_OUTPUTS_FILE = "detailed-model-outputs.csv"
@@ -344,6 +344,8 @@ class HydroSimulations(ABC):
             os.makedirs(os.path.join(self.asr_dir, "plots"))
         if not os.path.exists(os.path.join(self.asr_dir, "surrogate-gpe")):
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
+        # The log files belong to the results they explain.
+        setup_file_logging(self.asr_dir)
         if self.user_param_values:
             collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
             self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, ndmin=2)

@@ -1,8 +1,11 @@
 """
 Setup logging
+
+Messages go to the console from the import on. The log files ``logfile.log``, ``warnings.log`` and ``errors.log`` are written into the results folder of a calibration: :class:`~hydroBayesCal.hysim.HydroSimulations` calls :func:`setup_file_logging` with its ``asr_dir`` as soon as that folder exists, so the log lies next to the results it explains and several calibration cases keep their logs apart.
 """
 import os
 import logging
+from datetime import datetime
 
 # setup logging
 info_formatter = logging.Formatter("%(asctime)s - %(message)s")
@@ -28,27 +31,48 @@ console_ehandler.setLevel(logging.ERROR)
 console_ehandler.setFormatter(error_formatter)
 logger_error.addHandler(console_ehandler)
 
-# create info file handler and set level to debug
+#: File handlers installed by :func:`setup_file_logging`, per logger.
+_FILE_HANDLERS = {}
+
+#: (logger, file name, level, formatter) of the three log files.
+_LOG_FILES = (
+    (logger, "logfile.log", logging.INFO, info_formatter),
+    (logger_warn, "warnings.log", logging.WARNING, warn_formatter),
+    (logger_error, "errors.log", logging.ERROR, error_formatter),
+)
+
+
 def setup_file_logging(log_dir):
+    """Write the log files into ``log_dir`` from now on.
+
+    The files are appended to, so a restart with ``only_bal_mode`` keeps the log of the runs it restarts from; every call that changes the folder marks the start of a session in ``logfile.log``. Files of an earlier call are closed, so the messages of one process go to one folder and are not written twice. Calling it again with the same folder changes nothing.
+
+    Parameters
+    ----------
+    log_dir : str
+        Folder of the log files, normally the ``asr_dir`` of the model.
+
+    Returns
+    -------
+    str
+        Absolute path of ``log_dir``.
+    """
+    log_dir = os.path.abspath(log_dir)
+    current = _FILE_HANDLERS.get(logger.name)
+    if current is not None and os.path.dirname(current.baseFilename) == log_dir:
+        return log_dir
     os.makedirs(log_dir, exist_ok=True)
 
-    info_handler = logging.FileHandler(
-        os.path.join(log_dir, "logfile.log"), "w"
-    )
-    info_handler.setLevel(logging.INFO)
-    info_handler.setFormatter(info_formatter)
-    logger.addHandler(info_handler)
+    for target, file_name, level, formatter in _LOG_FILES:
+        previous = _FILE_HANDLERS.pop(target.name, None)
+        if previous is not None:
+            target.removeHandler(previous)
+            previous.close()
+        handler = logging.FileHandler(os.path.join(log_dir, file_name), "a")
+        handler.setLevel(level)
+        handler.setFormatter(formatter)
+        target.addHandler(handler)
+        _FILE_HANDLERS[target.name] = handler
 
-    warn_handler = logging.FileHandler(
-        os.path.join(log_dir, "warnings.log"), "w"
-    )
-    warn_handler.setLevel(logging.WARNING)
-    warn_handler.setFormatter(warn_formatter)
-    logger_warn.addHandler(warn_handler)
-
-    err_handler = logging.FileHandler(
-        os.path.join(log_dir, "errors.log"), "w"
-    )
-    err_handler.setLevel(logging.ERROR)
-    err_handler.setFormatter(error_formatter)
-    logger_error.addHandler(err_handler)
+    logger.info(f"---- HydroBayesCal session of {datetime.now():%Y-%m-%d %H:%M:%S}, log files in {log_dir} ----")
+    return log_dir

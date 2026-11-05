@@ -187,9 +187,9 @@ def log_actions(func):
 
     def wrapper(*args, **kwargs):
         func(*args, **kwargs)
-        for handler in logging.getLogger("HyBayesCal").handlers:
+        for handler in logging.getLogger("HydroBayesCal").handlers:
             handler.close()
-            logging.getLogger("HyBayesCal").removeHandler(handler)
+            logging.getLogger("HydroBayesCal").removeHandler(handler)
         for handler in logging.getLogger("warnings").handlers:
             handler.close()
             logging.getLogger("warnings").removeHandler(handler)

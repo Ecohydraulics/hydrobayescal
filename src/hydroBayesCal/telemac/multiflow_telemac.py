@@ -47,6 +47,7 @@ import numpy as np
 
 from hydroBayesCal.function_pool import *  # noqa: F401,F403 - provides logging/logger
 from hydroBayesCal.hysim import results_folder_name
+from hydroBayesCal.utils.config_logging import setup_file_logging
 from hydroBayesCal.telemac.control_telemac import TelemacModel
 
 try:
@@ -192,6 +193,8 @@ class MultiflowTelemacModel:
                   os.path.join(self.asr_dir, "plots"),
                   os.path.join(self.asr_dir, "surrogate-gpe")):
             os.makedirs(d, exist_ok=True)
+        # The per-flow models moved the log files into their own folders; the calibration logs into the combined one.
+        setup_file_logging(self.asr_dir)
 
         logger.info(
             f"multiflow model ready: {len(self.models)} flows "
