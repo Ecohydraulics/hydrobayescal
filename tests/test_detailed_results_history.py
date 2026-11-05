@@ -31,6 +31,9 @@ def saver(tmp_path):
         "calibration_parameters": ["ks"],
         "calibration_quantities": ["U_x"],
         "model_evaluations": np.zeros((1, 1)),
+        "nloc": 2,
+        "_point_ids": HydroSimulations._point_ids,
+        "_per_point_outputs": HydroSimulations._per_point_outputs,
     })()
     return stub
 

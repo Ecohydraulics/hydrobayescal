@@ -216,7 +216,7 @@ output before extraction. Equivalently, in a script:
 
 Results are written to the same ``auto-saved-results-HydroBayesCal`` layout as
 for TELEMAC (see :doc:`gpe-bal-telemac`), so post-processing is identical
-across solvers.
+across solvers. ``initial-model-outputs.json`` holds the outputs per calibration point and run in the layout of the TELEMAC binding, ``{point: [{quantity: value} per run]}``, with every extracted quantity, so that any of them can become the calibration target of a restart with ``only_bal_mode``. Result folders of releases up to 1.11, whose file holds the flat matrix of the calibration targets, are read as well.
 
 See also
 --------

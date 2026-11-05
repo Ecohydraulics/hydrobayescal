@@ -90,7 +90,9 @@ def build_multiflow_model(config):
         delete_complex_outputs=config.execution["delete_complex_outputs"],
         validation=config.execution["validation"],
         multitask_selection=config.sampling.get("multitask_selection", "variables"),
+        calibration_case=config.calibration.get("calibration_case", None),
         gaia_layer_average=config.morphodynamic_simulation.get("gaia_layer_average", None),
+        point_time_column=getattr(config, "extraction", {}).get("point_time_column", None),
     )
 
 
@@ -171,6 +173,7 @@ def main():
         posterior_sampling_method=config.sampling.get("posterior_sampling_method",
                                                       "rejection_sampling"),
         bal_n_jobs=config.sampling.get("bal_n_jobs", -1),
+        tp_normalization=config.sampling.get("tp_normalization", False),
     )
 
 

@@ -32,6 +32,7 @@ DRIVERS = [
     DRIVERS_DIR / "bal_telemac_multiflow.py",
     REPO / "examples" / "Telemac" / "Hydromorphodynamic" / "Ering" / "bal_telemac.py",
     REPO / "examples" / "Telemac" / "Telemac2d" / "Ering" / "hydrodynamic_calibration" / "bal_telemac.py",
+    REPO / "examples" / "Telemac" / "Telemac2d" / "Ering" / "morphodynamic_FSF_calibration" / "bal_telemac.py",
     REPO / "examples" / "Telemac" / "Telemac3d" / "cylinderFlume" / "bal_telemac.py",
 ]
 
@@ -45,6 +46,9 @@ EXPECTED_FALLBACKS = {
     "bal_n_jobs": -1,
     "posterior_sampling_method": "rejection_sampling",
     "user_param_values": False,
+    "calibration_case": None,
+    "point_time_column": None,
+    "tp_normalization": False,
 }
 
 #: Keys a configuration file may leave out. A driver that reads one of them without a fallback hands ``None`` to the library, or fails on the missing key, and does so after the initial design has been simulated.
@@ -105,6 +109,12 @@ def test_run_bal_model_signature_default(path):
                         args.defaults))
     assert "include_surrogate_error" in defaults, f"{path.name}: parameter missing"
     assert ast.literal_eval(defaults["include_surrogate_error"]) is True
+
+
+def test_hydrosimulations_keeps_the_results_folder_without_a_case():
+    from hydroBayesCal.hysim import HydroSimulations
+
+    assert inspect.signature(HydroSimulations.__init__).parameters["calibration_case"].default is None
 
 
 def test_hydrosimulations_error_budget_defaults():

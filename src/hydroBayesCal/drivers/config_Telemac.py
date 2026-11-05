@@ -91,6 +91,11 @@ calibration = {
     'gpe_error':              0.0,
     'model_structural_error': 0.0,
 
+    # Optional name of this calibration case. The results go to
+    # <res_dir>/auto-saved-results-HydroBayesCal_<calibration_case>, so that
+    # several calibrations of one model keep their results and restart data apart.
+    # None (default): <res_dir>/auto-saved-results-HydroBayesCal.
+    'calibration_case': None,
     'dict_output_name': "extraction-data",
 }
 
@@ -122,6 +127,10 @@ sampling = {
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
+    # Scale every calibration parameter to [0, 1] before the emulator is trained.
+    # Worth trying when the parameters differ by orders of magnitude (a roughness
+    # in m next to a discharge in m3/s). Off by default (the emulator of 1.11).
+    'tp_normalization': False,
 
     # Feed the GPE predictive standard deviation into the Bayesian inference rather
     # than treating the surrogate predictions as exact. On by default: the emulator's
@@ -164,6 +173,13 @@ extraction = {
     # steps (steady state), "last" takes the final one, "index" a fixed index.
     'output_extraction_time': "mean_last",
     'n_last':                 80,
+    # Optional: name of a column of the calibration points file that gives an
+    # extraction time per point, in seconds on the time axis of the result files
+    # (for samples taken at different times). At a point with a time, "mean_last"
+    # averages the n_last output steps that end at that time, "last" and "index"
+    # take the step written at that time; an empty cell uses the mode above.
+    # None (default): every point is extracted with output_extraction_time.
+    'point_time_column':      None,
 }
 
 # ============================================================================

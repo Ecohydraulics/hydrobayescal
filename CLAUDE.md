@@ -61,7 +61,7 @@ Concrete bindings: `telemac/control_telemac.py` (`TelemacModel`, by far the most
 `TelemacModel` instances (one per steady discharge) and re-exposes the same attribute surface the
 driver reads, concatenating per-flow observations and outputs into one combined space.
 
-`HydroSimulations` also owns the result bookkeeping of the bindings that do not have their own (OpenFOAM, Delft3D): `_save_all_results()` writes the stored runs and merges the detailed results table by run index, and `_load_stored_outputs()` reads them back for `only_bal_mode`, rebuilding the training matrix from `restart_data/detailed-model-outputs.csv` when the configured calibration targets differ from the stored ones. The bindings call `_save_all_results()` with all rows of the current block after every run, so it has to stay idempotent per run.
+`HydroSimulations` also owns the result bookkeeping of the bindings that do not have their own (OpenFOAM, Delft3D): `_save_all_results()` writes the stored runs, merges the detailed results table by run index, and derives from the merged `restart_data/detailed-model-outputs.csv` the file `initial-model-outputs.json` in the per-point layout of the TELEMAC binding, `{point_id: [{quantity: value} per run]}` with every quantity (flat matrix only when no detailed rows are given). `_load_stored_outputs()` reads it back for `only_bal_mode` for any configured targets, and still reads the flat file of releases up to 1.11 (rebuilding from the detailed table when its targets differ). Both bindings forward their remaining `**kwargs` to the base class; Delft3D used to drop the three error terms. The bindings call `_save_all_results()` with all rows of the current block after every run, so it has to stay idempotent per run.
 
 Key data contract, assumed everywhere downstream: `model_evaluations` is a 2D array of shape
 `[num_runs, nloc * num_calibration_quantities]`, with quantities interleaved per location (two
@@ -69,7 +69,7 @@ quantities, two locations => columns 1-2 are location 1, columns 3-4 are locatio
 ordering when touching extraction, `rearrange_array()` or the surrogate code.
 
 The calibration-points CSV must carry `Point, X, Y` plus a `<TARGET>_DATA` and `<TARGET>_ERROR`
-column per calibration target (resolved case-insensitively). Total variance is
+column per calibration target (resolved case-insensitively). TELEMAC only: `extraction['point_time_column']` (default `None`) names an optional column with an extraction time per point in seconds on the SLF time axis (`config_telemac.point_times` / `point_time_index`); at such a point `"mean_last"` becomes the internal mode `config_telemac.MEAN_WINDOW` (the `n` steps ending there) and `"last"`/`"index"` become `"index"`. The mode is called `"mean_last"`, never `"last_mean"`. Total variance is
 `measurement_error**2 + gpe_error**2 + model_structural_error**2 + site_specific_error**2`. The
 three relative terms default to 0.10 / 0.0 / 0.0 as fractions of the measured value; the last comes
 from the `_ERROR` column in physical units. `gpe_error` is 0.0 because the drivers default to
@@ -126,6 +126,7 @@ A user-supplied design (`user_param_values`, or `'user'` as sampling method in t
   and `MultiGPyTraining` (multitask). `multitask_selection` picks the task axis: `"variables"`
   (tasks = calibration quantities, the default), `"locations"`, or `"all"`.
   `"SO_sequential"` uses `SOSequentialGPyTraining` instead, independent `GPyTraining` models per calibration quantity behind the same `predict_` interface. The value comes from `sampling['multitask_selection']` in all four drivers and is validated in `HydroSimulations.__init__` (`hysim.MULTITASK_SELECTIONS`). `MultiGPyTraining.predict_(multitask_cov=True)` returns the posterior predictive covariance between the quantities per location (`_posterior_task_blocks`), which is what BAL samples from. The emulators train in double precision (`precision="double"`, the default of `GPyTraining`, `MultiGPyTraining` and `SOSequentialGPyTraining.from_training_data`; kernel and likelihood arrive from the drivers in torch's default single precision and are converted). Single precision, the only one up to 1.10.1, could not factorize the training covariance of some 30 to 80 runs of a smooth response (`NotPSDError`) and lost the posterior covariance in round-off where the emulator is nearly certain. Prediction follows the type of the stored model (`_model_dtype`), so an emulator pickled by an earlier release still predicts, in single precision; for such models a covariance block can come out indefinite, which the BAL sampler refuses, so every block passes through `bal_functions.project_to_psd` as the last operation on it. `predict_` of both classes evaluates its inputs in pieces (`PREDICTION_BUDGET`): gpytorch returns the joint distribution of all points it is given, whose covariance needed 15 GB for 25,000 prior samples, while only per-point quantities are used.
+  The drivers build every multitask likelihood with `multitask_likelihood(num_tasks)` (global and per-task noise start at 1e-5, bound 1e-6). `sampling['tp_normalization']` (default `False`) scales the calibration parameters to [0, 1] over the training runs (`x_min`, `x_range` on the emulator); an emulator without `x_min` (pickled before 1.12) predicts unscaled.
   Every output column is normalized by its spread over the training runs (`_output_normalization`); a column that is the same in every run (a dry calibration point) is trained on zeros and returned with its value and zero emulator uncertainty, and non-finite training outputs are refused up front (`_require_finite_outputs`).
 * `surrogate/gpe_skl.py`: `SklTraining`, the scikit-learn alternative (`gp_library="skl"`).
 * `surrogate/validation_metrics.py`: `validation_error` and `save_valid_criteria`, shared by both emulator modules, which re-export them.
@@ -144,7 +145,7 @@ A user-supplied design (`user_param_values`, or `'user'` as sampling method in t
 
 ### Output layout
 
-Everything is written under `<res_dir>/auto-saved-results-HydroBayesCal/`:
+Everything is written under `<res_dir>/auto-saved-results-HydroBayesCal/`, or `<res_dir>/auto-saved-results-HydroBayesCal_<calibration_case>/` when `calibration['calibration_case']` is set (`hysim.results_folder_name`; the default `None` keeps the old name so that earlier results stay restartable):
 `calibration-data/<quantities joined by _>/` (BAL_dictionary.pkl, model outputs),
 `restart_data/` (collocation points, initial-model-outputs.json), `surrogate-gpe/<exploit>_<util>/`
 (pickled GPEs per iteration), `plots/`. In multiflow runs each flow additionally gets its own
@@ -159,9 +160,8 @@ symbol there can silently shadow names in those modules. It holds JSON/CSV outpu
 raster/mesh utilities, and the report-only roughness-identifiability diagnostic
 (`diagnose_roughness_identifiability` / `log_roughness_identifiability`).
 
-Logging goes through `utils/config_logging.py`, which exposes `logger`, `logger_warn` and
-`logger_error` and writes `logfile.log`, `warnings.log`, `errors.log` into the current working
-directory at import time.
+Logging goes through `utils/config_logging.py`, which exposes `logger` (named `HydroBayesCal`), `logger_warn` and
+`logger_error`. Messages go to the console from the import on; `logfile.log`, `warnings.log`, `errors.log` are written into `asr_dir`, because `HydroSimulations.__init__` (and `MultiflowTelemacModel` for its combined folder) calls `setup_file_logging(asr_dir)`. That call is idempotent per folder, closes the files of an earlier folder and appends, so an `only_bal_mode` restart keeps the log of its runs.
 
 `extract.py` is the only public API surface (`hbc.extract_results(...)`): standalone point
 extraction from SELAFIN (2D/3D, with height-above-bed selection via `ELEVATION Z`) or OpenFOAM VTK,

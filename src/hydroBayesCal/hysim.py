@@ -14,13 +14,39 @@ import numpy as np
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from hydroBayesCal.utils.config_logging import logger, logger_error, logger_warn
+from hydroBayesCal.utils.config_logging import logger, logger_error, logger_warn, setup_file_logging
 
 #: Name of the detailed results table in ``restart_data``: every extracted quantity for every run x calibration point, whichever calibration targets were active when the run was simulated.
 DETAILED_OUTPUTS_FILE = "detailed-model-outputs.csv"
 
 #: Values of ``multitask_selection``, i.e. of ``sampling['multitask_selection']`` in a configuration.
 MULTITASK_SELECTIONS = ("variables", "locations", "all", "SO_sequential")
+
+#: Name of the results folder in ``res_dir`` when no ``calibration_case`` is given.
+RESULTS_FOLDER = "auto-saved-results-HydroBayesCal"
+
+
+def results_folder_name(calibration_case=None):
+    """Name of the results folder in ``res_dir`` for one calibration case.
+
+    Without a case the folder is ``auto-saved-results-HydroBayesCal``, the name of every release before 1.12.0, so earlier results stay restartable with ``only_bal_mode``. A case name is appended, ``auto-saved-results-HydroBayesCal_<case>``, so that several calibrations of one model (other parameters, other targets) keep their results, surrogates and restart data apart.
+
+    Parameters
+    ----------
+    calibration_case : str, optional
+        ``calibration['calibration_case']`` of the configuration.
+
+    Raises
+    ------
+    ValueError
+        If the name contains a path separator, which would put the results outside ``res_dir``.
+    """
+    if calibration_case is None or not str(calibration_case).strip():
+        return RESULTS_FOLDER
+    case = str(calibration_case).strip()
+    if any(sep in case for sep in ("/", "\\", os.sep)) or case in (".", ".."):
+        raise ValueError(f"calibration_case {case!r} must be a folder name, not a path.")
+    return f"{RESULTS_FOLDER}_{case}"
 
 
 class HydroSimulations(ABC):
@@ -48,6 +74,7 @@ class HydroSimulations(ABC):
             gpe_error=0.0,
             measurement_error=0.10,
             model_structural_error=0.0,
+            calibration_case=None,
             *args,
             **kwargs,
     ):
@@ -132,6 +159,8 @@ class HydroSimulations(ABC):
             True              | True, with init_runs > max_runs | Surrogate construction + Bayesian Active Learning
         validation : bool, optional (Default: False)
             If True, creates output files (inputs and outputs) corresponding to validation process.
+        calibration_case : str, optional (Default: None)
+            Name of the calibration case, appended to the results folder, see :func:`results_folder_name`. Without it the results go to ``<res_dir>/auto-saved-results-HydroBayesCal``.
         gpe_error : float, optional (Default: 0.0)
             Flat stand-in for the emulator's own uncertainty, as a fraction of each
             measured value. It defaults to 0.0 because the drivers now run with
@@ -266,6 +295,7 @@ class HydroSimulations(ABC):
         self.only_bal_mode = only_bal_mode
         self.delete_complex_outputs=delete_complex_outputs
         self.validation=validation
+        self.calibration_case = calibration_case
         # Checked here because the drivers branch on this value only when they build the surrogate, after the initial design has been simulated. An unknown value used to match none of those branches.
         if multitask_selection not in MULTITASK_SELECTIONS:
             raise ValueError(
@@ -301,8 +331,7 @@ class HydroSimulations(ABC):
                 gpe_error=self.gpe_error, measurement_error=self.measurement_error,
                 model_structural_error=self.model_structural_error)
 
-        self.asr_dir = os.path.join(res_dir,
-                                    f"auto-saved-results-HydroBayesCal")
+        self.asr_dir = os.path.join(res_dir, results_folder_name(calibration_case))
         self.calibration_folder = os.path.join(self.asr_dir,"calibration-data","_".join(self.calibration_quantities))
         self.restart_data_folder = os.path.join(self.asr_dir,"restart_data")
         if not os.path.exists(self.asr_dir):
@@ -315,6 +344,8 @@ class HydroSimulations(ABC):
             os.makedirs(os.path.join(self.asr_dir, "plots"))
         if not os.path.exists(os.path.join(self.asr_dir, "surrogate-gpe")):
             os.makedirs(os.path.join(self.asr_dir, "surrogate-gpe"))
+        # The log files belong to the results they explain.
+        setup_file_logging(self.asr_dir)
         if self.user_param_values:
             collocation_path = os.path.join(self.restart_data_folder, 'user-collocation-points.csv')
             self.user_collocation_points = np.loadtxt(collocation_path, delimiter=',', skiprows=1, ndmin=2)
@@ -746,8 +777,8 @@ class HydroSimulations(ABC):
           shape ``(n_runs, n_params)``
         - ``model_evaluations.npy``: flat model outputs, shape
           ``(n_runs, nloc * n_quantities)``
-        - ``initial-model-outputs.json``: the same data as JSON, also copied to
-          ``restart_data_folder`` so ``only_bal_mode`` can reload it
+        - ``initial-model-outputs.json``: the outputs at the calibration points in the layout of the TELEMAC binding, ``{point_id: [{quantity: value} per run]}``, with every quantity of the detailed table and the runs of all calibration targets; also copied to ``restart_data_folder`` so ``only_bal_mode`` can reload it. Without ``detailed_results`` it holds the flat matrix of releases up to 1.11, see :meth:`_load_stored_outputs`.
+        - ``model-results-calibration-{quantities}.csv``: ``model_evaluations`` with one column per calibration point and target, as the TELEMAC binding writes it
         - ``initial-collocation-points.csv``: written to ``restart_data_folder``,
           the companion file ``__init__`` reads under ``only_bal_mode``
         - ``collocation-points-{quantities}.csv``: parameter values as CSV
@@ -771,21 +802,6 @@ class HydroSimulations(ABC):
         """
         np.save(os.path.join(self.calibration_folder, "collocation_points.npy"), collocation_points)
         np.save(os.path.join(self.calibration_folder, "model_evaluations.npy"), self.model_evaluations)
-
-        output = {
-            "collocation_points": collocation_points.tolist(),
-            "model_evaluations": self.model_evaluations.tolist(),
-            "calibration_parameters": self.calibration_parameters,
-            "calibration_quantities": self.calibration_quantities,
-            "n_runs": int(collocation_points.shape[0]),
-        }
-        with open(os.path.join(self.calibration_folder, "initial-model-outputs.json"), "w") as f:
-            json.dump(output, f, indent=2)
-
-        # Also save to restart_data_folder so only_bal_mode can find it
-        with open(os.path.join(self.restart_data_folder, "initial-model-outputs.json"), "w") as f:
-            json.dump(output, f, indent=2)
-        logger.info("Saved initial-model-outputs.json to restart_data folder for BAL restart.")
 
         # Collocation points CSV (calibration parameter values)
         quantities_str = "_".join(self.calibration_quantities)
@@ -834,9 +850,95 @@ class HydroSimulations(ABC):
             logger.info(f"Saved detailed results npy to {npy_path}")
 
             # The same rows go into one table in restart_data that does not depend on the calibration targets. calibration_folder is named after them, so a restart on other targets starts in an empty folder; this table is what lets it reuse the runs already simulated (_load_stored_outputs). It is merged on its own rather than copied from the per-target table, which after such a restart holds only the runs made since.
-            HydroSimulations._merge_detailed_rows(
+            _, restart_rows = HydroSimulations._merge_detailed_rows(
                 os.path.join(self.restart_data_folder, DETAILED_OUTPUTS_FILE),
                 detailed_results)
+            point_outputs = self._per_point_outputs(restart_rows)
+        else:
+            point_outputs = None
+
+        # The outputs at the calibration points, per point in the layout of the TELEMAC binding. Without the detailed rows (or if they do not match the calibration points) the flat matrix is written, as up to 1.11.
+        output = point_outputs if point_outputs is not None else {
+            "collocation_points": collocation_points.tolist(),
+            "model_evaluations": self.model_evaluations.tolist(),
+            "calibration_parameters": self.calibration_parameters,
+            "calibration_quantities": self.calibration_quantities,
+            "n_runs": int(collocation_points.shape[0]),
+        }
+        for folder in (self.calibration_folder, self.restart_data_folder):
+            with open(os.path.join(folder, "initial-model-outputs.json"), "w") as f:
+                json.dump(output, f, indent=2)
+        logger.info("Saved initial-model-outputs.json to restart_data folder for BAL restart.")
+
+        # model_evaluations as the TELEMAC binding writes it: one row per run, one column per point and target.
+        np.savetxt(
+            os.path.join(self.calibration_folder, f"model-results-calibration-{quantities_str}.csv"),
+            np.atleast_2d(self.model_evaluations), delimiter=",", fmt="%.8f",
+            header=",".join(f"{i}_{q}" for i in range(1, int(self.nloc or 0) + 1) for q in self.calibration_quantities),
+            comments="")
+
+    def _point_ids(self):
+        """Identifiers of the calibration points, the first column of the calibration points file, as strings (JSON keys)."""
+        df = getattr(self, "calibration_pts_df", None)
+        return [] if df is None else [str(k) for k in df.iloc[:, 0]]
+
+    def _per_point_outputs(self, rows):
+        """The detailed results table as ``{point_id: [{quantity: value} per run]}``.
+
+        Rows of one run are matched to the calibration points by their order, as in :meth:`_rebuild_model_evaluations_from_detailed`. The quantities are all columns but the run index, the coordinates and the calibration parameters. Returns ``None`` (and the caller writes the flat layout) if there are no calibration points or a run has another number of rows.
+        """
+        point_ids = self._point_ids()
+        if not point_ids or not rows:
+            return None
+        run_key = "run_idx" if "run_idx" in rows[0] else next(iter(rows[0]))
+        skip = {run_key, "x", "y", "z", *self.calibration_parameters}
+        quantities = [c for c in rows[0] if c not in skip]
+        by_run = {}
+        for row in rows:
+            by_run.setdefault(int(HydroSimulations._as_float(row[run_key])), []).append(row)
+        if any(len(run_rows) != len(point_ids) for run_rows in by_run.values()):
+            logger_warn.warning(
+                f"The detailed results do not hold one row per calibration point ({len(point_ids)}) for every run; "
+                "initial-model-outputs.json is written as the flat matrix instead.")
+            return None
+        outputs = {point_id: [] for point_id in point_ids}
+        for run_idx in sorted(by_run):
+            for point_id, row in zip(point_ids, by_run[run_idx]):
+                outputs[point_id].append({q: HydroSimulations._as_float(row.get(q)) for q in quantities})
+        return outputs
+
+    def _load_per_point_outputs(self, data, output_data_path, run_range_filtering=None):
+        """``model_evaluations`` for the configured calibration targets from ``initial-model-outputs.json`` in the per-point layout.
+
+        The collocation points of the stored runs come from ``restart_data/initial-collocation-points.csv``, which :meth:`_save_all_results` rewrites with every run.
+        """
+        point_ids = self._point_ids()
+        missing = [p for p in point_ids if p not in data]
+        if not point_ids or missing:
+            raise ValueError(
+                f"{output_data_path} has no outputs for the calibration points {missing or point_ids}. The calibration "
+                "points file has to be the one the runs were extracted with.")
+        n_stored = min(len(data[p]) for p in point_ids)
+        lo, hi = (1, n_stored) if run_range_filtering is None else (int(run_range_filtering[0]), min(int(run_range_filtering[1]), n_stored))
+        try:
+            evaluations = np.array([[float(data[p][r][q]) for p in point_ids for q in self.calibration_quantities]
+                                    for r in range(lo - 1, hi)])
+        except KeyError as error:
+            raise ValueError(
+                f"The calibration target {error} is not stored in {output_data_path}. A target can be chosen after the "
+                "runs only if it was extracted with them.") from None
+
+        collocation_path = os.path.join(self.restart_data_folder, "initial-collocation-points.csv")
+        collocation = np.loadtxt(collocation_path, delimiter=",", skiprows=1, ndmin=2)
+        if collocation.shape[0] < hi:
+            raise ValueError(
+                f"{collocation_path} holds {collocation.shape[0]} parameter sets, but {output_data_path} holds {n_stored} runs.")
+        self.restart_collocation_points = collocation[lo - 1:hi]
+        self.model_evaluations = evaluations
+        logger.info(
+            f"Loaded {evaluations.shape[0]} of {n_stored} stored run(s) for {list(self.calibration_quantities)} from "
+            f"{os.path.basename(output_data_path)}.")
+        return self.model_evaluations
 
     @staticmethod
     def _as_float(value):
@@ -973,7 +1075,9 @@ class HydroSimulations(ABC):
         Shared by the bindings that keep their results through
         :meth:`_save_all_results`; their ``output_processing`` delegates here.
 
-        Fast path: ``initial-model-outputs.json`` was written with the ``calibration_quantities`` that are configured now, so its ``model_evaluations`` matrix is returned as stored.
+        Per-point path (results of 1.12 on): ``initial-model-outputs.json`` holds every quantity per calibration point, see :meth:`_save_all_results`; the configured targets are taken from it directly and the parameter sets from ``restart_data/initial-collocation-points.csv``. ``run_range_filtering`` applies.
+
+        Fast path (flat file of releases up to 1.11): ``initial-model-outputs.json`` was written with the ``calibration_quantities`` that are configured now, so its ``model_evaluations`` matrix is returned as stored.
 
         Re-selection path: the configured ``calibration_quantities`` differ from the ones in that JSON, so the stored matrix belongs to other calibration targets. It is rebuilt from ``restart_data/detailed-model-outputs.csv`` by slicing out the requested quantities. This is what lets the calibration targets be chosen after the expensive runs: extract everything once, then restart with ``only_bal_mode`` and another ``calibration_quantities``, and only the surrogate and BAL are recomputed.
 
@@ -993,6 +1097,10 @@ class HydroSimulations(ABC):
         if output_data_path and os.path.isfile(output_data_path):
             with open(output_data_path, "r") as f:
                 data = json.load(f)
+
+        # The per-point layout of 1.12 holds every quantity, so any extracted quantity can be selected from it directly.
+        if data is not None and "model_evaluations" not in data:
+            return self._load_per_point_outputs(data, output_data_path, run_range_filtering)
 
         # An older JSON without a recorded quantity list is trusted as-is, so this stays backward compatible: the rebuild path only triggers when the stored quantities are known and actually differ from what is configured now.
         stored_q = data.get("calibration_quantities") if data is not None else None

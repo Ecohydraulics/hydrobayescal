@@ -539,6 +539,8 @@ class Delft3DModel(HydroSimulations):
             delete_complex_outputs=delete_complex_outputs,
             validation=validation,
             multitask_selection=multitask_selection,
+            # The remaining base-class parameters (the three error terms, calibration_case) arrive here. They were accepted but not forwarded, so a configured measurement_error was replaced by the default of HydroSimulations on every Delft3D run.
+            **kwargs,
         )
 
         # Delft3D-specific attributes

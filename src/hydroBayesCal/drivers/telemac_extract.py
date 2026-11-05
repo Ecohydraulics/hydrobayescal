@@ -57,6 +57,7 @@ def main():
         dict_output_name=config.calibration['dict_output_name'],
         init_runs=1,
         gaia_layer_average=gaia_layer_average,
+        point_time_column=config.extraction.get('point_time_column', None),
     )
     # Set after construction, because the constructor resets it. Without it, TELEMAC and GAIA quantities cannot be extracted together.
     if config.extraction.get('input_gaia_slf_file'):

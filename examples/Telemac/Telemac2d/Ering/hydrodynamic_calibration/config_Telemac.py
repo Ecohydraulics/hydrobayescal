@@ -26,7 +26,7 @@ paths = {
     'case_template_dir': os.path.join(BASE_DIR, ""),
     'model_dir':         os.path.join(BASE_DIR, "simulationFiles"),
     'res_dir':           os.path.join(BASE_DIR),
-    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measurements-calibration-EringCalib-detailed-updated.csv"),
+    'calibration_pts_file_path': os.path.join(BASE_DIR, "measuredData", "measurements-calibration-EringCalib-detailed-updated2.csv"),
 }
 
 # ============================================================================
@@ -35,7 +35,7 @@ paths = {
 hydrodynamic_simulation = {
     'solver_name':           "Telemac2d",
     'n_processors':          16,
-    'results_filename_base': "results_hydrodynamics_Ering_MU",
+    'results_filename_base': "results_postBAL",
     'control_file':          "Ering_afterflush_hydrodynamics-hotstart.cas",
     'friction_file':         "Ering_friction_zones.tbl", #Telemac friction file (if needed)
     'fortran_file':          None
@@ -86,9 +86,9 @@ calibration = {
     #                           conditions). Independent of the emulator and NOT
     #                           supplied by include_surrogate_error. Set it only if
     #                           you can defend a value.
-    'measurement_error':      0.20,
+    'measurement_error':      0.2,
     'gpe_error':              0.05,
-    'model_structural_error': 0.25,
+    'model_structural_error': 0.0,
 
     'dict_output_name': "extraction-data",
 }
@@ -97,12 +97,12 @@ calibration = {
 # SAMPLING AND BAL SETTINGS
 # ============================================================================
 sampling = {
-    'init_runs': 2,   # Number of initial parameter samples
-    'max_runs': 2,   # Total runs (initial + BAL iterations)
+    'init_runs': 30,   # Number of initial parameter samples
+    'max_runs': 100,   # Total runs (initial + BAL iterations)
 
     # Experimental design
     'parameter_distribution':   "uniform",
-    'parameter_sampling_method': "random",
+    'parameter_sampling_method': "sobol",
     'tp_selection_criteria':    "dkl",
 
     # BAL specific0
@@ -111,7 +111,8 @@ sampling = {
     'mc_samples_al': 2000,
     'mc_exploration': 1000,
     'gp_library':    "gpy",
-    'multitask_selection': 'SO_sequential',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
+    'multitask_selection': 'variables',  # 'locations' or 'variables' or 'all' or 'SO_sequential'
+    'tp_normalization': True,  # calibration parameters scaled to [0, 1] for the emulator
     # Feed the GPE predictive standard deviation into the Bayesian inference rather
     # than treating the surrogate predictions as exact. On by default: the emulator's
     # uncertainty is genuine uncertainty, and the BAL utility already accounts for
@@ -130,17 +131,17 @@ extraction = {
     'calibration_quantities': ["WATER DEPTH","SCALAR VELOCITY"],
     'extraction_quantities': ["WATER DEPTH", "SCALAR VELOCITY", "TURBULENT ENERG", "VELOCITY U", "VELOCITY V"],
     'time_index': 10,
-    'input_slf_file' : "results2m3_preBAL_1.slf",
+    'input_slf_file' : "results2m3_postBAL_1.slf",
 }
 
 # ============================================================================
 # EXECUTION MODES
 # ============================================================================
 execution = {
-    'complete_bal_mode':      False,
-    'only_bal_mode':          False,
+    'complete_bal_mode':      True,
+    'only_bal_mode':          True,
     'delete_complex_outputs': True,
-    'validation':             True,
+    'validation':             False,
 }
 # ============================================================================
 # PLOTTING AND REPORTING SETTINGS
@@ -160,7 +161,7 @@ plotting = {
     # Order of parameters in the BAL posterior arrays - must be in same order as 'parameters', used for plotting selected parameters.
     # When all parameters are plotted all indices must be included.
     'parameter_indices': [0,1,2,3,4],
-    'iterations_to_plot': [70],
+    'iterations_to_plot': [11],
     #-------------------------
     #posterior plotting options
     #-------------------------

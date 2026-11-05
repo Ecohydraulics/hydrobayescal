@@ -374,3 +374,15 @@ def test_clipping_of_an_indefinite_block_is_reported_once(monkeypatch):
     indefinite = np.array([[1.0e-6, 1.1e-6], [1.1e-6, 1.0e-6]])
     MultiGPyTraining._posterior_task_blocks(_Prediction(indefinite, 1, 2), block_size=2)
     assert gpe_gpytorch._REPORTED_CLIPPED_COVARIANCE
+
+
+def test_the_drivers_multitask_likelihood_starts_without_noise():
+    """Global and per-task noise start at 1e-5 with 1e-6 as lower bound, for every task layout."""
+    from hydroBayesCal.surrogate.gpe_gpytorch import (LIKELIHOOD_INITIAL_NOISE, LIKELIHOOD_NOISE_FLOOR,
+                                                      multitask_likelihood)
+
+    likelihood = multitask_likelihood(4)
+
+    assert likelihood.noise.item() == pytest.approx(LIKELIHOOD_INITIAL_NOISE, rel=1e-3)
+    assert likelihood.task_noises.detach().numpy() == pytest.approx([LIKELIHOOD_INITIAL_NOISE] * 4, rel=1e-3)
+    assert likelihood.raw_noise_constraint.lower_bound.item() == pytest.approx(LIKELIHOOD_NOISE_FLOOR)

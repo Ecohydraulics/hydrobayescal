@@ -2,6 +2,7 @@
 Global constant and variable definitions
 """
 import os
+import re
 import numpy as np
 import pandas as _pd
 
@@ -65,6 +66,10 @@ def gaia_sand_ratio_variable(layer, sand_class):
     return " ".join(f"LAY{layer:<2d}SAND RAT{sand_class}".split())
 
 
+#: A layer-average target named after one sand class, ``SAND RAT<class>``, see :func:`resolve_gaia_layer_average`.
+SAND_RATIO_TARGET = re.compile(r"SAND RAT([1-9][0-9]*)")
+
+
 def resolve_gaia_layer_average(gaia_layer_average, requested=None):
     """Check a ``gaia_layer_average`` configuration and name the GAIA variables it reads.
 
@@ -77,6 +82,8 @@ def resolve_gaia_layer_average(gaia_layer_average, requested=None):
                 "thicknesses": [0.08, 0.60], # weight of every layer, in meters
             }
         }
+
+    A target named ``SAND RAT<class>`` (for instance ``SAND RAT2``) may leave out ``sand_classes``: the trailing number of the name is then the one sand class it averages. Every other name has to state ``sand_classes``.
 
     Parameters
     ----------
@@ -103,6 +110,10 @@ def resolve_gaia_layer_average(gaia_layer_average, requested=None):
             raise ValueError(f"gaia_layer_average['{target}'] must be a dictionary.")
 
         layers, thicknesses, sand_classes = spec.get("layers"), spec.get("thicknesses"), spec.get("sand_classes")
+        # The name 'SAND RAT<class>' carries only the class number, so it cannot be mistaken for a layer number.
+        class_in_name = SAND_RATIO_TARGET.fullmatch(" ".join(str(target).split()).upper())
+        if sand_classes is None and class_in_name is not None:
+            sand_classes = [int(class_in_name.group(1))]
         if sand_classes is None:
             raise ValueError(
                 f"gaia_layer_average['{target}'] has no 'sand_classes'. GAIA names the ratio of a sand class in a bed layer "
@@ -130,6 +141,81 @@ def resolve_gaia_layer_average(gaia_layer_average, requested=None):
             "variables": [[gaia_sand_ratio_variable(layer, c) for c in sand_classes] for layer in layers],
         }
     return resolved
+#: Internal time mode of :meth:`~hydroBayesCal.telemac.control_telemac.TelemacModel._apply_time_mode`: the mean of the ``n`` output steps that end at ``time_index``. It is what ``"mean_last"`` becomes at a calibration point with its own time, see :func:`point_times`.
+MEAN_WINDOW = "mean_window"
+
+
+def point_times(calibration_pts_df, column):
+    """Read the extraction time of every calibration point from a column of the calibration points file.
+
+    A measurement taken at another time than the end of the simulation (a bed sample of an earlier survey, a gauge reading during a flood) is compared with the model output at that time. The times are given in seconds on the time axis of the SELAFIN result files, the axis TELEMAC and GAIA write (``0`` is the start of the simulation, a hot start carries on the time of its initial condition). A point without a value is extracted with the configured ``output_extraction_time``.
+
+    Parameters
+    ----------
+    calibration_pts_df : pandas.DataFrame
+        Calibration (or validation) points.
+    column : str
+        Name of the column with the times, ``extraction['point_time_column']`` in the configuration. Matched case-insensitively.
+
+    Returns
+    -------
+    numpy.ndarray
+        One time per point in seconds, ``nan`` where the point has none.
+
+    Raises
+    ------
+    ValueError
+        If the column is missing or holds a value that is not a number of seconds, for instance a date. The values are not guessed: a date read as a number would select a time step that has nothing to do with the measurement.
+    """
+    matches = [c for c in calibration_pts_df.columns if str(c).strip().lower() == str(column).strip().lower()]
+    if not matches:
+        raise ValueError(
+            f"extraction['point_time_column'] is '{column}', but the calibration points file has no such column. "
+            f"Columns: {list(calibration_pts_df.columns)}.")
+    values = calibration_pts_df[matches[0]]
+    text = values.astype(str).str.strip()
+    empty = values.isna() | text.str.lower().isin(["", "nan", "none"])
+    times = _pd.to_numeric(text.where(~empty), errors="coerce")
+    invalid = times.isna() & ~empty
+    if invalid.any():
+        point_ids = calibration_pts_df.iloc[:, 0][invalid].tolist()
+        raise ValueError(
+            f"The column '{matches[0]}' of the calibration points file holds values that are not times in seconds "
+            f"at the points {point_ids}: {values[invalid].tolist()}. Give the time in seconds on the time axis of the "
+            "result files, or leave the cell empty to extract that point with output_extraction_time.")
+    return times.to_numpy(dtype=float)
+
+
+def point_time_index(model_times, point_time, label):
+    """Index of the output step written at ``point_time``.
+
+    Parameters
+    ----------
+    model_times : array-like
+        Output times of a SELAFIN file in seconds.
+    point_time : float
+        Requested time in seconds.
+    label : str
+        Names the point and the result file in the error message.
+
+    Raises
+    ------
+    ValueError
+        If no output step was written at that time. The nearest step is not taken instead: a result file with a coarser output interval than the measurement times would otherwise go unnoticed.
+    """
+    model_times = np.asarray(model_times, dtype=float)
+    # SELAFIN stores times in single precision, which resolves about 1e-7 of the value.
+    matches = np.flatnonzero(np.isclose(model_times, point_time, rtol=1e-6, atol=1e-3))
+    if not len(matches):
+        nearest = model_times[np.argmin(np.abs(model_times - point_time))] if model_times.size else None
+        raise ValueError(
+            f"{label}: no output was written at t = {point_time} s; the nearest output time is {nearest} s "
+            f"(outputs from {model_times.min() if model_times.size else None} to "
+            f"{model_times.max() if model_times.size else None} s). Write outputs at the measurement times "
+            "(GRAPHIC PRINTOUT PERIOD) or correct the time in the calibration points file.")
+    return int(matches[0])
+
+
 # ============================================================
 # DEFAULT PHYSICAL CONSTANTS FOR WALL-LAW DIAGNOSTICS
 # ============================================================

@@ -44,6 +44,9 @@ def _stub(tmp_path, calibration_quantities, nloc=2):
         # output_processing delegates to these two methods of the shared base class, so the stub has to carry them: a bare stub raised AttributeError on the rebuild path.
         "_load_stored_outputs": OpenFOAMModel._load_stored_outputs,
         "_rebuild_model_evaluations_from_detailed": OpenFOAMModel._rebuild_model_evaluations_from_detailed,
+        "_point_ids": OpenFOAMModel._point_ids,
+        "_per_point_outputs": OpenFOAMModel._per_point_outputs,
+        "_load_per_point_outputs": OpenFOAMModel._load_per_point_outputs,
     })()
 
 

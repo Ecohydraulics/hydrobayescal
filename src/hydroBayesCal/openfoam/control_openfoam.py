@@ -2,12 +2,8 @@ import os
 import re
 import glob
 import json
-import sys
 import shutil
 import subprocess
-import csv
-import logging
-from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import numpy as np
@@ -15,14 +11,8 @@ import pyvista as pv
 from scipy import spatial
 
 
-#: ``kEpsilonCoeffs`` entries in ``constant/turbulenceProperties`` that may be used as
-#: calibration parameters, mapping the lowercase config spelling to the exact case
-#: OpenFOAM expects in the case file. Config names are matched case-insensitively; the
-#: dictionary key written into the case is not, so it is taken from this table rather
-#: than from what the user typed. The coefficient must already be present in the
-#: template's ``kEpsilonCoeffs`` subdictionary, otherwise the run fails loudly:
-#: OpenFOAM falls back to built-in defaults for coefficients it does not find, so a
-#: silently skipped write would leave every run using the same value.
+#: k-epsilon coefficients that can be calibrated: config name (lowercase) -> name in
+#: kEpsilonCoeffs. The coefficient must already be in the template's kEpsilonCoeffs.
 KEPSILON_COEFFS = {
     "cmu": "Cmu",
     "c1": "C1",
@@ -31,6 +21,114 @@ KEPSILON_COEFFS = {
     "sigmak": "sigmak",
     "sigmaeps": "sigmaEps",
 }
+
+#: Bed wall functions for ks (in order of preference). The atmospheric rough wall
+#: functions use the roughness length z0 and also work if the first cell is smaller
+#: than the roughness; nutkRoughWallFunction uses Ks and needs the first cell to be
+#: larger than Ks. atmNutkWallFunction is the ESI name (z0 is a Function1, written
+#: "z0 constant <v>;", with atmEpsilon/atmOmega counterparts that carry z0 as well),
+#: nutkAtmRoughWallFunction the Foundation name (z0 is a field, "z0 uniform <v>;",
+#: in nut only).
+ATM_ROUGH_WALL = "atmNutkWallFunction"
+FOUNDATION_ATM_ROUGH_WALL = "nutkAtmRoughWallFunction"
+Z0_ROUGH_WALLS = (ATM_ROUGH_WALL, FOUNDATION_ATM_ROUGH_WALL)
+KS_ROUGH_WALL = "nutkRoughWallFunction"
+
+#: Fully rough flow: roughness length z0 = ks / 30 (Nikuradse).
+KS_TO_Z0 = 1.0 / 30.0
+
+#: Turbulence fields whose atm wall functions carry their own z0 entry and must be
+#: kept consistent with the z0 written to nut.
+ATM_Z0_FIELDS = ("nut", "epsilon", "omega")
+
+
+def _is_number(name: str) -> bool:
+    try:
+        float(name)
+        return True
+    except ValueError:
+        return False
+
+
+def _set_patch_entry(path: str, patch: str, key: str, new_value: str, keep_form: bool = False) -> bool:
+    """Replace the line ``key ...;`` of ``patch`` in boundaryField (line based, also
+    works for full fields in time directories). Returns True if a line was replaced.
+
+    With ``keep_form``, a value written as ``uniform <v>`` or ``constant <v>`` keeps
+    its keyword and only the number is replaced: the ESI line reads ``z0`` as a
+    Function1 (``constant``), the Foundation line as a field (``uniform``), and the
+    template knows which one its solver expects.
+    """
+    with open(path, "r") as f:
+        lines = f.readlines()
+
+    key_re = re.compile(rf"^(\s*){re.escape(key)}\s+[^;]*;")
+    patch_re = re.compile(rf"^\s*{re.escape(patch)}\s*(\{{\s*)?$")
+    in_bf = in_patch = False
+    depth = 0
+    replaced = False
+    for i, line in enumerate(lines):
+        if not in_bf:
+            in_bf = line.strip().startswith("boundaryField")
+            continue
+        if not in_patch:
+            if patch_re.match(line):
+                in_patch = True
+                depth = line.count("{") - line.count("}")
+            continue
+        depth += line.count("{") - line.count("}")
+        m = key_re.match(line)
+        if m:
+            value = new_value
+            if keep_form:
+                old_parts = line[m.end(1) + len(key):].split()
+                old_form = old_parts[0] if old_parts else ""
+                new_parts = new_value.split()
+                if old_form in ("uniform", "constant") and len(new_parts) == 2 and new_parts[0] in ("uniform", "constant"):
+                    value = f"{old_form} {new_parts[1]}"
+            lines[i] = f"{m.group(1)}{key:<16}{value};\n"
+            replaced = True
+        if depth <= 0 and "}" in line:
+            break
+
+    if replaced:
+        with open(path, "w") as f:
+            f.writelines(lines)
+    return replaced
+
+
+def _find_ks_patch(case_template_dir):
+    """Find the bed patch in ``0/nut`` that the ``ks`` parameter writes to.
+
+    A patch with an atmospheric rough wall function (atmNutkWallFunction in the ESI
+    line, nutkAtmRoughWallFunction in the Foundation line) is used first, otherwise
+    nutkRoughWallFunction. If there are several, the one named bottom/base/bed is used.
+
+    Returns
+    -------
+    (str, str) or (None, None)
+        The patch name and its wall function type.
+    """
+    nut_path = os.path.join(case_template_dir, "0", "nut")
+    if not os.path.isfile(nut_path):
+        return None, None
+
+    with open(nut_path, "r") as f:
+        content = f.read()
+
+    for bc_type in (*Z0_ROUGH_WALLS, KS_ROUGH_WALL):
+        patches = re.findall(rf"(\w+)\s*\{{\s*[^{{}}]*?type\s+{bc_type}\s*;", content, re.DOTALL)
+        if len(patches) == 1:
+            return patches[0], bc_type
+        if len(patches) > 1:
+            beds = [p for p in patches if p.lower() in ("bottom", "base", "bed")]
+            if len(beds) == 1:
+                return beds[0], bc_type
+            raise ValueError(
+                f"Several {bc_type} patches in {nut_path} ({', '.join(patches)}) and no single "
+                "bed patch (bottom/base/bed) among them: cannot tell which one 'ks' belongs to."
+            )
+    return None, None
 
 
 class OpenFOAMController:
@@ -58,11 +156,8 @@ class OpenFOAMController:
 
         return os.path.join(self.case_dir, rp)
 
-    # The turbulence dictionary this case actually carries. OpenFOAM Foundation 8+
-    # renamed 'constant/turbulenceProperties' to 'constant/momentumTransport'; the
-    # ESI line kept the old name. Both are checked so one binding serves both, and
-    # the ESI spelling is returned unchanged when neither exists, so a missing-file
-    # error still names the conventional path.
+    # Turbulence dictionary of the case: constant/momentumTransport (Foundation 8+)
+    # or constant/turbulenceProperties (ESI, also the default).
     def _turbulence_dictionary(self) -> str:
         for candidate in ("constant/momentumTransport",
                           "constant/turbulenceProperties"):
@@ -177,23 +272,15 @@ class OpenFOAMController:
         patch_found = False
         ks_written = False
         cs_present = False  # True once we've seen (and preserved) an existing Cs line
-        brace_level = 0
         skip_multiline_value = False  # True while consuming a nonuniform list after 'value'
-        # Ks/Cs are roughness settings of nutkRoughWallFunction and are meaningless on
-        # any other boundary condition, so they are only written for that wall function.
-        # Without this gate every patch carrying a 'value' entry and a non-None value
-        # would have Ks/Cs injected into it.
+        # Ks/Cs are only written for nutkRoughWallFunction
         is_rough_wall = bc_type == "nutkRoughWallFunction"
 
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            # ----------------------------------------------------------------
-            # Skip lines that are part of a multi-line 'value nonuniform ...'
-            # list that we already replaced with 'value uniform 0;'.
-            # We stop skipping once we see the line that ends the list: either
-            # a standalone ';' or the closing ');' of a bracketed list.
-            # ----------------------------------------------------------------
+            # Skip the rest of a multi-line 'value nonuniform' list (already
+            # replaced by 'value uniform 0;'), until ';' or ');'
             if skip_multiline_value:
                 if stripped in (";", ");"):
                     skip_multiline_value = False
@@ -205,8 +292,6 @@ class OpenFOAMController:
                 continue
 
             if inside_boundary_field:
-                brace_level += line.count("{") - line.count("}")
-
                 if not inside_patch:
                     if re.match(rf"^\s*{re.escape(patch)}\s*\{{\s*$", line):
                         inside_patch = True
@@ -237,8 +322,7 @@ class OpenFOAMController:
                         continue
 
                     if is_rough_wall and re.match(r"\s*Cs\s+", line):
-                        # Preserve whatever Cs value the template already sets rather
-                        # than overwriting it with a hardcoded default.
+                        # keep the Cs value of the template
                         cs_present = True
                         new_lines.append(line)
                         continue
@@ -249,12 +333,10 @@ class OpenFOAMController:
                             new_lines.append(f"        Ks uniform {float(value):.5f};\n")
                             ks_written = True
                             if not cs_present:
-                                new_lines.append(f"        Cs uniform 0.5;\n")
+                                new_lines.append("        Cs uniform 0.5;\n")
                                 cs_present = True
                         new_lines.append("        value uniform 0;\n")
-                        # If the original value was a multi-line nonuniform list
-                        # (i.e. the line does NOT end with ';'), activate the
-                        # skip mode so the list body is consumed and discarded.
+                        # multi-line nonuniform list: skip its body
                         if not stripped.endswith(";"):
                             skip_multiline_value = True
                         continue
@@ -265,7 +347,7 @@ class OpenFOAMController:
                             new_lines.append(f"        Ks uniform {float(value):.5f};\n")
                             ks_written = True
                             if not cs_present:
-                                new_lines.append(f"        Cs uniform 0.5;\n")
+                                new_lines.append("        Cs uniform 0.5;\n")
                                 cs_present = True
                         inside_patch = False
                         new_lines.append(line)
@@ -343,6 +425,27 @@ class OpenFOAMController:
         with open(path, "w") as f:
             f.writelines(new_lines)
 
+    # Writes the roughness length z0 into the z0 entry of `patch` for every atm wall
+    # function field (nut, epsilon, omega) in 0/ and in every other time directory
+    # (a hot-start case reads its boundary conditions from {startTime}/, not 0/).
+    def update_roughness_length(self, patch: str, z0: float, ks: Optional[float] = None) -> None:
+        label = f"z0={z0:.6g}" + (f" (ks={ks:.6g})" if ks is not None else "")
+        time_dirs = ["0"] + [
+            e for e in sorted(os.listdir(self.case_dir))
+            if e != "0" and os.path.isdir(os.path.join(self.case_dir, e)) and _is_number(e)
+        ]
+        for tdir in time_dirs:
+            for field in ATM_Z0_FIELDS:
+                path = os.path.join(self.case_dir, tdir, field)
+                if not os.path.isfile(path):
+                    continue
+                if _set_patch_entry(path, patch, "z0", f"constant {z0:.6g}", keep_form=True):
+                    print(f"Updating {label} on patch '{patch}' in {tdir}/{field}")
+                elif field == "nut" and tdir == "0":
+                    # nut must carry the z0 entry; anything else means the case
+                    # template is not set up the way the binding expects.
+                    raise ValueError(f"No 'z0' entry on patch '{patch}' in 0/nut")
+
     # Dispatches all calibration parameter updates: k-epsilon coefficients go to
     # turbulenceProperties, everything else is written as a boundary condition;
     # alpha.water fields are skipped.
@@ -354,15 +457,8 @@ class OpenFOAMController:
 
             if patch in KEPSILON_COEFFS.values():
                 value = float(param["value"])
-                # The turbulence dictionary is 'constant/turbulenceProperties' in
-                # the ESI line but 'constant/momentumTransport' in OpenFOAM
-                # Foundation 8+. Callers name the ESI spelling (it is the default
-                # in the config), so honouring the caller's file UNCONDITIONALLY
-                # targets a file that does not exist on a Foundation case - which
-                # fails on the first perturbed run, after the whole experimental
-                # design has been sampled. Resolve on EXISTENCE, not on spelling:
-                # take the caller's file when it is really there, otherwise
-                # whichever turbulence dictionary this case actually carries.
+                # Use the given turbulence dictionary if it exists, otherwise the one
+                # of the case (turbulenceProperties or momentumTransport)
                 turb_file = param.get("file") or self._turbulence_dictionary()
                 if not os.path.isfile(self._case_path(turb_file)):
                     turb_file = self._turbulence_dictionary()
@@ -377,6 +473,10 @@ class OpenFOAMController:
 
             if patch == "ks":
                 value = float(param["value"])
+                if param["bc_type"] in Z0_ROUGH_WALLS:
+                    # z0 bed: write z0 = ks/30 to nut, epsilon and omega
+                    self.update_roughness_length(param["patch"], value * KS_TO_Z0, ks=value)
+                    continue
                 print(f"Updating Ks={value} on patch '{param['patch']}' in 0/nut...")
                 self.update_boundary_condition(
                     file=param["file"],
@@ -385,47 +485,24 @@ class OpenFOAMController:
                     bc_type=param["bc_type"],
                     value=value,
                 )
-                # Also update nut in every other time directory present in the case
-                # (e.g. 600/nut for a hot-start case).
-                # When startTime > 0, OpenFOAM reads boundary conditions from
-                # {startTime}/nut, NOT from 0/nut.  If only 0/nut is updated, the
-                # simulation sees the template Ks for every run and produces
-                # identical results regardless of the calibration parameter.
+                # Also update Ks in the other time directories: a hot start reads the
+                # boundary conditions from {startTime}/nut, not 0/nut
                 for entry in sorted(os.listdir(self.case_dir)):
                     if entry == "0":
                         continue
                     try:
-                        float(entry)   # skip non-numeric dirs (constant, system, …)
+                        float(entry)   # skip non-numeric dirs (constant, system, ...)
                     except ValueError:
                         continue
                     nut_path = os.path.join(self.case_dir, entry, "nut")
                     if os.path.isfile(nut_path):
                         print(f"  Also updating Ks={value} in {entry}/nut (hot-start time dir)...")
-                        # Use a simple targeted line replacement instead of the full
-                        # update_boundary_condition parser.  The full-field file has a
-                        # massive internalField + nonuniform value lists in the
-                        # boundaryField that the parser struggles with.  Here we only
-                        # need to change one line: "Ks  uniform <old>;" inside the
-                        # bottom patch.  Ks only appears in nutkRoughWallFunction patches
-                        # so a global scan is safe.
-                        with open(nut_path, "r") as fh:
-                            raw_lines = fh.readlines()
-                        ks_re = re.compile(r"^(\s*Ks\s+uniform\s+)[0-9eE.+\-]+(\s*;.*)$")
-                        updated = False
-                        new_raw = []
-                        for ln in raw_lines:
-                            m = ks_re.match(ln)
-                            if m and not updated:
-                                new_raw.append(f"{m.group(1)}{value:.5f}{m.group(2)}\n")
-                                updated = True
-                            else:
-                                new_raw.append(ln)
-                        if updated:
-                            with open(nut_path, "w") as fh:
-                                fh.writelines(new_raw)
+                        # Line replacement on the bed patch only (other walls keep
+                        # their own Ks)
+                        if _set_patch_entry(nut_path, param["patch"], "Ks", f"uniform {value:.5f}"):
                             print(f"    Ks updated to {value:.5f} in {entry}/nut.")
                         else:
-                            print(f"    WARNING: Ks line not found in {entry}/nut — file unchanged.")
+                            print(f"    WARNING: Ks line not found in {entry}/nut - file unchanged.")
                 continue
 
             field_type = param.get("field_type", "")
@@ -447,11 +524,8 @@ class OpenFOAMController:
 
         if int(nprocs) > 1:
             self.decompose_parallel_case(int(nprocs))
-            # No `source .../etc/bashrc` here: the caller is expected to have
-            # entered an OpenFOAM environment already (that is how every other
-            # command in this class is run), and a hard-coded install path made
-            # the binding usable on exactly one machine. HBC_MPI_LAUNCHER covers
-            # the installs whose launcher is not `mpirun` (MS-MPI's `mpiexec`).
+            # OpenFOAM environment must be loaded before. Set HBC_MPI_LAUNCHER if the
+            # launcher is not mpirun (e.g. mpiexec)
             launcher = os.environ.get("HBC_MPI_LAUNCHER", "mpirun")
             mpi_cmd = f"{launcher} -np {int(nprocs)} {solver} -parallel"
             self._run_streamed(
@@ -470,7 +544,6 @@ class OpenFOAMController:
         # to ensure foamToVTK only converts this run's own time directories.
         vtk_dir_pre = os.path.join(self.case_dir, "VTK")
         if os.path.isdir(vtk_dir_pre):
-            import shutil
             shutil.rmtree(vtk_dir_pre)
             print(f"Removed pre-existing VTK folder: {vtk_dir_pre}", flush=True)
         print("Converting to VTK...")
@@ -480,10 +553,7 @@ class OpenFOAMController:
         result = subprocess.run(["bash", "-c", cmd], env=env, cwd=self.case_dir,
                                 capture_output=True, text=True)
         if result.returncode != 0:
-            # Not fatal any more. Extraction reads the case directly (see
-            # extract_fields_from_vtk), so VTK output is a convenience for
-            # ParaView/VisIt rather than a dependency, and foamToVTK's output
-            # layout differs between the Foundation and ESI lines anyway.
+            # Not fatal: extraction reads the case directly, VTK is only for ParaView
             print(f"foamToVTK stderr: {result.stderr}", flush=True)
             print(f"foamToVTK stdout: {result.stdout}", flush=True)
             logger.warning(
@@ -493,43 +563,36 @@ class OpenFOAMController:
             return
         print("VTK conversion completed.")
 
-    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any, Any]:
+    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1,
+                                return_resolved_tke: bool = False) -> Tuple[Any, ...]:
         """
         Extract velocity (U), turbulent kinetic energy (k) and water volume
         fraction (alpha.water) from the finished run, averaged over the last
         ``n_avg_timesteps`` write times, restricted to the water phase.
 
-        Reads the **case directory itself** through pyvista's OpenFOAM reader rather
-        than a ``foamToVTK`` tree. The previous implementation required the ESI
-        layout (``VTK/*.vtm`` plus ``VTK/<stem>/internal.vtu``); OpenFOAM Foundation
-        writes legacy ``VTK/<case>_<n>.vtk`` instead, so the binding could only ever
-        run against one of the two OpenFOAM lines. Reading the case works for both,
-        for ASCII and binary ``writeFormat``, and skips writing a full duplicate of
-        every run to disk.
+        Reads the case directory with pyvista's OpenFOAM reader (no foamToVTK needed,
+        works for ESI and Foundation, ASCII and binary).
 
-        k is the OpenFOAM ``k`` field (RANS turbulent kinetic energy). Time values
-        come from the reader, so the sort is by real simulation time - a hot-started
-        run whose step indices exceed the new run's cannot reorder the window.
+        k is the total TKE: modelled k plus the resolved part 0.5 * trace(UPrime2Mean)
+        if UPrime2Mean is written by fieldAverage.
 
         Args:
             alpha_threshold: keep only points with alpha.water > this (default 0.5).
                 A single-phase (rigid-lid) case carries no alpha.water; every cell
                 is then water and all points are kept.
             n_avg_timesteps: number of trailing write times to average.
+            return_resolved_tke: also return the resolved part of k on its own.
 
         Returns:
             (coordinates, U_mean, k_mean, alpha_mean) for water-phase points; k_mean
             is None when the case carries no k field, alpha_mean is None when it
-            carries no alpha.water (single-phase case). alpha_mean is kept so
-            ALPHA_WATER can be reported at the control points; on a water-masked
-            extraction it is by construction above the threshold, but it is still
-            useful as a free-surface proximity check.
+            carries no alpha.water (single-phase case). With return_resolved_tke a
+            fifth entry, the resolved TKE, None when UPrime2Mean is not written.
         """
         foam_files = sorted(glob.glob(os.path.join(self.case_dir, "*.foam")))
         foam_file = foam_files[0] if foam_files else os.path.join(self.case_dir, "case.foam")
         if not os.path.isfile(foam_file):
-            # pyvista's reader needs a .foam handle; create the conventional empty
-            # marker rather than failing on a case that is otherwise complete.
+            # pyvista needs a .foam file
             open(foam_file, "a").close()
 
         reader = pv.OpenFOAMReader(foam_file)
@@ -540,8 +603,7 @@ class OpenFOAMController:
             pass
 
         times = [float(x) for x in reader.time_values]
-        # t=0 is the initial condition, not a result: averaging it in would drag the
-        # window towards the hot-start state. Kept only if it is all there is.
+        # skip t=0 (initial condition) unless it is the only time
         positive = [x for x in times if x > 0.0]
         times = positive or times
         if not times:
@@ -591,8 +653,7 @@ class OpenFOAMController:
                         f"(alpha > {alpha_threshold})"
                     )
                 else:
-                    # A rigid-lid / single-phase case has no alpha.water because
-                    # every cell IS water - not because information is missing.
+                    # single-phase case: all cells are water
                     logger.info("no alpha.water field (single-phase case) - using all points")
                 # Accumulate U, k and alpha.water across the selected write times
                 U_sum = np.zeros_like(
@@ -622,15 +683,46 @@ class OpenFOAMController:
         U_mean = U_sum / n
         k_mean = k_sum / n if has_k else None
         alpha_mean = alpha_sum / n if has_alpha else None
+        k_res = None
 
         if k_mean is None:
             logger.warning("k field not found - TKE will be NaN")
         else:
             logger.info(
-                f"k (averaged over {n} step(s)): Mean={k_mean.mean():.4e}, Max={k_mean.max():.4e}"
+                f"k_mod (averaged over {n} step(s)): Mean={k_mean.mean():.4e}, Max={k_mean.max():.4e}"
             )
+            # Add the resolved TKE 0.5 * trace(UPrime2Mean) (URANS, e.g. vortex shedding),
+            # since the measured TKE contains both parts
+            if "UPrime2Mean" in mesh.point_data:
+                R = mesh.point_data["UPrime2Mean"]
+                if water_mask is not None:
+                    R = R[water_mask]
+                k_res = _resolved_tke(R)
+                logger.info(
+                    f"k_res (0.5*tr(UPrime2Mean)): Mean={k_res.mean():.4e}, Max={k_res.max():.4e}"
+                )
+                k_mean = k_mean + k_res
+            else:
+                logger.warning(
+                    "UPrime2Mean not found (fieldAverage with prime2Mean on U missing?) - "
+                    "TKE is the modelled k only, without the resolved URANS part."
+                )
 
+        if return_resolved_tke:
+            return coords, U_mean, k_mean, alpha_mean, k_res
         return coords, U_mean, k_mean, alpha_mean
+
+
+def _resolved_tke(R):
+    """Resolved TKE, 0.5 * trace, from a UPrime2Mean array (n_points x 6 or 9).
+
+    pyvista's OpenFOAM reader keeps the component order of OpenFOAM for a symmTensor, (xx, xy, xz, yy, yz, zz), measured with VTK 9.6 and 9.7 on a field of known components; the normal stresses are the components 0, 3 and 5. They are not told apart by their sign: an off-diagonal stress may be positive everywhere. Round-off below zero is clipped.
+    """
+    R = np.asarray(R, dtype=float)
+    if R.ndim != 2 or R.shape[1] not in (6, 9):
+        raise ValueError(f"UPrime2Mean must have 6 or 9 components per point, got shape {R.shape}.")
+    diag = R[:, [0, 4, 8]] if R.shape[1] == 9 else R[:, [0, 3, 5]]
+    return 0.5 * np.maximum(diag, 0.0).sum(axis=1)
 
 
 # =============================================================================
@@ -649,21 +741,16 @@ class OpenFOAMModel(HydroSimulations):
     your existing OpenFOAMController for the actual OpenFOAM operations.
     """
 
-    #: Field names ``_extract_at_control_points`` returns, and therefore the only
-    #: valid entries in ``calibration_quantities`` and ``extraction_quantities``.
-    #: ``U_magnitude`` is a legacy alias of ``U_MAG``, kept so the detailed result
-    #: CSVs and per-run JSONs written by earlier versions stay readable.
-    #: Every one of these is written to ``results-detailed-*.csv`` for every run x
-    #: control point regardless of what is being calibrated, so the calibration
-    #: quantities can be re-chosen afterwards from stored data (see
-    #: :meth:`output_processing` and ``--only_bal_mode``). ``ALPHA_WATER`` is the
-    #: interFoam water volume fraction at the point; it is extracted and stored but
-    #: is rarely a sensible calibration target on its own.
+    #: Quantities returned by _extract_at_control_points (valid calibration and
+    #: extraction quantities). U_magnitude is the old name of U_MAG, ALPHA_WATER is
+    #: the interFoam water volume fraction at the point. TKE is the total turbulent
+    #: kinetic energy, TKE_MODELED the k of the turbulence model and TKE_RESOLVED
+    #: 0.5 tr(UPrime2Mean) of a URANS run (NaN without fieldAverage).
     EXTRACTABLE_QUANTITIES = (
         "U_x", "U_y", "U_z",
         "U_MAG", "U_magnitude",
         "u_fluct", "v_fluct", "w_fluct",
-        "TKE",
+        "TKE", "TKE_MODELED", "TKE_RESOLVED",
         "ALPHA_WATER",
     )
 
@@ -702,23 +789,18 @@ class OpenFOAMModel(HydroSimulations):
         *args,
         **kwargs
     ):
-        # OpenFOAM-specific directory defaults, resolved before the base
-        # constructor runs so the standard result layout is built on them.
+        # Default folders
         case_template_dir = os.path.abspath(case_template_dir)
         model_dir = os.path.abspath(model_dir) if model_dir else os.path.dirname(case_template_dir)
         res_dir = os.path.abspath(res_dir) if res_dir else os.path.join(model_dir, "results")
 
-        # Fall back to a minimal single-parameter k-epsilon Cmu setup so a bare
-        # OpenFOAM case is still usable without an explicit calibration config.
+        # Defaults if no calibration setup is given
         calibration_parameters = calibration_parameters or ["Cmu"]
         param_values = param_values or [[0.06, 0.12]]
         extraction_quantities = extraction_quantities or ["U_x", "U_y", "U_z"]
         calibration_quantities = calibration_quantities or ["U_x", "U_y", "U_z"]
 
-        # The base class owns the common state: parameters, observations and
-        # variances (from the calibration CSV), and the standard result folder
-        # layout (asr_dir, calibration-data/<quantities>, restart_data, plots,
-        # surrogate-gpe). This keeps the OpenFOAM binding aligned with Telemac.
+        # Base class: parameters, observations, variances and result folders (as Telemac)
         os.makedirs(model_dir, exist_ok=True)
         super().__init__(
             control_file=control_file,
@@ -739,13 +821,12 @@ class OpenFOAMModel(HydroSimulations):
             delete_complex_outputs=delete_complex_outputs,
             validation=validation,
             multitask_selection=multitask_selection,
-            # The three error terms have to be forwarded, not just accepted: the
-            # base class builds the observation variances from them, so leaving
-            # them to **kwargs meant a configured measurement_error was silently
-            # replaced by HydroSimulations' own default on every OpenFOAM run.
+            # error terms, used by the base class for the variances
             gpe_error=gpe_error,
             measurement_error=measurement_error,
             model_structural_error=model_structural_error,
+            # further base-class parameters, e.g. calibration_case
+            **kwargs,
         )
 
         # OpenFOAM-specific attributes
@@ -757,50 +838,37 @@ class OpenFOAMModel(HydroSimulations):
         self.water_surface_alpha = water_surface_alpha
         self.reference_z = reference_z
         self.n_avg_timesteps = max(1, int(n_avg_timesteps))  # minimum 1
-        # Write foamToVTK output per run (for ParaView/VisIt). Off by default:
-        # field extraction reads the case directly, so this is only ever a
-        # convenience, and with delete_complex_outputs it is deleted immediately.
+        # Write VTK for every run (off by default, only needed for ParaView)
         self.write_vtk = bool(write_vtk)
         # Alias consumed by the GP layer (see bal_openfoam.py).
         self.parameter_ranges = self.param_values
 
-        # Reject unknown calibration targets here, before any simulation runs.
-        # The extraction filter in run_multiple_simulations used to fall back to
-        # NaN for a quantity it could not find, so a name the binding does not
-        # produce yielded an all-NaN output column that trained the GPE on
-        # nothing and only surfaced much later as a nonsensical surrogate.
+        # Check calibration quantities and parameters before any simulation
         self._validate_calibration_quantities()
-
-        # Same reasoning for the parameter names. The dispatch in
-        # run_multiple_simulations raises NotImplementedError for a name it cannot
-        # route, but only once the experimental design has been sampled and a case
-        # directory copied, so a typo cost a full setup before it was reported.
         self._validate_calibration_parameters()
 
-        # The base class sets these only when a calibration file is present;
-        # provide robust fallbacks so the BAL driver never sees None.
+        # Fallbacks if there is no calibration file
         if self.num_calibration_quantities is None:
             self.num_calibration_quantities = len(self.calibration_quantities)
         if self.nloc is None:
             self.nloc = 0
 
-        # XYZ coordinates of the calibration points. The base class stores the
-        # dataframe and the observations/variances; the OpenFOAM field
-        # extraction additionally needs the point coordinates.
+        # XYZ coordinates of the calibration points
         self._load_control_points()
 
         # Check that k is written to VTK output
         self._check_k_in_controldict()
 
-        # Auto-detect which patch in 0/nut carries the roughness wall function,
-        # instead of hardcoding a patch name that varies between case templates.
-        self.ks_patch = self._detect_ks_patch()
+        # Find the bed patch for ks in 0/nut
+        self.ks_patch, self.ks_bc_type = _find_ks_patch(self.case_template_dir)
         if self.ks_patch:
-            logger.info(f"Auto-detected ks roughness patch: '{self.ks_patch}' (from the case template's 0/nut)")
+            how = (f"z0 = ks/30 written to {', '.join(ATM_Z0_FIELDS)}" if self.ks_bc_type in Z0_ROUGH_WALLS
+                   else "Ks written to nut")
+            logger.info(f"Auto-detected ks roughness patch: '{self.ks_patch}' ({self.ks_bc_type}; {how})")
         else:
             logger.warning(
-                "Could not auto-detect a nutkRoughWallFunction patch in the case template's 0/nut; "
-                "a 'ks' calibration parameter will fail if used."
+                f"Could not auto-detect a {', '.join(Z0_ROUGH_WALLS)} or {KS_ROUGH_WALL} bed patch in the case "
+                "template's 0/nut; a 'ks' calibration parameter will fail if used."
             )
 
         # Results storage
@@ -884,37 +952,12 @@ class OpenFOAMModel(HydroSimulations):
             logger.info("controlDict check passed: 'k' field appears to be available for VTK output.")
 
     def _detect_ks_patch(self):
-        """Find the patch in ``0/nut`` that uses ``nutkRoughWallFunction``.
-
-        Case templates name the bed patch differently (``base``, ``bottom``, ...),
-        so the name is read from the case template rather than hardcoded: the
-        roughness patch is whichever one is actually configured with the wall
-        function that the ``ks`` calibration parameter writes to.
-
-        Returns
-        -------
-        str or None
-            The patch name, or ``None`` if ``0/nut`` is missing or declares no
-            ``nutkRoughWallFunction`` patch.
-        """
-        nut_path = os.path.join(self.case_template_dir, "0", "nut")
-        if not os.path.isfile(nut_path):
-            return None
-
-        with open(nut_path, "r") as f:
-            content = f.read()
-
-        match = re.search(r"(\w+)\s*\{\s*[^{}]*?type\s+nutkRoughWallFunction\s*;", content, re.DOTALL)
-        return match.group(1) if match else None
+        """Name of the bed patch in ``0/nut`` that ``ks`` is written to, or None."""
+        return _find_ks_patch(self.case_template_dir)[0]
 
     def _load_control_points(self):
-        """Read the XYZ coordinates of the calibration points.
-
-        Observations, variances and ``nloc`` are set by the base class from the
-        calibration CSV (``<quantity>_DATA`` / ``<quantity>_ERROR`` columns).
-        The OpenFOAM field extraction additionally needs the point coordinates,
-        which are read here from the same dataframe the base class stored.
-        """
+        """Read the XYZ coordinates of the calibration points (observations and
+        variances are read by the base class)."""
         df = self.calibration_pts_df
         if df is None:
             self.control_points = np.array([])
@@ -938,12 +981,10 @@ class OpenFOAMModel(HydroSimulations):
         bal_new_set_parameters=None,
         start_index=0,
     ):
-        """Run multiple simulations - BAL interface.
+        """Run multiple simulations (BAL interface).
 
-        ``start_index`` resumes a staged initial design: the cumulative design is passed
-        together with the number of rows already simulated, so growing the design runs
-        only the new block while the run numbering and the accumulated outputs stay
-        continuous. See :mod:`~hydroBayesCal.surrogate.initial_design`.
+        start_index: number of runs already done (staged initial design); only the
+        remaining runs are simulated.
         """
         start_index = int(start_index or 0)
         design = None
@@ -954,8 +995,7 @@ class OpenFOAMModel(HydroSimulations):
             design = np.atleast_2d(collocation_points)
             params_to_run = design[start_index:]
             start_idx = start_index
-        # Outputs of the blocks already simulated, so a staged design accumulates
-        # instead of replacing what the earlier blocks produced.
+        # keep outputs of runs already done (staged design)
         previous_evaluations = self.model_evaluations if start_index else None
 
         all_results = []
@@ -994,7 +1034,7 @@ class OpenFOAMModel(HydroSimulations):
                         "file": "0/nut",
                         "patch": self.ks_patch,
                         "field_type": "scalar",
-                        "bc_type": "nutkRoughWallFunction",
+                        "bc_type": self.ks_bc_type,
                         "value": float(pval),
                     }
                 else:
@@ -1008,21 +1048,16 @@ class OpenFOAMModel(HydroSimulations):
                 # Run simulation
                 foam.run_simulation(nprocs=self.n_processors, solver=self.solver_name)
 
-                # Convert to VTK
-                # Extraction reads the case directory itself, so VTK output is
-                # no longer required to get the fields out. It is still written on
-                # request (write_vtk=True), for opening a run in ParaView/VisIt -
-                # but not by default: with delete_complex_outputs the whole run
-                # folder is removed straight after extraction, so converting every
-                # run would write a full duplicate of it only to delete it again.
+                # Convert to VTK (only if write_vtk, not needed for the extraction)
                 if getattr(self, "write_vtk", False):
                     foam.convert_to_vtk()
 
                 # Extract fields, averaged over the last n_avg_timesteps write times
-                coords, U, k, alpha = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
+                coords, U, k, alpha, k_res = foam.extract_fields_from_vtk(
+                    n_avg_timesteps=self.n_avg_timesteps, return_resolved_tke=True)
 
                 # Sanity check: verify fields differ from previous run.
-                # Identical fields across runs indicate a VTK extraction bug (e.g. missing -latestTime).
+                # Identical fields across runs indicate an extraction bug.
                 if run_idx > start_idx:
                     prev_U_path = os.path.join(self.restart_data_folder, "raw_fields", f"U_{run_idx - 1:04d}.npy")
                     if os.path.isfile(prev_U_path):
@@ -1030,17 +1065,14 @@ class OpenFOAMModel(HydroSimulations):
                         if prev_U.shape == U.shape and np.allclose(prev_U, U, rtol=1e-6):
                             raise RuntimeError(
                                 f"SANITY CHECK FAILED: Run {run_idx} produced identical U fields to run {run_idx - 1}. "
-                                f"This almost certainly means foamToVTK is reading the wrong time directory. "
-                                f"Check that -latestTime is being applied and that the simulation actually ran."
+                                f"Check that the simulation actually ran and that the parameter was written to the case."
                             )
                         else:
                             logger.info(f"Sanity check passed: run {run_idx} fields differ from run {run_idx - 1}.")
 
                 if self.nloc == 0:
-                    # No measurements file yet  save raw fields to disk so they can
-                    # be re-extracted at control points once measurements.csv is ready.
-                    # This allows the initial runs to complete and free disk space
-                    # without needing measurement coordinates.
+                    # No measurements file yet: save raw fields so they can be
+                    # extracted at the control points later
                     raw_dir = os.path.join(self.restart_data_folder, "raw_fields")
                     os.makedirs(raw_dir, exist_ok=True)
                     np.save(os.path.join(raw_dir, f"coords_{run_idx:04d}.npy"), coords)
@@ -1049,7 +1081,7 @@ class OpenFOAMModel(HydroSimulations):
                         np.save(os.path.join(raw_dir, f"k_{run_idx:04d}.npy"), k)
                     if alpha is not None:
                         np.save(os.path.join(raw_dir, f"alpha_{run_idx:04d}.npy"), alpha)
-                    logger.info(f"No measurements file  raw fields saved to {raw_dir} for run {run_idx}.")
+                    logger.info(f"No measurements file - raw fields saved to {raw_dir} for run {run_idx}.")
 
                     # Save collocation points so they can be reloaded later
                     current_cp = (design[:start_idx + i + 1] if design is not None
@@ -1057,13 +1089,10 @@ class OpenFOAMModel(HydroSimulations):
                     np.save(os.path.join(self.restart_data_folder, "collocation_points.npy"), current_cp)
 
                 else:
-                    # Measurements file exists  interpolate to control points as normal
-                    results = self._extract_at_control_points(coords, U, k, alpha)
+                    # Measurements file exists: extract at control points
+                    results = self._extract_at_control_points(coords, U, k, alpha, k_resolved=k_res)
 
-                    # calibration_quantities is validated against
-                    # EXTRACTABLE_QUANTITIES in __init__, so a missing key here
-                    # means the extraction itself is broken and must not be
-                    # papered over with NaN.
+                    # quantities are checked in __init__, a missing key is an error
                     run_results = []
                     for loc_idx in range(self.nloc):
                         for qty in self.calibration_quantities:
@@ -1081,15 +1110,8 @@ class OpenFOAMModel(HydroSimulations):
                             "run_idx": run_idx,
                             **{p: float(v) for p, v in zip(self.calibration_parameters, params)},
                             "x": float(cp[0]), "y": float(cp[1]), "z": float(cp[2]),
-                            "U_x": float(results["U_x"][pt_idx]),
-                            "U_y": float(results["U_y"][pt_idx]),
-                            "U_z": float(results["U_z"][pt_idx]),
-                            "U_magnitude": float(results["U_magnitude"][pt_idx]),
-                            "u_fluct": float(results["u_fluct"][pt_idx]),
-                            "v_fluct": float(results["v_fluct"][pt_idx]),
-                            "w_fluct": float(results["w_fluct"][pt_idx]),
-                            "TKE": float(results["TKE"][pt_idx]),
-                            "ALPHA_WATER": float(results["ALPHA_WATER"][pt_idx]),
+                            # every extractable quantity, so any of them can become a calibration target on a restart
+                            **{q: float(results[q][pt_idx]) for q in self.EXTRACTABLE_QUANTITIES},
                         }
                         all_detailed_results.append(row)
 
@@ -1109,7 +1131,7 @@ class OpenFOAMModel(HydroSimulations):
                         ]) if self.model_evaluations is not None else current_results
                         current_cp = np.vstack([collocation_points, params_to_run[:i + 1]])
 
-                    # Save cumulative results after every run
+                    # Save after every run; the base class merges the rows by run, so passing the whole block again is safe
                     self._save_all_results(current_cp, all_detailed_results)
 
                 # Delete the run folder immediately to free disk space
@@ -1132,17 +1154,11 @@ class OpenFOAMModel(HydroSimulations):
                             "run_idx": run_idx,
                             **{p: float(v) for p, v in zip(self.calibration_parameters, params)},
                             "x": float(cp[0]), "y": float(cp[1]), "z": float(cp[2]),
-                            "U_x": np.nan, "U_y": np.nan, "U_z": np.nan,
-                            "U_magnitude": np.nan,
-                            "u_fluct": np.nan, "v_fluct": np.nan, "w_fluct": np.nan,
-                            "TKE": np.nan,
-                            "ALPHA_WATER": np.nan,
+                            **{q: np.nan for q in self.EXTRACTABLE_QUANTITIES},
                         }
                         all_detailed_results.append(row)
 
-        # model_evaluations is already up to date from the per-run updates above.
-        # Final save to ensure all results are on disk after the full batch.
-        # Skip if nloc=0 (no measurements file yet)  raw fields were saved per-run instead.
+        # Final save (not if nloc = 0, then raw fields were saved per run)
         if self.nloc > 0:
             if bal_new_set_parameters is not None:
                 all_cp = np.vstack([collocation_points, params_to_run])
@@ -1150,15 +1166,16 @@ class OpenFOAMModel(HydroSimulations):
                 all_cp = design
             self._save_all_results(all_cp, all_detailed_results)
 
-    def _extract_at_control_points(self, coords, U, k=None, alpha=None):
+    def _extract_at_control_points(self, coords, U, k=None, alpha=None, k_resolved=None):
         """Extract velocity, TKE and water fraction at control points.
 
-        TKE is read directly from the OpenFOAM k field (RANS turbulent kinetic energy).
+        TKE is the total (modelled k + resolved) TKE from ``extract_fields_from_vtk``. TKE_MODELED is the turbulence model's k, TKE_RESOLVED the resolved part 0.5 tr(UPrime2Mean), NaN when the case does not write UPrime2Mean.
 
         Args:
             coords: Array of VTK point coordinates (water phase only)
             U: Velocity array at VTK points, shape (n_points, 3)
-            k: RANS turbulent kinetic energy array from OpenFOAM k field, or None
+            k: total turbulent kinetic energy array (modelled + resolved), or None
+            k_resolved: resolved part of k, or None
             alpha: interFoam alpha.water array at VTK points, or None (single-phase)
 
         Returns:
@@ -1167,8 +1184,7 @@ class OpenFOAMModel(HydroSimulations):
             u_fluct, v_fluct, w_fluct, TKE and ALPHA_WATER at the control points
         """
         if len(self.control_points) == 0:
-            # Built from the constant so both return paths always expose the
-            # same keys.
+            # empty arrays for all quantities
             return {q: np.array([]) for q in self.EXTRACTABLE_QUANTITIES}
 
         tree = spatial.cKDTree(coords)
@@ -1176,7 +1192,7 @@ class OpenFOAMModel(HydroSimulations):
 
         U_cp = U[indices]
 
-        # TKE read directly from OpenFOAM k field
+        # TKE = modelled k + resolved 0.5*tr(UPrime2Mean), see extract_fields_from_vtk
         # Isotropic fluctuation components estimated as sqrt(2k/3) for reporting only
         if k is not None:
             k_cp = k[indices]
@@ -1191,6 +1207,9 @@ class OpenFOAMModel(HydroSimulations):
             alpha_cp = np.full(len(self.control_points), np.nan)
 
         u_mag = np.linalg.norm(U_cp, axis=1)
+        nan = np.full(len(self.control_points), np.nan)
+        k_res_cp = k_resolved[indices] if k_resolved is not None else nan
+        k_mod_cp = (k_cp - k_res_cp) if k_resolved is not None else k_cp
 
         return {
             "U_x": U_cp[:, 0],
@@ -1201,7 +1220,9 @@ class OpenFOAMModel(HydroSimulations):
             "u_fluct": fluct,
             "v_fluct": fluct,
             "w_fluct": fluct,
-            "TKE": k_cp,        # k from OpenFOAM k-epsilon field
+            "TKE": k_cp,        # modelled k + resolved URANS TKE
+            "TKE_MODELED": k_mod_cp,    # k of the turbulence model
+            "TKE_RESOLVED": k_res_cp,   # 0.5 tr(UPrime2Mean), NaN without fieldAverage
             "ALPHA_WATER": alpha_cp,  # interFoam water volume fraction at the point
         }
 
@@ -1229,12 +1250,9 @@ class OpenFOAMModel(HydroSimulations):
             shutil.rmtree(case_dir)
             logger.info(f"Deleted run folder to free disk space: {case_dir}")
 
-    def output_processing(self, output_data_path=None, **kwargs):
-        """Load stored model outputs for a BAL restart or a pure re-analysis.
+    def output_processing(self, output_data_path=None, run_range_filtering=None, **kwargs):
+        """Load stored results for a BAL restart or a pure re-analysis.
 
-        The stored matrix is returned as it is when it was written for the ``calibration_quantities`` configured now. When they differ it is rebuilt from ``restart_data/detailed-model-outputs.csv``, which holds every quantity in :attr:`EXTRACTABLE_QUANTITIES` for every run x control point, so the calibration quantities can be chosen after the expensive runs: restart with ``--only_bal_mode True --calibration_quantities "..."`` and only the surrogate and BAL are recomputed. See :meth:`~hydroBayesCal.hysim.HydroSimulations._load_stored_outputs`.
-
-        ``run_range_filtering=(lo, hi)`` (1-indexed, inclusive), if passed by the driver, trims a rebuilt matrix to those runs.
+        ``initial-model-outputs.json`` holds every extractable quantity per calibration point (the layout of the TELEMAC binding), so the calibration targets can be chosen after the runs. Files of releases up to 1.11 (flat matrix) are read as well. See :meth:`~hydroBayesCal.hysim.HydroSimulations._load_stored_outputs`. ``run_range_filtering = (first, last)``, 1-based, trims the stored runs.
         """
-        return self._load_stored_outputs(
-            output_data_path, run_range_filtering=kwargs.get("run_range_filtering"))
+        return self._load_stored_outputs(output_data_path, run_range_filtering=run_range_filtering)

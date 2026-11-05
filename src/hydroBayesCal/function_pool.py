@@ -187,9 +187,9 @@ def log_actions(func):
 
     def wrapper(*args, **kwargs):
         func(*args, **kwargs)
-        for handler in logging.getLogger("HyBayesCal").handlers:
+        for handler in logging.getLogger("HydroBayesCal").handlers:
             handler.close()
-            logging.getLogger("HyBayesCal").removeHandler(handler)
+            logging.getLogger("HydroBayesCal").removeHandler(handler)
         for handler in logging.getLogger("warnings").handlers:
             handler.close()
             logging.getLogger("warnings").removeHandler(handler)
@@ -891,6 +891,22 @@ def parse_classes_keyword(file_path, keyword):
 
     return None  # If not found
 def update_gaia_class_line(line, index, new_value):
+    """Replace the value of one sediment class in a GAIA keyword line such as ``CLASSES SHIELDS PARAMETERS = 0.047;0.05``.
+
+    Parameters
+    ----------
+    line : str
+        Keyword line with ``=`` or ``:`` and the values of all classes separated by ``;``.
+    index : int
+        Index of the class, 0-based.
+    new_value : float
+        New value of that class.
+
+    Returns
+    -------
+    str
+        The updated line.
+    """
     # Split at ":" or "="
     if ':' in line:
         key, values = line.split(':', 1)
@@ -909,7 +925,8 @@ def update_gaia_class_line(line, index, new_value):
         raise IndexError("Index out of range")
 
     # Update the value at the specified index
-    values_list[index] = f"{new_value:.3f}"  # Format with 3 decimals if you want
+    # Six significant digits for any magnitude: a fixed number of decimals wrote a sediment diameter of 0.00025 m as 0.000 (3 decimals) or 0.00025 but 0.000125 as 0.00013 (5 decimals).
+    values_list[index] = f"{float(new_value):.6g}"
 
     # Reconstruct the line
     updated_line = f"{key.strip()} {separator} {';'.join(values_list)}"

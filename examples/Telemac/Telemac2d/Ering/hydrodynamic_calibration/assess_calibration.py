@@ -59,11 +59,6 @@ def main():
                 calibration_quantities=config.calibration['calibration_quantities'],
                 dict_output_name=config.calibration['dict_output_name'],
                 user_param_values=True,
-                # max_runs=8,
-                # complete_bal_mode=False,
-                # only_bal_mode=False,
-                # delete_complex_outputs=True,
-                # validation=False
                 )
     surrogate_to_analyze = 100
     results_folder_path = full_complexity_model.asr_dir
@@ -105,7 +100,7 @@ def main():
     #
     # -------------------------------------------------------------------------
 
-    surrogate_type = "SO_sequential"  # options: "MO", "SO", "SOSequential"
+    surrogate_type = "MO"  # options: "MO", "SO", "SOSequential"
 
     start_time = time.time()
 

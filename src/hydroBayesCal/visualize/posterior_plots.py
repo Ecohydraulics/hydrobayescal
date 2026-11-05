@@ -22,6 +22,21 @@ def _latex_safe(text):
     return str(text).replace('\\', ' ').replace('_', r'\_').replace('%', r'\%')
 
 
+def _format_number(value, position=None):
+    """Tick and annotation label of a parameter value.
+
+    A value that two decimals represent is written in decimal notation (``0.05``, ``12.5``), any other one in scientific notation with one decimal (``4.5x10^-4`` as ``$4.5\\times10^{-4}$``), so that parameters of very different magnitude share one label style. ``position`` is the argument matplotlib's ``FuncFormatter`` passes; it is not used.
+    """
+    value = float(value)
+    if np.isclose(value, 0.0, rtol=0.0, atol=1e-15):
+        return '0'
+    if np.isclose(value, round(value, 2), rtol=0.0, atol=1e-10):
+        return f'{value:.2f}'.rstrip('0').rstrip('.')
+    exponent = int(np.floor(np.log10(abs(value))))
+    coefficient = value / (10 ** exponent)
+    return rf'${coefficient:.1f}\times10^{{{exponent}}}$'
+
+
 class PosteriorPlots:
     @staticmethod
     def _iteration_series(bayesian_dict, parameter_names, param_values=None):
@@ -657,37 +672,12 @@ class PosteriorPlots:
                 ]
 
         # ------------------------------------------------------------------
-        # Define COMMON histogram bins for all posterior subplots
+        # Validate histogram configuration
         # ------------------------------------------------------------------
-        # The histogram domain is the complete range covered by all selected
-        # calibration parameters. Therefore every subplot uses exactly the
-        # same numerical bin width and exactly the same bin-edge positions.
-        global_bin_min = float(
-            np.min(
-                x_limits[:, 0]
-            )
-        )
-
-        global_bin_max = float(
-            np.max(
-                x_limits[:, 1]
-            )
-        )
-
-        if (
-                not np.isfinite(global_bin_min)
-                or not np.isfinite(global_bin_max)
-        ):
-            raise ValueError(
-                "The global histogram limits must be finite."
-            )
-
-        if global_bin_max <= global_bin_min:
-            raise ValueError(
-                "Cannot construct histogram bins because the global "
-                "parameter range is zero or negative."
-            )
-
+        # Histogram ranges are defined separately for every calibration
+        # parameter inside the plotting loop. This allows parameters with
+        # very different prior ranges and orders of magnitude to be plotted
+        # without forcing them onto one global numerical scale.
         if (
                 not isinstance(
                     bins,
@@ -698,41 +688,6 @@ class PosteriorPlots:
             raise ValueError(
                 "bins must be a positive integer."
             )
-
-        common_bin_edges = np.linspace(
-            global_bin_min,
-            global_bin_max,
-            bins + 1
-        )
-
-        common_bin_width = float(
-            common_bin_edges[1]
-            - common_bin_edges[0]
-        )
-
-        print(
-            "Common histogram configuration:"
-        )
-
-        print(
-            f"  global minimum: "
-            f"{global_bin_min}"
-        )
-
-        print(
-            f"  global maximum: "
-            f"{global_bin_max}"
-        )
-
-        print(
-            f"  number of bins: "
-            f"{bins}"
-        )
-
-        print(
-            f"  common bin width: "
-            f"{common_bin_width}"
-        )
 
         # Results returned by the function
         estimate_results = {}
@@ -967,8 +922,8 @@ class PosteriorPlots:
                 num_rows,
                 num_cols,
                 figsize=(
-                    6.5 * num_cols,
-                    5 * num_rows
+                    8.5 * num_cols,
+                    5.0 * num_rows
                 )
             )
 
@@ -986,6 +941,37 @@ class PosteriorPlots:
             ):
 
                 ax = axes[col]
+
+                # ----------------------------------------------------------
+                # Parameter-specific histogram range and bin edges
+                # ----------------------------------------------------------
+                # Each parameter is histogrammed over its own calibration
+                # range. Therefore a parameter spanning 1e-4--1e-3 and one
+                # spanning 0.02--0.08 both use the full plotting resolution.
+                param_min = float(x_limits[col][0])
+                param_max = float(x_limits[col][1])
+
+                if (
+                        not np.isfinite(param_min)
+                        or not np.isfinite(param_max)
+                ):
+                    raise ValueError(
+                        f"Histogram limits for parameter "
+                        f"'{parameter_names[param_idx]}' must be finite."
+                    )
+
+                if param_max <= param_min:
+                    raise ValueError(
+                        f"Invalid histogram range for parameter "
+                        f"'{parameter_names[param_idx]}': "
+                        f"[{param_min}, {param_max}]"
+                    )
+
+                parameter_bin_edges = np.linspace(
+                    param_min,
+                    param_max,
+                    bins + 1
+                )
 
                 posterior_vector = posterior_matrix[
                                    :,
@@ -1007,11 +993,11 @@ class PosteriorPlots:
                     )
 
                 # ----------------------------------------------------------
-                # Histogram values used for common normalization
+                # Histogram values used for parameter-specific normalization
                 # ----------------------------------------------------------
                 posterior_hist_values, _ = np.histogram(
                     finite_posterior_values,
-                    bins=common_bin_edges,
+                    bins=parameter_bin_edges,
                     density=density
                 )
 
@@ -1042,7 +1028,7 @@ class PosteriorPlots:
 
                     prior_hist_values, _ = np.histogram(
                         finite_prior_values,
-                        bins=common_bin_edges,
+                        bins=parameter_bin_edges,
                         density=density
                     )
 
@@ -1065,7 +1051,7 @@ class PosteriorPlots:
                     posterior_patches
                 ) = ax.hist(
                     finite_posterior_values,
-                    bins=common_bin_edges,
+                    bins=parameter_bin_edges,
                     density=density,
                     alpha=0.75,
                     color='0.35',
@@ -1202,9 +1188,9 @@ class PosteriorPlots:
                 ax.text(
                     value,
                     1.05,
-                    f'{value:.3f}',
+                    _format_number(value),
                     color='black',
-                    fontsize=28,
+                    fontsize=20,
                     rotation=90,
                     verticalalignment='bottom',
                     horizontalalignment='right'
@@ -1221,7 +1207,7 @@ class PosteriorPlots:
                         prior_patches
                     ) = ax.hist(
                         finite_prior_values,
-                        bins=common_bin_edges,
+                        bins=parameter_bin_edges,
                         density=density,
                         alpha=0.35,
                         color='0.75',
@@ -1247,29 +1233,31 @@ class PosteriorPlots:
 
                 ax.set_xlabel(
                     f'{parameter_names[param_idx]}{unit}',
-                    fontsize=40
+                    fontsize=30
                 )
 
                 ax.set_ylabel(
                     'Posterior\n density [-]',
-                    fontsize=40
+                    fontsize=30
                 )
 
                 ax.tick_params(
                     axis='both',
                     which='major',
-                    labelsize=35
+                    labelsize=20,
+                    pad=7
                 )
 
-                ax.set_xticks(
-                    np.round(
-                        np.linspace(
-                            x_limits[col][0],
-                            x_limits[col][1],
-                            4
-                        ),
-                        3
-                    )
+                x_tick_values = np.linspace(
+                    x_limits[col][0],
+                    x_limits[col][1],
+                    4
+                )
+
+                ax.set_xticks(x_tick_values)
+
+                ax.xaxis.set_major_formatter(
+                    plt.FuncFormatter(_format_number)
                 )
 
                 ax.set_xlim(
@@ -1359,13 +1347,15 @@ class PosteriorPlots:
                 handles=legend_elements,
                 loc='upper center',
                 ncol=len(legend_elements),
-                fontsize=28,
+                fontsize=20,
                 frameon=False,
                 bbox_to_anchor=(0.5, 1.02)
             )
 
             fig.tight_layout(
-                rect=[0, 0.01, 1, 0.95]
+                rect=[0.02, 0.02, 0.98, 0.94],
+                h_pad=2.5,
+                w_pad=1.5
             )
 
             fig.savefig(
