@@ -1409,11 +1409,8 @@ class TelemacModel(HydroSimulations):
             gaia_layer_average, requested=calibration_extraction_quantity)
         for target, spec in gaia_layer_average_specs.items():
             logger.info(
-                f"GAIA target '{target}': "
-                f"layers={spec['layers']}, "
-                f"variables={spec['variables']}, "
-                f"thicknesses={spec['thicknesses'].tolist()}"
-            )
+                f"GAIA layer average '{target}': sand classes {spec['sand_classes']} in layers {spec['layers']}, "
+                f"variables {spec['variables']}, thicknesses {spec['thicknesses'].tolist()}")
 
         # ============================================================
         # CLASSIFY REQUESTED QUANTITIES
@@ -1598,15 +1595,16 @@ class TelemacModel(HydroSimulations):
                     continue
 
                 # GAIA derived layer-average quantity.
-                # A requested quantity such as ``SAND RAT1`` is not expected to
-                # exist literally in the SLF. Instead, validate the internally
-                # constructed layer variables, e.g. ``LAY1 SAND RAT1`` and
-                # ``LAY2 SAND RAT1``.
                 if (
                         model_source == "gaia"
                         and q in gaia_layer_average_specs
                 ):
-                    required_layer_variables = gaia_layer_average_specs[q]["variables"]
+                    required_layer_variables = [
+                        variable_name
+                        for layer_variables in gaia_layer_average_specs[q]["variables"]
+                        for variable_name in layer_variables
+                    ]
+
                     missing_layer_variables = [
                         variable_name
                         for variable_name in required_layer_variables
@@ -1629,15 +1627,17 @@ class TelemacModel(HydroSimulations):
 
                 # Normal variable: must exist literally in the SLF.
                 if q not in var_index:
+
                     # Give a targeted diagnostic if the SLF holds numbered variants of the name (e.g. LAY1 SAND RAT1, LAY1 SAND RAT2), which means a layer average was intended but not configured.
                     if model_source == "gaia":
-                        related_matches = [
+                        suffixed_matches = [
                             variable_name
                             for variable_name in variables
-                            if q in variable_name
+                            if variable_name.startswith(q)
+                               and variable_name != q
                         ]
 
-                        if related_matches:
+                        if suffixed_matches:
                             raise ValueError(
                                 f"GAIA quantity '{q}' is not stored under that name in the "
                                 f"SLF, but numbered variables were found: {suffixed_matches}. "
@@ -1964,36 +1964,31 @@ class TelemacModel(HydroSimulations):
                     ):
 
                         average_spec = gaia_layer_average_specs[q]
-
                         layer_variables = average_spec["variables"]
                         layer_thicknesses = average_spec["thicknesses"]
 
-                        # Each quantity corresponds to a single sand class.
-                        # Example:
-                        # SAND RAT1 -> LAY1 SAND RAT1, LAY2 SAND RAT1
-                        # SAND RAT2 -> LAY1 SAND RAT2, LAY2 SAND RAT2
-
+                        # Ratio of the selected sand classes in each layer: the ratios of the classes add up within a layer.
                         layer_values = np.asarray(
                             [
-                                float(results[var_index[variable_name]])
-                                for variable_name in layer_variables
+                                sum(float(results[var_index[variable_name]])
+                                    for variable_name in class_variables)
+                                for class_variables in layer_variables
                             ],
                             dtype=float
                         )
 
-                        # Thickness-weighted average across selected GAIA layers.
                         weighted_average = float(
                             np.sum(layer_values * layer_thicknesses)
                             / np.sum(layer_thicknesses)
                         )
 
-                        # Store the result under the requested calibration target.
+                        # Store ONLY the name of the derived quantity.
                         differentiated_values[q] = weighted_average
 
                         logger.info(
                             f"[GAIA] Point {key} - {q}: "
                             f"variables={layer_variables}, "
-                            f"ratio_per_layer={layer_values.tolist()}, "
+                            f"ratio per layer={layer_values.tolist()}, "
                             f"thicknesses={layer_thicknesses.tolist()}, "
                             f"weighted_average={weighted_average}"
                         )

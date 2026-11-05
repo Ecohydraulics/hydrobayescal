@@ -79,6 +79,28 @@ def test_an_entry_without_sand_classes_is_rejected_with_the_naming_rule():
             {"LAY1 SAND RAT": {"layers": [1, 2], "thicknesses": [0.08, 0.60]}})
 
 
+@pytest.mark.parametrize("target, sand_class", [("SAND RAT1", 1), ("SAND RAT2", 2), ("sand  rat12", 12)])
+def test_a_target_named_after_one_sand_class_needs_no_sand_classes(target, sand_class):
+    resolved = resolve_gaia_layer_average({target: {"layers": [1, 2], "thicknesses": [0.08, 0.60]}})
+
+    assert resolved[target]["sand_classes"] == [sand_class]
+    assert resolved[target]["variables"] == [[gaia_sand_ratio_variable(1, sand_class)],
+                                             [gaia_sand_ratio_variable(2, sand_class)]]
+
+
+def test_stated_sand_classes_have_priority_over_the_target_name():
+    resolved = resolve_gaia_layer_average(
+        {"SAND RAT1": {"sand_classes": [1, 2], "layers": [1], "thicknesses": [0.1]}})
+
+    assert resolved["SAND RAT1"]["sand_classes"] == [1, 2]
+
+
+@pytest.mark.parametrize("target", ["LAY1 SAND RAT", "SAND RAT", "SAND RAT0", "FINE SAND RAT1"])
+def test_other_names_without_sand_classes_are_still_rejected(target):
+    with pytest.raises(ValueError, match=r"LAY<layer> SAND RAT<class>"):
+        resolve_gaia_layer_average({target: {"layers": [1, 2], "thicknesses": [0.08, 0.60]}})
+
+
 @pytest.mark.parametrize("entry, message", [
     ({"sand_classes": [1], "layers": [1, 2], "thicknesses": [0.08]}, "2 layers but 1 thicknesses"),
     ({"sand_classes": [1], "layers": [1], "thicknesses": [0.0]}, "> 0"),
