@@ -170,7 +170,7 @@ UML/*.out
 UML/*.synctex.gz
 UML/*.txss2
 #auto saved results folders and .log files in EXAMPLES
-**/auto-saved-results-HydroBayesCal/
+**/auto-saved-results-HydroBayesCal*/
 **/measuredData/
 **/simulationFiles/
 examples/Telemac/**/*.log

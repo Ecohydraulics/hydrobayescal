@@ -5,6 +5,7 @@ Authors: Andres Heredia, Sebastian Schwindt
 """
 from scipy import spatial
 import numpy as np
+import pandas as pd
 from hydroBayesCal.telemac import config_telemac
 from datetime import datetime
 # from hydroBayesCal.telemac.pputils.ppmodules.selafin_io_pp import ppSELAFIN
@@ -451,20 +452,23 @@ class TelemacModel(HydroSimulations):
             control_file="tel.cas",
     ):
         """
-        Runs a Telemac2D or Telemac3D simulation with one or more processors.
-        The number of processors to use is defined by self.nproc.
+        Runs a TELEMAC2D or TELEMAC3D simulation with one or more processors.
+
+        The simulation is executed from ``self.model_dir`` so that relative
+        paths inside the TELEMAC steering file are resolved consistently on
+        Linux and Windows.
 
         Parameters
         ----------
         control_file : str
-            The name of the control file used to launch the simulation.
-            Default is "tel.cas". This file should be located in the model directory.
+            Name of the TELEMAC steering file.
+            The file must be located inside ``self.model_dir``.
 
         Returns
         -------
         None
-            The method executes the model run using a launcher command.
         """
+
         logger.info("Running full complexity model " + str(self.num_run))
 
         start_time = datetime.now()
@@ -474,28 +478,128 @@ class TelemacModel(HydroSimulations):
         else:
             logger.info(f"* Parallel run on {self.nproc} processors")
 
-        # Determine the launcher command for Telemac
-        if self.tm_xd in self.tm_xd_dict:
-            tm_launcher = self.tm_xd_dict[self.tm_xd]
-            telemac_command = f"{tm_launcher} {os.path.join(self.model_dir, control_file)} --ncsize={self.nproc}"
-        else:
-            raise ValueError(f"Invalid launcher: {self.tm_xd}. Expected one of {list(self.tm_xd_dict.keys())}.")
+        # ---------------------------------------------------------
+        # Check TELEMAC launcher
+        # ---------------------------------------------------------
 
-        logger.info(f"Executing control file: {control_file}")
+        if self.tm_xd not in self.tm_xd_dict:
+            raise ValueError(
+                f"Invalid launcher: {self.tm_xd}. "
+                f"Expected one of {list(self.tm_xd_dict.keys())}."
+            )
+
+        tm_launcher = self.tm_xd_dict[self.tm_xd].strip()
+
+        # ---------------------------------------------------------
+        # Resolve model directory and control file
+        # ---------------------------------------------------------
+
+        model_dir = os.path.abspath(self.model_dir)
+
+        control_file_name = os.path.basename(control_file)
+
+        control_file_path = os.path.join(
+            model_dir,
+            control_file_name
+        )
+
+        if not os.path.isdir(model_dir):
+            raise FileNotFoundError(
+                f"Model directory not found: {model_dir}"
+            )
+
+        if not os.path.isfile(control_file_path):
+            raise FileNotFoundError(
+                f"TELEMAC steering file not found: {control_file_path}"
+            )
+
+        # ---------------------------------------------------------
+        # Find TELEMAC launcher
+        # ---------------------------------------------------------
+
+        launcher_path = shutil.which(tm_launcher)
+
+        if launcher_path is None:
+            raise FileNotFoundError(
+                f"Could not find TELEMAC launcher '{tm_launcher}' in PATH."
+            )
+
+        # ---------------------------------------------------------
+        # Build TELEMAC command
+        #
+        # IMPORTANT:
+        #
+        # TELEMAC is executed with cwd=model_dir and receives only
+        # the steering-file name.
+        #
+        # This ensures relative paths such as:
+        #
+        #   FORTRAN FILE = fortran_folder
+        #
+        # are resolved relative to model_dir on Linux and Windows.
+        # ---------------------------------------------------------
+
+        if os.name == "nt" and launcher_path.lower().endswith(".py"):
+
+            # Windows: explicitly execute TELEMAC Python launcher
+            # with the active Python interpreter.
+            telemac_command = [
+                sys.executable,
+                launcher_path,
+                control_file_name,
+                f"--ncsize={self.nproc}",
+            ]
+
+        else:
+
+            # Linux / Unix
+            telemac_command = [
+                launcher_path,
+                control_file_name,
+                f"--ncsize={self.nproc}",
+            ]
+
+        logger.info(f"Executing control file: {control_file_name}")
+        logger.info(f"Working directory: {model_dir}")
+        logger.info(
+            "TELEMAC command: "
+            + " ".join(str(arg) for arg in telemac_command)
+        )
+
+        # ---------------------------------------------------------
+        # Run TELEMAC
+        # ---------------------------------------------------------
 
         try:
-            # Run the simulation command
-            process = subprocess.Popen(telemac_command, cwd=self.model_dir, shell=True, env=os.environ)
-            stdout, stderr = process.communicate()
+
+            process = subprocess.run(
+                telemac_command,
+                cwd=model_dir,
+                env=os.environ.copy(),
+                shell=False,
+                check=False,
+            )
 
             if process.returncode != 0:
-                logger.error(f"Simulation failed with error: {stderr}")
+                logger.error(
+                    f"Simulation failed with return code "
+                    f"{process.returncode}"
+                )
             else:
-                logger.info("Simulation completed successfully.")
-        except Exception as e:
-            logger.error(f"An error occurred while running the simulation: {e}")
+                logger.info(
+                    "Simulation completed successfully."
+                )
 
-        logger.info("TELEMAC simulation time: " + str(datetime.now() - start_time))
+        except Exception as e:
+
+            logger.exception(
+                f"An error occurred while running the simulation: {e}"
+            )
+
+        logger.info(
+            "TELEMAC simulation time: "
+            + str(datetime.now() - start_time)
+        )
 
     def _next_validation_attempt(self):
         """
@@ -1122,7 +1226,7 @@ class TelemacModel(HydroSimulations):
             user_param_values=False,
             output_extraction="interpolated",  # "nearest": nearest node; "interpolated": IDW interpolation
             k=3,
-            output_extraction_time="last",  # "last", "index", "mean_last"
+            output_extraction_time="last",  # "last", "index", "last_mean"
             time_index=0,
             n=5,
             compute_wall_law_diagnostics=False,
@@ -1146,7 +1250,6 @@ class TelemacModel(HydroSimulations):
         calibration_pts_df : pandas.DataFrame
             DataFrame containing extraction locations. The first column must
             contain point identifiers. The following columns are expected to be:
-
             - column 1: x-coordinate
             - column 2: y-coordinate
             - column 3: vertical measurement offset (z)
@@ -1306,8 +1409,11 @@ class TelemacModel(HydroSimulations):
             gaia_layer_average, requested=calibration_extraction_quantity)
         for target, spec in gaia_layer_average_specs.items():
             logger.info(
-                f"GAIA layer average '{target}': sand classes {spec['sand_classes']} in layers {spec['layers']}, "
-                f"variables {spec['variables']}, thicknesses {spec['thicknesses'].tolist()}")
+                f"GAIA target '{target}': "
+                f"layers={spec['layers']}, "
+                f"variables={spec['variables']}, "
+                f"thicknesses={spec['thicknesses'].tolist()}"
+            )
 
         # ============================================================
         # CLASSIFY REQUESTED QUANTITIES
@@ -1323,7 +1429,6 @@ class TelemacModel(HydroSimulations):
             if classification_tm_gaia_dict.get(q) == "gaia"
             or q in gaia_layer_average_specs
         ]
-
         # A quantity that belongs to neither module would be left out of the output without a word, and the run would fail later on a missing key.
         unclassified = [
             q for q in calibration_extraction_quantity
@@ -1335,7 +1440,6 @@ class TelemacModel(HydroSimulations):
                 f"(classification_tm_gaia_dict in telemac/config_telemac.py) and are not configured in "
                 f"morphodynamic_simulation['gaia_layer_average']. Check the spelling, or add the variable to the classification."
             )
-
         # ============================================================
         # INTERNAL TELEMAC HELPERS
         # ============================================================
@@ -1472,6 +1576,7 @@ class TelemacModel(HydroSimulations):
             slf = ppSELAFIN(slf_files[model_source])
             slf.readHeader()
             slf.readTimes()
+            model_times = np.asarray(slf.getTimes(), dtype=float)
 
             variables = [' '.join(v.split()) for v in slf.getVarNames()]
             var_index = {v: i for i, v in enumerate(variables)}
@@ -1493,16 +1598,15 @@ class TelemacModel(HydroSimulations):
                     continue
 
                 # GAIA derived layer-average quantity.
+                # A requested quantity such as ``SAND RAT1`` is not expected to
+                # exist literally in the SLF. Instead, validate the internally
+                # constructed layer variables, e.g. ``LAY1 SAND RAT1`` and
+                # ``LAY2 SAND RAT1``.
                 if (
                         model_source == "gaia"
                         and q in gaia_layer_average_specs
                 ):
-                    required_layer_variables = [
-                        variable_name
-                        for layer_variables in gaia_layer_average_specs[q]["variables"]
-                        for variable_name in layer_variables
-                    ]
-
+                    required_layer_variables = gaia_layer_average_specs[q]["variables"]
                     missing_layer_variables = [
                         variable_name
                         for variable_name in required_layer_variables
@@ -1525,17 +1629,15 @@ class TelemacModel(HydroSimulations):
 
                 # Normal variable: must exist literally in the SLF.
                 if q not in var_index:
-
                     # Give a targeted diagnostic if the SLF holds numbered variants of the name (e.g. LAY1 SAND RAT1, LAY1 SAND RAT2), which means a layer average was intended but not configured.
                     if model_source == "gaia":
-                        suffixed_matches = [
+                        related_matches = [
                             variable_name
                             for variable_name in variables
-                            if variable_name.startswith(q)
-                               and variable_name != q
+                            if q in variable_name
                         ]
 
-                        if suffixed_matches:
+                        if related_matches:
                             raise ValueError(
                                 f"GAIA quantity '{q}' is not stored under that name in the "
                                 f"SLF, but numbered variables were found: {suffixed_matches}. "
@@ -1610,7 +1712,8 @@ class TelemacModel(HydroSimulations):
                 "tree": tree,
                 "x2d": x2d,
                 "y2d": y2d,
-                "quantities": quantities
+                "quantities": quantities,
+                "times": model_times
             }
 
         # ============================================================
@@ -1635,6 +1738,16 @@ class TelemacModel(HydroSimulations):
             yu = calibration_pts_df.iloc[key_index, 2]
             zu = calibration_pts_df.iloc[key_index, 3]
 
+            # Optional CSV time (in seconds, relative to the SLF time origin).
+            # Missing values retain the original extraction behavior.
+            requested_time = (
+                calibration_pts_df.iloc[key_index]["time"]
+                if "time" in calibration_pts_df.columns else np.nan
+            )
+            has_requested_time = pd.notna(requested_time) and str(requested_time).strip() != ""
+            if has_requested_time:
+                requested_time = float(requested_time)
+
             differentiated_values = {}
             wall_law_diagnostic_values = {}
 
@@ -1653,6 +1766,45 @@ class TelemacModel(HydroSimulations):
                 x2d = data["x2d"]
                 y2d = data["y2d"]
                 quantities = data["quantities"]
+
+                # Resolve time independently for TELEMAC and GAIA.
+                point_mode = output_extraction_time
+                point_time_index = time_index
+                if has_requested_time:
+                    model_times = data["times"]
+                    matches = np.flatnonzero(np.isclose(
+                        model_times, requested_time, rtol=0.0, atol=1e-5
+                    ))
+                    if not len(matches):
+                        raise ValueError(
+                            f"Point {key}: time {requested_time} s not found in "
+                            f"{model_source.upper()} SLF output times. "
+                            f"Available range: {model_times[0]} to {model_times[-1]} s."
+                        )
+                    point_time_index = int(matches[0])
+                    if output_extraction_time == "last_mean":
+                        if n < 1 or point_time_index + 1 < n:
+                            raise ValueError(
+                                f"Point {key}: cannot average {n} steps ending at "
+                                f"time index {point_time_index}."
+                            )
+                    else:
+                        point_mode = "index"
+
+                def select_point_time(all_times_outputs):
+                    if has_requested_time and output_extraction_time == "last_mean":
+                        # Values are arranged as [time, variable].
+                        return np.mean(
+                            np.asarray(all_times_outputs)[
+                            point_time_index - n + 1:point_time_index + 1
+                            ], axis=0
+                        )
+                    return self._apply_time_mode(
+                        all_times_outputs=all_times_outputs,
+                        output_extraction_time=point_mode,
+                        time_index=point_time_index,
+                        n=n
+                    )
 
                 if not quantities:
                     continue
@@ -1690,8 +1842,8 @@ class TelemacModel(HydroSimulations):
                             target_xy=(xu, yu),
                             key=key,
                             slf_2d_data=slf_2d_data,
-                            output_extraction_time=output_extraction_time,
-                            time_index=time_index,
+                            output_extraction_time=point_mode,
+                            time_index=point_time_index,
                             n=n,
                             kappa=kappa,
                             nikuradse_log_factor=nikuradse_log_factor,
@@ -1710,8 +1862,8 @@ class TelemacModel(HydroSimulations):
                             NPLAN=NPLAN,
                             NVAR=data["NVAR"],
                             target_xy=(xu, yu),
-                            output_extraction_time=output_extraction_time,
-                            time_index=time_index,
+                            output_extraction_time=point_mode,
+                            time_index=point_time_index,
                             n=n
                         )
                     )
@@ -1744,12 +1896,7 @@ class TelemacModel(HydroSimulations):
                         slf.readVariablesAtNode(node_idx)
                         all_times_outputs = slf.getVarValuesAtNode()
 
-                        results_z = self._apply_time_mode(
-                            all_times_outputs=all_times_outputs,
-                            output_extraction_time=output_extraction_time,
-                            time_index=time_index,
-                            n=n
-                        )
+                        results_z = select_point_time(all_times_outputs)
 
                         z_profile[p_i] = results_z[z_index]
 
@@ -1776,12 +1923,7 @@ class TelemacModel(HydroSimulations):
                     slf.readVariablesAtNode(node_idx)
                     all_times_outputs = slf.getVarValuesAtNode()
 
-                    vals = self._apply_time_mode(
-                        all_times_outputs=all_times_outputs,
-                        output_extraction_time=output_extraction_time,
-                        time_index=time_index,
-                        n=n
-                    )
+                    vals = select_point_time(all_times_outputs)
 
                     results_all[j, :] = vals
 
@@ -1822,31 +1964,36 @@ class TelemacModel(HydroSimulations):
                     ):
 
                         average_spec = gaia_layer_average_specs[q]
+
                         layer_variables = average_spec["variables"]
                         layer_thicknesses = average_spec["thicknesses"]
 
-                        # Ratio of the selected sand classes in each layer: the ratios of the classes add up within a layer.
+                        # Each quantity corresponds to a single sand class.
+                        # Example:
+                        # SAND RAT1 -> LAY1 SAND RAT1, LAY2 SAND RAT1
+                        # SAND RAT2 -> LAY1 SAND RAT2, LAY2 SAND RAT2
+
                         layer_values = np.asarray(
                             [
-                                sum(float(results[var_index[variable_name]])
-                                    for variable_name in class_variables)
-                                for class_variables in layer_variables
+                                float(results[var_index[variable_name]])
+                                for variable_name in layer_variables
                             ],
                             dtype=float
                         )
 
+                        # Thickness-weighted average across selected GAIA layers.
                         weighted_average = float(
                             np.sum(layer_values * layer_thicknesses)
                             / np.sum(layer_thicknesses)
                         )
 
-                        # Store ONLY the name of the derived quantity.
+                        # Store the result under the requested calibration target.
                         differentiated_values[q] = weighted_average
 
                         logger.info(
                             f"[GAIA] Point {key} - {q}: "
                             f"variables={layer_variables}, "
-                            f"ratio per layer={layer_values.tolist()}, "
+                            f"ratio_per_layer={layer_values.tolist()}, "
                             f"thicknesses={layer_thicknesses.tolist()}, "
                             f"weighted_average={weighted_average}"
                         )
@@ -2010,7 +2157,6 @@ class TelemacModel(HydroSimulations):
                 + "\nREASON:\n"
                 + str(error)
             )
-
     @staticmethod
     def tbl_creator(
             zone_identifier,

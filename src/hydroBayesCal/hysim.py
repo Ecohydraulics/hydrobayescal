@@ -48,6 +48,7 @@ class HydroSimulations(ABC):
             gpe_error=0.0,
             measurement_error=0.10,
             model_structural_error=0.0,
+            calibration_case="case1",
             *args,
             **kwargs,
     ):
@@ -266,6 +267,7 @@ class HydroSimulations(ABC):
         self.only_bal_mode = only_bal_mode
         self.delete_complex_outputs=delete_complex_outputs
         self.validation=validation
+        self.calibration_case= calibration_case
         # Checked here because the drivers branch on this value only when they build the surrogate, after the initial design has been simulated. An unknown value used to match none of those branches.
         if multitask_selection not in MULTITASK_SELECTIONS:
             raise ValueError(
@@ -301,8 +303,9 @@ class HydroSimulations(ABC):
                 gpe_error=self.gpe_error, measurement_error=self.measurement_error,
                 model_structural_error=self.model_structural_error)
 
-        self.asr_dir = os.path.join(res_dir,
-                                    f"auto-saved-results-HydroBayesCal")
+        self.asr_dir = os.path.join(
+            res_dir,
+            f"auto-saved-results-HydroBayesCal_{self.calibration_case}")
         self.calibration_folder = os.path.join(self.asr_dir,"calibration-data","_".join(self.calibration_quantities))
         self.restart_data_folder = os.path.join(self.asr_dir,"restart_data")
         if not os.path.exists(self.asr_dir):
