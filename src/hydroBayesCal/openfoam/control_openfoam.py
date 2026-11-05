@@ -848,9 +848,6 @@ class OpenFOAMModel(HydroSimulations):
 
         # Results storage
         self.model_evaluations = None
-        # Per-point history in the TELEMAC initial-model-outputs.json layout:
-        # {point_id: [{quantity: value, ...} per run]}. See _record_point_outputs.
-        self.point_outputs = {}
 
         logger.info(f"OpenFOAMModel initialized: {self.ndim} parameter(s), {self.nloc} locations")
 
@@ -975,14 +972,9 @@ class OpenFOAMModel(HydroSimulations):
             start_idx = start_index
         # keep outputs of runs already done (staged design)
         previous_evaluations = self.model_evaluations if start_index else None
-        # per-point history: keep only the runs before this batch
-        for point_id in self.point_outputs:
-            self.point_outputs[point_id] = self.point_outputs[point_id][:start_idx]
 
         all_results = []
         all_detailed_results = []  # for comprehensive CSV: one row per run x control point
-        # _save_all_results appends to the csv, so only new rows are passed
-        n_detailed_saved = 0
 
         for i, params in enumerate(params_to_run):
             run_idx = start_idx + i
@@ -1081,7 +1073,6 @@ class OpenFOAMModel(HydroSimulations):
                             run_results.append(float(results[qty][loc_idx]))
 
                     all_results.append(run_results)
-                    self._record_point_outputs(results)
 
                     # Store detailed results: one row per control point. Every
                     # extractable quantity is written here regardless of what is
@@ -1093,15 +1084,8 @@ class OpenFOAMModel(HydroSimulations):
                             "run_idx": run_idx,
                             **{p: float(v) for p, v in zip(self.calibration_parameters, params)},
                             "x": float(cp[0]), "y": float(cp[1]), "z": float(cp[2]),
-                            "U_x": float(results["U_x"][pt_idx]),
-                            "U_y": float(results["U_y"][pt_idx]),
-                            "U_z": float(results["U_z"][pt_idx]),
-                            "U_magnitude": float(results["U_magnitude"][pt_idx]),
-                            "u_fluct": float(results["u_fluct"][pt_idx]),
-                            "v_fluct": float(results["v_fluct"][pt_idx]),
-                            "w_fluct": float(results["w_fluct"][pt_idx]),
-                            "TKE": float(results["TKE"][pt_idx]),
-                            "ALPHA_WATER": float(results["ALPHA_WATER"][pt_idx]),
+                            # every extractable quantity, so any of them can become a calibration target on a restart
+                            **{q: float(results[q][pt_idx]) for q in self.EXTRACTABLE_QUANTITIES},
                         }
                         all_detailed_results.append(row)
 
@@ -1121,11 +1105,8 @@ class OpenFOAMModel(HydroSimulations):
                         ]) if self.model_evaluations is not None else current_results
                         current_cp = np.vstack([collocation_points, params_to_run[:i + 1]])
 
-                    # Save after every run (only new rows, the csv is appended)
-                    self._save_all_results(current_cp, all_detailed_results[n_detailed_saved:])
-                    self._save_initial_model_outputs()
-                    n_detailed_saved = len(all_detailed_results)
-                    self._save_model_results_calibration_csv()
+                    # Save after every run; the base class merges the rows by run, so passing the whole block again is safe
+                    self._save_all_results(current_cp, all_detailed_results)
 
                 # Delete the run folder immediately to free disk space
                 if self.delete_complex_outputs:
@@ -1142,17 +1123,12 @@ class OpenFOAMModel(HydroSimulations):
                 print(f"{'='*60}\n", flush=True)
                 if self.nloc > 0:
                     all_results.append([np.nan] * (self.nloc * len(self.calibration_quantities)))
-                    self._record_point_outputs(None)
                     for pt_idx, cp in enumerate(self.control_points):
                         row = {
                             "run_idx": run_idx,
                             **{p: float(v) for p, v in zip(self.calibration_parameters, params)},
                             "x": float(cp[0]), "y": float(cp[1]), "z": float(cp[2]),
-                            "U_x": np.nan, "U_y": np.nan, "U_z": np.nan,
-                            "U_magnitude": np.nan,
-                            "u_fluct": np.nan, "v_fluct": np.nan, "w_fluct": np.nan,
-                            "TKE": np.nan,
-                            "ALPHA_WATER": np.nan,
+                            **{q: np.nan for q in self.EXTRACTABLE_QUANTITIES},
                         }
                         all_detailed_results.append(row)
 
@@ -1162,58 +1138,7 @@ class OpenFOAMModel(HydroSimulations):
                 all_cp = np.vstack([collocation_points, params_to_run])
             else:
                 all_cp = design
-            self._save_all_results(all_cp, all_detailed_results[n_detailed_saved:])
-            self._save_initial_model_outputs()
-            self._save_model_results_calibration_csv()
-
-    def _save_model_results_calibration_csv(self):
-        """model-results-calibration-*.csv as in the TELEMAC binding: one row per run,
-        one column per (point, quantity). Rewritten completely at every call.
-        """
-        if self.model_evaluations is None:
-            return
-        quantities_str = '_'.join(self.calibration_quantities)
-        column_headers = [
-            f"{i}_{qty}"
-            for i in range(1, self.nloc + 1)
-            for qty in self.calibration_quantities
-        ]
-        csv_path = os.path.join(
-            self.calibration_folder, f"model-results-calibration-{quantities_str}.csv"
-        )
-        np.savetxt(csv_path, self.model_evaluations, delimiter=',', fmt='%.8f',
-                   header=','.join(column_headers))
-        logger.info(f"Saved model results calibration CSV to {csv_path}")
-
-    def _point_ids(self):
-        """Calibration point IDs: the first column of the calibration CSV, as TELEMAC keys them."""
-        df = self.calibration_pts_df
-        return [] if df is None else [str(k) for k in df.iloc[:, 0]]
-
-    def _point_output_quantities(self):
-        """Quantities stored in initial-model-outputs.json: extraction and calibration
-        quantities, so the calibration quantities can be changed in a restart.
-        """
-        quantities = [q for q in (self.extraction_quantities or [])
-                      if q in self.EXTRACTABLE_QUANTITIES]
-        return quantities + [q for q in self.calibration_quantities if q not in quantities]
-
-    def _record_point_outputs(self, results):
-        """Append one run to ``point_outputs``; ``results=None`` records a failed run as NaN."""
-        quantities = self._point_output_quantities()
-        for pt_idx, point_id in enumerate(self._point_ids()):
-            self.point_outputs.setdefault(point_id, []).append({
-                q: float(results[q][pt_idx]) if results is not None else float("nan")
-                for q in quantities
-            })
-
-    def _save_initial_model_outputs(self):
-        """Write initial-model-outputs.json as in the TELEMAC binding:
-        {point_id: [{quantity: value, ...}, ...]}, one entry per run.
-        """
-        for folder in (self.calibration_folder, self.restart_data_folder):
-            with open(os.path.join(folder, "initial-model-outputs.json"), "w") as f:
-                json.dump(self.point_outputs, f, indent=4)
+            self._save_all_results(all_cp, all_detailed_results)
 
     def _extract_at_control_points(self, coords, U, k=None, alpha=None):
         """Extract velocity, TKE and water fraction at control points.
@@ -1294,38 +1219,8 @@ class OpenFOAMModel(HydroSimulations):
             logger.info(f"Deleted run folder to free disk space: {case_dir}")
 
     def output_processing(self, output_data_path=None, run_range_filtering=None, **kwargs):
-        """Load stored results for a BAL restart.
+        """Load stored results for a BAL restart or a pure re-analysis.
 
-        Reads the TELEMAC layout written by _save_initial_model_outputs. The flat layout
-        and the re-selection from detailed-model-outputs.csv are done by the base class.
-        run_range_filtering = (first, last), 1-based, as in the TELEMAC binding.
+        ``initial-model-outputs.json`` holds every extractable quantity per calibration point (the layout of the TELEMAC binding), so the calibration targets can be chosen after the runs. Files of releases up to 1.11 (flat matrix) are read as well. See :meth:`~hydroBayesCal.hysim.HydroSimulations._load_stored_outputs`. ``run_range_filtering = (first, last)``, 1-based, trims the stored runs.
         """
-        data = None
-        if output_data_path and os.path.isfile(output_data_path):
-            with open(output_data_path, 'r') as f:
-                data = json.load(f)
-        if data is None or "model_evaluations" in data:
-            return self._load_stored_outputs(output_data_path, run_range_filtering=run_range_filtering)
-
-        point_ids = self._point_ids()
-        missing = [p for p in point_ids if p not in data]
-        if missing:
-            raise KeyError(f"Calibration points {missing} not found in {output_data_path}.")
-
-        n_runs = len(data[point_ids[0]])
-        first, last = run_range_filtering or (1, n_runs)
-        self.point_outputs = {p: data[p][first - 1:last] for p in point_ids}
-
-        try:
-            rows = [
-                [float(self.point_outputs[p][r][q])
-                 for p in point_ids for q in self.calibration_quantities]
-                for r in range(len(self.point_outputs[point_ids[0]]))
-            ]
-        except KeyError as e:
-            raise KeyError(
-                f"Calibration quantity {e} is not stored in {output_data_path}; it can only "
-                f"be re-selected if it was extracted when the runs were made."
-            ) from None
-        self.model_evaluations = np.array(rows)
-        return self.model_evaluations
+        return self._load_stored_outputs(output_data_path, run_range_filtering=run_range_filtering)
