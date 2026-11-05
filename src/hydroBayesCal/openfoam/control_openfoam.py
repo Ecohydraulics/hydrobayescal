@@ -544,7 +544,8 @@ class OpenFOAMController:
             return
         print("VTK conversion completed.")
 
-    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1) -> Tuple[Any, Any, Any, Any]:
+    def extract_fields_from_vtk(self, alpha_threshold: float = 0.5, n_avg_timesteps: int = 1,
+                                return_resolved_tke: bool = False) -> Tuple[Any, ...]:
         """
         Extract velocity (U), turbulent kinetic energy (k) and water volume
         fraction (alpha.water) from the finished run, averaged over the last
@@ -561,11 +562,13 @@ class OpenFOAMController:
                 A single-phase (rigid-lid) case carries no alpha.water; every cell
                 is then water and all points are kept.
             n_avg_timesteps: number of trailing write times to average.
+            return_resolved_tke: also return the resolved part of k on its own.
 
         Returns:
             (coordinates, U_mean, k_mean, alpha_mean) for water-phase points; k_mean
             is None when the case carries no k field, alpha_mean is None when it
-            carries no alpha.water (single-phase case).
+            carries no alpha.water (single-phase case). With return_resolved_tke a
+            fifth entry, the resolved TKE, None when UPrime2Mean is not written.
         """
         foam_files = sorted(glob.glob(os.path.join(self.case_dir, "*.foam")))
         foam_file = foam_files[0] if foam_files else os.path.join(self.case_dir, "case.foam")
@@ -661,6 +664,7 @@ class OpenFOAMController:
         U_mean = U_sum / n
         k_mean = k_sum / n if has_k else None
         alpha_mean = alpha_sum / n if has_alpha else None
+        k_res = None
 
         if k_mean is None:
             logger.warning("k field not found - TKE will be NaN")
@@ -685,20 +689,20 @@ class OpenFOAMController:
                     "TKE is the modelled k only, without the resolved URANS part."
                 )
 
+        if return_resolved_tke:
+            return coords, U_mean, k_mean, alpha_mean, k_res
         return coords, U_mean, k_mean, alpha_mean
 
 
 def _resolved_tke(R):
-    """Resolved TKE, 0.5 * trace, from a UPrime2Mean array (n_points x 6 or 9)."""
-    R = np.asarray(R)
-    if R.shape[1] == 9:
-        diag = R[:, [0, 4, 8]]
-    else:
-        # VTK order (xx, yy, zz, xy, yz, xz); if this gives negative normal stresses
-        # use the OpenFOAM order (xx, xy, xz, yy, yz, zz)
-        diag = R[:, [0, 1, 2]]
-        if (diag < -1e-6 * np.abs(R).max()).any():
-            diag = R[:, [0, 3, 5]]
+    """Resolved TKE, 0.5 * trace, from a UPrime2Mean array (n_points x 6 or 9).
+
+    pyvista's OpenFOAM reader keeps the component order of OpenFOAM for a symmTensor, (xx, xy, xz, yy, yz, zz), measured with VTK 9.6 and 9.7 on a field of known components; the normal stresses are the components 0, 3 and 5. They are not told apart by their sign: an off-diagonal stress may be positive everywhere. Round-off below zero is clipped.
+    """
+    R = np.asarray(R, dtype=float)
+    if R.ndim != 2 or R.shape[1] not in (6, 9):
+        raise ValueError(f"UPrime2Mean must have 6 or 9 components per point, got shape {R.shape}.")
+    diag = R[:, [0, 4, 8]] if R.shape[1] == 9 else R[:, [0, 3, 5]]
     return 0.5 * np.maximum(diag, 0.0).sum(axis=1)
 
 
@@ -720,12 +724,14 @@ class OpenFOAMModel(HydroSimulations):
 
     #: Quantities returned by _extract_at_control_points (valid calibration and
     #: extraction quantities). U_magnitude is the old name of U_MAG, ALPHA_WATER is
-    #: the interFoam water volume fraction at the point.
+    #: the interFoam water volume fraction at the point. TKE is the total turbulent
+    #: kinetic energy, TKE_MODELED the k of the turbulence model and TKE_RESOLVED
+    #: 0.5 tr(UPrime2Mean) of a URANS run (NaN without fieldAverage).
     EXTRACTABLE_QUANTITIES = (
         "U_x", "U_y", "U_z",
         "U_MAG", "U_magnitude",
         "u_fluct", "v_fluct", "w_fluct",
-        "TKE",
+        "TKE", "TKE_MODELED", "TKE_RESOLVED",
         "ALPHA_WATER",
     )
 
@@ -1028,7 +1034,8 @@ class OpenFOAMModel(HydroSimulations):
                     foam.convert_to_vtk()
 
                 # Extract fields, averaged over the last n_avg_timesteps write times
-                coords, U, k, alpha = foam.extract_fields_from_vtk(n_avg_timesteps=self.n_avg_timesteps)
+                coords, U, k, alpha, k_res = foam.extract_fields_from_vtk(
+                    n_avg_timesteps=self.n_avg_timesteps, return_resolved_tke=True)
 
                 # Sanity check: verify fields differ from previous run.
                 # Identical fields across runs indicate an extraction bug.
@@ -1064,7 +1071,7 @@ class OpenFOAMModel(HydroSimulations):
 
                 else:
                     # Measurements file exists: extract at control points
-                    results = self._extract_at_control_points(coords, U, k, alpha)
+                    results = self._extract_at_control_points(coords, U, k, alpha, k_resolved=k_res)
 
                     # quantities are checked in __init__, a missing key is an error
                     run_results = []
@@ -1140,15 +1147,16 @@ class OpenFOAMModel(HydroSimulations):
                 all_cp = design
             self._save_all_results(all_cp, all_detailed_results)
 
-    def _extract_at_control_points(self, coords, U, k=None, alpha=None):
+    def _extract_at_control_points(self, coords, U, k=None, alpha=None, k_resolved=None):
         """Extract velocity, TKE and water fraction at control points.
 
-        TKE is the total (modelled k + resolved) TKE from ``extract_fields_from_vtk``.
+        TKE is the total (modelled k + resolved) TKE from ``extract_fields_from_vtk``. TKE_MODELED is the turbulence model's k, TKE_RESOLVED the resolved part 0.5 tr(UPrime2Mean), NaN when the case does not write UPrime2Mean.
 
         Args:
             coords: Array of VTK point coordinates (water phase only)
             U: Velocity array at VTK points, shape (n_points, 3)
             k: total turbulent kinetic energy array (modelled + resolved), or None
+            k_resolved: resolved part of k, or None
             alpha: interFoam alpha.water array at VTK points, or None (single-phase)
 
         Returns:
@@ -1180,6 +1188,9 @@ class OpenFOAMModel(HydroSimulations):
             alpha_cp = np.full(len(self.control_points), np.nan)
 
         u_mag = np.linalg.norm(U_cp, axis=1)
+        nan = np.full(len(self.control_points), np.nan)
+        k_res_cp = k_resolved[indices] if k_resolved is not None else nan
+        k_mod_cp = (k_cp - k_res_cp) if k_resolved is not None else k_cp
 
         return {
             "U_x": U_cp[:, 0],
@@ -1191,6 +1202,8 @@ class OpenFOAMModel(HydroSimulations):
             "v_fluct": fluct,
             "w_fluct": fluct,
             "TKE": k_cp,        # modelled k + resolved URANS TKE
+            "TKE_MODELED": k_mod_cp,    # k of the turbulence model
+            "TKE_RESOLVED": k_res_cp,   # 0.5 tr(UPrime2Mean), NaN without fieldAverage
             "ALPHA_WATER": alpha_cp,  # interFoam water volume fraction at the point
         }
 
