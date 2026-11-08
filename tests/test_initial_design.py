@@ -21,6 +21,7 @@ from hydroBayesCal.surrogate.initial_design import (
     recommended_init_runs,
     run_staged_initial_design,
     sobol_block,
+    sobol_samples,
     tensor_rule_samples,
     validate_sampling_method,
 )
@@ -163,7 +164,35 @@ def test_sobol_block_continues_the_sequence():
     assert np.allclose(combined[:16], first)
     assert len(np.unique(combined, axis=0)) == 32
     # And the union is exactly the order-32 Sobol design, not first plus something.
-    assert np.allclose(combined, design.generate_samples(32, "sobol"))
+    assert np.allclose(combined, sobol_samples(design, 32))
+
+
+@pytest.mark.parametrize("n_runs", [16, 32, 64])
+def test_a_sobol_design_of_a_power_of_two_puts_one_point_in_every_slice_of_every_range(n_runs):
+    """chaospy skips the first Sobol point, so 16 runs left the lowest sixteenth of every range empty and put two points in another sixteenth."""
+    design = _ExpDesign([[0.0, 1.0], [0.01, 0.3], [10.0, 50.0], [0.0, 2.0]])
+    points = sobol_samples(design, n_runs)
+
+    assert points.shape == (n_runs, 4)
+    for column, (low, high) in zip(points.T, design.ranges):
+        assert np.all((column > low) & (column < high))
+        slices = np.floor((column - low) / (high - low) * n_runs).astype(int)
+        assert np.array_equal(np.sort(slices), np.arange(n_runs))
+
+
+def test_a_sobol_design_is_reproducible_and_independent_of_its_length():
+    design = _ExpDesign(RANGES)
+    assert np.array_equal(sobol_samples(design, 20), sobol_samples(design, 20))
+    assert np.allclose(sobol_samples(design, 64)[:20], sobol_samples(design, 20))
+
+
+def test_the_initial_sobol_design_is_the_start_of_the_staged_one(monkeypatch):
+    """The one-block design (adaptive_init_runs=False) and the staged design run the same points."""
+    _warnings_of(monkeypatch)
+    design = _ExpDesign(RANGES, sampling_method="sobol")
+    design.n_init_samples = 16
+    generate_initial_design(design)
+    assert np.allclose(design.x, sobol_block(_ExpDesign(RANGES), 0, 16))
 
 
 def test_sobol_block_falls_back_when_the_prefix_does_not_match():
@@ -204,8 +233,11 @@ def test_a_tiny_design_is_insufficient_and_a_larger_one_is_not():
     design = _ExpDesign(RANGES)
     observations = _response(TRUTH[None, :])
     variances = (0.10 * np.abs(observations).ravel()) ** 2
+    # Seeded: the 128-run design accepts 225 to 390 prior samples against a floor of 200, depending on the draw, and an unseeded draw fell below it on CI.
+    rng = np.random.default_rng(1)
+
     def prior(n):
-        return design.generate_samples(n, "random")
+        return rng.random((n, len(RANGES)))
 
     small = design.generate_samples(8, "sobol")
     poor = initial_design_sufficiency(small, _response(small), observations, variances,
@@ -235,6 +267,33 @@ def test_stability_cannot_be_decided_without_a_previous_block():
     # Undecided is not the same as passed: a first block can never be 'sufficient'.
     assert report["criteria"]["stability"]["passed"] is None
     assert report["verdict"] != "sufficient"
+
+
+def test_the_gate_draws_again_when_one_redraw_does_not_resolve_the_posterior(monkeypatch):
+    """The acceptance rate falls as the prior sample grows, so one redraw sized from the first rate can stay below the floor."""
+    from hydroBayesCal.surrogate import initial_design
+
+    accepted = iter([40, 150, 400])
+    sizes = []
+
+    def fake_inference(prediction, observations, variances, deviation, prior):
+        sizes.append(prior.shape[0])
+        n_accepted = next(accepted)
+        return {"posterior": prior[:n_accepted], "indices": np.arange(n_accepted), "log_bme": 0.0}
+
+    monkeypatch.setattr(initial_design, "_predict_gate", lambda fitted, points: (np.zeros((len(points), 1)), np.ones((len(points), 1))))
+    monkeypatch.setattr(initial_design, "_run_inference", fake_inference)
+    monkeypatch.setattr(initial_design.logger, "info", lambda *args, **kwargs: None)
+    rng = np.random.default_rng(0)
+
+    inference, _, n_prior = initial_design._resolve_posterior(
+        None, lambda n: rng.random((n, 3)), None, None, post_floor=200,
+        lower=np.zeros(3), span=np.ones(3), ndim=3, prior_samples=5000, seed=0)
+
+    # 40 of 5000 asks for 37,500 draws; 150 of those asks for 75,000, capped at 60,000.
+    assert sizes == [5000, 37500, initial_design.PRIOR_SAMPLE_CAP]
+    assert inference["posterior"].shape[0] == 400
+    assert n_prior == initial_design.PRIOR_SAMPLE_CAP
 
 
 def test_the_gate_never_raises_on_malformed_input():

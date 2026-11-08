@@ -52,6 +52,7 @@ __all__ = [
     "initial_design_ladder",
     "validate_sampling_method",
     "tensor_rule_samples",
+    "sobol_samples",
     "generate_initial_design",
     "sobol_block",
     "loo_predictivity",
@@ -71,6 +72,9 @@ SAMPLES_PER_DIMENSION = 10
 #: Absolute floor. Below this a Gaussian process over more than one dimension cannot be
 #: fitted to anything worth calling a surrogate, whatever the number of parameters.
 MINIMUM_INIT_RUNS = 16
+
+#: Seed of the scrambling of the Sobol sequence (:func:`sobol_samples`). Fixed, so that a configuration always yields the same design and a staged design regenerates the points it has already run.
+SOBOL_SEED = 20261108
 
 #: Sampling methods that reach chaospy intact through ``bayesvalidrox``. The strings
 #: ``chebyshev(FT)`` and ``grid(FT)``, still advertised in older configurations, are not
@@ -127,6 +131,9 @@ DEFAULT_THRESHOLDS = {
 #: has to measure the design rather than the size of the prior sample.
 PRIOR_SAMPLE_CAP = 60000
 
+#: Redraws of the prior sample by the gate when the accepted samples stay below the floor (:func:`_resolve_posterior`).
+MAX_PRIOR_REDRAWS = 3
+
 #: Rules that chaospy builds as a tensor product: asked for ``n`` points, they return ``n`` nodes per calibration parameter, that is ``n ** ndim`` points (256 for 16 runs over two parameters, 27,000 for 30 runs over three). The nested forms have ``2 ** n - 1`` nodes per parameter.
 TENSOR_RULES = ("chebyshev", "nested_chebyshev", "grid", "nested_grid")
 
@@ -153,9 +160,8 @@ def recommended_init_runs(
     """How many initial runs a calibration with ``ndim`` parameters needs.
 
     The rule is ``samples_per_dimension * ndim``, floored at ``minimum`` and rounded up
-    to the next power of two. The rounding is not cosmetic: chaospy generates an
-    unscrambled Sobol sequence, whose equidistribution properties hold at
-    :math:`n = 2^m`. A design of 100 Sobol points is measurably less uniform than one of
+    to the next power of two. The rounding is not cosmetic: the equidistribution
+    properties of a Sobol sequence hold at :math:`n = 2^m`. A design of 100 Sobol points is measurably less uniform than one of
     128, and the extra 28 runs buy more than the 28 BAL iterations they would otherwise
     pay for, because BAL cannot repair a region the emulator has never seen.
 
@@ -360,8 +366,54 @@ def _prior_distribution(exp_design):
         exp_design.init_param_space()
     distribution = getattr(exp_design, "j_dist", None)
     if distribution is None or not hasattr(distribution, "inv"):
-        raise ValueError("The experimental design carries no joint parameter distribution (j_dist) to place grid or Chebyshev nodes in.")
+        raise ValueError("The experimental design carries no joint parameter distribution (j_dist) to map the design onto.")
     return distribution
+
+
+def sobol_samples(exp_design, n_samples, seed=SOBOL_SEED):
+    """The first ``n_samples`` points of a scrambled Sobol sequence, mapped onto the prior.
+
+    chaospy, which ``bayesvalidrox`` samples with, starts its Sobol sequence at the second point, because the first one is the corner of the unit hypercube, where an unbounded prior has no finite value. Without that point, the first :math:`2^m` points are no longer balanced: in every calibration parameter the lowest :math:`1/2^m` of the range received no point and another :math:`1/2^m` received two, so a 16-run design never tried the lowest sixteenth of any range (Owen 2020, "On dropping the first Sobol' point"). Here the sequence starts at its first point and is scrambled (Owen scrambling, ``scipy.stats.qmc.Sobol``), which keeps every point inside the hypercube and places exactly one point in each :math:`1/2^m` of every range of a design of :math:`2^m` runs. The scrambling is seeded, so the design is reproducible, and the first :math:`n` points do not depend on how many follow, so a staged design keeps extending the runs it has carried out (:func:`sobol_block`).
+
+    Parameters
+    ----------
+    exp_design : object
+        ``bayesvalidrox`` ``ExpDesigns`` instance; its joint distribution ``j_dist`` maps the unit hypercube to the parameter space.
+    n_samples : int
+        Number of parameter sets.
+    seed : int
+        Seed of the scrambling. Default :data:`SOBOL_SEED`.
+
+    Returns
+    -------
+    array
+        ``[n_samples, ndim]`` parameter sets.
+    """
+    import warnings
+
+    from scipy.stats import qmc
+
+    n_samples = int(n_samples)
+    if n_samples < 1:
+        raise ValueError(f"A design needs at least one parameter set, got {n_samples}.")
+    if getattr(exp_design, "input_data_given", False):
+        # A prior given as a sample has no distribution to map onto; bayesvalidrox resamples it.
+        return np.atleast_2d(exp_design.generate_samples(n_samples, "sobol"))
+    distribution = _prior_distribution(exp_design)
+    ndim = len(distribution)
+
+    # A generator instead of an integer: scipy renamed the argument from seed to rng (1.15) and the stream must not depend on the version.
+    generator = np.random.default_rng(int(seed))
+    try:
+        engine = qmc.Sobol(d=ndim, scramble=True, rng=generator)
+    except TypeError:
+        engine = qmc.Sobol(d=ndim, scramble=True, seed=generator)
+    with warnings.catch_warnings():
+        # scipy warns for every n that is not a power of two; recommended_init_runs already reports on the size of the design.
+        warnings.filterwarnings("ignore", message=".*balance properties of Sobol.*")
+        unit = engine.random(n_samples)
+    samples = np.asarray(distribution.inv(unit.T), dtype=float)
+    return np.atleast_2d(samples.reshape(ndim, -1).T)
 
 
 def tensor_rule_samples(exp_design, n_samples, sampling_method="chebyshev"):
@@ -423,7 +475,7 @@ def tensor_rule_samples(exp_design, n_samples, sampling_method="chebyshev"):
 def generate_initial_design(exp_design):
     """Generate the initial design of a ``bayesvalidrox`` ``ExpDesigns`` into ``exp_design.x``.
 
-    The drivers call this in place of ``exp_design.generate_ed()``. For a grid or Chebyshev rule it draws exactly ``exp_design.n_init_samples`` parameter sets with :func:`tensor_rule_samples`, where ``generate_ed`` would build the full tensor product (at 40 runs over five parameters, 10^8 parameter sets, more memory than the workstation has). Every other rule, and a design supplied by the user, goes to ``generate_ed`` unchanged.
+    The drivers call this in place of ``exp_design.generate_ed()``. For a grid or Chebyshev rule it draws exactly ``exp_design.n_init_samples`` parameter sets with :func:`tensor_rule_samples`, where ``generate_ed`` would build the full tensor product (at 40 runs over five parameters, 10^8 parameter sets, more memory than the workstation has). A Sobol design comes from :func:`sobol_samples`, because the Sobol sequence of chaospy lacks its first point. Every other rule, and a design supplied by the user, goes to ``generate_ed`` unchanged.
 
     Parameters
     ----------
@@ -431,9 +483,10 @@ def generate_initial_design(exp_design):
         ``bayesvalidrox`` ``ExpDesigns`` instance with ``sampling_method`` and ``n_init_samples`` set.
     """
     method = str(getattr(exp_design, "sampling_method", "")).strip().lower()
-    if (method in TENSOR_RULES and getattr(exp_design, "x", None) is None
-            and not getattr(exp_design, "input_data_given", False)):
-        exp_design.x = tensor_rule_samples(exp_design, exp_design.n_init_samples, method)
+    if (getattr(exp_design, "x", None) is None and not getattr(exp_design, "input_data_given", False)
+            and (method in TENSOR_RULES or method == "sobol")):
+        exp_design.x = (sobol_samples(exp_design, exp_design.n_init_samples) if method == "sobol"
+                        else tensor_rule_samples(exp_design, exp_design.n_init_samples, method))
         exp_design.n_init_samples = exp_design.x.shape[0]
         return
     exp_design.generate_ed()
@@ -489,13 +542,18 @@ def sobol_block(exp_design, n_from, n_to, existing=None, sampling_method="sobol"
         block = np.atleast_2d(block)
         return (block, rule) if return_rule else block
 
+    def sequence(n_samples):
+        if method == "sobol":
+            return sobol_samples(exp_design, n_samples)
+        return exp_design.generate_samples(n_samples, method)
+
     if n_from == 0:
         if method in TENSOR_RULES:
             return result(tensor_rule_samples(exp_design, n_to, method), method)
-        return result(exp_design.generate_samples(n_to, method), method)
+        return result(sequence(n_to), method)
 
     if extensible:
-        full = np.atleast_2d(exp_design.generate_samples(n_to, method))
+        full = np.atleast_2d(sequence(n_to))
         prefix_ok = full.shape[0] == n_to
         if prefix_ok and existing is not None:
             existing = np.atleast_2d(np.asarray(existing, dtype=float))
@@ -915,8 +973,8 @@ def _resolve_posterior(fitted, prior, observations, variances, post_floor,
     posterior would be told to add solver runs when what it needs is a denser prior.
 
     So the prior sample is grown instead: the observed acceptance rate says how many
-    draws the floor needs, and the gate redraws once at that size, capped at
-    :data:`PRIOR_SAMPLE_CAP`. Failure after that is a genuine finding, reported as such,
+    draws the floor needs, and the gate redraws at that size, capped at
+    :data:`PRIOR_SAMPLE_CAP`, and again from the new rate if the floor is still not met (at most :data:`MAX_PRIOR_REDRAWS` times). Failure after that is a genuine finding, reported as such,
     and it applies to the calibration itself, whose ``prior_samples`` faces exactly the
     same acceptance rate.
 
@@ -945,18 +1003,22 @@ def _resolve_posterior(fitted, prior, observations, variances, post_floor,
     if fixed or post_size >= post_floor or post_size == 0:
         return inference, deviation, sample.shape[0]
 
-    acceptance = post_size / sample.shape[0]
-    needed = int(min(PRIOR_SAMPLE_CAP, math.ceil(1.5 * post_floor / acceptance)))
-    if needed <= sample.shape[0]:
-        return inference, deviation, sample.shape[0]
-
-    logger.info(
-        f"Initial design: {post_size} of {sample.shape[0]} prior samples were accepted, "
-        f"below the {post_floor} needed to resolve the posterior. Redrawing "
-        f"{needed} prior samples, so the check measures the design and not the size of "
-        f"the prior sample.")
-    sample = draw(needed)
-    inference, deviation = run(sample)
+    # The acceptance rate falls as the sample grows, because rejection sampling normalizes by the largest likelihood in the sample, which grows with it. One redraw sized from the first rate therefore ended between 204 and 366 accepted samples for a floor of 200, so the sample is grown again from the new rate until the floor or the cap is reached.
+    for _ in range(MAX_PRIOR_REDRAWS):
+        acceptance = post_size / sample.shape[0]
+        needed = int(min(PRIOR_SAMPLE_CAP, math.ceil(1.5 * post_floor / acceptance)))
+        if needed <= sample.shape[0]:
+            break
+        logger.info(
+            f"Initial design: {post_size} of {sample.shape[0]} prior samples were accepted, "
+            f"below the {post_floor} needed to resolve the posterior. Redrawing "
+            f"{needed} prior samples, so the check measures the design and not the size of "
+            f"the prior sample.")
+        sample = draw(needed)
+        inference, deviation = run(sample)
+        post_size = inference["posterior"].shape[0]
+        if post_size >= post_floor or post_size == 0:
+            break
     return inference, deviation, sample.shape[0]
 
 
