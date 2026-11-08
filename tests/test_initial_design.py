@@ -21,6 +21,7 @@ from hydroBayesCal.surrogate.initial_design import (
     recommended_init_runs,
     run_staged_initial_design,
     sobol_block,
+    sobol_samples,
     tensor_rule_samples,
     validate_sampling_method,
 )
@@ -163,7 +164,35 @@ def test_sobol_block_continues_the_sequence():
     assert np.allclose(combined[:16], first)
     assert len(np.unique(combined, axis=0)) == 32
     # And the union is exactly the order-32 Sobol design, not first plus something.
-    assert np.allclose(combined, design.generate_samples(32, "sobol"))
+    assert np.allclose(combined, sobol_samples(design, 32))
+
+
+@pytest.mark.parametrize("n_runs", [16, 32, 64])
+def test_a_sobol_design_of_a_power_of_two_puts_one_point_in_every_slice_of_every_range(n_runs):
+    """chaospy skips the first Sobol point, so 16 runs left the lowest sixteenth of every range empty and put two points in another sixteenth."""
+    design = _ExpDesign([[0.0, 1.0], [0.01, 0.3], [10.0, 50.0], [0.0, 2.0]])
+    points = sobol_samples(design, n_runs)
+
+    assert points.shape == (n_runs, 4)
+    for column, (low, high) in zip(points.T, design.ranges):
+        assert np.all((column > low) & (column < high))
+        slices = np.floor((column - low) / (high - low) * n_runs).astype(int)
+        assert np.array_equal(np.sort(slices), np.arange(n_runs))
+
+
+def test_a_sobol_design_is_reproducible_and_independent_of_its_length():
+    design = _ExpDesign(RANGES)
+    assert np.array_equal(sobol_samples(design, 20), sobol_samples(design, 20))
+    assert np.allclose(sobol_samples(design, 64)[:20], sobol_samples(design, 20))
+
+
+def test_the_initial_sobol_design_is_the_start_of_the_staged_one(monkeypatch):
+    """The one-block design (adaptive_init_runs=False) and the staged design run the same points."""
+    _warnings_of(monkeypatch)
+    design = _ExpDesign(RANGES, sampling_method="sobol")
+    design.n_init_samples = 16
+    generate_initial_design(design)
+    assert np.allclose(design.x, sobol_block(_ExpDesign(RANGES), 0, 16))
 
 
 def test_sobol_block_falls_back_when_the_prefix_does_not_match():
