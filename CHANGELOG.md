@@ -4,6 +4,11 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-11-08
+
+### Fixed
+- **A Sobol design left the lowest part of every parameter range empty.** chaospy, through which `bayesvalidrox` draws its samples, starts the Sobol sequence at its second point. Without the first point, the first 2^m points are no longer balanced: a design of n = 16, 32, 64, ... runs never tried the lowest 1/n of any calibration parameter's range and tried another 1/n twice (16 runs for a roughness between 0.01 and 0.30 m: no initial run below 0.028 m). The initial design, every block of a staged design and the `sobol` exploitation method now draw from a scrambled Sobol sequence that starts at its first point (`initial_design.sobol_samples`, `scipy.stats.qmc.Sobol` with the fixed seed `SOBOL_SEED`), which places exactly one run in each sixteenth of every range of a 16-run design and none on the bounds of the prior. A new calibration with `parameter_sampling_method = "sobol"` therefore runs other parameter sets than with 1.12.0. A restart with `only_bal_mode` reads its parameter sets from `restart_data/initial-collocation-points.csv` and is not affected.
+
 ## [1.12.0] - 2026-11-05
 
 An integration release. It merges the work of Federica Scolari (`of-dev`, OpenFOAM) and Andrés Heredia (`hbc-telemac-andres`, TELEMAC and the emulators) since 1.11.1 into `main`. Where a contribution solved a problem of the shared code in one binding or one driver, the solution is placed in the shared code, so that all bindings and drivers get it. Two changes alter the numbers of a calibration and are listed first under Changed: the initial noise of the multitask emulators, and the resolved TKE of OpenFOAM runs that write `UPrime2Mean`.
