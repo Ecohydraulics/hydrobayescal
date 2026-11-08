@@ -74,6 +74,8 @@ Sobol has one further property the workflow depends on: it is **extensible**. Th
 length :math:`n`, so the design can be grown without discarding a single simulation that
 has already been run. Latin hypercube and random designs have no such guarantee.
 
+HydroBayesCal uses a scrambled Sobol sequence that starts at its first point. Of a design of :math:`2^m` runs, exactly one run then falls into each :math:`1/2^m` of the range of every calibration parameter: 16 runs test each parameter once in every sixteenth of its range. The scrambling shifts the points at random within these slices, with a fixed seed, so that the same configuration always yields the same design and no run sits on the bounds of the prior. Up to version 1.12.0 the design came from the unscrambled sequence of chaospy, which skips the first point; a 16-run design then never tried the lowest sixteenth of any range and tried another sixteenth twice.
+
 ``chebyshev`` and ``grid`` place their nodes as a tensor product, that is, every combination of a set of nodes per calibration parameter. A complete design therefore has :math:`k^d` runs for :math:`k` nodes per parameter and :math:`d` parameters. HydroBayesCal builds the smallest such product that holds ``init_runs`` points and keeps ``init_runs`` of its nodes, chosen to spread over the parameter space; the log names the size of the complete design. Set ``init_runs`` to that size (for example 16 for a 4 x 4 grid over two parameters) to run the complete grid. Beyond two or three calibration parameters, a tensor product is a poor design for a Gaussian process emulator, and ``sobol`` is the better choice.
 
 In a staged initial design (``adaptive_init_runs``, see below), a ``random`` or ``latin_hypercube`` design is therefore grown by a fresh block of the same rule. The nodes of ``chebyshev`` and ``grid`` depend on the size of the design, so a second set of nodes neither continues nor complements the first; their later blocks are drawn as a Latin hypercube, with a warning in the log. ``initial-design.json`` records the rule every block was drawn with.
@@ -100,7 +102,7 @@ with an absolute floor of 16:
 
 where :math:`d` is the number of calibration parameters. Ten runs per dimension is the
 established rule of thumb for an initial design a Gaussian process is to be fitted to. The
-rounding to a power of two is not cosmetic: an unscrambled Sobol sequence is balanced at
+rounding to a power of two is not cosmetic: a Sobol sequence is balanced at
 :math:`n = 2^m`, so 128 points cover the space measurably better than 100 do.
 
 .. table:: Recommended number of initial runs
