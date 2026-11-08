@@ -811,7 +811,9 @@ class SequentialDesign:
         elif 'sobol' in exp_design.exploit_method.lower():
             new_tp_size = self.SM.training_points.shape[0] + exp_design.n_new_samples
             # Sample new TPs
-            new_tp = exp_design.generate_samples(n_samples=new_tp_size, sampling_method='sobol')
+            # The sequence of a Sobol initial design; the one of chaospy lacks its first point.
+            from hydroBayesCal.surrogate.initial_design import sobol_samples
+            new_tp = sobol_samples(exp_design, new_tp_size)
             self.selected_criteria = 0
             util_fun = ''
 
