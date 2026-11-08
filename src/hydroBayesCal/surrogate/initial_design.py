@@ -131,6 +131,9 @@ DEFAULT_THRESHOLDS = {
 #: has to measure the design rather than the size of the prior sample.
 PRIOR_SAMPLE_CAP = 60000
 
+#: Redraws of the prior sample by the gate when the accepted samples stay below the floor (:func:`_resolve_posterior`).
+MAX_PRIOR_REDRAWS = 3
+
 #: Rules that chaospy builds as a tensor product: asked for ``n`` points, they return ``n`` nodes per calibration parameter, that is ``n ** ndim`` points (256 for 16 runs over two parameters, 27,000 for 30 runs over three). The nested forms have ``2 ** n - 1`` nodes per parameter.
 TENSOR_RULES = ("chebyshev", "nested_chebyshev", "grid", "nested_grid")
 
@@ -970,8 +973,8 @@ def _resolve_posterior(fitted, prior, observations, variances, post_floor,
     posterior would be told to add solver runs when what it needs is a denser prior.
 
     So the prior sample is grown instead: the observed acceptance rate says how many
-    draws the floor needs, and the gate redraws once at that size, capped at
-    :data:`PRIOR_SAMPLE_CAP`. Failure after that is a genuine finding, reported as such,
+    draws the floor needs, and the gate redraws at that size, capped at
+    :data:`PRIOR_SAMPLE_CAP`, and again from the new rate if the floor is still not met (at most :data:`MAX_PRIOR_REDRAWS` times). Failure after that is a genuine finding, reported as such,
     and it applies to the calibration itself, whose ``prior_samples`` faces exactly the
     same acceptance rate.
 
@@ -1000,18 +1003,22 @@ def _resolve_posterior(fitted, prior, observations, variances, post_floor,
     if fixed or post_size >= post_floor or post_size == 0:
         return inference, deviation, sample.shape[0]
 
-    acceptance = post_size / sample.shape[0]
-    needed = int(min(PRIOR_SAMPLE_CAP, math.ceil(1.5 * post_floor / acceptance)))
-    if needed <= sample.shape[0]:
-        return inference, deviation, sample.shape[0]
-
-    logger.info(
-        f"Initial design: {post_size} of {sample.shape[0]} prior samples were accepted, "
-        f"below the {post_floor} needed to resolve the posterior. Redrawing "
-        f"{needed} prior samples, so the check measures the design and not the size of "
-        f"the prior sample.")
-    sample = draw(needed)
-    inference, deviation = run(sample)
+    # The acceptance rate falls as the sample grows, because rejection sampling normalizes by the largest likelihood in the sample, which grows with it. One redraw sized from the first rate therefore ended between 204 and 366 accepted samples for a floor of 200, so the sample is grown again from the new rate until the floor or the cap is reached.
+    for _ in range(MAX_PRIOR_REDRAWS):
+        acceptance = post_size / sample.shape[0]
+        needed = int(min(PRIOR_SAMPLE_CAP, math.ceil(1.5 * post_floor / acceptance)))
+        if needed <= sample.shape[0]:
+            break
+        logger.info(
+            f"Initial design: {post_size} of {sample.shape[0]} prior samples were accepted, "
+            f"below the {post_floor} needed to resolve the posterior. Redrawing "
+            f"{needed} prior samples, so the check measures the design and not the size of "
+            f"the prior sample.")
+        sample = draw(needed)
+        inference, deviation = run(sample)
+        post_size = inference["posterior"].shape[0]
+        if post_size >= post_floor or post_size == 0:
+            break
     return inference, deviation, sample.shape[0]
 
 

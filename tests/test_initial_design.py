@@ -233,8 +233,11 @@ def test_a_tiny_design_is_insufficient_and_a_larger_one_is_not():
     design = _ExpDesign(RANGES)
     observations = _response(TRUTH[None, :])
     variances = (0.10 * np.abs(observations).ravel()) ** 2
+    # Seeded: the 128-run design accepts 225 to 390 prior samples against a floor of 200, depending on the draw, and an unseeded draw fell below it on CI.
+    rng = np.random.default_rng(1)
+
     def prior(n):
-        return design.generate_samples(n, "random")
+        return rng.random((n, len(RANGES)))
 
     small = design.generate_samples(8, "sobol")
     poor = initial_design_sufficiency(small, _response(small), observations, variances,
@@ -264,6 +267,33 @@ def test_stability_cannot_be_decided_without_a_previous_block():
     # Undecided is not the same as passed: a first block can never be 'sufficient'.
     assert report["criteria"]["stability"]["passed"] is None
     assert report["verdict"] != "sufficient"
+
+
+def test_the_gate_draws_again_when_one_redraw_does_not_resolve_the_posterior(monkeypatch):
+    """The acceptance rate falls as the prior sample grows, so one redraw sized from the first rate can stay below the floor."""
+    from hydroBayesCal.surrogate import initial_design
+
+    accepted = iter([40, 150, 400])
+    sizes = []
+
+    def fake_inference(prediction, observations, variances, deviation, prior):
+        sizes.append(prior.shape[0])
+        n_accepted = next(accepted)
+        return {"posterior": prior[:n_accepted], "indices": np.arange(n_accepted), "log_bme": 0.0}
+
+    monkeypatch.setattr(initial_design, "_predict_gate", lambda fitted, points: (np.zeros((len(points), 1)), np.ones((len(points), 1))))
+    monkeypatch.setattr(initial_design, "_run_inference", fake_inference)
+    monkeypatch.setattr(initial_design.logger, "info", lambda *args, **kwargs: None)
+    rng = np.random.default_rng(0)
+
+    inference, _, n_prior = initial_design._resolve_posterior(
+        None, lambda n: rng.random((n, 3)), None, None, post_floor=200,
+        lower=np.zeros(3), span=np.ones(3), ndim=3, prior_samples=5000, seed=0)
+
+    # 40 of 5000 asks for 37,500 draws; 150 of those asks for 75,000, capped at 60,000.
+    assert sizes == [5000, 37500, initial_design.PRIOR_SAMPLE_CAP]
+    assert inference["posterior"].shape[0] == 400
+    assert n_prior == initial_design.PRIOR_SAMPLE_CAP
 
 
 def test_the_gate_never_raises_on_malformed_input():
