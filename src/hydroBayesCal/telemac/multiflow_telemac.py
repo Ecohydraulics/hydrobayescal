@@ -163,8 +163,7 @@ class MultiflowTelemacModel:
         self.ndim = first.ndim
         self.calibration_parameters = first.calibration_parameters
         self.param_values = first.param_values
-        self.parameter_ranges = getattr(first, "parameter_ranges",
-                                        list(first.param_values))
+        self.parameter_ranges = first.parameter_ranges
         self.calibration_quantities = first.calibration_quantities
         self.extraction_quantities = first.extraction_quantities
         self.num_calibration_quantities = first.num_calibration_quantities
