@@ -4,7 +4,7 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.12.2] - 2026-11-09
 
 ### Fixed
 - **`gp_library = "skl"` failed with TELEMAC.** The scikit-learn branch of the drivers sets the length scales of the RBF kernel from `complex_model.parameter_ranges`, which only the OpenFOAM and Delft3D bindings set; with `TelemacModel` (and `MultiflowTelemacModel`) the first BAL iteration raised `AttributeError`. `HydroSimulations` now sets `parameter_ranges` from `param_values` for every binding. Present since 1.11.1 at least.
