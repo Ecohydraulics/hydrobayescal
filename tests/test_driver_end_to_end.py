@@ -66,7 +66,6 @@ class _AnalyticModel(HydroSimulations):
             calibration_quantities=list(quantities), extraction_quantities=list(quantities),
             complete_bal_mode=True, only_bal_mode=False, delete_complex_outputs=False,
             multitask_selection=multitask_selection)
-        self.parameter_ranges = self.param_values  # as OpenFOAM and Delft3D set it, read by the scikit-learn branch
         self.calls = []
 
     def run_multiple_simulations(self, collocation_points=None, bal_new_set_parameters=None,
@@ -180,6 +179,18 @@ def test_a_calibration_runs_through_with_the_exploration_trade_off(tmp_path):
     assert model.model_evaluations.shape[0] == MAX_RUNS
     assert np.all(bal["exploration_tradeoff_active"])
     assert np.all(np.isfinite(bal["log_BME"]))
+
+
+def test_a_telemac_model_carries_the_parameter_ranges_of_the_scikit_learn_emulator(tmp_path):
+    """The scikit-learn branch sets the RBF length scales from parameter_ranges, which TelemacModel never had: gp_library="skl" raised AttributeError at the first BAL iteration."""
+    pytest.importorskip("tqdm")
+    from hydroBayesCal.telemac.control_telemac import TelemacModel
+
+    ranges = [[0.01, 0.3], [0.01, 0.4]]
+    model = TelemacModel(res_dir=str(tmp_path), model_dir=str(tmp_path), calibration_parameters=["zone1", "zone3"],
+                         param_values=ranges, extraction_quantities=["WATER DEPTH"], calibration_quantities=["WATER DEPTH"])
+
+    assert model.parameter_ranges == ranges
 
 
 @pytest.mark.parametrize("driver_name", ["bal_telemac", "bal_openfoam", "bal_delft3d"])

@@ -550,8 +550,6 @@ class Delft3DModel(HydroSimulations):
         self.n_processors = int(n_processors)
         self.roughness_formulation = roughness_formulation
         self.n_avg_timesteps = max(1, int(n_avg_timesteps))
-        # Alias consumed by the GP layer (see bal_delft3d.py).
-        self.parameter_ranges = self.param_values
 
         # The base class sets these only when a calibration file is present;
         # provide robust fallbacks so the BAL driver never sees None.

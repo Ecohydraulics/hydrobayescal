@@ -822,8 +822,6 @@ class OpenFOAMModel(HydroSimulations):
         self.n_avg_timesteps = max(1, int(n_avg_timesteps))  # minimum 1
         # Write VTK for every run (off by default, only needed for ParaView)
         self.write_vtk = bool(write_vtk)
-        # Alias consumed by the GP layer (see bal_openfoam.py).
-        self.parameter_ranges = self.param_values
 
         # Check calibration quantities and parameters before any simulation
         self._validate_calibration_quantities()

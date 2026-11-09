@@ -286,6 +286,8 @@ class HydroSimulations(ABC):
         self.calibration_pts_file_path = calibration_pts_file_path
         self.nproc = n_cpus
         self.param_values = param_values
+        # Read by the scikit-learn branch of the drivers for the length scales of the RBF kernel. Set here for every binding: TELEMAC never set it, so gp_library="skl" failed with TELEMAC.
+        self.parameter_ranges = param_values
         self.calibration_quantities = calibration_quantities
         self.extraction_quantities = extraction_quantities
         self.calibration_parameters = calibration_parameters
