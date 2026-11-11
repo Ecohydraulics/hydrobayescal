@@ -601,11 +601,14 @@ The BAL loop stores, for every iteration, a **joint** posterior sample in
 joint likelihood over all calibration points and calibration targets. That sample, not any
 single training point, is the calibration result.
 
-The calibrated parameter set is the **maximum of the joint posterior probability density
-function**, i.e. the single parameter combination the measurements support most strongly
-once all parameters are considered together. The per-parameter marginal optima answer a
-different question, and most of this step is about telling the two apart and deciding
-which one to report.
+Since 1.13.0 the calibrated parameter set is the vector of **per-parameter posterior
+maxima**: the peak of each parameter's own posterior marginal, which is what a modeler
+reads off the posterior of, for example, one roughness zone and reports with its credible
+interval. The **maximum of the joint posterior probability density function**, the single
+combination the measurements support most strongly once all parameters are considered
+together, is still computed and reported next to it, and the diagnostics below say when
+the two disagree and both should be run with the full complexity model. Up to 1.12.2 the
+joint maximum was the default (``--estimate joint`` restores that rule).
 
 Run the derivation on a finished calibration:
 
@@ -617,12 +620,16 @@ Run the derivation on a finished calibration:
 It reports, for every calibration parameter:
 
 * the **peak of that parameter's own posterior marginal**, with the credible interval.
-  The peak is read directly off a histogram of the accepted posterior samples (the
-  most populated bin, refined to the mean of the samples inside it), with no
-  smoothing, so the reported optimum is a property of the posterior rather than of a
-  fitted curve. The number of bins follows from the sample size and the spread of the
-  posterior instead of being fixed in advance, see
-  :func:`~hydroBayesCal.surrogate.posterior_analysis.marginal_bin_count`;
+  The peak is read directly off histograms of the accepted posterior samples (the
+  most populated bin, refined to the mean of the samples inside it; adjacent bins with
+  the same count are one plateau), with no smoothing, so the reported optimum is a
+  property of the posterior rather than of a fitted curve. The number of bins follows
+  from the sample size and the spread of the posterior instead of being fixed in
+  advance, see :func:`~hydroBayesCal.surrogate.posterior_analysis.marginal_bin_count`.
+  Because the modal bin of a flat-topped marginal moves with every shift of the bin
+  edges, the peak is the median over 200 bootstrap resamples of the sample, and the
+  standard deviation of those resampled peaks is reported as its spread
+  (:func:`~hydroBayesCal.surrogate.posterior_analysis.bagged_marginal_peak`);
 * the **variance reduction** relative to the prior, i.e. how strongly the measurements
   constrain that parameter at all;
 * flags for parameters whose optimum is **pinned at a prior bound** (the range is too
@@ -703,8 +710,12 @@ How the calibrated optima are chosen
 +++++++++++++++++++++++++++++++++++++
 
 :func:`~hydroBayesCal.surrogate.posterior_analysis.select_calibrated_parameters` turns
-those measurements into one decision. The joint maximum is the default and the marginal
-peaks have to earn their promotion:
+those measurements into one decision. By default (``estimate="marginal"``) the reported set
+is the marginal-peak vector unless the posterior has several well-separated modes; where the
+verdict is ``coupled`` or ``inconsistent``, or the vector differs from the joint maximum,
+the message says so and lists both vectors for a run of the full complexity model. With
+``estimate="joint"`` (``--estimate joint``), the rule of 1.5.0 to 1.12.2 applies, in which
+the joint maximum is the default and the marginal peaks have to earn their promotion:
 
 .. list-table::
    :header-rows: 1
@@ -731,9 +742,9 @@ peaks have to earn their promotion:
      - **Joint maximum**, with the marginal-peak vector to be checked against it by
        running the solver at both.
 
-Parameters flagged **non-identifiable** are reported from the joint maximum and marked:
-any value in their range fits about as well, so the number is a placeholder the data does
-not support, whichever vector it came from.
+Parameters flagged **non-identifiable** are marked: any value in their range fits about
+as well, so the number is a placeholder the data does not support, whichever vector it
+came from.
 
 The decision, its reasoning and the parameter sets it asks to be verified are logged and
 written to the ``selected`` column of ``calibrated-parameter-candidates.csv``
