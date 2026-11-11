@@ -4,6 +4,15 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-11-11
+
+### Changed
+- **The calibrated parameter set is the vector of per-parameter posterior maxima.** `select_calibrated_parameters` (and so `analyze_posterior` and `derive_calibrated_parameters.py`) reports the peak of each parameter's own posterior marginal by default (`CALIBRATED_ESTIMATE = "marginal"`), unless the posterior has several well-separated modes. The joint maximum is still computed; where the equifinality verdict is `coupled` or `inconsistent`, or the two vectors differ, the message says so and both are listed for a run of the full complexity model. `estimate="joint"` (`--estimate joint`) restores the rule of 1.5.0 to 1.12.2. Every calibrated set changes where the two vectors differed by more than 0.25 posterior standard deviations; on a TELEMAC calibration with four roughness zones: 2.8 / 32.6 / 7.4 / 29.0 cm instead of 5.7 / 36.1 / 10.0 / 29.4 cm.
+- **The marginal peak no longer depends on where the histogram bins start.** It is the median of the histogram peaks of 200 bootstrap resamples of the posterior sample (`bagged_marginal_peak`, fixed seed `PEAK_SEED`); the standard deviation of those peaks is stored per iteration as `marginal_peak_spread` and logged with the peaks. On the 445 samples of a flat-topped TELEMAC marginal, one histogram gave 0.310, 0.319 or 0.343 depending on the bin edges, the bagged peak 0.326 (spread 0.016). `marginal_optima(..., peak_resamples=0)` reads one histogram as before.
+
+### Fixed
+- **Tied histogram bins gave the lower end of a plateau as the peak.** `np.argmax` took the first of two bins with the same count (zone 3 of the calibration above: bins at 0.30 and 0.32 m with 67 samples each, peak 0.310). Adjacent tied bins are now one plateau (mean of their samples); of separate tied bins, the one nearest the posterior median is taken.
+
 ## [1.12.2] - 2026-11-09
 
 ### Fixed

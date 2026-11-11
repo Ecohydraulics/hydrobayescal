@@ -68,6 +68,7 @@ __all__ = [
 #: ``bayesian_dict['posterior']`` for result files written before they existed.
 ITERATION_KEYS = (
     "marginal_optima",
+    "marginal_peak_spread",
     "marginal_hdi",
     "variance_reduction",
     "identifiability_flags",
@@ -318,12 +319,94 @@ def _histogram_peak(column, counts, edges):
     Taking the mean of the samples inside the modal bin instead of the bin centre
     gives sub-bin resolution, so the reported optimum is not quantised to the bin
     grid.
+
+    Bin counts tie often (see :func:`_count_marginal_modes`). Up to 1.12.2 ``argmax``
+    took the first of the tied bins, so a flat-topped marginal reported the lower end
+    of its plateau: zone 3 of a TELEMAC calibration with bins 7 and 8 tied at 67
+    samples gave 0.310 where the plateau spans 0.30 to 0.34. Adjacent tied bins are one
+    plateau and are now merged; of tied bins that are not adjacent, the one nearest the
+    posterior median is taken.
     """
-    modal = int(np.argmax(counts))
-    inside = column[(column >= edges[modal]) & (column <= edges[modal + 1])]
+    column = np.asarray(column, dtype=float)
+    counts = np.asarray(counts)
+    top = np.flatnonzero(counts == counts.max())
+    runs = np.split(top, np.flatnonzero(np.diff(top) > 1) + 1)
+    if len(runs) > 1:
+        median = float(np.median(column))
+        centres = [0.5 * (edges[run[0]] + edges[run[-1] + 1]) for run in runs]
+        run = runs[int(np.argmin([abs(centre - median) for centre in centres]))]
+    else:
+        run = runs[0]
+    low, high = edges[run[0]], edges[run[-1] + 1]
+    inside = column[(column >= low) & (column <= high)]
     if inside.size:
         return float(np.mean(inside))
-    return float(0.5 * (edges[modal] + edges[modal + 1]))
+    return float(0.5 * (low + high))
+
+
+#: Resamples behind the per-parameter peak (:func:`bagged_marginal_peak`).
+PEAK_RESAMPLES = 200
+#: Seed of those resamples, so that the same posterior always gives the same peak.
+PEAK_SEED = 20261111
+
+
+def bagged_marginal_peak(column, samples_per_bin=25, min_bins=8,
+                         n_resamples=PEAK_RESAMPLES, seed=PEAK_SEED):
+    """Peak of one posterior marginal, averaged over bootstrap resamples.
+
+    The peak of a single histogram depends on where its bins happen to start. Where a
+    marginal is sharp that does not matter, but a flat-topped marginal (a parameter
+    the data constrain to a plateau) moves its modal bin across the plateau with every
+    shift of the bin edges and with every few samples added: on the 445 posterior
+    samples of a TELEMAC roughness zone, bins over the occupied range gave 0.310, the
+    same number of bins over the calibration range 0.319, and bins anchored at the
+    lower bound 0.343. Bootstrapping those samples moved the single-histogram peak by
+    1.2 cm (one standard deviation).
+
+    The peak is therefore the median of the histogram peaks of ``n_resamples``
+    bootstrap resamples (bagging), each binned with :func:`marginal_bin_count` and
+    read with :func:`_histogram_peak`. It is no smoother than one histogram near a
+    prior bound (each resample is still a histogram of the samples, with no kernel
+    reaching across the bound), so a parameter pinned at its limit stays pinned. The
+    standard deviation of the resampled peaks is returned as the spread of the peak:
+    how precisely the posterior sample locates it.
+
+    Parameters
+    ----------
+    column : array
+        Posterior samples of one calibration parameter.
+    samples_per_bin, min_bins : int
+        Passed to :func:`marginal_bin_count`.
+    n_resamples : int
+        Bootstrap resamples; 0 reads the peak off one histogram of the samples, as
+        up to 1.12.2 (with the tie rule of :func:`_histogram_peak`).
+    seed : int
+        Seed of the resampling, so that the result is reproducible.
+
+    Returns
+    -------
+    tuple of float
+        ``(peak, spread)``; ``(nan, nan)`` for a degenerate column.
+    """
+    column = np.asarray(column, dtype=float)
+    counts, edges = _marginal_histogram(column, samples_per_bin=samples_per_bin,
+                                        min_bins=min_bins)
+    if counts is None:
+        return np.nan, np.nan
+    single = _histogram_peak(column, counts, edges)
+    if not n_resamples:
+        return single, np.nan
+    rng = np.random.default_rng(seed)
+    peaks = []
+    for _ in range(int(n_resamples)):
+        resample = rng.choice(column, column.size)
+        counts, edges = _marginal_histogram(resample, samples_per_bin=samples_per_bin,
+                                            min_bins=min_bins)
+        if counts is not None:
+            peaks.append(_histogram_peak(resample, counts, edges))
+    if not peaks:
+        return single, np.nan
+    return float(np.median(peaks)), float(np.std(peaks))
 
 
 class _DensityEstimator:
@@ -458,14 +541,17 @@ def marginal_optima(
         mode_valley_fraction=0.3,
         min_mode_height=0.10,
         min_post_size=200,
+        peak_resamples=PEAK_RESAMPLES,
 ):
     """Per-parameter marginal optimum and identifiability from a joint posterior.
 
     Each parameter's optimum is the peak of that parameter's own posterior marginal,
-    read directly off a histogram of the accepted posterior samples: the most
-    populated bin, refined to the mean of the samples inside it. The bin count comes
-    from :func:`marginal_bin_count`, so it follows from the sample size and the
-    spread of the posterior instead of being fixed in advance.
+    read directly off histograms of the accepted posterior samples: the most
+    populated bin, refined to the mean of the samples inside it, taken as the median
+    over bootstrap resamples (:func:`bagged_marginal_peak`), so that it does not
+    depend on where the bins start. The bin count comes from
+    :func:`marginal_bin_count`, so it follows from the sample size and the spread of
+    the posterior instead of being fixed in advance.
 
     The estimate is deliberately made on the samples themselves, with no smoothing.
     A smoothed density estimate returns the peak of the smoothed curve, not of the
@@ -513,11 +599,14 @@ def marginal_optima(
     min_post_size : int
         Below this number of accepted samples the marginal estimates are reported
         but flagged as untrustworthy.
+    peak_resamples : int
+        Bootstrap resamples behind each peak (:func:`bagged_marginal_peak`); 0 reads
+        it off one histogram.
 
     Returns
     -------
     dict
-        ``parameter_names``, ``peak``, ``mean``, ``median``, ``hdi_low``,
+        ``parameter_names``, ``peak``, ``peak_spread``, ``mean``, ``median``, ``hdi_low``,
         ``hdi_high``, ``std_post``, ``std_prior``, ``variance_reduction``,
         ``n_marginal_modes``, ``n_bins``, ``flags`` (list of lists), ``post_size``,
         ``verdict``, ``message`` and ``recommendation``.
@@ -535,6 +624,7 @@ def marginal_optima(
         std_prior = (bounds[:, 1] - bounds[:, 0]) / np.sqrt(12.0)
 
     peak = np.full(ndim, np.nan)
+    peak_spread = np.full(ndim, np.nan)
     mean = posterior.mean(axis=0)
     median = np.median(posterior, axis=0)
     std_post = posterior.std(axis=0)
@@ -561,7 +651,9 @@ def marginal_optima(
             flags[i].append("degenerate_marginal")
         else:
             n_bins[i] = counts.size
-            peak[i] = _histogram_peak(column, counts, edges)
+            peak[i], peak_spread[i] = bagged_marginal_peak(
+                column, samples_per_bin=samples_per_bin, min_bins=min_bins,
+                n_resamples=peak_resamples)
             n_modes[i] = _count_marginal_modes(
                 counts, valley_fraction=mode_valley_fraction,
                 min_mode_height=min_mode_height)
@@ -640,6 +732,7 @@ def marginal_optima(
     return {
         "parameter_names": names,
         "peak": peak,
+        "peak_spread": peak_spread,
         "mean": mean,
         "median": median,
         "hdi_low": hdi_low,
@@ -1512,6 +1605,7 @@ def analyze_posterior(
         max_modes=5,
         refine=False,
         include_surrogate_error=None,
+        estimate=None,
         **kwargs
 ):
     """Run the full posterior analysis and return every part of it.
@@ -1531,6 +1625,9 @@ def analyze_posterior(
         ``observations`` and ``error``.
     include_surrogate_error : bool, optional
         Whether the likelihood of the surrogate includes the variance of the emulator. By default the setting the calibration was run with, as stored in ``bayesian_dict``, and ``True`` (the default of the drivers) where nothing is stored.
+    estimate : str, optional
+        How the calibrated set is chosen, see :func:`select_calibrated_parameters`
+        (default :data:`CALIBRATED_ESTIMATE`, the per-parameter posterior maxima).
 
     Returns
     -------
@@ -1589,12 +1686,27 @@ def analyze_posterior(
         "modes": modes,
         "candidates": candidates,
     }
-    analysis["decision"] = select_calibrated_parameters(analysis)
+    analysis["decision"] = select_calibrated_parameters(
+        analysis, estimate=estimate or CALIBRATED_ESTIMATE)
     return analysis
 
 
-def select_calibrated_parameters(analysis, gap_tolerance=0.25):
+#: How the calibrated parameter set is read off the posterior by default.
+CALIBRATED_ESTIMATE = "marginal"
+
+
+def select_calibrated_parameters(analysis, gap_tolerance=0.25,
+                                 estimate=CALIBRATED_ESTIMATE):
     """Which parameter set is the calibration result, and why.
+
+    Since 1.13.0 the default (``estimate="marginal"``) is the vector of per-parameter
+    posterior maxima, the peak of each parameter's own marginal: what a modeler reads
+    off the posterior of a roughness zone and reports with its credible interval, and
+    what the calibration of independent zones is after. The joint maximum and the
+    diagnostics below are still computed; they no longer replace the per-parameter
+    peaks, but their verdict is attached to the message, and where they disagree both
+    vectors are listed for a run of the full complexity model. ``estimate="joint"``
+    restores the rule of 1.5.0 to 1.12.2, described in the rest of this docstring.
 
     The calibration infers a *joint* posterior over the calibration parameters, and the
     calibrated parameter set is the maximum of that joint density. The per-parameter
@@ -1636,6 +1748,9 @@ def select_calibrated_parameters(analysis, gap_tolerance=0.25):
     gap_tolerance : float
         How far the marginal-peak vector may sit from the joint optimum, in posterior
         standard deviations per parameter, and still count as agreeing with it.
+    estimate : str
+        ``"marginal"`` (default): the per-parameter posterior maxima; ``"joint"``: the
+        rule of 1.5.0 to 1.12.2.
 
     Returns
     -------
@@ -1744,11 +1859,39 @@ def select_calibrated_parameters(analysis, gap_tolerance=0.25):
             "measurements before reporting one as the calibrated parameter set.")
         must_verify = [("joint_map", joint_vector), ("marginal_peak", peak_vector)]
 
+    if estimate not in ("marginal", "joint"):
+        raise ValueError(f"estimate must be 'marginal' or 'joint', not {estimate!r}")
+    if estimate == "marginal" and source != "marginal-peak vector":
+        worst = (float(np.nanmax(np.abs(gap))) if np.any(np.isfinite(gap)) else np.nan)
+        selected, source = peak_vector, "marginal-peak vector"
+        if verdict in ("inconsistent", "coupled"):
+            message = (
+                f"The calibrated parameter set is the vector of per-parameter marginal "
+                f"peaks. Check it: the posterior couples the parameters (verdict "
+                f"{verdict!r}, largest |r| = {equifinality['max_abs_correlation']:.2f}, "
+                f"{equifinality['density_percentile']:.0f}th joint density percentile), "
+                f"so the peaks need not form a parameter set the posterior supports as a "
+                f"whole; the {joint_label} is the alternative.")
+            recommendation = (
+                "Run the full complexity model at the marginal-peak vector and at the "
+                "joint optimum and compare both with the measurements.")
+        else:
+            message = (
+                f"The calibrated parameter set is the vector of per-parameter marginal "
+                f"peaks. It differs from the {joint_label} by up to {worst:.2f} posterior "
+                f"standard deviations; the parameters are effectively independent under "
+                f"the posterior (largest |r| = "
+                f"{equifinality['max_abs_correlation']:.2f}).")
+            recommendation = (
+                "Run the full complexity model at this parameter set to confirm the "
+                "surrogate, and report the marginal credible intervals with it.")
+        must_verify = [("marginal_peak", peak_vector), ("joint_map", joint_vector)]
+
     if unidentified:
         message += (
-            f" The measurements do not identify {', '.join(unidentified)}: their reported "
-            f"values are taken from the joint optimum, but any value in their calibration "
-            f"range fits about as well.")
+            f" The measurements do not identify {', '.join(unidentified)}: any value in "
+            f"their calibration range fits about as well, so their reported values are "
+            f"placeholders the data do not support.")
 
     runner_up = (joint_vector if source == "marginal-peak vector" else peak_vector)
     runner_up_source = ("marginal-peak vector" if source != "marginal-peak vector"
@@ -1875,7 +2018,7 @@ def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=No
     Returns
     -------
     dict
-        ``peak``, ``hdi``, ``variance_reduction``, ``flags``, ``gap`` (dict with
+        ``peak``, ``peak_spread``, ``hdi``, ``variance_reduction``, ``flags``, ``gap`` (dict with
         ``density_percentile``, ``mahalanobis_percentile``, ``max_abs_correlation``
         and ``verdict``), ``joint``, ``joint_log_density``, ``n_modes`` and
         ``post_size``.
@@ -1900,6 +2043,7 @@ def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=No
 
         return {
             "peak": marginal["peak"],
+            "peak_spread": marginal["peak_spread"],
             "hdi": np.column_stack([marginal["hdi_low"], marginal["hdi_high"]]),
             "variance_reduction": marginal["variance_reduction"],
             "flags": marginal["flags"],
@@ -1920,6 +2064,7 @@ def track_iteration(posterior, prior=None, parameter_names=None, prior_bounds=No
             ndim = len(parameter_names) if parameter_names else 0
         return {
             "peak": np.full(ndim, np.nan),
+            "peak_spread": np.full(ndim, np.nan),
             "hdi": np.full((ndim, 2), np.nan),
             "variance_reduction": np.full(ndim, np.nan),
             "flags": [[] for _ in range(ndim)],
@@ -1956,6 +2101,7 @@ def record_iteration(bayesian_dict, iteration, posterior, prior=None,
             bayesian_dict[key].append(None)
 
     bayesian_dict["marginal_optima"][iteration] = summary["peak"]
+    bayesian_dict["marginal_peak_spread"][iteration] = summary["peak_spread"]
     bayesian_dict["marginal_hdi"][iteration] = summary["hdi"]
     bayesian_dict["variance_reduction"][iteration] = summary["variance_reduction"]
     bayesian_dict["identifiability_flags"][iteration] = summary["flags"]
@@ -1973,8 +2119,11 @@ def record_iteration(bayesian_dict, iteration, posterior, prior=None,
 
     if log and summary["post_size"]:
         names = parameter_names or [f"parameter_{i + 1}" for i in range(len(summary["peak"]))]
-        peaks = ", ".join(f"{name}={value:.4g}"
-                          for name, value in zip(names, summary["peak"]))
+        peaks = ", ".join(
+            f"{name}={value:.4g}" + (f" (+/- {spread:.2g})" if np.isfinite(spread) else "")
+            for name, value, spread in zip(names, summary["peak"], summary["peak_spread"]))
+        # the calibrated set since 1.13.0 (CALIBRATED_ESTIMATE); the joint maximum follows
+        # for comparison
         logger.info(f"Marginal optima after iteration {iteration}: {peaks}")
         joint = ", ".join(f"{name}={value:.4g}"
                           for name, value in zip(names, summary["joint"]))

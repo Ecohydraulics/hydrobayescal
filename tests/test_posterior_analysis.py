@@ -440,8 +440,8 @@ def test_track_iteration_never_raises(bad):
     summary = track_iteration(bad, parameter_names=["a", "b"], prior_bounds=BOUNDS_UNIT)
     # The failure path has to return the same keys as the success path: a consumer
     # reading the summary must not have to know whether the diagnostic worked.
-    assert set(summary) == {"peak", "hdi", "variance_reduction", "flags", "gap",
-                            "joint", "joint_log_density", "n_modes", "post_size"}
+    assert set(summary) == {"peak", "peak_spread", "hdi", "variance_reduction", "flags",
+                            "gap", "joint", "joint_log_density", "n_modes", "post_size"}
     assert summary["n_modes"] == 1
 
 
@@ -601,12 +601,16 @@ def test_independent_posterior_promotes_the_marginal_peaks():
 
 
 def test_a_ridge_posterior_reports_the_joint_optimum_not_the_marginal_peaks():
-    """The case the whole module exists for: individually optimal, jointly wrong."""
+    """The case the joint rule exists for: individually optimal, jointly wrong.
+
+    Since 1.13.0 the joint rule is chosen with ``estimate="joint"``; the default (the
+    per-parameter peaks) is tested in ``test_a_ridge_posterior_by_default_reports_the_peaks_with_a_warning``.
+    """
     t = RNG.uniform(0.0, 1.0, 8000)
     posterior = np.column_stack([0.15 + 0.7 * t + RNG.normal(0, 0.012, 8000),
                                  0.85 - 0.7 * t + RNG.normal(0, 0.012, 8000)])
     analysis = analyze_posterior(posterior=posterior, parameter_names=["a", "b"],
-                                 prior_bounds=BOUNDS_UNIT)
+                                 prior_bounds=BOUNDS_UNIT, estimate="joint")
     decision = analysis["decision"]
 
     assert analysis["equifinality"]["verdict"] in ("coupled", "inconsistent")
