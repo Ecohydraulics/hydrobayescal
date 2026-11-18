@@ -826,6 +826,8 @@ def test_refinement_on_a_trained_emulator(precision):
     """The same with a trained gpytorch emulator instead of a stand-in, in the precision of earlier releases and in the present one.
 
     The starts lie around the optimum, like the posterior samples the refinement is seeded with. The likelihood includes the variance of the emulator here, which flattens it where the emulator is uncertain: from a start far outside the posterior, a search can end in a corner of the calibration ranges that has no training run.
+
+    The single-precision case is an emulator pickled by an earlier release, which predicts in single precision: it is trained in double precision and converted. Trained in single precision, since 1.14 its hyperparameters reach long length scales (about 5), where the training covariance is ill-conditioned in single precision: the length scales then depended on the number of threads (4.45 to 5.01), and on the CI runners one of the four starts ended elsewhere in some runs.
     """
     torch = pytest.importorskip("torch")
     gpytorch = pytest.importorskip("gpytorch")
@@ -839,9 +841,17 @@ def test_refinement_on_a_trained_emulator(precision):
     likelihood.noise = 1e-5
     emulator = GPyTraining(collocation_points=x, model_evaluations=model(x), likelihood=likelihood,
                            kernel=gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=2)),
-                           training_iter=150, optimizer="adam", lr=0.07, verbose=False, precision=precision)
+                           training_iter=150, optimizer="adam", lr=0.07, verbose=False)
     torch.manual_seed(0)
     emulator.train_()
+    if precision == "single":
+        for entry in emulator.gp_list:
+            gp = entry["gp"]
+            gp.to(torch.float32)
+            entry["likelihood"].to(torch.float32)
+            gp.set_train_data(*[t.to(torch.float32) for t in gp.train_inputs], gp.train_targets.to(torch.float32),
+                              strict=False)
+        assert next(emulator.gp_list[0]["gp"].parameters()).dtype == torch.float32
     truth = np.array([0.6, 0.4])
     starts = truth + np.array([[0.08, -0.06], [-0.07, 0.05], [0.05, 0.08], [-0.04, -0.07]])
 
