@@ -263,7 +263,7 @@ class GPyTraining:
     precision : {"double", "single"}, optional
         Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` reproduces the arithmetic of releases up to 1.10.1.
     mean_features : list of list of tuple, optional
-        Trend features of the mean, one list per output column, as :func:`~hydroBayesCal.surrogate.hydraulic_mean.trend_features` returns them for ``sampling['gp_mean']``. Default ``None``: zero mean on the normalized outputs, the emulator of releases up to 1.13.
+        Trend features of the mean, one list per output column, as :func:`~hydroBayesCal.surrogate.hydraulic_mean.trend_features` returns them for ``sampling['gp_mean']``. A trend switches on ``tp_normalization``. Default ``None``: zero mean on the normalized outputs, the emulator of releases up to 1.13.
 
     Notes
     -----
@@ -322,12 +322,13 @@ class GPyTraining:
         self.verbose = verbose
 
         # Options for GPR library:
-        self.tp_norm = tp_normalization
+        self.mean_features = _column_features(mean_features, self.n_obs, self.n_params)
+        # A trend acts on the physical parameters, the kernel on the scaled ones: without the scaling, the trend made a single-output emulator of a k-epsilon test model 1.1 to 11 times less accurate (hydraulic_mean.py).
+        self.tp_norm = bool(tp_normalization) or self.mean_features is not None
         self.y_norm = y_normalization
         # Parameters used to normalize GP inputs
         self.x_min = None
         self.x_range = None
-        self.mean_features = _column_features(mean_features, self.n_obs, self.n_params)
 
         self._id_vectors(likelihood, kernel)
 
@@ -468,6 +469,8 @@ class GPyTraining:
 
         best_loss = float('inf')
         best_params = None
+        # The same for every restart: feature standardization and least-squares start depend on the training data only.
+        trend = trend_mean(features, train_x, train_y, self.x_min, self.x_range)
 
         for i in range(self.n_restarts):
 
@@ -476,8 +479,7 @@ class GPyTraining:
             likelihood_ = copy.deepcopy(likelihood)
 
             # Initialize instance of GPyTorch GPR. Kernel and likelihood arrive in torch's default type, single precision, and are brought to the precision of this emulator together with the model.
-            mean_module = trend_mean(features, train_x, train_y, self.x_min, self.x_range)
-            gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_, mean_module=mean_module)
+            gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_, mean_module=copy.deepcopy(trend))
             gp.to(self.dtype)
             likelihood_.to(self.dtype)
 
@@ -742,10 +744,11 @@ class MultiGPyTraining:
         self.training_iter = training_iter
         self.n_restarts = n_restarts
         self.lr = lr
-        self.tp_norm = tp_normalization
+        self.mean_features = _column_features(mean_features, self.n_obs, self.n_params)
+        # A trend switches on the input scaling, see GPyTraining.
+        self.tp_norm = bool(tp_normalization) or self.mean_features is not None
         self.x_min = None
         self.x_range = None
-        self.mean_features = _column_features(mean_features, self.n_obs, self.n_params)
         self.parallel = parallelize
         self.noise_constraint = noise_constraint
         self.losses = []  # To store loss values for tracking convergence

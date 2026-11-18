@@ -225,3 +225,86 @@ def test_delft3d_and_openfoam_name_the_roles_of_their_parameters():
     openfoam.calibration_parameters = ["ks", "Cmu", "C1"]
     assert openfoam.friction_laws() == {"ks": "NIKU"}
     assert openfoam.turbulence_constants() == {"Cmu": hm.CMU}
+
+
+# Findings of the review of PR 33.
+
+def test_telemac_3d_names_its_bottom_friction_coefficient_and_defaults_to_nikuradse(tmp_path):
+    """TELEMAC-3D calls the keyword FRICTION COEFFICIENT FOR THE BOTTOM, and LAW OF BOTTOM FRICTION defaults to 5 (telemac3d.dico); TELEMAC-2D has no default."""
+    from hydroBayesCal.telemac.control_telemac import TelemacModel
+
+    (tmp_path / "run.cas").write_text("FRICTION COEFFICIENT FOR THE BOTTOM = 0.01\n")
+    model = object.__new__(TelemacModel)
+    model.friction_file, model.fr_tbl, model.tm_cas = None, str(tmp_path / "none.tbl"), str(tmp_path / "run.cas")
+    model.calibration_parameters = ["FRICTION COEFFICIENT FOR THE BOTTOM"]
+    model.tm_xd = "Telemac3d"
+    assert model.friction_laws() == {"FRICTION COEFFICIENT FOR THE BOTTOM": "NIKU"}
+    model.tm_xd = "Telemac2d"
+    assert model.friction_laws() == {}
+    (tmp_path / "run.cas").write_text("LAW OF BOTTOM FRICTION = 6\n")
+    model.calibration_parameters = ["FRICTION COEFFICIENT"]
+    assert model.friction_laws() == {"FRICTION COEFFICIENT": "COWH"}
+
+
+@pytest.mark.parametrize("quantity, kind", [("3D VELOCITY MAGNITUDE", "velocity"), ("U_magnitude", "velocity"),
+                                            ("TKE_MODELED", "tke"), ("TURBULENT ENERG", "tke")])
+def test_the_target_names_of_the_bindings_are_recognized(quantity, kind):
+    assert hm.target_kind(quantity) == kind
+
+
+def test_a_prior_sample_at_or_below_zero_does_not_blow_up_the_trend():
+    """With a normal prior, param_values are [mean, std]: prior samples can reach zero or below, where a power or logarithm is undefined."""
+    theta = torch.tensor([[0.005], [0.01], [0.02], [0.03], [0.04], [0.05]], dtype=torch.float64)
+    mean = hm.HydraulicMean([("log", 0)], theta, torch.log(theta[:, 0]))
+    with torch.no_grad():
+        values = mean(torch.tensor([[-0.01], [0.0], [1e-12]], dtype=torch.float64))
+    assert torch.all(torch.isfinite(values))
+    with torch.no_grad():
+        floor = mean(torch.tensor([[hm.FLOOR_FRACTION * 0.005]], dtype=torch.float64))
+    assert torch.allclose(values[:3], floor)  # flat below the floor
+
+
+def test_a_shaped_feature_of_a_parameter_with_nonpositive_training_values_becomes_linear():
+    theta = torch.tensor([[-0.01], [0.01], [0.02], [0.03], [0.04], [0.05]], dtype=torch.float64)
+    mean = hm.trend_mean([("log", 0)], theta, theta[:, 0])
+    assert mean.features == [("power", 0, 1.0)]
+
+
+def test_the_emulators_scale_the_parameters_whenever_they_have_a_trend():
+    x = np.random.default_rng(0).random((8, 2))
+    features = [[("power", 0, 1.0), ("power", 1, 1.0)]] * 2
+    kernel = gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=2))
+    single = GPyTraining(x, np.ones((8, 2)), kernel, 1, gpytorch.likelihoods.GaussianLikelihood(), mean_features=features)
+    multi = MultiGPyTraining(x, np.ones((8, 2)), kernel, 1, multitask_likelihood(2), number_quantities=2,
+                             mean_features=features)
+    assert single.tp_norm and multi.tp_norm
+    assert not GPyTraining(x, np.ones((8, 2)), kernel, 1, gpytorch.likelihoods.GaussianLikelihood()).tp_norm
+
+
+def test_a_trend_that_does_not_fit_the_output_columns_falls_back_to_the_constant_mean():
+    class Model:
+        calibration_parameters, calibration_quantities, nloc, parameter_ranges = ["ks"], ["U_x"], 2, [[0.001, 0.05]]
+
+        def trend_features(self, gp_mean):
+            return hm.trend_features(gp_mean, self.calibration_parameters, self.calibration_quantities, self.nloc,
+                                     self.parameter_ranges, {"ks": "NIKU"})
+
+    assert len(hm.driver_trend_features(Model(), "hydraulic", "gpy", n_columns=2)) == 2
+    assert hm.driver_trend_features(Model(), "hydraulic", "gpy", n_columns=3) is None
+    assert hm.driver_trend_features(Model(), "hydraulic", "skl", n_columns=2) is None
+    assert hm.driver_trend_features(Model(), "constant", "gpy", n_columns=2) is None
+
+
+def test_a_multiflow_model_reports_its_trend_once_for_all_flows(caplog):
+    from hydroBayesCal.telemac.multiflow_telemac import MultiflowTelemacModel
+
+    flow = type("Flow", (), {"friction_laws": lambda self: {"zone1": "MANN"}, "turbulence_constants": lambda self: {},
+                             "nloc": 2})()
+    model = object.__new__(MultiflowTelemacModel)
+    model.models, model.nloc = [flow, flow, flow], 6
+    model.calibration_parameters, model.calibration_quantities = ["zone1"], ["WATER DEPTH"]
+    model.parameter_ranges = [[0.02, 0.05]]
+    with caplog.at_level("INFO", logger="HydroBayesCal"):
+        features = model.trend_features("hydraulic")
+    assert features == [[("power", 0, 0.6)]] * 6
+    assert sum("Hydraulic GP mean" in record.getMessage() for record in caplog.records) == 1

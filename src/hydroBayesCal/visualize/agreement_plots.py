@@ -253,8 +253,7 @@ class AgreementPlots:
     def _state_title(key, state, diagnosis, usetex):
         """Column title: the calibration state, its ensemble size and the roughness
         reading of that state."""
-        # before: TELEMAC runs of the initial design; after: samples of the posterior
-        # predictive of the surrogate, which are no runs
+        # Before calibration: full-complexity runs of the initial design; after it: samples of the posterior predictive of the surrogate, which are no runs.
         unit = "posterior samples" if key == "post" else "runs"
         title = f"{state['label']} ({state['n_members']} {unit})"
         reading = ((diagnosis or {}).get("states", {}).get(key, {}) or {}).get("roughness")

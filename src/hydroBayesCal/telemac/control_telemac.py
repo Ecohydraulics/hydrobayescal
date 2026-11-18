@@ -2164,14 +2164,17 @@ class TelemacModel(HydroSimulations):
     def friction_laws(self):
         """Friction law of every calibration parameter that is a bed-friction coefficient.
 
-        A parameter ``zone<id>`` takes the law of zone ``<id>`` in the second column of the friction data file (``.tbl``: ``MANN``, ``STRI``, ``CHEZ``, ``NIKU``, ...). A parameter named ``FRICTION COEFFICIENT`` takes the ``LAW OF BOTTOM FRICTION`` of the steering file. Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.friction_laws`; a file that cannot be read leaves the parameter without a law (linear trend).
+        A parameter ``zone<id>`` takes the law of zone ``<id>`` in the second column of the friction data file (``.tbl``: ``MANN``, ``STRI``, ``CHEZ``, ``NIKU``, ...). A parameter named ``FRICTION COEFFICIENT`` (TELEMAC-2D) or ``FRICTION COEFFICIENT FOR THE BOTTOM`` (TELEMAC-3D) takes the ``LAW OF BOTTOM FRICTION`` of the steering file, which TELEMAC-3D sets to 5 (Nikuradse) when the keyword is missing. Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.friction_laws`; a file that cannot be read leaves the parameter without a law (linear trend).
 
         Returns
         -------
         dict
             ``{parameter name: law}``.
         """
-        from hydroBayesCal.surrogate.hydraulic_mean import TELEMAC_LAW_CODES
+        from hydroBayesCal.surrogate.hydraulic_mean import (
+            TELEMAC3D_DEFAULT_LAW,
+            TELEMAC_LAW_CODES,
+        )
         laws = {}
         zones = {}
         if self.friction_file and os.path.isfile(self.fr_tbl):
@@ -2180,7 +2183,7 @@ class TelemacModel(HydroSimulations):
                     tokens = line.split()
                     if len(tokens) >= 2 and not tokens[0].startswith("*"):
                         zones.setdefault(tokens[0], tokens[1].upper())
-        cas_law = None
+        cas_law = TELEMAC3D_DEFAULT_LAW if getattr(self, "tm_xd", None) == "Telemac3d" else None
         if os.path.isfile(self.tm_cas):
             with open(self.tm_cas, "r") as file:
                 for line in file:
@@ -2196,7 +2199,8 @@ class TelemacModel(HydroSimulations):
             name = str(parameter)
             if name.lower().startswith("zone") and name[4:] in zones:
                 laws[name] = zones[name[4:]]
-            elif " ".join(name.split()).upper() == "FRICTION COEFFICIENT" and cas_law is not None:
+            elif (" ".join(name.split()).upper() in ("FRICTION COEFFICIENT", "FRICTION COEFFICIENT FOR THE BOTTOM")
+                  and cas_law is not None):
                 laws[name] = cas_law
         return laws
 

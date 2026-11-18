@@ -16,7 +16,7 @@ from hydroBayesCal.openfoam.control_openfoam import OpenFOAMModel
 from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
 from hydroBayesCal.surrogate.gpe_skl import *
 from hydroBayesCal.surrogate.gpe_gpytorch import *
-from hydroBayesCal.surrogate.hydraulic_mean import check_gp_mean
+from hydroBayesCal.surrogate.hydraulic_mean import check_gp_mean, driver_trend_features
 from hydroBayesCal.function_pool import *
 from hydroBayesCal.surrogate.posterior_analysis import ITERATION_KEYS, record_iteration
 from hydroBayesCal.surrogate.target_agreement import finalize_target_agreement
@@ -308,19 +308,8 @@ def run_bal_model(collocation_points,
         logger.info(f"BAL point selection: "
                     f"{'exploration/exploitation trade-off' if do_tradeoff else 'exploitation only'} "
                     f"(set by bal_exploration_tradeoff).")
-    # Trend of the emulator mean, the same for every iteration (sampling['gp_mean']; None for the constant mean).
-    mean_features = None
-    if str(gp_mean).strip().lower() != "constant":
-        if gp_library == 'gpy':
-            mean_features = complex_model.trend_features(gp_mean)
-            if not tp_normalization:
-                # The trend acts on the physical parameters, the kernel on the scaled ones. Without the scaling, the single-output emulator with the trend was less accurate than with the constant mean on a k-epsilon test model; with it, more accurate in every case tested.
-                logger.info(f"gp_mean='{gp_mean}': the emulators are trained on calibration parameters scaled to [0, 1] "
-                            f"(tp_normalization), which the trend mean needs.")
-                tp_normalization = True
-        else:
-            logger_warn.warning(f"gp_mean='{gp_mean}' applies to the gpytorch emulators only; "
-                                f"the {gp_library} emulator keeps its constant mean.")
+    # Trend of the emulator mean, the same for every iteration (sampling['gp_mean']; None for the constant mean). A trend switches on the input scaling of the emulators.
+    mean_features = driver_trend_features(complex_model, gp_mean, gp_library, n_columns=model_outputs.shape[1])
     for it in range(0, n_iter + 1):
 
         # 1. Train surrogate

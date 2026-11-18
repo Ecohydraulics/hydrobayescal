@@ -7,6 +7,8 @@ The emulators of :mod:`hydroBayesCal.surrogate.gpe_gpytorch` model every output 
 * **Bed friction, normal flow of a wide channel at a fixed unit discharge** (TELEMAC, Delft3D). The water depth (and water-surface elevation) scales with n^(3/5), k_St^(-3/5) or C^(-2/3) (Manning, Strickler, Chezy), the depth-averaged velocity with the inverse power. An equivalent sand roughness k_s (Nikuradse, Haaland, log wall, Colebrook-White) enters the log law, U ∝ ln(12 h / k_s), so its feature is ln(k_s).
 * **Rough-wall turbulence, k-ε model** (OpenFOAM). The wall roughness ``ks`` enters every velocity and turbulence target through the log law, as ln(k_s). In the equilibrium (log) layer the turbulent kinetic energy is k = u*² / √C_μ, so the feature of C_μ is C_μ^(-1/2) for the turbulent kinetic energy and C_μ^(-1/4) for a velocity fluctuation. The friction velocity u* depends on k_s as well, so k is a product of a function of C_μ and one of k_s; a product feature was tested on a k-ε channel model and made the emulator less accurate, so the trend stays additive.
 
+A power or logarithm needs a positive parameter. A parameter whose prior range (with a uniform prior) or whose training values reach zero or below gets the linear trend, and the feature is held constant below a hundredth of the smallest training value (:data:`FLOOR_FRACTION`): with a normal prior, ``param_values`` are the mean and the standard deviation, and prior samples can reach zero.
+
 A parameter without a known role (GAIA, a fortran constant, the other k-ε coefficients) and a target of another kind get the linear trend. The coefficients a and b_k are trained with the kernel hyperparameters, so their signs are free: a zone whose roughness raises the velocity at a point in another zone gets a negative coefficient with the same curvature.
 
 A feature is a tuple: ``("power", j, p)`` for θ_j^p (``p = 1``: linear) or ``("log", j)`` for ln θ_j.
@@ -21,9 +23,9 @@ from hydroBayesCal.utils.config_logging import logger, logger_warn
 GP_MEANS = ("constant", "linear", "hydraulic")
 
 #: Marks a sand roughness in :data:`DEPTH_EXPONENTS`: its feature is the logarithm.
-LOG_FEATURE = 0.0
+LOG_FEATURE = "log"
 
-#: Exponent p of the water depth in the friction coefficient of each law (h ∝ c^p), keyed by the four-letter law names of a TELEMAC friction table. The velocity takes -p. ``LOG_FEATURE`` marks laws with an equivalent sand roughness. ``None`` (no friction) falls back to the linear trend.
+#: Exponent p of the water depth in the friction coefficient of each law (h ∝ c^p), keyed by the four-letter law names of a TELEMAC friction table. The velocity takes -p. :data:`LOG_FEATURE` marks laws with an equivalent sand roughness. ``None`` (no friction) falls back to the linear trend.
 DEPTH_EXPONENTS = {
     "MANN": 0.6,
     "STRI": -0.6,
@@ -35,8 +37,10 @@ DEPTH_EXPONENTS = {
     "NOFR": None,
 }
 
-#: TELEMAC ``LAW OF BOTTOM FRICTION`` codes and their table names.
-TELEMAC_LAW_CODES = {0: "NOFR", 1: "HAAL", 2: "CHEZ", 3: "STRI", 4: "MANN", 5: "NIKU", 6: "LOGW", 7: "COWH"}
+#: TELEMAC ``LAW OF BOTTOM FRICTION`` codes (telemac2d.dico and telemac3d.dico of v9.1; 6 exists in TELEMAC-2D only) and their friction-table names.
+TELEMAC_LAW_CODES = {0: "NOFR", 1: "HAAL", 2: "CHEZ", 3: "STRI", 4: "MANN", 5: "NIKU", 6: "COWH"}
+#: ``LAW OF BOTTOM FRICTION`` of a TELEMAC-3D steering file without the keyword (default 5). TELEMAC-2D has no default.
+TELEMAC3D_DEFAULT_LAW = "NIKU"
 
 #: Role of the k-ε coefficient C_μ, see :meth:`~hydroBayesCal.hysim.HydroSimulations.turbulence_constants`.
 CMU = "CMU"
@@ -46,12 +50,15 @@ CMU_EXPONENTS = {"tke": -0.5, "fluctuation": -0.25}
 
 #: Calibration targets that scale like the water depth, with underscores read as blanks (TELEMAC, Delft3D). A water-surface elevation is the depth plus the bed level, a constant the coefficient a absorbs.
 DEPTH_LIKE = ("WATER DEPTH", "FREE SURFACE", "WATER LEVEL", "WATER SURFACE")
-#: Calibration targets that scale like a velocity (TELEMAC, Delft3D, OpenFOAM names). Any name that starts with VELOCITY counts as well.
-VELOCITY_LIKE = ("SCALAR VELOCITY", "U MAG", "U X", "U Y", "U Z")
-#: Turbulent kinetic energy (TELEMAC ``TURBULENT ENERG.``, OpenFOAM ``TKE``).
-TKE_LIKE = ("TKE", "TURBULENT ENERG", "TURBULENT ENERG.", "TURBULENT ENERGY")
+#: Calibration targets that scale like a velocity (TELEMAC, Delft3D, OpenFOAM names, including the old OpenFOAM name ``U_magnitude``). Any name that starts with VELOCITY counts as well.
+VELOCITY_LIKE = ("SCALAR VELOCITY", "3D VELOCITY MAGNITUDE", "U MAG", "U MAGNITUDE", "U X", "U Y", "U Z")
+#: Turbulent kinetic energy (TELEMAC ``TURBULENT ENERG.``, OpenFOAM ``TKE`` and ``TKE_MODELED``). The resolved part of a URANS run, ``TKE_RESOLVED``, is not the k of the log layer and keeps the linear trend.
+TKE_LIKE = ("TKE", "TKE MODELED", "TURBULENT ENERG", "TURBULENT ENERG.", "TURBULENT ENERGY")
 #: Velocity fluctuations (OpenFOAM).
 FLUCTUATION_LIKE = ("U FLUCT", "V FLUCT", "W FLUCT")
+
+#: A power or logarithm of a parameter is evaluated at no less than this fraction of its smallest training value. With a normal prior, ``param_values`` are the mean and the standard deviation, and prior samples can reach zero or below, where the feature is undefined (a logarithm of -708, a power of 1e185 at the smallest float). The floor keeps the trend finite there; such a sample, an unphysical roughness, then only gets a small likelihood. It lies two decades below the smallest run, so that it stays below the lower bound of a uniform prior, which a design does not reach (Sobol never does): a floor at the smallest run itself made the emulators of the tests clearly less accurate between that bound and the run.
+FLOOR_FRACTION = 0.01
 
 #: The trend has one coefficient per feature plus a constant. With fewer than this many training runs per coefficient it nearly interpolates the runs and leaves the Gaussian process without residual to learn from, which makes the emulator overconfident; the emulator then keeps the constant mean.
 MIN_RUNS_PER_COEFFICIENT = 2
@@ -195,6 +202,40 @@ def describe(feature, parameters):
     return parameters[feature[1]] if feature[2] == 1.0 else f"{parameters[feature[1]]}^{feature[2]:.3g}"
 
 
+def driver_trend_features(complex_model, gp_mean, gp_library, n_columns):
+    """Trend features the ``run_bal_model`` of a driver hands to the emulators, or ``None`` for the constant mean.
+
+    ``None`` as well, with a warning, for the scikit-learn emulator and when the features do not match the ``n_columns`` output columns of the training data, so that a calibration whose initial runs are done does not stop at its first emulator.
+
+    Parameters
+    ----------
+    complex_model : HydroSimulations or MultiflowTelemacModel
+        The model binding, for :meth:`~hydroBayesCal.hysim.HydroSimulations.trend_features`.
+    gp_mean : str
+        ``sampling['gp_mean']``.
+    gp_library : str
+        ``sampling['gp_library']``.
+    n_columns : int
+        Number of output columns of the training data.
+    """
+    if check_gp_mean(gp_mean) == "constant":
+        return None
+    if gp_library != "gpy":
+        logger_warn.warning(f"gp_mean='{gp_mean}' applies to the gpytorch emulators only; the {gp_library} emulator "
+                            f"keeps its constant mean.")
+        return None
+    features = complex_model.trend_features(gp_mean)
+    if features is not None and len(features) != int(n_columns):
+        logger_warn.warning(
+            f"gp_mean='{gp_mean}': the trend has features for {len(features)} output columns (calibration points x "
+            f"targets), the training data have {n_columns}. The emulators keep the constant mean.")
+        return None
+    if features is not None:
+        logger.info(f"gp_mean='{gp_mean}': the emulators are trained on calibration parameters scaled to [0, 1] "
+                    f"(tp_normalization), which the trend mean needs.")
+    return features
+
+
 def _column_features(mean_features, n_columns, n_params):
     """Check one feature list per output column; ``None`` stays ``None``."""
     if mean_features is None:
@@ -250,6 +291,8 @@ class HydraulicMean(gpytorch.means.Mean):
         self.register_buffer("x_scale", scale)
         self.register_buffer("f_center", torch.zeros(n_features, dtype=dtype))
         self.register_buffer("f_scale", torch.ones(n_features, dtype=dtype))
+        # A power or logarithm is evaluated at no less than this, see FLOOR_FRACTION.
+        self.register_buffer("theta_floor", FLOOR_FRACTION * (offset + train_x * scale).min(dim=0).values.detach().clone())
         with torch.no_grad():
             raw = self._raw_features(train_x)
             spread = raw.std(dim=0) if raw.shape[0] > 1 else torch.ones(n_features, dtype=dtype)
@@ -261,14 +304,13 @@ class HydraulicMean(gpytorch.means.Mean):
         self.register_parameter("constant", torch.nn.Parameter(constant))
         self.register_parameter("weights", torch.nn.Parameter(weights))
 
-    @staticmethod
-    def _evaluate(feature, theta):
-        kind = feature[0]
-        value = theta[..., int(feature[1])]
+    def _evaluate(self, feature, theta):
+        kind, j = feature[0], int(feature[1])
+        value = theta[..., j]
         if kind == "power" and feature[2] == 1.0:
             return value
-        # A power or logarithm needs a positive value; trend_features keeps such features to positive prior ranges, the clamp only guards against round-off at a bound.
-        value = value.clamp_min(torch.finfo(value.dtype).tiny)
+        # Held at the floor below it, which trend_mean keeps positive: a prior sample at or below zero (normal prior) would give a logarithm of -708 or a power of 1e185.
+        value = torch.maximum(value, self.theta_floor[j])
         return torch.log(value) if kind == "log" else value ** float(feature[2])
 
     def _raw_features(self, x):
@@ -301,11 +343,35 @@ def trend_mean(features, train_x, train_y=None, x_min=None, x_range=None):
     """
     if features is None:
         return None
+    features = _positive_features(features, train_x, x_min, x_range)
     n_runs, n_features = int(train_x.shape[0]), len(features)
     if n_runs < MIN_RUNS_PER_COEFFICIENT * (n_features + 1):
         _warn_too_few_runs(n_runs, n_features)
         return None
     return HydraulicMean(features, train_x, train_y=train_y, x_min=x_min, x_range=x_range)
+
+
+def _positive_features(features, train_x, x_min=None, x_range=None):
+    """Turn a power or logarithm of a parameter with a training value at or below zero into its linear feature."""
+    theta = np.asarray(torch.as_tensor(train_x).detach(), dtype=float)
+    if x_min is not None:
+        theta = np.asarray(x_min, dtype=float) + theta * np.asarray(x_range, dtype=float)
+    nonpositive = {j for j in range(theta.shape[1]) if theta[:, j].min() <= 0.0}
+    if not nonpositive or not any(_is_shaped(f) and f[1] in nonpositive for f in features):
+        return list(features)
+    _warn_once(("nonpositive", tuple(sorted(nonpositive))),
+               f"Calibration parameter(s) {sorted(nonpositive)} (counted from 0) have training values at or below "
+               f"zero, where the power or logarithm of the physical trend is undefined; they get a linear trend.")
+    return [("power", f[1], 1.0) if _is_shaped(f) and f[1] in nonpositive else f for f in features]
+
+
+_REPORTED = set()
+
+
+def _warn_once(key, message):
+    if key not in _REPORTED:
+        _REPORTED.add(key)
+        logger_warn.warning(message)
 
 
 _REPORTED_TOO_FEW_RUNS = set()
