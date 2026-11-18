@@ -40,10 +40,11 @@ def _train(emulator):
         emulator.train_()
 
 
-def test_the_parameters_are_used_as_they_are_by_default():
+def test_the_parameters_are_scaled_by_default():
+    """On since 1.14: without the scaling, the emulators predicted far less reliably for parameters with small ranges."""
     for cls in (GPyTraining, MultiGPyTraining, SOSequentialGPyTraining.from_training_data):
         import inspect
-        assert inspect.signature(cls).parameters["tp_normalization"].default is False
+        assert inspect.signature(cls).parameters["tp_normalization"].default is True
 
 
 @pytest.mark.parametrize("build", [_single, _multi], ids=["single-output", "multitask"])

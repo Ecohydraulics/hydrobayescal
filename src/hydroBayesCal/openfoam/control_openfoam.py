@@ -952,6 +952,17 @@ class OpenFOAMModel(HydroSimulations):
         else:
             self.control_points = np.array([])
 
+    def friction_laws(self):
+        """The wall roughness height ``ks`` of the bed follows the log law of a sand roughness (Nikuradse). Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.friction_laws`."""
+        return {parameter: "NIKU" for parameter in self.calibration_parameters or []
+                if str(parameter).strip().lower() == "ks"}
+
+    def turbulence_constants(self):
+        """The k-ε coefficient ``Cmu`` is C_μ. Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.turbulence_constants`."""
+        from hydroBayesCal.surrogate.hydraulic_mean import CMU
+        return {parameter: CMU for parameter in self.calibration_parameters or []
+                if str(parameter).strip().lower() == "cmu"}
+
     def run_multiple_simulations(
         self,
         collocation_points,

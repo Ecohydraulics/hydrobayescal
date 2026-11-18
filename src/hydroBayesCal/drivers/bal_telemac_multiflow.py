@@ -52,6 +52,7 @@ from bal_telemac import (  # noqa: E402  (reuses the stock driver logic)
     setup_experiment_design,
 )
 from hydroBayesCal.function_pool import *  # noqa: E402,F401,F403 - logger
+from hydroBayesCal.surrogate.hydraulic_mean import check_gp_mean
 from hydroBayesCal.telemac.multiflow_telemac import MultiflowTelemacModel  # noqa: E402
 
 
@@ -108,6 +109,8 @@ def main():
     )
     args = parser.parse_args()
     config = load_config(args.config)
+    # Refused now, not after the initial runs.
+    check_gp_mean(config.sampling.get("gp_mean", "constant"))
 
     multiflow_model = build_multiflow_model(config)
 
@@ -173,7 +176,8 @@ def main():
         posterior_sampling_method=config.sampling.get("posterior_sampling_method",
                                                       "rejection_sampling"),
         bal_n_jobs=config.sampling.get("bal_n_jobs", -1),
-        tp_normalization=config.sampling.get("tp_normalization", False),
+        tp_normalization=config.sampling.get("tp_normalization", True),
+        gp_mean=config.sampling.get("gp_mean", "constant"),
     )
 
 

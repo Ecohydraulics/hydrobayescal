@@ -220,6 +220,19 @@ class MultiflowTelemacModel:
             model.init_runs = int(value)
 
     # ------------------------------------------------------------------ runs
+    def trend_features(self, gp_mean="constant"):
+        """Trend features of the emulator mean for the combined output columns, ``None`` for ``"constant"``.
+
+        All flows share the calibration parameters, the targets and the friction data file, so the features of a calibration point do not depend on its flow; the roles are read from the first flow.
+        """
+        from hydroBayesCal.surrogate.hydraulic_mean import trend_features
+        hydraulic = str(gp_mean).strip().lower() == "hydraulic"
+        first = self.models[0]
+        return trend_features(gp_mean, self.calibration_parameters, self.calibration_quantities, self.nloc,
+                              parameter_ranges=self.parameter_ranges,
+                              friction_laws=first.friction_laws() if hydraulic else None,
+                              turbulence_constants=first.turbulence_constants() if hydraulic else None)
+
     def run_multiple_simulations(self, collocation_points=None,
                                  bal_new_set_parameters=None,
                                  bal_iteration=int(),
