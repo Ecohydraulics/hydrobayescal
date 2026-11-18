@@ -268,7 +268,7 @@ def run_bal_model(collocation_points,
     tp_normalization : bool
         Scale the calibration parameters to [0, 1] before the gpytorch emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration. Not passed to the scikit-learn emulator (``gp_library='skl'``), whose RBF length scales and bounds are set from the physical parameter ranges.
     gp_mean : {"constant", "linear", "hydraulic"}
-        Mean function of the gpytorch emulators, see :mod:`~hydroBayesCal.surrogate.hydraulic_mean`. ``"constant"`` (default) is the emulator of releases up to 1.13. ``"hydraulic"`` adds a trend whose shape follows the friction law of every roughness parameter (Manning, Strickler, Chezy, sand roughness) and a linear trend in the other parameters; ``"linear"`` a linear trend in all of them. ``sampling['gp_mean']`` in the configuration. Not used by the scikit-learn emulator.
+        Mean function of the gpytorch emulators, see :mod:`~hydroBayesCal.surrogate.hydraulic_mean`. ``"constant"`` (default) is the emulator of releases up to 1.13. ``"hydraulic"`` adds a trend whose shape follows the physics of every calibration parameter (bed friction law, wall roughness ``ks``, k-ε coefficient ``Cmu``) and is linear in the other parameters; ``"linear"`` a linear trend in all of them. Either trend also switches on ``tp_normalization``. ``sampling['gp_mean']`` in the configuration. Not used by the scikit-learn emulator.
 
     Returns
     -------
@@ -390,10 +390,15 @@ def run_bal_model(collocation_points,
     # SURROGATE MODEL
     # Train the GPE a maximum of "iteration_limit" times
     # Trend of the emulator mean, the same for every iteration (sampling['gp_mean']; None for the constant mean).
-    mean_exponents = None
+    mean_features = None
     if str(gp_mean).strip().lower() != "constant":
         if gp_library == 'gpy':
-            mean_exponents = complex_model.mean_exponents(gp_mean)
+            mean_features = complex_model.trend_features(gp_mean)
+            if not tp_normalization:
+                # The trend acts on the physical parameters, the kernel on the scaled ones. Without the scaling, the single-output emulator with the trend was less accurate than with the constant mean on a k-epsilon test model; with it, more accurate in every case tested.
+                logger.info(f"gp_mean='{gp_mean}': the emulators are trained on calibration parameters scaled to [0, 1] "
+                            f"(tp_normalization), which the trend mean needs.")
+                tp_normalization = True
         else:
             logger_warn.warning(f"gp_mean='{gp_mean}' applies to the gpytorch emulators only; "
                                 f"the {gp_library} emulator keeps its constant mean.")
@@ -451,7 +456,7 @@ def run_bal_model(collocation_points,
                                                         training_iter=150,
                                                         likelihood=multi_likelihood_loc,
                                                         optimizer="adam", lr=0.01,
-                                                        number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents
+                                                        number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_features=mean_features
                                                         )
                 else:
                     likelihood = gpytorch.likelihoods.GaussianLikelihood(
@@ -463,7 +468,7 @@ def run_bal_model(collocation_points,
                                      likelihood=likelihood, kernel=kernel,
                                      training_iter=150,
                                      optimizer="adam", lr=0.07,
-                                     verbose=False, tp_normalization=tp_normalization, mean_exponents=mean_exponents)
+                                     verbose=False, tp_normalization=tp_normalization, mean_features=mean_features)
                     surrogate_object = sm
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
@@ -472,7 +477,7 @@ def run_bal_model(collocation_points,
                 if complex_model.multitask_selection == "SO_sequential":
                     # Independent single-output GPEs, one per calibration target, each set up as for a calibration on that target alone. No correlation between the targets is modeled.
                     surrogate_object = SOSequentialGPyTraining.from_training_data(
-                        collocation_points, model_outputs, complex_model.calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents)
+                        collocation_points, model_outputs, complex_model.calibration_quantities, tp_normalization=tp_normalization, mean_features=mean_features)
                 if complex_model.multitask_selection == "variables":
                     multi_likelihood_var = multitask_likelihood(complex_model.num_calibration_quantities)
                     multi_sm_var = MultiGPyTraining(collocation_points,
@@ -481,7 +486,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_var,
                                                     optimizer="adam", lr=0.07,
-                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents
+                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_features=mean_features
                                                     )
                     surrogate_object = multi_sm_var
                 if complex_model.multitask_selection == "locations":
@@ -493,7 +498,7 @@ def run_bal_model(collocation_points,
                                                 kernel,
                                                 training_iter=150,
                                                 likelihood=multi_likelihood_loc,
-                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents
+                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_features=mean_features
                                                 )
                     surrogate_object = multi_sm_loc
 
@@ -505,7 +510,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_all,
                                                     optimizer="adam", lr=0.01,
-                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents
+                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_features=mean_features
                                                     )
                     surrogate_object = multi_sm_all
 

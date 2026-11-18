@@ -957,6 +957,12 @@ class OpenFOAMModel(HydroSimulations):
         return {parameter: "NIKU" for parameter in self.calibration_parameters or []
                 if str(parameter).strip().lower() == "ks"}
 
+    def turbulence_constants(self):
+        """The k-ε coefficient ``Cmu`` is C_μ. Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.turbulence_constants`."""
+        from hydroBayesCal.surrogate.hydraulic_mean import CMU
+        return {parameter: CMU for parameter in self.calibration_parameters or []
+                if str(parameter).strip().lower() == "cmu"}
+
     def run_multiple_simulations(
         self,
         collocation_points,

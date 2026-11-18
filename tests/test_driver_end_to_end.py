@@ -201,9 +201,9 @@ def test_a_calibration_runs_through_with_the_hydraulic_mean_for_every_surrogate_
     model, bal = _calibrate(driver_name, tmp_path, quantities, multitask_selection, model_class=_FrictionModel,
                             gp_mean="hydraulic", tp_normalization=True)
     assert len(bal["N_tp"]) == MAX_RUNS - INIT_RUNS + 1 and all(n is not None for n in bal["N_tp"])
-    exponents = model.mean_exponents("hydraulic")
-    assert exponents.shape == (model.nloc * len(quantities), 2)
-    np.testing.assert_allclose(exponents[0::len(quantities), 1], 0.0)
+    features = model.trend_features("hydraulic")
+    assert len(features) == model.nloc * len(quantities)
+    assert all(f[1] == ("log", 1) for f in features[0::len(quantities)])
 
 
 def test_a_telemac_model_carries_the_parameter_ranges_of_the_scikit_learn_emulator(tmp_path):

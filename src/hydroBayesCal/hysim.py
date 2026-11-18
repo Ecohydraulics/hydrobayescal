@@ -704,16 +704,24 @@ class HydroSimulations(ABC):
         """
         return {}
 
-    def mean_exponents(self, gp_mean="constant"):
-        """Trend exponents of the emulator mean for ``sampling['gp_mean']``, one row per output column.
+    def turbulence_constants(self):
+        """Role of every calibration parameter that is a coefficient of the k-ε model, ``{parameter: role}`` with :data:`~hydroBayesCal.surrogate.hydraulic_mean.CMU` for C_μ.
 
-        See :func:`hydroBayesCal.surrogate.hydraulic_mean.mean_exponents`; ``None`` for ``"constant"``.
+        Read by the hydraulic mean of the emulators; the base class knows none.
         """
-        from hydroBayesCal.surrogate.hydraulic_mean import mean_exponents
+        return {}
+
+    def trend_features(self, gp_mean="constant"):
+        """Trend features of the emulator mean for ``sampling['gp_mean']``, one list per output column.
+
+        See :func:`hydroBayesCal.surrogate.hydraulic_mean.trend_features`; ``None`` for ``"constant"``.
+        """
+        from hydroBayesCal.surrogate.hydraulic_mean import trend_features
         hydraulic = str(gp_mean).strip().lower() == "hydraulic"
-        return mean_exponents(gp_mean, self.calibration_parameters, self.calibration_quantities, self.nloc,
+        return trend_features(gp_mean, self.calibration_parameters, self.calibration_quantities, self.nloc,
                               parameter_ranges=self.parameter_ranges,
-                              friction_laws=self.friction_laws() if hydraulic else None)
+                              friction_laws=self.friction_laws() if hydraulic else None,
+                              turbulence_constants=self.turbulence_constants() if hydraulic else None)
 
     def update_model_controls(
             self,

@@ -150,7 +150,7 @@ sampling = {
     'gp_library':     "gpy",
     # Scale every calibration parameter to [0, 1] before a gpytorch emulator (gp_library "gpy") is trained. Worth trying when the parameters differ by orders of magnitude (a roughness in m next to a discharge in m3/s). Off by default (the emulator of 1.11). The scikit-learn emulator ("skl") is not affected.
     'tp_normalization': False,
-    # Mean function of a gpytorch emulator. "constant" (default): the emulator of 1.13. "hydraulic": a trend whose shape follows the friction law of every roughness parameter (h ~ n^(3/5), U ~ n^(-3/5), ln(ks) for a sand roughness) and is linear in the other parameters; on an analytic compound channel it cut the emulator error by a factor of 2 to 8. "linear": a linear trend in all parameters. The scikit-learn emulator ("skl") is not affected.
+    # Mean function of a gpytorch emulator. "constant" (default): the emulator of 1.13. "hydraulic": a trend whose shape follows the physics of every calibration parameter (bed friction: h ~ n^(3/5), U ~ n^(-3/5); wall roughness: ln(ks); k-epsilon: TKE ~ Cmu^(-1/2)) and is linear in the other parameters; on analytic channel and k-epsilon test models it cut the emulator error by factors of 1.2 to 8. "linear": a linear trend in all parameters. A trend switches on tp_normalization. The scikit-learn emulator ("skl") is not affected.
     'gp_mean': "constant",
 
     # Feed the GPE predictive standard deviation into the Bayesian inference rather
