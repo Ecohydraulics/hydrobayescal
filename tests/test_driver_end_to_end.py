@@ -90,11 +90,11 @@ def _driver(name):
 
 
 def _calibrate(driver_name, folder, quantities, multitask_selection, dry_point=False, gp_library="gpy",
-               driver=None, **bal_options):
+               driver=None, model_class=None, **bal_options):
     """Initial design and one BAL iteration through the functions of one driver."""
     matplotlib.pyplot.rcParams.update({"text.usetex": False})
     driver = driver or _driver(driver_name)
-    model = _AnalyticModel(folder, quantities, multitask_selection, dry_point)
+    model = (model_class or _AnalyticModel)(folder, quantities, multitask_selection, dry_point)
     design = driver.setup_experiment_design(
         complex_model=model, tp_selection_criteria="dkl",
         parameter_distribution="uniform", parameter_sampling_method="sobol")
@@ -179,6 +179,31 @@ def test_a_calibration_runs_through_with_the_exploration_trade_off(tmp_path):
     assert model.model_evaluations.shape[0] == MAX_RUNS
     assert np.all(bal["exploration_tradeoff_active"])
     assert np.all(np.isfinite(bal["log_BME"]))
+
+
+class _FrictionModel(_AnalyticModel):
+    """The analytic model with a Manning roughness in a and a sand roughness in b, on prior ranges that start above zero."""
+
+    def __init__(self, folder, quantities, multitask_selection, dry_point=False):
+        super().__init__(folder, quantities, multitask_selection, dry_point)
+        self.param_values = self.parameter_ranges = [[0.05, 1.0], [0.05, 1.0]]
+
+    def friction_laws(self):
+        return {"a": "MANN", "b": "NIKU"}
+
+
+@pytest.mark.parametrize("driver_name", ["bal_telemac", "bal_openfoam", "bal_delft3d"])
+@pytest.mark.parametrize("quantities, multitask_selection", LAYOUTS,
+                         ids=lambda value: "+".join(value) if isinstance(value, tuple) else value)
+def test_a_calibration_runs_through_with_the_hydraulic_mean_for_every_surrogate_layout(
+        tmp_path, driver_name, quantities, multitask_selection):
+    """Every emulator a driver builds takes the trend of sampling['gp_mean'], with one row of exponents per output column."""
+    model, bal = _calibrate(driver_name, tmp_path, quantities, multitask_selection, model_class=_FrictionModel,
+                            gp_mean="hydraulic", tp_normalization=True)
+    assert len(bal["N_tp"]) == MAX_RUNS - INIT_RUNS + 1 and all(n is not None for n in bal["N_tp"])
+    features = model.trend_features("hydraulic")
+    assert len(features) == model.nloc * len(quantities)
+    assert all(f[1] == ("log", 1) for f in features[0::len(quantities)])
 
 
 def test_a_telemac_model_carries_the_parameter_ranges_of_the_scikit_learn_emulator(tmp_path):

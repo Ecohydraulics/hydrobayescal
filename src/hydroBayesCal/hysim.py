@@ -692,6 +692,37 @@ class HydroSimulations(ABC):
         # Return the dictionary and number of dimensions
         return param_dict, ndim
 
+    def friction_laws(self):
+        """Friction law of every calibration parameter that is a bed-friction coefficient.
+
+        Read by the hydraulic mean of the emulators (``sampling['gp_mean'] = "hydraulic"``), see :mod:`hydroBayesCal.surrogate.hydraulic_mean`. A binding that knows its friction parameters overrides this method; the base class knows none, so every parameter gets a linear trend.
+
+        Returns
+        -------
+        dict
+            ``{parameter name: law}``, with a four-letter law of :data:`~hydroBayesCal.surrogate.hydraulic_mean.DEPTH_EXPONENTS` (``"MANN"``, ``"STRI"``, ``"CHEZ"``, ``"NIKU"``, ...).
+        """
+        return {}
+
+    def turbulence_constants(self):
+        """Role of every calibration parameter that is a coefficient of the k-ε model, ``{parameter: role}`` with :data:`~hydroBayesCal.surrogate.hydraulic_mean.CMU` for C_μ.
+
+        Read by the hydraulic mean of the emulators; the base class knows none.
+        """
+        return {}
+
+    def trend_features(self, gp_mean="constant"):
+        """Trend features of the emulator mean for ``sampling['gp_mean']``, one list per output column.
+
+        See :func:`hydroBayesCal.surrogate.hydraulic_mean.trend_features`; ``None`` for ``"constant"``.
+        """
+        from hydroBayesCal.surrogate.hydraulic_mean import trend_features
+        hydraulic = str(gp_mean).strip().lower() == "hydraulic"
+        return trend_features(gp_mean, self.calibration_parameters, self.calibration_quantities, self.nloc,
+                              parameter_ranges=self.parameter_ranges,
+                              friction_laws=self.friction_laws() if hydraulic else None,
+                              turbulence_constants=self.turbulence_constants() if hydraulic else None)
+
     def update_model_controls(
             self,
             collocation_point_values,
