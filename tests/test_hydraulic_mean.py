@@ -4,6 +4,7 @@ import pickle
 
 import numpy as np
 import pytest
+from analytic_models import wall_layer
 
 torch = pytest.importorskip("torch")
 gpytorch = pytest.importorskip("gpytorch")
@@ -34,18 +35,6 @@ def _log_law(points):
         depth = brentq(lambda h: h * np.sqrt(9.81 * h * SLOPE) / 0.41 * np.log(12.0 * h / ks) - q, 0.5, 50.0)
         rows.append([depth, q / depth])
     return np.array(rows)
-
-
-def _wall_layer(points, heights=(0.1, 0.4, 0.8), depth=0.3, bulk_velocity=0.5):
-    """Log layer of a k-epsilon flume at fixed discharge: C_mu and k_s -> [u, k] at three heights, interleaved."""
-    points = np.atleast_2d(points)
-    cmu, ks = points[:, :1], points[:, 1:]
-    ustar = 0.41 * bulk_velocity / (np.log(30.0 * depth / ks) - 1.0)
-    z = np.asarray(heights) * depth
-    out = np.empty((points.shape[0], 2 * len(heights)))
-    out[:, 0::2] = ustar / 0.41 * np.log(30.0 * z / ks)
-    out[:, 1::2] = ustar ** 2 / np.sqrt(cmu) * np.exp(-2.0 * z / depth)
-    return out
 
 
 def _emulator(x, y, features, layout="single"):
@@ -174,7 +163,7 @@ def test_the_hydraulic_mean_emulates_the_log_layer_of_a_k_epsilon_flume_better_t
     test = lo + (hi - lo) * np.random.default_rng(2).random((400, 2))
     features = hm.trend_features("hydraulic", ["Cmu", "ks"], ["U_x", "TKE"], 3, [[0.06, 0.12], [0.001, 0.05]],
                                  {"ks": "NIKU"}, {"Cmu": hm.CMU})
-    errors = _relative_errors(x, test, _wall_layer, features, layout)
+    errors = _relative_errors(x, test, wall_layer, features, layout)
     assert errors["hydraulic"] < THRESHOLD * errors["constant"], errors
 
 

@@ -456,8 +456,8 @@ def run_bal_model(collocation_points,
                     # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
                     sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                                      likelihood=likelihood, kernel=kernel,
-                                     training_iter=150,
-                                     optimizer="adam", lr=0.07,
+                                     training_iter=SINGLE_OUTPUT_ITERATIONS,
+                                     optimizer="adam", lr=SINGLE_OUTPUT_LEARNING_RATE,
                                      verbose=False, tp_normalization=tp_normalization, mean_features=mean_features)
                     surrogate_object = sm
             else:

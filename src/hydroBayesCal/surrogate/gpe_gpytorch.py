@@ -52,6 +52,11 @@ def _model_dtype(model):
     return torch.get_default_dtype()
 
 
+#: Optimizer iterations and learning rate of the single-output emulator (:class:`GPyTraining`) in all drivers and in :meth:`SOSequentialGPyTraining.from_training_data`. Up to 1.13 a StepLR schedule froze its hyperparameters; 1.14.0 kept the drivers' settings (150 at 0.07 for TELEMAC, 100 at 0.5 for OpenFOAM and Delft3D), which with a constant rate gave different emulators per solver: on a compound channel and a k-epsilon model with scaled parameters, 0.07 x 150 ended 4 to 29 % above the validation error of the converged emulator, 0.5 x 100 0 to 14 %, but 0.5 x 100 without input scaling reached errors of 0.6 to 0.9 where this setting stays at 1 to 14 % with scaling and gives the smallest error of the three without it.
+SINGLE_OUTPUT_ITERATIONS = 300
+SINGLE_OUTPUT_LEARNING_RATE = 0.1
+
+
 #: Largest size, in entries, of the square matrices a prediction builds between its prediction points: (points per piece x tasks) squared. gpytorch evaluates the joint distribution of all points it is given, with their covariance, while the emulators use the mean, the variance and the covariance between the targets at each point only. Predicting in pieces returns the same numbers and makes the memory independent of the number of prior samples. In one piece, 25,000 prior samples needed 15 GB in single precision and twice that in double precision.
 PREDICTION_BUDGET = 4.0e6
 
@@ -261,7 +266,7 @@ class GPyTraining:
         ``True`` to parallelise surrogate training, ``False`` to train
         sequentially.
     precision : {"double", "single"}, optional
-        Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` reproduces the arithmetic of releases up to 1.10.1.
+        Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` computes in the precision of releases up to 1.10.1 but does not reproduce their emulators: their hyperparameters were hardly trained up to 1.13, and with trained, long length scales the training covariance is ill-conditioned in single precision, so that the result depends on the number of threads (length scales of 4.45 to 5.01 for the same runs in a test).
     mean_features : list of list of tuple, optional
         Trend features of the mean, one list per output column, as :func:`~hydroBayesCal.surrogate.hydraulic_mean.trend_features` returns them for ``sampling['gp_mean']``. A trend switches on ``tp_normalization``. Default ``None``: zero mean on the normalized outputs, the mean of releases up to 1.13.
 
@@ -283,7 +288,7 @@ class GPyTraining:
             y_normalization=True,
             tp_normalization=True,
             optimizer="adam",
-            lr=0.5,
+            lr=SINGLE_OUTPUT_LEARNING_RATE,
             loss='exact',
             n_restarts=1,
             weight_decay=0,
@@ -565,9 +570,12 @@ class GPyTraining:
                           f'   Outputscale: {gp.covar_module.outputscale.item()}',
                           f'   lengthscale: {gp.covar_module.base_kernel.lengthscale[0]}',
                           f'   noise: {gp.likelihood.noise.item()}')
+            # The loss of the hyperparameters this restart ends with: the one of the last iteration was computed before its optimizer step, which with a constant learning rate is not negligible.
+            with torch.no_grad():
+                loss = float(-mll(gp(train_x), train_y))
             if loss < best_loss:
                 best_loss = loss
-                best_params = gp.state_dict()
+                best_params = copy.deepcopy(gp.state_dict())
 
         if best_params is None:
             raise RuntimeError(
@@ -580,6 +588,7 @@ class GPyTraining:
             return_out_dic = dict()
             return_out_dic['gp'] = gp
             return_out_dic['likelihood'] = likelihood_
+            return_out_dic['loss'] = best_loss  # negative marginal log likelihood of the kept hyperparameters
 
             return_out_dic['c_hp'] = gp.covar_module.outputscale.item()
             return_out_dic['cl_hp'] = gp.covar_module.base_kernel.lengthscale.numpy()[0, :]
@@ -1537,7 +1546,8 @@ class SOSequentialGPyTraining:
 
     @classmethod
     def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
-                           training_iter=150, lr=0.07, verbose=False, tp_normalization=True, precision="double",
+                           training_iter=SINGLE_OUTPUT_ITERATIONS, lr=SINGLE_OUTPUT_LEARNING_RATE, verbose=False,
+                           tp_normalization=True, precision="double",
                            mean_features=None):
         """Build the container from the training data of a calibration.
 
