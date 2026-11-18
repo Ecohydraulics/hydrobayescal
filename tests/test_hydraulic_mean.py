@@ -274,11 +274,13 @@ def test_the_emulators_scale_the_parameters_whenever_they_have_a_trend():
     x = np.random.default_rng(0).random((8, 2))
     features = [[("power", 0, 1.0), ("power", 1, 1.0)]] * 2
     kernel = gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=2))
-    single = GPyTraining(x, np.ones((8, 2)), kernel, 1, gpytorch.likelihoods.GaussianLikelihood(), mean_features=features)
+    single = GPyTraining(x, np.ones((8, 2)), kernel, 1, gpytorch.likelihoods.GaussianLikelihood(),
+                         tp_normalization=False, mean_features=features)
     multi = MultiGPyTraining(x, np.ones((8, 2)), kernel, 1, multitask_likelihood(2), number_quantities=2,
-                             mean_features=features)
+                             tp_normalization=False, mean_features=features)
     assert single.tp_norm and multi.tp_norm
-    assert not GPyTraining(x, np.ones((8, 2)), kernel, 1, gpytorch.likelihoods.GaussianLikelihood()).tp_norm
+    assert not GPyTraining(x, np.ones((8, 2)), kernel, 1, gpytorch.likelihoods.GaussianLikelihood(),
+                           tp_normalization=False).tp_norm
 
 
 def test_a_trend_that_does_not_fit_the_output_columns_falls_back_to_the_constant_mean():

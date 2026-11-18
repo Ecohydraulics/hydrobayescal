@@ -176,7 +176,7 @@ def main():
         posterior_sampling_method=config.sampling.get("posterior_sampling_method",
                                                       "rejection_sampling"),
         bal_n_jobs=config.sampling.get("bal_n_jobs", -1),
-        tp_normalization=config.sampling.get("tp_normalization", False),
+        tp_normalization=config.sampling.get("tp_normalization", True),
         gp_mean=config.sampling.get("gp_mean", "constant"),
     )
 

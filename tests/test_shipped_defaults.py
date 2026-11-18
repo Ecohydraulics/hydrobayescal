@@ -48,7 +48,7 @@ EXPECTED_FALLBACKS = {
     "user_param_values": False,
     "calibration_case": None,
     "point_time_column": None,
-    "tp_normalization": False,
+    "tp_normalization": True,
     "gp_mean": "constant",
 }
 
