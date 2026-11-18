@@ -377,8 +377,8 @@ def run_bal_model(collocation_points,
 
                 # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
                 sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
-                                 likelihood=likelihood, kernel=kernel, training_iter=100,
-                                 optimizer="adam", verbose=False, tp_normalization=tp_normalization, mean_features=mean_features)
+                                 likelihood=likelihood, kernel=kernel, training_iter=SINGLE_OUTPUT_ITERATIONS,
+                                 optimizer="adam", lr=SINGLE_OUTPUT_LEARNING_RATE, verbose=False, tp_normalization=tp_normalization, mean_features=mean_features)
                 if complex_model.multitask_selection == "locations":
                     # One calibration target with the locations as tasks: a single multitask GPE that learns the correlation between the calibration points (kept in sync with bal_telemac.py, the canonical driver).
                     multi_likelihood_loc = multitask_likelihood(complex_model.nloc)
