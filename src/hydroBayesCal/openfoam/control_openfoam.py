@@ -952,6 +952,11 @@ class OpenFOAMModel(HydroSimulations):
         else:
             self.control_points = np.array([])
 
+    def friction_laws(self):
+        """The wall roughness height ``ks`` of the bed follows the log law of a sand roughness (Nikuradse). Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.friction_laws`."""
+        return {parameter: "NIKU" for parameter in self.calibration_parameters or []
+                if str(parameter).strip().lower() == "ks"}
+
     def run_multiple_simulations(
         self,
         collocation_points,

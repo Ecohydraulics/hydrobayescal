@@ -692,6 +692,29 @@ class HydroSimulations(ABC):
         # Return the dictionary and number of dimensions
         return param_dict, ndim
 
+    def friction_laws(self):
+        """Friction law of every calibration parameter that is a bed-friction coefficient.
+
+        Read by the hydraulic mean of the emulators (``sampling['gp_mean'] = "hydraulic"``), see :mod:`hydroBayesCal.surrogate.hydraulic_mean`. A binding that knows its friction parameters overrides this method; the base class knows none, so every parameter gets a linear trend.
+
+        Returns
+        -------
+        dict
+            ``{parameter name: law}``, with a four-letter law of :data:`~hydroBayesCal.surrogate.hydraulic_mean.DEPTH_EXPONENTS` (``"MANN"``, ``"STRI"``, ``"CHEZ"``, ``"NIKU"``, ...).
+        """
+        return {}
+
+    def mean_exponents(self, gp_mean="constant"):
+        """Trend exponents of the emulator mean for ``sampling['gp_mean']``, one row per output column.
+
+        See :func:`hydroBayesCal.surrogate.hydraulic_mean.mean_exponents`; ``None`` for ``"constant"``.
+        """
+        from hydroBayesCal.surrogate.hydraulic_mean import mean_exponents
+        hydraulic = str(gp_mean).strip().lower() == "hydraulic"
+        return mean_exponents(gp_mean, self.calibration_parameters, self.calibration_quantities, self.nloc,
+                              parameter_ranges=self.parameter_ranges,
+                              friction_laws=self.friction_laws() if hydraulic else None)
+
     def update_model_controls(
             self,
             collocation_point_values,

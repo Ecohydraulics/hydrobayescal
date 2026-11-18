@@ -4,6 +4,14 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Physics-informed mean function of the gpytorch emulators** (`sampling['gp_mean']`, new module `surrogate/hydraulic_mean.py`). `"hydraulic"` adds a trend m(θ) = a + Σ b_k f_k(θ_k) to every emulator output, so that the Gaussian process learns only the departure from it. The shape f_k follows the normal-flow scaling of the friction law of a roughness parameter: the water depth (and water-surface elevation) scales with n^(3/5), k_St^(-3/5) or C^(-2/3), the velocity with the inverse power, and an equivalent sand roughness (Nikuradse, Haaland, log wall, Colebrook-White) enters as ln(k_s). The law of a TELEMAC `zone<id>` parameter is read from the friction data file, that of `FRICTION COEFFICIENT` from `LAW OF BOTTOM FRICTION`, the Delft3D one from `roughness_formulation`, and the OpenFOAM `ks` is a sand roughness (`HydroSimulations.friction_laws`, overridden per binding). Other parameters get a linear trend, as all parameters do with `"linear"`. The coefficients start from their least-squares estimate; with fewer than 2 (n_parameters + 1) training runs the constant mean is kept. On an analytic compound channel (Manning's n in main channel and floodplain, input scaling on), the validation error with 8, 16 and 32 runs fell from 0.17 / 0.062 / 0.018 to 0.050 / 0.018 / 0.010, and for a sand roughness between 0.002 and 0.6 m from 0.41 / 0.28 / 0.18 to 0.049 / 0.042 / 0.026. Where the response is a product of a roughness and another parameter over a narrow range, the multitask emulator with the trend can be slightly less accurate (up to 1.6 times the error in a test), see the documentation of the surrogate model. The default `"constant"` keeps the emulator of 1.13; emulators pickled earlier predict unchanged. All emulator layouts and the three drivers (and the multiflow driver) support it.
+
+### Changed
+- The posterior column of the target-agreement figure counts posterior samples, not runs.
+
 ## [1.13.0] - 2026-11-11
 
 ### Changed

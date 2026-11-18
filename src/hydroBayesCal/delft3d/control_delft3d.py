@@ -61,6 +61,10 @@ ROUGHNESS_METHODS = {
     "nikuradse": "Z",
 }
 
+#: Law of the hydraulic emulator mean per ``roughness_formulation`` (lower case, without blanks), see :meth:`Delft3DModel.friction_laws`.
+FRICTION_LAWS = {"chezy": "CHEZ", "manning": "MANN", "whitecolebrook": "COWH",
+                 "white-colebrook": "COWH", "nikuradse": "NIKU"}
+
 
 class Delft3DController:
     """
@@ -590,6 +594,12 @@ class Delft3DModel(HydroSimulations):
             self.control_points = df[[x_col, y_col]].values
         else:
             self.control_points = np.array([])
+
+    def friction_laws(self):
+        """Law of the uniform bed roughness (``"roughness"`` or ``"Ccof"``), from ``roughness_formulation``. Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.friction_laws`."""
+        law = FRICTION_LAWS.get(str(self.roughness_formulation).replace(" ", "").lower())
+        return {parameter: law for parameter in self.calibration_parameters or []
+                if law and str(parameter).replace(" ", "").lower() in ("roughness", "ccof")}
 
     def update_model_controls(self, controller, params):
         """Write one set of calibration parameter values into the ``.mdf``.

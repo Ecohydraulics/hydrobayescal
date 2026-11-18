@@ -220,6 +220,15 @@ class MultiflowTelemacModel:
             model.init_runs = int(value)
 
     # ------------------------------------------------------------------ runs
+    def friction_laws(self):
+        """Friction laws of the calibration parameters, see :meth:`TelemacModel.friction_laws`; those of the first flow."""
+        return self.models[0].friction_laws()
+
+    def mean_exponents(self, gp_mean="constant"):
+        """Trend exponents of the emulator mean for the combined output columns: the rows of every flow in flow order, as the outputs are combined. ``None`` for ``"constant"``."""
+        blocks = [model.mean_exponents(gp_mean) for model in self.models]
+        return None if blocks[0] is None else np.vstack(blocks)
+
     def run_multiple_simulations(self, collocation_points=None,
                                  bal_new_set_parameters=None,
                                  bal_iteration=int(),

@@ -2161,6 +2161,45 @@ class TelemacModel(HydroSimulations):
                 + "\nREASON:\n"
                 + str(error)
             )
+    def friction_laws(self):
+        """Friction law of every calibration parameter that is a bed-friction coefficient.
+
+        A parameter ``zone<id>`` takes the law of zone ``<id>`` in the second column of the friction data file (``.tbl``: ``MANN``, ``STRI``, ``CHEZ``, ``NIKU``, ...). A parameter named ``FRICTION COEFFICIENT`` takes the ``LAW OF BOTTOM FRICTION`` of the steering file. Read by the hydraulic mean of the emulators, see :meth:`HydroSimulations.friction_laws`; a file that cannot be read leaves the parameter without a law (linear trend).
+
+        Returns
+        -------
+        dict
+            ``{parameter name: law}``.
+        """
+        from hydroBayesCal.surrogate.hydraulic_mean import TELEMAC_LAW_CODES
+        laws = {}
+        zones = {}
+        if self.friction_file and os.path.isfile(self.fr_tbl):
+            with open(self.fr_tbl, "r") as file:
+                for line in file:
+                    tokens = line.split()
+                    if len(tokens) >= 2 and not tokens[0].startswith("*"):
+                        zones.setdefault(tokens[0], tokens[1].upper())
+        cas_law = None
+        if os.path.isfile(self.tm_cas):
+            with open(self.tm_cas, "r") as file:
+                for line in file:
+                    keyword, separator, value = line.split("/")[0].partition("=")
+                    if not separator:
+                        keyword, separator, value = line.split("/")[0].partition(":")
+                    if separator and " ".join(keyword.split()).upper() == "LAW OF BOTTOM FRICTION":
+                        try:
+                            cas_law = TELEMAC_LAW_CODES.get(int(float(value.split()[0])))
+                        except (ValueError, IndexError):
+                            cas_law = None
+        for parameter in self.calibration_parameters or []:
+            name = str(parameter)
+            if name.lower().startswith("zone") and name[4:] in zones:
+                laws[name] = zones[name[4:]]
+            elif " ".join(name.split()).upper() == "FRICTION COEFFICIENT" and cas_law is not None:
+                laws[name] = cas_law
+        return laws
+
     @staticmethod
     def tbl_creator(
             zone_identifier,

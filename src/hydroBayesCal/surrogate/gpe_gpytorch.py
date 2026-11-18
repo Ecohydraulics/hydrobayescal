@@ -20,6 +20,7 @@ from gpytorch.kernels import MultitaskKernel, RBFKernel, LinearKernel, ScaleKern
 from scipy.optimize import dual_annealing, differential_evolution
 
 from hydroBayesCal.surrogate.bal_functions import project_to_psd
+from hydroBayesCal.surrogate.hydraulic_mean import _as_column_exponents, trend_mean
 # The validation criteria live in validation_metrics.py, one implementation for both emulator libraries. They stay importable from this module, where scripts written for earlier versions look for them.
 from hydroBayesCal.surrogate.validation_metrics import save_valid_criteria, validation_error  # noqa: F401
 from hydroBayesCal.utils.config_logging import logger, logger_warn
@@ -199,16 +200,18 @@ class MyExactGPyModel(gpytorch.models.ExactGP):
         :param train_y: <np.array[n_tp, n_obs]> with forward model outputs used to train GPR
         :param kernel: <kernel instance> with kernel used in GPR
         :param likelihood <likelihood instance> to train noise in GPR
+        :param mean_module <gpytorch.means.Mean, optional> trend mean, see :class:`~hydroBayesCal.surrogate.hydraulic_mean.HydraulicMean`; default zero mean
     """
 
     def __init__(
             self, train_x,
             train_y, kernel,
-            likelihood
+            likelihood,
+            mean_module=None
     ):
         super(MyExactGPyModel, self).__init__(train_inputs=train_x, train_targets=train_y, likelihood=likelihood)
-        # self.mean_module = gpytorch.means.ConstantMean()
-        self.mean_module = gpytorch.means.ZeroMean()
+        # Zero mean on the normalized outputs, i.e. the average of the training runs, unless a trend mean is given (see hydraulic_mean.py).
+        self.mean_module = gpytorch.means.ZeroMean() if mean_module is None else mean_module
         self.covar_module = kernel
 
     def forward(self, x):
@@ -259,6 +262,8 @@ class GPyTraining:
         sequentially.
     precision : {"double", "single"}, optional
         Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` reproduces the arithmetic of releases up to 1.10.1.
+    mean_exponents : numpy.ndarray, optional
+        Exponents of a trend mean, shape ``[n_obs, n_p]`` (one row per output column) or ``[n_p]``, as :func:`~hydroBayesCal.surrogate.hydraulic_mean.mean_exponents` returns them for ``sampling['gp_mean']``. Default ``None``: zero mean on the normalized outputs, the emulator of releases up to 1.13.
 
     Notes
     -----
@@ -285,7 +290,8 @@ class GPyTraining:
             gradient_free_start=False,
             verbose=True,
             parallelize=False,
-            precision="double"
+            precision="double",
+            mean_exponents=None
     ):
 
         # Basic attributed
@@ -321,6 +327,7 @@ class GPyTraining:
         # Parameters used to normalize GP inputs
         self.x_min = None
         self.x_range = None
+        self.mean_exponents = _as_column_exponents(mean_exponents, self.n_obs, self.n_params)
 
         self._id_vectors(likelihood, kernel)
 
@@ -402,15 +409,21 @@ class GPyTraining:
             out = Parallel(n_jobs=-1, backend='multiprocessing')(delayed(self._fit_adam)(train_x=train_x,
                                                                                          model_y=self.model_evaluations[:, i],
                                                                                          likelihood=self.likelihood[i],
-                                                                                         kernel=self.kernel)
+                                                                                         kernel=self.kernel,
+                                                                                         exponents=self._column_exponents(i))
                                                                  for i in range(self.n_obs))
             self.gp_list = out
         else:
             for i, y_model in enumerate(self.model_evaluations.T):
                 out = self._fit_adam(train_x=train_x, model_y=y_model, likelihood=self.likelihood[i],
-                                     kernel=self.kernel)
+                                     kernel=self.kernel, exponents=self._column_exponents(i))
 
                 self.gp_list.append(out)
+
+    def _column_exponents(self, column):
+        """Trend exponents of one output column, or ``None`` for the zero mean (also for an emulator pickled before 1.14)."""
+        exponents = getattr(self, "mean_exponents", None)
+        return None if exponents is None else exponents[column]
 
     @staticmethod
     def init_model_params(model):
@@ -428,9 +441,11 @@ class GPyTraining:
                 torch.nn.init.xavier_uniform_(param_)
 
         for name, param in model.named_parameters():
+            if name.startswith("mean_module."):
+                continue  # a trend mean keeps its least-squares start, see HydraulicMean
             initialize_tensor(param)
 
-    def _fit_adam(self, train_x, model_y, kernel, likelihood):
+    def _fit_adam(self, train_x, model_y, kernel, likelihood, exponents=None):
         """
         Function trains the GPR for a given training location using the 'adam' optimizer from PyTorch
         Args:
@@ -438,6 +453,8 @@ class GPyTraining:
                 with input parameter sets to use in training
             model_y: array[n_tp,]
                 with simulator outputs in training points
+            exponents: array[n_param,], optional
+                trend exponents of this output column; None for the zero mean
         Returns: dict
             with trained gp object, trained likelihood object, hyperparameters
             and y_normalization parameters (if needed)
@@ -459,7 +476,8 @@ class GPyTraining:
             likelihood_ = copy.deepcopy(likelihood)
 
             # Initialize instance of GPyTorch GPR. Kernel and likelihood arrive in torch's default type, single precision, and are brought to the precision of this emulator together with the model.
-            gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_)
+            mean_module = trend_mean(exponents, train_x, train_y, self.x_min, self.x_range)
+            gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_, mean_module=mean_module)
             gp.to(self.dtype)
             likelihood_.to(self.dtype)
 
@@ -687,7 +705,8 @@ class MultiGPyTraining:
             number_quantities=2,
             noise_constraint=GreaterThan(1e-6),
             tp_normalization=False,
-            precision="double"
+            precision="double",
+            mean_exponents=None
     ):
         """
         Parameters
@@ -697,6 +716,8 @@ class MultiGPyTraining:
             Floating-point precision of the emulator, see :class:`GPyTraining`. Default ``"double"``.
         tp_normalization : bool, optional
             Scale the calibration parameters to [0, 1] before training, see :class:`GPyTraining`. Default ``False``.
+        mean_exponents : numpy.ndarray, optional
+            Exponents of a trend mean per output column, see :class:`GPyTraining`. Every task gets the trend of its output column. Default ``None``: a constant mean per task.
         """
         _precision_dtype(precision)  # refuse an unknown value here, not in the first training
         self.precision = str(precision).lower()
@@ -724,6 +745,7 @@ class MultiGPyTraining:
         self.tp_norm = tp_normalization
         self.x_min = None
         self.x_range = None
+        self.mean_exponents = _as_column_exponents(mean_exponents, self.n_obs, self.n_params)
         self.parallel = parallelize
         self.noise_constraint = noise_constraint
         self.losses = []  # To store loss values for tracking convergence
@@ -770,6 +792,27 @@ class MultiGPyTraining:
 
         return torch.tensor(X, dtype=dtype)
 
+    def _task_means(self, columns, X, Y_norm):
+        """Multitask mean of the output columns that are the tasks of one model, or ``None`` for a constant mean per task.
+
+        Parameters
+        ----------
+        columns : sequence of int
+            Output columns of ``model_evaluations``, one per task, in task order.
+        X : torch.Tensor
+            Training inputs as the model sees them.
+        Y_norm : torch.Tensor
+            Normalized training outputs of these columns, shape ``[n_runs, n_tasks]``.
+        """
+        exponents = getattr(self, "mean_exponents", None)
+        if exponents is None:
+            return None
+        means = [trend_mean(exponents[column], X, torch.as_tensor(Y_norm)[:, task], self.x_min, self.x_range)
+                 for task, column in enumerate(columns)]
+        if any(mean is None for mean in means):
+            return None
+        return MultitaskMean(means, num_tasks=len(means))
+
     def train_tasks_variables(self):#Training variables at each location separately
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
@@ -809,7 +852,9 @@ class MultiGPyTraining:
             # lengthscales, so only the last location's hyperparameters survived.
             likelihood = copy.deepcopy(self.likelihood)
             kernel = copy.deepcopy(self.kernel)
-            model = MultitaskGPModel(X, Y_loc_norm, likelihood, kernel, self.number_quantities)
+            columns = range(self.number_quantities * loc, self.number_quantities * (loc + 1))
+            model = MultitaskGPModel(X, Y_loc_norm, likelihood, kernel, self.number_quantities,
+                                     mean_module=self._task_means(columns, X, Y_loc_norm))
             # Kernel and likelihood arrive in torch's default type, single precision.
             model.to(dtype)
             likelihood.to(dtype)
@@ -920,8 +965,10 @@ class MultiGPyTraining:
             # Deep copies keep each quantity's noise and lengthscales its own.
             likelihood = copy.deepcopy(self.likelihood)
             kernel = copy.deepcopy(self.kernel)
+            columns = range(q, self.n_obs, self.number_quantities)
             model = MultitaskGPModel(X, Y_output_var_norm, likelihood, kernel,
-                                     number_tasks=num_locations)  # num_tasks = num_locations
+                                     number_tasks=num_locations,  # num_tasks = num_locations
+                                     mean_module=self._task_means(columns, X, Y_output_var_norm))
             model.to(dtype)
             likelihood.to(dtype)
 
@@ -978,7 +1025,8 @@ class MultiGPyTraining:
         # task layouts, so that self.likelihood/self.kernel stay untrained templates.
         likelihood = copy.deepcopy(self.likelihood)
         kernel = copy.deepcopy(self.kernel)
-        model = MultitaskGPModel(X, Y_norm, likelihood, kernel, number_tasks=self.n_obs)
+        model = MultitaskGPModel(X, Y_norm, likelihood, kernel, number_tasks=self.n_obs,
+                                 mean_module=self._task_means(range(self.n_obs), X, Y_norm))
         model.to(dtype)
         likelihood.to(dtype)
 
@@ -1375,7 +1423,8 @@ class MultitaskGPModel(ExactGP):
             train_y,
             likelihood,
             kernel,
-            number_tasks
+            number_tasks,
+            mean_module=None
     ):
         """
         :param train_x: torch.Tensor
@@ -1392,9 +1441,13 @@ class MultitaskGPModel(ExactGP):
 
         :param kernel: tuple(gpytorch.kernels.Kernel, gpytorch.kernels.Kernel)
             A tuple of kernel components to be used in the GP model. The tuple should contain two kernel components.
+
+        :param mean_module: gpytorch.means.MultitaskMean, optional
+            Mean with one trend per task, see :meth:`MultiGPyTraining._task_means`. Default: a constant mean per task.
         """
         super(MultitaskGPModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = MultitaskMean(ConstantMean(), num_tasks=number_tasks)
+        self.mean_module = (MultitaskMean(ConstantMean(), num_tasks=number_tasks)
+                            if mean_module is None else mean_module)
         self.covar_module = MultitaskKernel(
                             kernel,
             num_tasks=number_tasks, rank=2
@@ -1488,7 +1541,8 @@ class SOSequentialGPyTraining:
 
     @classmethod
     def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
-                           training_iter=150, lr=0.07, verbose=False, tp_normalization=False, precision="double"):
+                           training_iter=150, lr=0.07, verbose=False, tp_normalization=False, precision="double",
+                           mean_exponents=None):
         """Build the container from the training data of a calibration.
 
         One single-output GPE is set up per calibration target, with the kernel, likelihood and optimizer settings the drivers use for a calibration on one target, so a target is emulated the same way whether it is calibrated alone or together with others. The models are not trained yet, call :meth:`train_`.
@@ -1511,6 +1565,8 @@ class SOSequentialGPyTraining:
             Floating-point precision of the emulators, passed on to :class:`GPyTraining`.
         tp_normalization : bool
             Scale the calibration parameters to [0, 1] before training, passed on to :class:`GPyTraining`. Default ``False``.
+        mean_exponents : numpy.ndarray, optional
+            Trend exponents per output column in the interleaved order, shape ``[n_locations * n_quantities, n_params]``; each GPE gets the rows of its target. Default ``None`` (zero mean).
 
         Returns
         -------
@@ -1527,6 +1583,8 @@ class SOSequentialGPyTraining:
                 f"The model outputs have {model_outputs.shape[1]} columns, which is not a multiple of the "
                 f"{n_quantities} calibration quantities {calibration_quantities}.")
 
+        if mean_exponents is not None:
+            mean_exponents = _as_column_exponents(mean_exponents, model_outputs.shape[1], collocation_points.shape[1])
         surrogate_models = {}
         for quantity_idx, quantity in enumerate(calibration_quantities):
             kernel = gpytorch.kernels.ScaleKernel(
@@ -1541,7 +1599,8 @@ class SOSequentialGPyTraining:
                 likelihood=likelihood, kernel=kernel,
                 training_iter=training_iter,
                 optimizer="adam", lr=lr,
-                verbose=verbose, tp_normalization=tp_normalization, precision=precision)
+                verbose=verbose, tp_normalization=tp_normalization, precision=precision,
+                mean_exponents=None if mean_exponents is None else mean_exponents[quantity_idx::n_quantities])
         return cls(surrogate_models=surrogate_models, calibration_quantities=calibration_quantities)
 
     def __getitem__(self, key):

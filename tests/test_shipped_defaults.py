@@ -49,6 +49,7 @@ EXPECTED_FALLBACKS = {
     "calibration_case": None,
     "point_time_column": None,
     "tp_normalization": False,
+    "gp_mean": "constant",
 }
 
 #: Keys a configuration file may leave out. A driver that reads one of them without a fallback hands ``None`` to the library, or fails on the missing key, and does so after the initial design has been simulated.

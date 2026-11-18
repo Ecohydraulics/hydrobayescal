@@ -17,6 +17,7 @@ from hydroBayesCal.delft3d.control_delft3d import Delft3DModel
 from hydroBayesCal.surrogate.bal_functions import BayesianInference, SequentialDesign
 from hydroBayesCal.surrogate.gpe_skl import *
 from hydroBayesCal.surrogate.gpe_gpytorch import *
+from hydroBayesCal.surrogate.hydraulic_mean import check_gp_mean
 from hydroBayesCal.function_pool import *
 from hydroBayesCal.surrogate.posterior_analysis import ITERATION_KEYS, record_iteration
 from hydroBayesCal.surrogate.target_agreement import finalize_target_agreement
@@ -180,6 +181,7 @@ def run_bal_model(collocation_points,
                   bal_exploration_tradeoff="auto",
                   bal_n_jobs=-1,
                   tp_normalization=False,
+                  gp_mean="constant",
                   ):
     """
     Executes the Bayesian Active Learning (BAL) model to select new training points and evaluate the hydrodynamic model.
@@ -223,6 +225,8 @@ def run_bal_model(collocation_points,
         Number of worker processes that score the BAL candidates, passed to ``joblib``. ``-1`` (default) uses all cores, ``1`` scores them in the calling process.
     tp_normalization : bool
         Scale the calibration parameters to [0, 1] before the gpytorch emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration. Not passed to the scikit-learn emulator (``gp_library='skl'``), whose RBF length scales and bounds are set from the physical parameter ranges.
+    gp_mean : {"constant", "linear", "hydraulic"}
+        Mean function of the gpytorch emulators, see :mod:`~hydroBayesCal.surrogate.hydraulic_mean`. ``"constant"`` (default) is the emulator of releases up to 1.13. ``"hydraulic"`` adds a trend whose shape follows the friction law of every roughness parameter (Manning, Strickler, Chezy, sand roughness) and a linear trend in the other parameters; ``"linear"`` a linear trend in all of them. ``sampling['gp_mean']`` in the configuration. Not used by the scikit-learn emulator.
 
     Returns
     -------
@@ -327,6 +331,14 @@ def run_bal_model(collocation_points,
         logger.info(f"BAL point selection: "
                     f"{'exploration/exploitation trade-off' if do_tradeoff else 'exploitation only'} "
                     f"(forced by sampling['bal_exploration_tradeoff']).")
+    # Trend of the emulator mean, the same for every iteration (sampling['gp_mean']; None for the constant mean).
+    mean_exponents = None
+    if str(gp_mean).strip().lower() != "constant":
+        if gp_library == 'gpy':
+            mean_exponents = complex_model.mean_exponents(gp_mean)
+        else:
+            logger_warn.warning(f"gp_mean='{gp_mean}' applies to the gpytorch emulators only; "
+                                f"the {gp_library} emulator keeps its constant mean.")
     for it in range(0, n_iter + 1):
 
         # 1. Train surrogate
@@ -372,7 +384,7 @@ def run_bal_model(collocation_points,
                 # 1.3. Train a GPE, which consists of a gpe for each location being evaluated
                 sm = GPyTraining(collocation_points=collocation_points, model_evaluations=model_outputs,
                                  likelihood=likelihood, kernel=kernel, training_iter=100,
-                                 optimizer="adam", verbose=False, tp_normalization=tp_normalization)
+                                 optimizer="adam", verbose=False, tp_normalization=tp_normalization, mean_exponents=mean_exponents)
                 if complex_model.multitask_selection == "locations":
                     # One calibration target with the locations as tasks: a single multitask GPE that learns the correlation between the calibration points (kept in sync with bal_telemac.py, the canonical driver).
                     multi_likelihood_loc = multitask_likelihood(complex_model.nloc)
@@ -382,7 +394,7 @@ def run_bal_model(collocation_points,
                             gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)),
                         training_iter=150, likelihood=multi_likelihood_loc,
                         optimizer="adam", lr=0.01,
-                        number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization)
+                        number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents)
             else:
                 kernel = gpytorch.kernels.ScaleKernel(
                                     gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=complex_model.ndim)
@@ -390,7 +402,7 @@ def run_bal_model(collocation_points,
                 if complex_model.multitask_selection == "SO_sequential":
                     # Independent single-output GPEs, one per calibration target, without correlation between the targets (kept in sync with bal_telemac.py, the canonical driver).
                     so_sm = SOSequentialGPyTraining.from_training_data(
-                        collocation_points, model_outputs, complex_model.calibration_quantities, tp_normalization=tp_normalization)
+                        collocation_points, model_outputs, complex_model.calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents)
                 if complex_model.multitask_selection == "variables":
                     # Derive n_tasks_per_loc directly from data shape to avoid config mismatch
                     n_tasks_per_loc = model_outputs.shape[1] // complex_model.nloc
@@ -402,7 +414,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_var,
                                                     optimizer="adam", lr=0.01,
-                                                    number_quantities=n_tasks_per_loc, tp_normalization=tp_normalization
+                                                    number_quantities=n_tasks_per_loc, tp_normalization=tp_normalization, mean_exponents=mean_exponents
                                                     )
                 if complex_model.multitask_selection == "locations":
                     multi_likelihood_loc = multitask_likelihood(complex_model.nloc)
@@ -412,7 +424,7 @@ def run_bal_model(collocation_points,
                                                 kernel,
                                                 training_iter=150,
                                                 likelihood=multi_likelihood_loc,
-                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
+                                                optimizer="adam", lr=0.01, number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents
                                                 )
                 if complex_model.multitask_selection == "all":
                     multi_likelihood_all = multitask_likelihood(model_outputs.shape[1])
@@ -422,7 +434,7 @@ def run_bal_model(collocation_points,
                                                     training_iter=150,
                                                     likelihood=multi_likelihood_all,
                                                     optimizer="adam", lr=0.01,
-                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization
+                                                    number_quantities=complex_model.num_calibration_quantities, tp_normalization=tp_normalization, mean_exponents=mean_exponents
                                                     )
 
         # Trains the GPR
@@ -656,6 +668,8 @@ def main():
 
     print(f"Loading configuration from: {args.config}")
     config = load_config(args.config)
+    # Refused now, not after the initial runs.
+    check_gp_mean(config.sampling.get('gp_mean', 'constant'))
 
     # config_Delft3D.py uses standard names (e.g. WATER_DEPTH, U_x, U_MAG) shared across
     # solvers. No translation needed here - control_delft3d.py works with standard names internally.
@@ -747,6 +761,7 @@ def main():
         bal_exploration_tradeoff=config.sampling.get('bal_exploration_tradeoff', 'auto'),
         bal_n_jobs=config.sampling.get('bal_n_jobs', -1),
         tp_normalization=config.sampling.get('tp_normalization', False),
+        gp_mean=config.sampling.get('gp_mean', 'constant'),
     )
 
 
