@@ -520,7 +520,19 @@ With the initial model setup and the measurement points, the Bayesian model opti
 
       The gpytorch emulators compute in double precision. Single precision, which releases up to 1.10.1 used, resolves about seven digits, and a Gaussian process needs more in two places. Its training factorizes the covariance matrix of the training runs, whose condition number grows with the number of runs and with the smoothness of the model response; with the emulator settings of the drivers and a smooth analytic response, the training failed with ``NotPSDError`` in 6 of 20 attempts at 40 training runs and in all 20 at 80. Its posterior variance is a small difference of large terms, which is lost in round-off where the emulator is nearly certain. An emulator pickled by an earlier release keeps predicting in single precision, and ``precision="single"`` in the constructor of an emulator class reproduces the earlier arithmetic. The predictions over the prior sample are evaluated in pieces, so that time and memory grow in proportion to ``prior_samples``: in a test with six outputs, 100,000 prior samples took a few seconds and kept the process at about one gigabyte.
 
-      ``sampling['tp_normalization']`` (default ``False``) scales every calibration parameter to [0, 1] over the range of the training runs before an emulator is trained, and the prediction inputs with the same scale. The kernel length scales of the emulators start at about 0.7, which suits parameters of order one. On an analytic test model with a roughness in m, a Shields parameter and a discharge between 100 and 1000 m\ :sup:`3`/s (30 training runs), the emulators without scaling barely improved on the mean of the training outputs (normalized validation error 0.7 to 1.0), and with scaling reached 0.04 to 0.23. With three parameters of order 0.01 to 2 the effect was small and of either sign. The option is therefore worth switching on when the calibration parameters differ by orders of magnitude. An emulator pickled by an earlier release predicts unscaled, as it was trained. The option applies to the gpytorch emulators (``gp_library = "gpy"``); the scikit-learn emulator sets its RBF length scales from the physical parameter ranges and is trained as in 1.11.
+      ``sampling['tp_normalization']`` (default ``True`` since 1.14) scales every calibration parameter to [0, 1] over the range of the training runs before an emulator is trained, and the prediction inputs with the same scale. The kernel length scales of the emulators start at about 0.7, which suits parameters of order one. On an analytic test model with a roughness in m, a Shields parameter and a discharge between 100 and 1000 m\ :sup:`3`/s (30 training runs), the emulators without scaling barely improved on the mean of the training outputs (normalized validation error 0.7 to 1.0), and with scaling reached 0.04 to 0.23. Parameters with small ranges suffer as well: for Manning's :math:`n` between 0.02 and 0.06 the 95 % interval of the emulators covered only 7 to 18 % of the test points without scaling and 92 to 100 % with it, and on a k-ε test model the single-output and multitask emulators trained on the same runs disagreed by up to 74 % of the output spread without scaling and by 9 % with it. ``False`` reproduces the emulators of releases up to 1.13; an emulator pickled by an earlier release predicts as it was trained. The option applies to the gpytorch emulators (``gp_library = "gpy"``); the scikit-learn emulator sets its RBF length scales from the physical parameter ranges.
+
+      The single-output emulator (one calibration target, and ``"SO_sequential"``) trains its kernel hyperparameters with 300 iterations at a constant learning rate of 0.1 in all drivers (``SINGLE_OUTPUT_ITERATIONS`` and ``SINGLE_OUTPUT_LEARNING_RATE`` in :mod:`~hydroBayesCal.surrogate.gpe_gpytorch`). Up to 1.13, its learning rate halved every 5 iterations (150 at 0.07 in the TELEMAC driver and ``"SO_sequential"``, 100 at 0.5 in the OpenFOAM and Delft3D drivers), so the hyperparameters stayed near their initial values: on the k-ε test model with scaled parameters, the length scales ended at 0.4 to 1.1 where training to convergence gave 10 to 24, and the validation error of the velocity was 0.17, 0.11 and 0.040 with 8, 16 and 32 runs (converged: 0.059, 0.027 and 0.0096). Release 1.14.0 kept the drivers' settings with a constant rate: 0.079, 0.031 and 0.013 at 0.07, while 0.5 gave a different emulator for the same calibration and, without input scaling, errors of 0.6 to 0.9. Since 1.14.1 the error is 0.065, 0.028 and 0.011, in all drivers, close to that of the multitask ``"variables"`` emulator trained on the same runs (0.095, 0.033 and 0.014): in essence, both report the same values.
+
+      ``sampling['gp_mean']`` (default ``"constant"``) sets the mean function of the gpytorch emulators (:mod:`~hydroBayesCal.surrogate.hydraulic_mean`). With the constant mean, a prediction far from the training runs returns to their average. ``"hydraulic"`` adds a trend :math:`m(\theta) = a + \sum_k b_k f_k(\theta_k)`, so that the Gaussian process learns only the departure of the model response from it, with a feature :math:`f_k` per calibration parameter whose shape follows the physics of that parameter and of the calibration target. ``"linear"`` uses :math:`f_k(\theta_k) = \theta_k` for every parameter. Either trend trains the emulators on calibration parameters scaled to [0, 1], as ``tp_normalization = True`` does: the trend acts on the physical values, and without the scaling the single-output OpenFOAM emulator with the trend had 1.1 to 11 times the error of the constant mean in the k-ε test below. The coefficients :math:`a` and :math:`b_k` start from their least-squares estimate and are trained with the kernel hyperparameters, so their sign is free: the roughness of one zone may lower the velocity in another. Kept fixed at the least-squares estimate, the trend was less accurate in most cases. With fewer than :math:`2(n_p + 1)` training runs, or when the trend does not match the output columns of the training data, the emulator keeps the constant mean. A power or logarithm needs a positive parameter: a parameter whose uniform prior range or whose training values reach zero gets the linear trend, and below a hundredth of the smallest training value the feature is held constant, so that a prior sample at or below zero (normal prior) gets a finite prediction.
+
+      * **Bed friction** (TELEMAC, Delft3D). In the normal flow of a wide channel at constant unit discharge, the water depth (and the water-surface elevation) scales with :math:`n^{3/5}`, :math:`k_{St}^{-3/5}` or :math:`C^{-2/3}` (Manning, Strickler, Chezy), the depth-averaged velocity with the inverse power, and the turbulent kinetic energy like the depth (:math:`u_*^2 = g h S`). An equivalent sand roughness :math:`k_s` (Nikuradse, Haaland, log wall, Colebrook-White) enters through :math:`\ln k_s`. The law of a TELEMAC friction zone ``zone<id>`` is read from the friction data file (``.tbl``), the law of a ``FRICTION COEFFICIENT`` (TELEMAC-2D) or ``FRICTION COEFFICIENT FOR THE BOTTOM`` (TELEMAC-3D, default Nikuradse) parameter from ``LAW OF BOTTOM FRICTION``, and the Delft3D one from ``roughness_formulation``.
+      * **Wall roughness and k-ε coefficients** (OpenFOAM). The wall roughness ``ks`` enters velocities and turbulence quantities through the log law, :math:`\ln k_s`. In the equilibrium (log) layer, the turbulent kinetic energy is :math:`k = u_*^2 / \sqrt{C_\mu}`, so ``Cmu`` enters ``TKE`` as :math:`C_\mu^{-1/2}` and the velocity fluctuations as :math:`C_\mu^{-1/4}`. The other k-ε coefficients, and ``Cmu`` for the velocities, get a linear trend. Since :math:`u_*` depends on :math:`k_s`, the turbulent kinetic energy is a product of a function of :math:`C_\mu` and one of :math:`k_s`; a product feature made the emulators less accurate in the test below and is not used.
+      * All other parameters and calibration targets (e.g., ``ALPHA_WATER``) get a linear trend.
+
+      The k-ε test is a fully developed open-channel flow at fixed discharge, solved in the vertical with the standard k-ε model, a rough-wall log law with :math:`\kappa = 0.41` at the bed and the calibrated coefficients in the flow, as an OpenFOAM flume with wall functions; the calibration targets were ``U_x`` and ``TKE`` at three heights (300 test parameter sets), the emulators were set up as in the OpenFOAM driver. With ``Cmu`` in [0.06, 0.12] and ``ks`` in [0.001, 0.05] m (the shipped configuration) and 8, 16 and 32 training runs, the hydraulic mean reduced the normalized validation error of the velocity from 0.090, 0.042 and 0.015 to 0.022, 0.0070 and 0.0027 (single output) and from 0.13, 0.054 and 0.027 to 0.030, 0.0092 and 0.0036 (``"variables"``), and that of the turbulent kinetic energy from 0.073, 0.023 and 0.0095 to 0.043, 0.012 and 0.0040 (single output) and from 0.099, 0.035 and 0.019 to 0.040, 0.010 and 0.0050 (``"variables"``). With ``C1``, ``C2`` and ``sigmaEps`` calibrated as well (16 and 32 runs), the error of the velocity fell by a factor of 1.6 to 2.3 and that of the turbulent kinetic energy by a factor of 1.2 to 1.5.
+
+      For bed friction, an analytic compound channel served as test (main channel and floodplain with their own roughness, water depth and velocity at a point in each, 2,000 test parameter sets). Single-output emulators with scaled parameters reached the following normalized validation errors with 8, 16 and 32 training runs: for Manning's :math:`n`, 0.17, 0.062 and 0.018 with the constant mean and 0.050, 0.018 and 0.010 with the hydraulic mean; for :math:`k_s` between 0.002 and 0.6 m, 0.41, 0.28 and 0.18 against 0.049, 0.042 and 0.026. The linear trend improved the constant mean by 14 to 40 %. The gain is not universal: for a single channel with Manning's :math:`n` between 0.02 and 0.06 and a discharge factor between 0.8 and 1.2 (10 training runs), where the depth scales with the product :math:`(nQ)^{3/5}` that an additive trend cannot represent, the ``"variables"`` emulator with the hydraulic mean had 0.9 to 1.6 times the error of the one with the constant mean (errors of 1 to 5 % of the output spread in both cases). The trend pays off most where a parameter spans an order of magnitude or more, as a sand roughness usually does: with :math:`k_s` between 0.002 and 0.6 m in the same channel, its error was 6 to 42 % of that of the constant mean in both layouts. In the compound-channel test, the 95 % interval of the emulator with the constant mean covered only 7 to 18 % of the Manning test points without ``tp_normalization`` and 92 to 100 % with it; the interval is what the Bayesian active learning relies on, which is why input scaling is on by default since 1.14.
 
       The noise terms of the multitask likelihoods (global and per task) start at 1e-5 with 1e-6 as lower bound in every layout (:func:`~hydroBayesCal.surrogate.gpe_gpytorch.multitask_likelihood`), because a deterministic model carries no noise. Up to 1.11, ``"locations"`` and ``"all"`` started from gpytorch's initial value of about 0.7 with a bound of 1e-3, and the per-task noise of ``"variables"`` from 0.7 as well; on the analytic test model this made the validation error of those emulators 1.5 to 2.5 times larger.
 
@@ -601,11 +613,14 @@ The BAL loop stores, for every iteration, a **joint** posterior sample in
 joint likelihood over all calibration points and calibration targets. That sample, not any
 single training point, is the calibration result.
 
-The calibrated parameter set is the **maximum of the joint posterior probability density
-function**, i.e. the single parameter combination the measurements support most strongly
-once all parameters are considered together. The per-parameter marginal optima answer a
-different question, and most of this step is about telling the two apart and deciding
-which one to report.
+Since 1.13.0 the calibrated parameter set is the vector of **per-parameter posterior
+maxima**: the peak of each parameter's own posterior marginal, which is what a modeler
+reads off the posterior of, for example, one roughness zone and reports with its credible
+interval. The **maximum of the joint posterior probability density function**, the single
+combination the measurements support most strongly once all parameters are considered
+together, is still computed and reported next to it, and the diagnostics below say when
+the two disagree and both should be run with the full complexity model. Up to 1.12.2 the
+joint maximum was the default (``--estimate joint`` restores that rule).
 
 Run the derivation on a finished calibration:
 
@@ -617,12 +632,16 @@ Run the derivation on a finished calibration:
 It reports, for every calibration parameter:
 
 * the **peak of that parameter's own posterior marginal**, with the credible interval.
-  The peak is read directly off a histogram of the accepted posterior samples (the
-  most populated bin, refined to the mean of the samples inside it), with no
-  smoothing, so the reported optimum is a property of the posterior rather than of a
-  fitted curve. The number of bins follows from the sample size and the spread of the
-  posterior instead of being fixed in advance, see
-  :func:`~hydroBayesCal.surrogate.posterior_analysis.marginal_bin_count`;
+  The peak is read directly off histograms of the accepted posterior samples (the
+  most populated bin, refined to the mean of the samples inside it; adjacent bins with
+  the same count are one plateau), with no smoothing, so the reported optimum is a
+  property of the posterior rather than of a fitted curve. The number of bins follows
+  from the sample size and the spread of the posterior instead of being fixed in
+  advance, see :func:`~hydroBayesCal.surrogate.posterior_analysis.marginal_bin_count`.
+  Because the modal bin of a flat-topped marginal moves with every shift of the bin
+  edges, the peak is the median over 200 bootstrap resamples of the sample, and the
+  standard deviation of those resampled peaks is reported as its spread
+  (:func:`~hydroBayesCal.surrogate.posterior_analysis.bagged_marginal_peak`);
 * the **variance reduction** relative to the prior, i.e. how strongly the measurements
   constrain that parameter at all;
 * flags for parameters whose optimum is **pinned at a prior bound** (the range is too
@@ -703,8 +722,12 @@ How the calibrated optima are chosen
 +++++++++++++++++++++++++++++++++++++
 
 :func:`~hydroBayesCal.surrogate.posterior_analysis.select_calibrated_parameters` turns
-those measurements into one decision. The joint maximum is the default and the marginal
-peaks have to earn their promotion:
+those measurements into one decision. By default (``estimate="marginal"``) the reported set
+is the marginal-peak vector unless the posterior has several well-separated modes; where the
+verdict is ``coupled`` or ``inconsistent``, or the vector differs from the joint maximum,
+the message says so and lists both vectors for a run of the full complexity model. With
+``estimate="joint"`` (``--estimate joint``), the rule of 1.5.0 to 1.12.2 applies, in which
+the joint maximum is the default and the marginal peaks have to earn their promotion:
 
 .. list-table::
    :header-rows: 1
@@ -731,9 +754,9 @@ peaks have to earn their promotion:
      - **Joint maximum**, with the marginal-peak vector to be checked against it by
        running the solver at both.
 
-Parameters flagged **non-identifiable** are reported from the joint maximum and marked:
-any value in their range fits about as well, so the number is a placeholder the data does
-not support, whichever vector it came from.
+Parameters flagged **non-identifiable** are marked: any value in their range fits about
+as well, so the number is a placeholder the data does not support, whichever vector it
+came from.
 
 The decision, its reasoning and the parameter sets it asks to be verified are logged and
 written to the ``selected`` column of ``calibrated-parameter-candidates.csv``

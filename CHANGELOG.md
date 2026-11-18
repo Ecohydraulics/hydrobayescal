@@ -4,6 +4,40 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1] - 2026-11-18
+
+**Results change** for calibrations with a single-output emulator (one calibration target, and `SO_sequential`): all drivers now train it alike. Multitask emulators are unchanged.
+
+### Changed
+- The `precision="single"` documentation says what it does since 1.14: it computes in single precision but does not reproduce the emulators of releases up to 1.13, and with trained, long length scales its result depends on the number of threads.
+
+### Fixed
+- **The single-output emulator was trained differently per solver.** 1.14.0 removed the learning-rate schedule but kept the drivers' settings: 150 iterations at 0.07 (TELEMAC driver, `SO_sequential`) and 100 at 0.5 (OpenFOAM and Delft3D drivers). The first stopped 4 to 29 % above the validation error of the converged emulator on a compound channel and a k-ε test model, and the second, without input scaling (`tp_normalization = False` set in the configuration), reached errors of 0.6 to 0.9. All drivers and `SO_sequential` now use 300 iterations at 0.1 (`SINGLE_OUTPUT_ITERATIONS`, `SINGLE_OUTPUT_LEARNING_RATE`), 1 to 14 % above the converged error with scaling and the smallest error of the three settings without it; the class default of `GPyTraining` is 0.1 as well. On the k-ε model the velocity error with 8, 16 and 32 runs is 0.065, 0.028 and 0.011 (1.14.0: 0.079, 0.031 and 0.013).
+- **Restarts of the single-output emulator were compared by the loss before the last optimizer step**, which with a constant learning rate does not belong to the hyperparameters that are kept. The loss is now evaluated after training, stored as `gp_list[i]['loss']`, and the best state is copied.
+
+## [1.14.0] - 2026-11-18
+
+**Results change** for every calibration with a gpytorch emulator: the input scaling is on by default, and the single-output emulator (one calibration target, and `SO_sequential`) now trains its hyperparameters. Set `sampling['tp_normalization'] = False` to get the multitask emulators of 1.13 back; the single-output emulator of 1.13 is not reproduced.
+
+### Added
+- **Physics-informed mean function of the gpytorch emulators** (`sampling['gp_mean']`, new module `surrogate/hydraulic_mean.py`). `"hydraulic"` adds a trend m(θ) = a + Σ b_k f_k(θ_k) to every emulator output, so that the Gaussian process learns only the departure from it; the feature of each calibration parameter follows its physics and that of the calibration target. OpenFOAM: the wall roughness `ks` enters velocities and turbulence quantities as ln(k_s), and `Cmu` enters `TKE` as C_μ^(-1/2) and the velocity fluctuations as C_μ^(-1/4) (log layer, k = u*²/√C_μ). TELEMAC and Delft3D: the water depth scales with n^(3/5), k_St^(-3/5) or C^(-2/3), the velocity with the inverse power, and a sand roughness enters as ln(k_s); the laws come from the friction data file, `LAW OF BOTTOM FRICTION` (for `FRICTION COEFFICIENT` and the TELEMAC-3D `FRICTION COEFFICIENT FOR THE BOTTOM`, default Nikuradse in 3D) and `roughness_formulation` (`HydroSimulations.friction_laws` and `turbulence_constants`, overridden per binding). All other parameters get a linear trend, as all parameters do with `"linear"`. A trend switches on `tp_normalization`. On a 1D k-ε channel at fixed discharge with the ranges of the shipped OpenFOAM configuration (`Cmu`, `ks`; `U_x` and `TKE` at three heights), the hydraulic mean reduced the validation error of the velocity by a factor of 4 to 8 and that of the turbulent kinetic energy by a factor of 1.7 to 3.8 with 8 to 32 training runs; with five k-ε parameters by factors of 1.6 to 2.3 and 1.2 to 1.5. On an analytic compound channel the error with Manning's n fell by a factor of 1.8 to 3.4, with a sand roughness by 7 to 8. Where the response is a product of a roughness and another parameter over a narrow range, the multitask emulator with the trend can be slightly less accurate (up to 1.6 times the error in a test), see the documentation of the surrogate model. The default `"constant"` keeps the mean function of 1.13; emulators pickled earlier predict unchanged. All emulator layouts and drivers (including the multiflow driver) support it; an unknown value is refused right after the configuration is loaded.
+
+### Changed
+- **`sampling['tp_normalization']` defaults to `True`** (also in `GPyTraining`, `MultiGPyTraining` and `SOSequentialGPyTraining.from_training_data`). Without the scaling, the 95 % interval of the emulators covered 7 to 18 % of the test points for a Manning range of a few hundredths (92 to 100 % with it), the single-output and multitask emulators disagreed by up to 74 % of the output spread, and removing the learning-rate schedule above made the unscaled single-output emulator worse in some cases (validation error 0.10 to 0.50). A configuration that sets the key keeps its value; one without it gets the scaling. Emulators pickled earlier predict as they were trained.
+- The posterior column of the target-agreement figure counts posterior samples, not runs.
+
+### Fixed
+- **The single-output emulator barely trained its hyperparameters.** `GPyTraining` halved its learning rate every 5 iterations (`StepLR`), so with the 150 iterations at 0.07 of the TELEMAC driver and `SO_sequential` (100 at 0.5 in the OpenFOAM and Delft3D drivers; this entry said Delft3D used 150 at 0.07 until 1.14.1) the length scales stayed near their initial value: 0.4 to 1.1 on a k-ε test model where training to convergence gave 10 to 24. The validation error of the velocity was 0.17, 0.11 and 0.040 with 8, 16 and 32 runs (converged: 0.059, 0.027 and 0.0096); it is now 0.079, 0.031 and 0.013, as for the multitask `variables` emulator trained on the same runs (0.095, 0.033 and 0.014). The two now report in essence the same values, as Andrés Heredia expected. Affects every calibration on one target and `SO_sequential` since the first release (the schedule is in the first code of 2024).
+
+## [1.13.0] - 2026-11-11
+
+### Changed
+- **The calibrated parameter set is the vector of per-parameter posterior maxima.** `select_calibrated_parameters` (and so `analyze_posterior` and `derive_calibrated_parameters.py`) reports the peak of each parameter's own posterior marginal by default (`CALIBRATED_ESTIMATE = "marginal"`), unless the posterior has several well-separated modes. The joint maximum is still computed; where the equifinality verdict is `coupled` or `inconsistent`, or the two vectors differ, the message says so and both are listed for a run of the full complexity model. `estimate="joint"` (`--estimate joint`) restores the rule of 1.5.0 to 1.12.2. Every calibrated set changes where the two vectors differed by more than 0.25 posterior standard deviations; on a TELEMAC calibration with four roughness zones: 2.8 / 32.6 / 7.4 / 29.0 cm instead of 5.7 / 36.1 / 10.0 / 29.4 cm.
+- **The marginal peak no longer depends on where the histogram bins start.** It is the median of the histogram peaks of 200 bootstrap resamples of the posterior sample (`bagged_marginal_peak`, fixed seed `PEAK_SEED`); the standard deviation of those peaks is stored per iteration as `marginal_peak_spread` and logged with the peaks. On the 445 samples of a flat-topped TELEMAC marginal, one histogram gave 0.310, 0.319 or 0.343 depending on the bin edges, the bagged peak 0.326 (spread 0.016). `marginal_optima(..., peak_resamples=0)` reads one histogram as before.
+
+### Fixed
+- **Tied histogram bins gave the lower end of a plateau as the peak.** `np.argmax` took the first of two bins with the same count (zone 3 of the calibration above: bins at 0.30 and 0.32 m with 67 samples each, peak 0.310). Adjacent tied bins are now one plateau (mean of their samples); of separate tied bins, the one nearest the posterior median is taken.
+
 ## [1.12.2] - 2026-11-09
 
 ### Fixed

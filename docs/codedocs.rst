@@ -51,6 +51,10 @@ Gaussian Process Emulators
    :members:
    :show-inheritance:
 
+.. automodule:: hydroBayesCal.surrogate.hydraulic_mean
+   :members:
+   :show-inheritance:
+
 .. automodule:: hydroBayesCal.surrogate.gpe_skl
    :members:
    :show-inheritance:

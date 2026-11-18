@@ -20,6 +20,7 @@ from gpytorch.kernels import MultitaskKernel, RBFKernel, LinearKernel, ScaleKern
 from scipy.optimize import dual_annealing, differential_evolution
 
 from hydroBayesCal.surrogate.bal_functions import project_to_psd
+from hydroBayesCal.surrogate.hydraulic_mean import _column_features, trend_mean
 # The validation criteria live in validation_metrics.py, one implementation for both emulator libraries. They stay importable from this module, where scripts written for earlier versions look for them.
 from hydroBayesCal.surrogate.validation_metrics import save_valid_criteria, validation_error  # noqa: F401
 from hydroBayesCal.utils.config_logging import logger, logger_warn
@@ -49,6 +50,11 @@ def _model_dtype(model):
     for parameter in model.parameters():
         return parameter.dtype
     return torch.get_default_dtype()
+
+
+#: Optimizer iterations and learning rate of the single-output emulator (:class:`GPyTraining`) in all drivers and in :meth:`SOSequentialGPyTraining.from_training_data`. Up to 1.13 a StepLR schedule froze its hyperparameters; 1.14.0 kept the drivers' settings (150 at 0.07 for TELEMAC, 100 at 0.5 for OpenFOAM and Delft3D), which with a constant rate gave different emulators per solver: on a compound channel and a k-epsilon model with scaled parameters, 0.07 x 150 ended 4 to 29 % above the validation error of the converged emulator, 0.5 x 100 0 to 14 %, but 0.5 x 100 without input scaling reached errors of 0.6 to 0.9 where this setting stays at 1 to 14 % with scaling and gives the smallest error of the three without it.
+SINGLE_OUTPUT_ITERATIONS = 300
+SINGLE_OUTPUT_LEARNING_RATE = 0.1
 
 
 #: Largest size, in entries, of the square matrices a prediction builds between its prediction points: (points per piece x tasks) squared. gpytorch evaluates the joint distribution of all points it is given, with their covariance, while the emulators use the mean, the variance and the covariance between the targets at each point only. Predicting in pieces returns the same numbers and makes the memory independent of the number of prior samples. In one piece, 25,000 prior samples needed 15 GB in single precision and twice that in double precision.
@@ -199,16 +205,18 @@ class MyExactGPyModel(gpytorch.models.ExactGP):
         :param train_y: <np.array[n_tp, n_obs]> with forward model outputs used to train GPR
         :param kernel: <kernel instance> with kernel used in GPR
         :param likelihood <likelihood instance> to train noise in GPR
+        :param mean_module <gpytorch.means.Mean, optional> trend mean, see :class:`~hydroBayesCal.surrogate.hydraulic_mean.HydraulicMean`; default zero mean
     """
 
     def __init__(
             self, train_x,
             train_y, kernel,
-            likelihood
+            likelihood,
+            mean_module=None
     ):
         super(MyExactGPyModel, self).__init__(train_inputs=train_x, train_targets=train_y, likelihood=likelihood)
-        # self.mean_module = gpytorch.means.ConstantMean()
-        self.mean_module = gpytorch.means.ZeroMean()
+        # Zero mean on the normalized outputs, i.e. the average of the training runs, unless a trend mean is given (see hydraulic_mean.py).
+        self.mean_module = gpytorch.means.ZeroMean() if mean_module is None else mean_module
         self.covar_module = kernel
 
     def forward(self, x):
@@ -250,7 +258,7 @@ class GPyTraining:
     n_restarts : int, optional
         Number of optimisation restarts.
     tp_normalization : bool, optional
-        ``True`` scales every calibration parameter to [0, 1] over the range of the training points before training, and the prediction inputs with the same scale. The kernel length scales then start from comparable values for parameters of very different magnitude (a roughness of 0.01 m next to a discharge of 500 m3/s). Default ``False``, the emulator of releases up to 1.11; ``sampling['tp_normalization']`` in the configuration.
+        ``True`` scales every calibration parameter to [0, 1] over the range of the training points before training, and the prediction inputs with the same scale. The kernel length scales then start from comparable values for parameters of very different magnitude (a roughness of 0.01 m next to a discharge of 500 m3/s). Default ``True`` since 1.14; ``False`` reproduces the emulators of releases up to 1.13, which predicted far less reliably for parameters with small ranges (a Manning range of a few hundredths: 95 % interval covering 7 to 18 % of test points). ``sampling['tp_normalization']`` in the configuration.
     y_normalization : bool, optional
         ``True`` to normalise model outputs before training (predictions are
         de-normalised afterwards).
@@ -258,7 +266,9 @@ class GPyTraining:
         ``True`` to parallelise surrogate training, ``False`` to train
         sequentially.
     precision : {"double", "single"}, optional
-        Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` reproduces the arithmetic of releases up to 1.10.1.
+        Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` computes in the precision of releases up to 1.10.1 but does not reproduce their emulators: their hyperparameters were hardly trained up to 1.13, and with trained, long length scales the training covariance is ill-conditioned in single precision, so that the result depends on the number of threads (length scales of 4.45 to 5.01 for the same runs in a test).
+    mean_features : list of list of tuple, optional
+        Trend features of the mean, one list per output column, as :func:`~hydroBayesCal.surrogate.hydraulic_mean.trend_features` returns them for ``sampling['gp_mean']``. A trend switches on ``tp_normalization``. Default ``None``: zero mean on the normalized outputs, the mean of releases up to 1.13.
 
     Notes
     -----
@@ -276,16 +286,17 @@ class GPyTraining:
             training_iter,
             likelihood,
             y_normalization=True,
-            tp_normalization=False,
+            tp_normalization=True,
             optimizer="adam",
-            lr=0.5,
+            lr=SINGLE_OUTPUT_LEARNING_RATE,
             loss='exact',
             n_restarts=1,
             weight_decay=0,
             gradient_free_start=False,
             verbose=True,
             parallelize=False,
-            precision="double"
+            precision="double",
+            mean_features=None
     ):
 
         # Basic attributed
@@ -316,7 +327,9 @@ class GPyTraining:
         self.verbose = verbose
 
         # Options for GPR library:
-        self.tp_norm = tp_normalization
+        self.mean_features = _column_features(mean_features, self.n_obs, self.n_params)
+        # A trend acts on the physical parameters, the kernel on the scaled ones: without the scaling, the trend made a single-output emulator of a k-epsilon test model 1.1 to 11 times less accurate (hydraulic_mean.py).
+        self.tp_norm = bool(tp_normalization) or self.mean_features is not None
         self.y_norm = y_normalization
         # Parameters used to normalize GP inputs
         self.x_min = None
@@ -402,15 +415,21 @@ class GPyTraining:
             out = Parallel(n_jobs=-1, backend='multiprocessing')(delayed(self._fit_adam)(train_x=train_x,
                                                                                          model_y=self.model_evaluations[:, i],
                                                                                          likelihood=self.likelihood[i],
-                                                                                         kernel=self.kernel)
+                                                                                         kernel=self.kernel,
+                                                                                         features=self._column_features(i))
                                                                  for i in range(self.n_obs))
             self.gp_list = out
         else:
             for i, y_model in enumerate(self.model_evaluations.T):
                 out = self._fit_adam(train_x=train_x, model_y=y_model, likelihood=self.likelihood[i],
-                                     kernel=self.kernel)
+                                     kernel=self.kernel, features=self._column_features(i))
 
                 self.gp_list.append(out)
+
+    def _column_features(self, column):
+        """Trend features of one output column, or ``None`` for the zero mean (also for an emulator pickled before 1.14)."""
+        features = getattr(self, "mean_features", None)
+        return None if features is None else features[column]
 
     @staticmethod
     def init_model_params(model):
@@ -428,9 +447,11 @@ class GPyTraining:
                 torch.nn.init.xavier_uniform_(param_)
 
         for name, param in model.named_parameters():
+            if name.startswith("mean_module."):
+                continue  # a trend mean keeps its least-squares start, see HydraulicMean
             initialize_tensor(param)
 
-    def _fit_adam(self, train_x, model_y, kernel, likelihood):
+    def _fit_adam(self, train_x, model_y, kernel, likelihood, features=None):
         """
         Function trains the GPR for a given training location using the 'adam' optimizer from PyTorch
         Args:
@@ -438,6 +459,8 @@ class GPyTraining:
                 with input parameter sets to use in training
             model_y: array[n_tp,]
                 with simulator outputs in training points
+            features: list of tuple, optional
+                trend features of this output column; None for the zero mean
         Returns: dict
             with trained gp object, trained likelihood object, hyperparameters
             and y_normalization parameters (if needed)
@@ -451,6 +474,8 @@ class GPyTraining:
 
         best_loss = float('inf')
         best_params = None
+        # The same for every restart: feature standardization and least-squares start depend on the training data only.
+        trend = trend_mean(features, train_x, train_y, self.x_min, self.x_range)
 
         for i in range(self.n_restarts):
 
@@ -459,7 +484,7 @@ class GPyTraining:
             likelihood_ = copy.deepcopy(likelihood)
 
             # Initialize instance of GPyTorch GPR. Kernel and likelihood arrive in torch's default type, single precision, and are brought to the precision of this emulator together with the model.
-            gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_)
+            gp = MyExactGPyModel(train_x, train_y, kernel_, likelihood_, mean_module=copy.deepcopy(trend))
             gp.to(self.dtype)
             likelihood_.to(self.dtype)
 
@@ -486,13 +511,7 @@ class GPyTraining:
             elif 'loo' in self.loss.lower():
                 mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood_, gp)
 
-            # Change learning rate:
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=5,
-                gamma=0.5
-            )
-
+            # A constant learning rate. Up to 1.13, a StepLR schedule halved it every 5 iterations, so that the hyperparameters moved by at most about ten times the initial rate and stayed near their initial values: the length scales ended at 0.4 to 1.1 where training to convergence gave 10 to 24, and the validation error was 1.3 to 3.7 times that of the converged emulator (k-epsilon test model, scaled parameters). Without the schedule, the single-output emulator matches the multitask one trained on the same runs.
             if i == 0 and self.gradient_free_start:
                 def negative_log_likelihood(params):
                     """ Gradient-free optimizer from SciPy"""
@@ -546,15 +565,17 @@ class GPyTraining:
                 else:
                     loss = closure()
                     optimizer.step()
-                scheduler.step()   # Change learning rate
                 if self.verbose:
                     print(f'Iter {j + 1}/{self.training_iter} - Loss: {loss.item()}',
                           f'   Outputscale: {gp.covar_module.outputscale.item()}',
                           f'   lengthscale: {gp.covar_module.base_kernel.lengthscale[0]}',
                           f'   noise: {gp.likelihood.noise.item()}')
+            # The loss of the hyperparameters this restart ends with: the one of the last iteration was computed before its optimizer step, which with a constant learning rate is not negligible.
+            with torch.no_grad():
+                loss = float(-mll(gp(train_x), train_y))
             if loss < best_loss:
                 best_loss = loss
-                best_params = gp.state_dict()
+                best_params = copy.deepcopy(gp.state_dict())
 
         if best_params is None:
             raise RuntimeError(
@@ -567,6 +588,7 @@ class GPyTraining:
             return_out_dic = dict()
             return_out_dic['gp'] = gp
             return_out_dic['likelihood'] = likelihood_
+            return_out_dic['loss'] = best_loss  # negative marginal log likelihood of the kept hyperparameters
 
             return_out_dic['c_hp'] = gp.covar_module.outputscale.item()
             return_out_dic['cl_hp'] = gp.covar_module.base_kernel.lengthscale.numpy()[0, :]
@@ -686,8 +708,9 @@ class MultiGPyTraining:
             parallelize=False,
             number_quantities=2,
             noise_constraint=GreaterThan(1e-6),
-            tp_normalization=False,
-            precision="double"
+            tp_normalization=True,
+            precision="double",
+            mean_features=None
     ):
         """
         Parameters
@@ -696,7 +719,9 @@ class MultiGPyTraining:
         precision : {"double", "single"}, optional
             Floating-point precision of the emulator, see :class:`GPyTraining`. Default ``"double"``.
         tp_normalization : bool, optional
-            Scale the calibration parameters to [0, 1] before training, see :class:`GPyTraining`. Default ``False``.
+            Scale the calibration parameters to [0, 1] before training, see :class:`GPyTraining`. Default ``True``.
+        mean_features : list of list of tuple, optional
+            Trend features per output column, see :class:`GPyTraining`. Every task gets the trend of its output column. Default ``None``: a constant mean per task.
         """
         _precision_dtype(precision)  # refuse an unknown value here, not in the first training
         self.precision = str(precision).lower()
@@ -721,7 +746,9 @@ class MultiGPyTraining:
         self.training_iter = training_iter
         self.n_restarts = n_restarts
         self.lr = lr
-        self.tp_norm = tp_normalization
+        self.mean_features = _column_features(mean_features, self.n_obs, self.n_params)
+        # A trend switches on the input scaling, see GPyTraining.
+        self.tp_norm = bool(tp_normalization) or self.mean_features is not None
         self.x_min = None
         self.x_range = None
         self.parallel = parallelize
@@ -770,6 +797,27 @@ class MultiGPyTraining:
 
         return torch.tensor(X, dtype=dtype)
 
+    def _task_means(self, columns, X, Y_norm):
+        """Multitask mean of the output columns that are the tasks of one model, or ``None`` for a constant mean per task.
+
+        Parameters
+        ----------
+        columns : sequence of int
+            Output columns of ``model_evaluations``, one per task, in task order.
+        X : torch.Tensor
+            Training inputs as the model sees them.
+        Y_norm : torch.Tensor
+            Normalized training outputs of these columns, shape ``[n_runs, n_tasks]``.
+        """
+        features = getattr(self, "mean_features", None)
+        if features is None:
+            return None
+        means = [trend_mean(features[column], X, torch.as_tensor(Y_norm)[:, task], self.x_min, self.x_range)
+                 for task, column in enumerate(columns)]
+        if any(mean is None for mean in means):
+            return None
+        return MultitaskMean(means, num_tasks=len(means))
+
     def train_tasks_variables(self):#Training variables at each location separately
         """
         Train multitask Gaussian Process models using the provided collocation points and model evaluations.
@@ -809,7 +857,9 @@ class MultiGPyTraining:
             # lengthscales, so only the last location's hyperparameters survived.
             likelihood = copy.deepcopy(self.likelihood)
             kernel = copy.deepcopy(self.kernel)
-            model = MultitaskGPModel(X, Y_loc_norm, likelihood, kernel, self.number_quantities)
+            columns = range(self.number_quantities * loc, self.number_quantities * (loc + 1))
+            model = MultitaskGPModel(X, Y_loc_norm, likelihood, kernel, self.number_quantities,
+                                     mean_module=self._task_means(columns, X, Y_loc_norm))
             # Kernel and likelihood arrive in torch's default type, single precision.
             model.to(dtype)
             likelihood.to(dtype)
@@ -920,8 +970,10 @@ class MultiGPyTraining:
             # Deep copies keep each quantity's noise and lengthscales its own.
             likelihood = copy.deepcopy(self.likelihood)
             kernel = copy.deepcopy(self.kernel)
+            columns = range(q, self.n_obs, self.number_quantities)
             model = MultitaskGPModel(X, Y_output_var_norm, likelihood, kernel,
-                                     number_tasks=num_locations)  # num_tasks = num_locations
+                                     number_tasks=num_locations,  # num_tasks = num_locations
+                                     mean_module=self._task_means(columns, X, Y_output_var_norm))
             model.to(dtype)
             likelihood.to(dtype)
 
@@ -978,7 +1030,8 @@ class MultiGPyTraining:
         # task layouts, so that self.likelihood/self.kernel stay untrained templates.
         likelihood = copy.deepcopy(self.likelihood)
         kernel = copy.deepcopy(self.kernel)
-        model = MultitaskGPModel(X, Y_norm, likelihood, kernel, number_tasks=self.n_obs)
+        model = MultitaskGPModel(X, Y_norm, likelihood, kernel, number_tasks=self.n_obs,
+                                 mean_module=self._task_means(range(self.n_obs), X, Y_norm))
         model.to(dtype)
         likelihood.to(dtype)
 
@@ -1375,7 +1428,8 @@ class MultitaskGPModel(ExactGP):
             train_y,
             likelihood,
             kernel,
-            number_tasks
+            number_tasks,
+            mean_module=None
     ):
         """
         :param train_x: torch.Tensor
@@ -1392,9 +1446,13 @@ class MultitaskGPModel(ExactGP):
 
         :param kernel: tuple(gpytorch.kernels.Kernel, gpytorch.kernels.Kernel)
             A tuple of kernel components to be used in the GP model. The tuple should contain two kernel components.
+
+        :param mean_module: gpytorch.means.MultitaskMean, optional
+            Mean with one trend per task, see :meth:`MultiGPyTraining._task_means`. Default: a constant mean per task.
         """
         super(MultitaskGPModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = MultitaskMean(ConstantMean(), num_tasks=number_tasks)
+        self.mean_module = (MultitaskMean(ConstantMean(), num_tasks=number_tasks)
+                            if mean_module is None else mean_module)
         self.covar_module = MultitaskKernel(
                             kernel,
             num_tasks=number_tasks, rank=2
@@ -1488,7 +1546,9 @@ class SOSequentialGPyTraining:
 
     @classmethod
     def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
-                           training_iter=150, lr=0.07, verbose=False, tp_normalization=False, precision="double"):
+                           training_iter=SINGLE_OUTPUT_ITERATIONS, lr=SINGLE_OUTPUT_LEARNING_RATE, verbose=False,
+                           tp_normalization=True, precision="double",
+                           mean_features=None):
         """Build the container from the training data of a calibration.
 
         One single-output GPE is set up per calibration target, with the kernel, likelihood and optimizer settings the drivers use for a calibration on one target, so a target is emulated the same way whether it is calibrated alone or together with others. The models are not trained yet, call :meth:`train_`.
@@ -1510,7 +1570,9 @@ class SOSequentialGPyTraining:
         precision : {"double", "single"}
             Floating-point precision of the emulators, passed on to :class:`GPyTraining`.
         tp_normalization : bool
-            Scale the calibration parameters to [0, 1] before training, passed on to :class:`GPyTraining`. Default ``False``.
+            Scale the calibration parameters to [0, 1] before training, passed on to :class:`GPyTraining`. Default ``True``.
+        mean_features : list of list of tuple, optional
+            Trend features per output column in the interleaved order, ``n_locations * n_quantities`` lists; each GPE gets those of its target. Default ``None`` (zero mean).
 
         Returns
         -------
@@ -1527,6 +1589,8 @@ class SOSequentialGPyTraining:
                 f"The model outputs have {model_outputs.shape[1]} columns, which is not a multiple of the "
                 f"{n_quantities} calibration quantities {calibration_quantities}.")
 
+        if mean_features is not None:
+            mean_features = _column_features(mean_features, model_outputs.shape[1], collocation_points.shape[1])
         surrogate_models = {}
         for quantity_idx, quantity in enumerate(calibration_quantities):
             kernel = gpytorch.kernels.ScaleKernel(
@@ -1541,7 +1605,8 @@ class SOSequentialGPyTraining:
                 likelihood=likelihood, kernel=kernel,
                 training_iter=training_iter,
                 optimizer="adam", lr=lr,
-                verbose=verbose, tp_normalization=tp_normalization, precision=precision)
+                verbose=verbose, tp_normalization=tp_normalization, precision=precision,
+                mean_features=None if mean_features is None else mean_features[quantity_idx::n_quantities])
         return cls(surrogate_models=surrogate_models, calibration_quantities=calibration_quantities)
 
     def __getitem__(self, key):

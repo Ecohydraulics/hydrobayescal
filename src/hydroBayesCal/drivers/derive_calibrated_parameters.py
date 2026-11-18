@@ -121,6 +121,14 @@ def main():
              "optimum off the discrete prior sample and makes it global over those "
              "modes. Requires --surrogate.")
     parser.add_argument(
+        "--estimate",
+        type=str,
+        default="marginal",
+        choices=["marginal", "joint"],
+        help="How the calibrated set is read off the posterior: 'marginal' (default "
+             "since 1.13.0), the per-parameter posterior maxima; 'joint', the rule of "
+             "1.5.0 to 1.12.2 (joint maximum unless the marginal peaks agree with it).")
+    parser.add_argument(
         "--write-csv",
         action="store_true",
         help="Write restart_data/user-collocation-points.csv, backing up any existing "
@@ -171,6 +179,7 @@ def main():
         include=tuple(kind.strip() for kind in args.candidates.split(",") if kind.strip()),
         max_modes=args.max_modes,
         refine=args.refine,
+        estimate=args.estimate,
     )
     log_posterior_analysis(analysis)
 
