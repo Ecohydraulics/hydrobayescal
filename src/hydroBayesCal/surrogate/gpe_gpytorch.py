@@ -253,7 +253,7 @@ class GPyTraining:
     n_restarts : int, optional
         Number of optimisation restarts.
     tp_normalization : bool, optional
-        ``True`` scales every calibration parameter to [0, 1] over the range of the training points before training, and the prediction inputs with the same scale. The kernel length scales then start from comparable values for parameters of very different magnitude (a roughness of 0.01 m next to a discharge of 500 m3/s). Default ``False``, the emulator of releases up to 1.11; ``sampling['tp_normalization']`` in the configuration.
+        ``True`` scales every calibration parameter to [0, 1] over the range of the training points before training, and the prediction inputs with the same scale. The kernel length scales then start from comparable values for parameters of very different magnitude (a roughness of 0.01 m next to a discharge of 500 m3/s). Default ``True`` since 1.14; ``False`` reproduces the emulators of releases up to 1.13, which predicted far less reliably for parameters with small ranges (a Manning range of a few hundredths: 95 % interval covering 7 to 18 % of test points). ``sampling['tp_normalization']`` in the configuration.
     y_normalization : bool, optional
         ``True`` to normalise model outputs before training (predictions are
         de-normalised afterwards).
@@ -263,7 +263,7 @@ class GPyTraining:
     precision : {"double", "single"}, optional
         Floating-point precision of the emulator. ``"double"`` (default) is what a Gaussian process needs: its training solves a linear system whose condition number grows with the number of training runs and with the smoothness of the model response, and its posterior variance is a small difference of large terms. ``"single"`` reproduces the arithmetic of releases up to 1.10.1.
     mean_features : list of list of tuple, optional
-        Trend features of the mean, one list per output column, as :func:`~hydroBayesCal.surrogate.hydraulic_mean.trend_features` returns them for ``sampling['gp_mean']``. A trend switches on ``tp_normalization``. Default ``None``: zero mean on the normalized outputs, the emulator of releases up to 1.13.
+        Trend features of the mean, one list per output column, as :func:`~hydroBayesCal.surrogate.hydraulic_mean.trend_features` returns them for ``sampling['gp_mean']``. A trend switches on ``tp_normalization``. Default ``None``: zero mean on the normalized outputs, the mean of releases up to 1.13.
 
     Notes
     -----
@@ -281,7 +281,7 @@ class GPyTraining:
             training_iter,
             likelihood,
             y_normalization=True,
-            tp_normalization=False,
+            tp_normalization=True,
             optimizer="adam",
             lr=0.5,
             loss='exact',
@@ -506,13 +506,7 @@ class GPyTraining:
             elif 'loo' in self.loss.lower():
                 mll = gpytorch.mlls.LeaveOneOutPseudoLikelihood(likelihood_, gp)
 
-            # Change learning rate:
-            scheduler = torch.optim.lr_scheduler.StepLR(
-                optimizer,
-                step_size=5,
-                gamma=0.5
-            )
-
+            # A constant learning rate. Up to 1.13, a StepLR schedule halved it every 5 iterations, so that the hyperparameters moved by at most about ten times the initial rate and stayed near their initial values: the length scales ended at 0.4 to 1.1 where training to convergence gave 10 to 24, and the validation error was 1.3 to 3.7 times that of the converged emulator (k-epsilon test model, scaled parameters). Without the schedule, the single-output emulator matches the multitask one trained on the same runs.
             if i == 0 and self.gradient_free_start:
                 def negative_log_likelihood(params):
                     """ Gradient-free optimizer from SciPy"""
@@ -566,7 +560,6 @@ class GPyTraining:
                 else:
                     loss = closure()
                     optimizer.step()
-                scheduler.step()   # Change learning rate
                 if self.verbose:
                     print(f'Iter {j + 1}/{self.training_iter} - Loss: {loss.item()}',
                           f'   Outputscale: {gp.covar_module.outputscale.item()}',
@@ -706,7 +699,7 @@ class MultiGPyTraining:
             parallelize=False,
             number_quantities=2,
             noise_constraint=GreaterThan(1e-6),
-            tp_normalization=False,
+            tp_normalization=True,
             precision="double",
             mean_features=None
     ):
@@ -717,7 +710,7 @@ class MultiGPyTraining:
         precision : {"double", "single"}, optional
             Floating-point precision of the emulator, see :class:`GPyTraining`. Default ``"double"``.
         tp_normalization : bool, optional
-            Scale the calibration parameters to [0, 1] before training, see :class:`GPyTraining`. Default ``False``.
+            Scale the calibration parameters to [0, 1] before training, see :class:`GPyTraining`. Default ``True``.
         mean_features : list of list of tuple, optional
             Trend features per output column, see :class:`GPyTraining`. Every task gets the trend of its output column. Default ``None``: a constant mean per task.
         """
@@ -1544,7 +1537,7 @@ class SOSequentialGPyTraining:
 
     @classmethod
     def from_training_data(cls, collocation_points, model_outputs, calibration_quantities,
-                           training_iter=150, lr=0.07, verbose=False, tp_normalization=False, precision="double",
+                           training_iter=150, lr=0.07, verbose=False, tp_normalization=True, precision="double",
                            mean_features=None):
         """Build the container from the training data of a calibration.
 
@@ -1567,7 +1560,7 @@ class SOSequentialGPyTraining:
         precision : {"double", "single"}
             Floating-point precision of the emulators, passed on to :class:`GPyTraining`.
         tp_normalization : bool
-            Scale the calibration parameters to [0, 1] before training, passed on to :class:`GPyTraining`. Default ``False``.
+            Scale the calibration parameters to [0, 1] before training, passed on to :class:`GPyTraining`. Default ``True``.
         mean_features : list of list of tuple, optional
             Trend features per output column in the interleaved order, ``n_locations * n_quantities`` lists; each GPE gets those of its target. Default ``None`` (zero mean).
 

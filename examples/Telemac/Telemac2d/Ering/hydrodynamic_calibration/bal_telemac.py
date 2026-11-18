@@ -212,7 +212,7 @@ def run_bal_model(collocation_points,
                   n_last=80,
                   posterior_sampling_method="rejection_sampling",
                   bal_n_jobs=-1,
-                  tp_normalization=False,
+                  tp_normalization=True,
                   gp_mean="constant",
                   ):
     """
@@ -267,9 +267,9 @@ def run_bal_model(collocation_points,
     bal_n_jobs : int
         Number of worker processes that score the BAL candidates, passed to ``joblib``. ``-1`` (default) uses all cores, ``1`` scores them in the calling process.
     tp_normalization : bool
-        Scale the calibration parameters to [0, 1] before the gpytorch emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``False``; ``sampling['tp_normalization']`` in the configuration. Not passed to the scikit-learn emulator (``gp_library='skl'``), whose RBF length scales and bounds are set from the physical parameter ranges.
+        Scale the calibration parameters to [0, 1] before the gpytorch emulators are trained, see :class:`~hydroBayesCal.surrogate.gpe_gpytorch.GPyTraining`. Default ``True`` (since 1.14; ``False`` reproduces 1.13); ``sampling['tp_normalization']`` in the configuration. Not passed to the scikit-learn emulator (``gp_library='skl'``), whose RBF length scales and bounds are set from the physical parameter ranges.
     gp_mean : {"constant", "linear", "hydraulic"}
-        Mean function of the gpytorch emulators, see :mod:`~hydroBayesCal.surrogate.hydraulic_mean`. ``"constant"`` (default) is the emulator of releases up to 1.13. ``"hydraulic"`` adds a trend whose shape follows the physics of every calibration parameter (bed friction law, wall roughness ``ks``, k-ε coefficient ``Cmu``) and is linear in the other parameters; ``"linear"`` a linear trend in all of them. Either trend also switches on ``tp_normalization``. ``sampling['gp_mean']`` in the configuration. Not used by the scikit-learn emulator.
+        Mean function of the gpytorch emulators, see :mod:`~hydroBayesCal.surrogate.hydraulic_mean`. ``"constant"`` (default) is the mean function of releases up to 1.13. ``"hydraulic"`` adds a trend whose shape follows the physics of every calibration parameter (bed friction law, wall roughness ``ks``, k-ε coefficient ``Cmu``) and is linear in the other parameters; ``"linear"`` a linear trend in all of them. Either trend also switches on ``tp_normalization``. ``sampling['gp_mean']`` in the configuration. Not used by the scikit-learn emulator.
 
     Returns
     -------
@@ -837,7 +837,7 @@ def main():
         posterior_sampling_method=config.sampling.get('posterior_sampling_method',
                                                       'rejection_sampling'),
         bal_n_jobs=config.sampling.get('bal_n_jobs', -1),
-        tp_normalization=config.sampling.get('tp_normalization', False),
+        tp_normalization=config.sampling.get('tp_normalization', True),
         gp_mean=config.sampling.get('gp_mean', 'constant'),
     )
 
