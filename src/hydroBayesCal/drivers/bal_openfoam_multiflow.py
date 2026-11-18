@@ -135,7 +135,7 @@ def main():
         include_surrogate_error=config.sampling.get("include_surrogate_error", True),
         bal_exploration_tradeoff=config.sampling.get("bal_exploration_tradeoff", "auto"),
         bal_n_jobs=config.sampling.get("bal_n_jobs", -1),
-        tp_normalization=config.sampling.get("tp_normalization", False),
+        tp_normalization=config.sampling.get("tp_normalization", True),
         gp_mean=config.sampling.get("gp_mean", "constant"),
     )
 
