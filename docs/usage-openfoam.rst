@@ -202,6 +202,36 @@ outside the calibration workflow, use :func:`hydroBayesCal.extract_results`
 with the case directory or a ``.vtu`` file - see the section
 *Extract & compare 2d/3d simulation data* in :doc:`usage-telemac`.
 
+Several discharges in one calibration
+-------------------------------------
+
+When velocities were measured at several steady discharges, one parameter set (``ks`` and the k-ε coefficients) can be calibrated against all of them at once with ``bal_openfoam_multiflow.py``. Every collocation point is run once per discharge, each discharge with its own case template and its own calibration-points CSV, and the observations and model outputs of all discharges are concatenated into one calibration. A roughness that fits one discharge but not another is thus rejected by the likelihood. The workflow and the result layout are those of the TELEMAC counterpart, :doc:`usage-telemac-multiflow`.
+
+The configuration is a ``config_OpenFOAM.py`` plus a ``multiflow`` block:
+
+.. code-block:: python
+
+   multiflow = {
+       'flows': [
+           {'name': 'august-2026',
+            'case_template_dir': '/path/template-august-2026',
+            'calibration_pts_file_path': '/path/measurements-august-2026.csv'},
+           {'name': 'march-2026',
+            'case_template_dir': '/path/template-march-2026',
+            'calibration_pts_file_path': '/path/measurements-march-2026.csv'},
+       ],
+   }
+
+``paths['case_template_dir']`` and ``paths['calibration_pts_file_path']`` are ignored in favor of the per-flow entries. Each template is built for its discharge, with its own inflow and outlet values and initial fields. Every run copies its template into ``run_NNNN``, so each flow runs in its own folder, ``<paths['model_dir']>/flow-<name>``, unless its entry gives a ``model_dir``. All flows must use the same calibration parameters, ranges and calibration targets. The surrogate and the BAL dictionary are written to ``<res_dir>/auto-saved-results-HydroBayesCal``, and every flow additionally gets its own results tree in ``<res_dir>/flow-<name>``.
+
+The driver imports the loops of ``bal_openfoam.py``, which therefore has to sit beside it; ``hbc.copy_driver("bal_openfoam_multiflow.py", run_dir)`` copies both. Run it with:
+
+.. code-block:: bash
+
+   python bal_openfoam_multiflow.py --config config_OpenFOAM_multiflow.py
+
+``--only_init_mode True`` stops after the initial runs of all flows; ``--only_bal_mode`` and ``--complete_bal_mode`` override the values of the ``execution`` block.
+
 See also
 --------
 

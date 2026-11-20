@@ -4,7 +4,7 @@ All notable changes to HydroBayesCal are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.15.0] - 2026-11-20
 
 ### Added
 - **Multiflow calibration for OpenFOAM**: `drivers/bal_openfoam_multiflow.py` with `MultiflowOpenFOAMModel` calibrates one parameter set (`ks`, k-ε coefficients) against measurements taken at several steady discharges. Each flow has its own case template and calibration-points CSV and runs in its own folder (`<model_dir>/flow-<name>` unless the flow entry gives `model_dir`); the configuration is a `config_OpenFOAM.py` plus a `multiflow` block. The driver reuses the loops of `bal_openfoam.py`, which must sit next to it, and supports `sampling['gp_mean']`.
