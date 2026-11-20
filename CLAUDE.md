@@ -32,6 +32,7 @@ Running a calibration (drivers ship WITH the installed package as data; copy one
 python src/hydroBayesCal/drivers/bal_telemac.py           --config src/hydroBayesCal/drivers/config_Telemac.py
 python src/hydroBayesCal/drivers/bal_telemac_multiflow.py --config <config with a `multiflow` block>
 python src/hydroBayesCal/drivers/bal_openfoam.py          --config src/hydroBayesCal/drivers/config_OpenFOAM.py
+python src/hydroBayesCal/drivers/bal_openfoam_multiflow.py --config <config with a `multiflow` block>
 python src/hydroBayesCal/drivers/bal_delft3d.py           --config src/hydroBayesCal/drivers/config_Delft3D.py
 python src/hydroBayesCal/drivers/prebal_telemac_error_analysis.py --config <config>   # pre-BAL diagnostics only
 ```
@@ -56,10 +57,7 @@ results-folder layout. Subclasses must implement `run_multiple_simulations()` an
 `update_model_controls()` are optional overrides that raise `NotImplementedError` by default.
 
 Concrete bindings: `telemac/control_telemac.py` (`TelemacModel`, by far the most complete),
-`openfoam/control_openfoam.py`, `delft3d/control_delft3d.py`. `telemac/multiflow_telemac.py`
-(`MultiflowTelemacModel`) is deliberately *not* a `HydroSimulations` subclass: it composes several
-`TelemacModel` instances (one per steady discharge) and re-exposes the same attribute surface the
-driver reads, concatenating per-flow observations and outputs into one combined space.
+`openfoam/control_openfoam.py`, `delft3d/control_delft3d.py`. `multiflow.py` (`MultiflowModel`) is deliberately *not* a `HydroSimulations` subclass: it composes one single-flow model per steady discharge and re-exposes the same attribute surface the driver reads, concatenating per-flow observations and outputs into one combined space. `telemac/multiflow_telemac.py` (`MultiflowTelemacModel`) and `openfoam/multiflow_openfoam.py` (`MultiflowOpenFOAMModel`) subclass it and name their single-flow class (`model_class`), the keys every flow must give (`required_keys`) and the keys that must differ between flows (`distinct_keys`).
 
 `HydroSimulations` also owns the result bookkeeping of the bindings that do not have their own (OpenFOAM, Delft3D): `_save_all_results()` writes the stored runs, merges the detailed results table by run index, and derives from the merged `restart_data/detailed-model-outputs.csv` the file `initial-model-outputs.json` in the per-point layout of the TELEMAC binding, `{point_id: [{quantity: value} per run]}` with every quantity (flat matrix only when no detailed rows are given). `_load_stored_outputs()` reads it back for `only_bal_mode` for any configured targets, and still reads the flat file of releases up to 1.11 (rebuilding from the detailed table when its targets differ). Both bindings forward their remaining `**kwargs` to the base class; Delft3D used to drop the three error terms. The bindings call `_save_all_results()` with all rows of the current block after every run, so it has to stay idempotent per run.
 
@@ -97,7 +95,7 @@ they are near-duplicates across solvers, so a change to the workflow usually has
 
 `bal_telemac_multiflow.py` imports `setup_experiment_design`, `run_complex_model` and
 `run_bal_model` from `bal_telemac.py` verbatim and only swaps in `MultiflowTelemacModel`, so
-`bal_telemac.py` is the canonical driver, keep the two in sync.
+`bal_telemac.py` is the canonical driver, keep the two in sync. `bal_openfoam_multiflow.py` does the same with `bal_openfoam.py` and `MultiflowOpenFOAMModel`.
 
 The copies of `bal_telemac.py` in `examples/Telemac/**` are generated from it by `env-scripts/sync-example-drivers.py` and may differ in their header line and default config only; `tests/test_shipped_defaults.py` enforces that. Workflow changes go into the canonical driver, never into a copy. The same test module pins the `.get()` fallbacks of optional config keys, and `tests/test_driver_end_to_end.py` runs the three `run_bal_model` on an analytic model for every emulator layout.
 
@@ -161,7 +159,7 @@ raster/mesh utilities, and the report-only roughness-identifiability diagnostic
 (`diagnose_roughness_identifiability` / `log_roughness_identifiability`).
 
 Logging goes through `utils/config_logging.py`, which exposes `logger` (named `HydroBayesCal`), `logger_warn` and
-`logger_error`. Messages go to the console from the import on; `logfile.log`, `warnings.log`, `errors.log` are written into `asr_dir`, because `HydroSimulations.__init__` (and `MultiflowTelemacModel` for its combined folder) calls `setup_file_logging(asr_dir)`. That call is idempotent per folder, closes the files of an earlier folder and appends, so an `only_bal_mode` restart keeps the log of its runs.
+`logger_error`. Messages go to the console from the import on; `logfile.log`, `warnings.log`, `errors.log` are written into `asr_dir`, because `HydroSimulations.__init__` (and `MultiflowModel` for its combined folder) calls `setup_file_logging(asr_dir)`. That call is idempotent per folder, closes the files of an earlier folder and appends, so an `only_bal_mode` restart keeps the log of its runs.
 
 `extract.py` is the only public API surface (`hbc.extract_results(...)`): standalone point
 extraction from SELAFIN (2D/3D, with height-above-bed selection via `ELEVATION Z`) or OpenFOAM VTK,

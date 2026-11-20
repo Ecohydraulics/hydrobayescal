@@ -145,7 +145,7 @@ there:
    python bal_telemac.py --config config_Telemac.py
 
 ``copy_driver`` brings along any sibling the driver imports:
-``bal_telemac_multiflow.py`` needs ``bal_telemac.py`` beside it. Use
+``bal_telemac_multiflow.py`` needs ``bal_telemac.py`` beside it, and ``bal_openfoam_multiflow.py`` needs ``bal_openfoam.py``. Use
 ``hbc.available_drivers()`` to list what is packaged and ``hbc.driver_path(name)``
 or ``hbc.drivers_dir()`` when only the location is wanted. The packaged copy may
 sit in a read-only ``site-packages`` tree, so do not edit it in place.

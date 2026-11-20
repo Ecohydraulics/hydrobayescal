@@ -30,6 +30,7 @@ DRIVERS = [
     DRIVERS_DIR / "bal_openfoam.py",
     DRIVERS_DIR / "bal_delft3d.py",
     DRIVERS_DIR / "bal_telemac_multiflow.py",
+    DRIVERS_DIR / "bal_openfoam_multiflow.py",
     REPO / "examples" / "Telemac" / "Hydromorphodynamic" / "Ering" / "bal_telemac.py",
     REPO / "examples" / "Telemac" / "Telemac2d" / "Ering" / "hydrodynamic_calibration" / "bal_telemac.py",
     REPO / "examples" / "Telemac" / "Telemac2d" / "Ering" / "morphodynamic_FSF_calibration" / "bal_telemac.py",
@@ -97,7 +98,8 @@ def test_driver_get_fallbacks_match_the_shipped_defaults(path):
                 f"{EXPECTED_FALLBACKS[key]!r}")
 
 
-@pytest.mark.parametrize("path", DRIVERS[:3] + DRIVERS[4:],
+# the multiflow drivers import run_bal_model from their single-flow sibling
+@pytest.mark.parametrize("path", [d for d in DRIVERS if not d.name.endswith("_multiflow.py")],
                          ids=lambda p: str(p.relative_to(REPO)))
 def test_run_bal_model_signature_default(path):
     tree = ast.parse(path.read_text())
@@ -270,7 +272,8 @@ def test_telemac_drivers_hand_the_extraction_window_to_the_bal_loop(driver):
 # settings that have to reach every driver
 # --------------------------------------------------------------------------- #
 ALL_DRIVER_TEMPLATES = [DRIVERS_DIR / name for name in
-                        ("bal_telemac.py", "bal_telemac_multiflow.py", "bal_openfoam.py", "bal_delft3d.py")]
+                        ("bal_telemac.py", "bal_telemac_multiflow.py", "bal_openfoam.py",
+                         "bal_openfoam_multiflow.py", "bal_delft3d.py")]
 
 
 @pytest.mark.parametrize("driver", ALL_DRIVER_TEMPLATES, ids=lambda p: p.name)
