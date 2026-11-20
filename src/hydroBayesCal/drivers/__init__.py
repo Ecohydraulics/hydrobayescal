@@ -27,6 +27,7 @@ from pathlib import Path
 #: drivers that import a sibling driver, and the sibling(s) they need beside them
 _COMPANIONS: dict[str, tuple[str, ...]] = {
     "bal_telemac_multiflow.py": ("bal_telemac.py",),
+    "bal_openfoam_multiflow.py": ("bal_openfoam.py",),
 }
 
 
